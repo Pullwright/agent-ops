@@ -35,7 +35,7 @@
 #     collaborators can force that path too.
 #   - *where it reads the one-pass cap*. Fleet-wide (`union_log`), like
 #     requirement 8f's own `open_question_pass_available`, never this node's
-#     own stream alone — requirement 8u's sweep runs on every node, so a
+#     own stream alone — acceptance check 8u's sweep runs on every node, so a
 #     node-local cap lets each node spend its own pass over one unchanged
 #     head commit.
 #

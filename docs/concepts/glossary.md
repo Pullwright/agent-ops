@@ -108,7 +108,7 @@ has fully ended, it may launch another cycle immediately rather than
 waiting for the next cron firing, as long as sources remain and the
 lineage is under `max_chained_cycles`.
 
-Authoritative: docs/spec/implementation/requirements, requirement 39 (§ "The
+Authoritative: docs/spec/implementation/requirements, requirement 67 (§ "The
 Script (`agent-cycle.sh`)").
 
 <a id="claim"></a>

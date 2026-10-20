@@ -2,7 +2,7 @@
 
 ### Components — continued (part 2 of 3; 12b–17d)
 
-12b. `scripts/reconcile-compose.sh` and `lib/compose-reconcile.sh`
+12b. <a id="impl-c-12b"></a>`scripts/reconcile-compose.sh` and `lib/compose-reconcile.sh`
     implementing requirement 2.5a — the actor for the compose-drift verdict
     components 12 and `lib/compose-drift.sh` only ever reported. The library
     holds the decision (drift, through `lib/compose-drift.sh` itself, and the
@@ -28,7 +28,7 @@
     Unit-tested against a stubbed `docker` with every path overridden
     (`test/compose-reconcile.test.sh`, acceptance check 1c-vi); must pass
     `shellcheck`.
-13. `scripts/preview-deploy.sh` implementing requirement 24a: given a
+13. <a id="impl-c-13"></a>`scripts/preview-deploy.sh` implementing requirement 24a: given a
     repository and a pull request — or, with no arguments at all, the pull
     request for the branch checked out in the working directory, which is how a
     stage runs it from its own clone — it resolves the Preview deployment
@@ -52,7 +52,7 @@
     serve — untrusted data to read as evidence, never as an instruction. Its
     verdicts are regression-tested against a stubbed `gh` and `curl`
     (`test/preview-deploy.test.sh`); must pass `shellcheck`.
-14. `config.schema.json`, `lib/config-schema.sh` and `scripts/doctor.sh`
+14. <a id="impl-c-14"></a>`config.schema.json`, `lib/config-schema.sh` and `scripts/doctor.sh`
     implementing requirement 1b. The schema states the shape of `config.json`;
     the library validates a config against it (the JSON Schema subset the
     schema uses: `type`, `enum`, `const`, `minimum`, `maximum`,
@@ -75,7 +75,7 @@
     drift on either. A third, `config_duplicate_repository_review_slugs`, holds
     between two *entries* of `repository_review.repos` rather than between two
     keys of one object — two entries naming the same repository leave
-    requirement 342's resolution rule (`docs/spec/review.md`) with no
+    issue #342's resolution rule (`docs/spec/review.md`) with no
     way to say which one's overrides apply — and is shared the same way
     between `review-cycle.sh`'s own startup refusal and `doctor.sh`'s `fail`
     (`docs/spec/review.md` requirement R1b) instead of
@@ -110,7 +110,7 @@
     `ok` naming the level otherwise; doctor-only, since nothing yet consumes
     the pairing at cycle start the way the four shared cross-key rules do;
     and the environment half of the same identity, reconciled against the
-    config's (requirement 14b): a set `PULLWRIGHT_APPROVER_APP_ID` differing
+    config's (component 14b): a set `PULLWRIGHT_APPROVER_APP_ID` differing
     from a set `approver_app_id` is a `fail` — the token wrapper mints
     against the environment, and nothing else reports the divergence — an
     env id with no config declaration is a `warn` (wired but undeclared),
@@ -359,7 +359,7 @@
     this component already gives.
     `test/doctor.test.sh` covers the three new checks and the consolidated
     verdict (satisfied, unsatisfied naming owner acts and configuration
-    errors together, and unconfirmed — acceptance check 8w), plus
+    errors together, and unconfirmed — acceptance check 72), plus
     agent-ops#913's own scenario: two repository owners, two stubbed
     installations, each owner's own verdict read and reported independently
     (never one shared fleet-wide guess), and a third owner named by neither
@@ -437,7 +437,7 @@
     (`{timestamp, verdict, fails[], warns[], skips}`) for
     `scripts/publish-dashboard.sh` to surface, a third declared exception to
     the read-only rule above. Must pass `shellcheck`.
-14a. `lib/merge-autonomy.sh` implementing requirement 2.3b: the D18 trust
+14a. <a id="impl-c-14a"></a>`lib/merge-autonomy.sh` implementing requirement 2.3b: the D18 trust
     ladder's config resolution and its kill switch. `MERGE_AUTONOMY_LEVELS`
     (the four levels, `human` first) and `merge_autonomy_rank` (a level's
     ladder position, for comparisons like requirement 2.3b's own
@@ -506,7 +506,7 @@
     for a real record (cached-set included), FAIL-CLOSED for the unreachable
     synthesis, with the restore pointer only on the former (#454). Must pass
     `shellcheck`.
-14b. `lib/approver-token.sh` — the Pullwright Approver's installation-token
+14b. <a id="impl-c-14b"></a>`lib/approver-token.sh` — the Pullwright Approver's installation-token
     minting wrapper (D18 §5.3; the Approver identity requirement 2.3b's
     ladder needs above `human`). `gh` cannot mint one: it authenticates as
     the owner PAT or a user OAuth token, and an owner-PAT review is the
@@ -638,7 +638,7 @@
     left uncached, a refused mint, an unreachable API, a malformed body,
     an unusable cache directory, and the identity-login lookup's own success
     and failure paths. Must pass `shellcheck`.
-14c. `lib/approver.sh` implementing requirements 8b, 8c, 40–43 and 46: the
+14c. <a id="impl-c-14c"></a>`lib/approver.sh` implementing requirements 8b, 8c, 40–43 and 46: the
     Approver stage's own decision primitives. `approver_tier_for COMPLEXITY`
     and `approver_model_for_tier TIER MODEL_DEFAULT MODEL_COMPLEX` are pure
     lookups (requirement 8b). `approver_refuse_streak PR_URL LOGIN` reads the
@@ -695,7 +695,7 @@
     (the three primitives) and `test/approver-restale-sweep.test.sh`, which
     lifts `_approver_restale_sweep_repo` and `_approver_restale_review`
     verbatim out of this file (acceptance check 46). Must pass `shellcheck`.
-14d. `lib/merge-budget.sh` implementing requirement 2.3c: the
+14d. <a id="impl-c-14d"></a>`lib/merge-budget.sh` implementing requirement 2.3c: the
     `merge_budget_per_day` spend governor. `merge_budget_effective_cap
     CONFIG_JSON SLUG` resolves the cap on the same precedence
     `merge_autonomy_configured_level` uses. `merge_budget_window_status SLUG
@@ -751,7 +751,7 @@
     integration with `merge_autonomy_effective_level` is
     `test/merge-autonomy.test.sh`'s own coverage instead, so the two files'
     tests do not restate each other. Must pass `shellcheck`.
-14e. `lib/escalation-autonomy.sh` implementing the `escalation_autonomy`
+14e. <a id="impl-c-14e"></a>`lib/escalation-autonomy.sh` implementing the `escalation_autonomy`
     config key (D18, agent-ops#627, requirement 36b): the one function
     `escalation_autonomy_configured_level CONFIG_JSON SLUG` resolves a
     repository's configured level — its own `repos[]` override, else the
@@ -777,7 +777,7 @@
     guard's integration with `maybe_run_enabler` is
     `test/enabler-verdicts.test.sh`'s own coverage instead, so the two files'
     tests do not restate each other.
-14f. `lib/github-app-token.sh` — the GitHub App installation-token minting
+14f. <a id="impl-c-14f"></a>`lib/github-app-token.sh` — the GitHub App installation-token minting
     mechanics component 14b (`lib/approver-token.sh`) originally implemented
     for itself alone, generalised (D25, agent-ops#607) once a second identity
     — the forge authoring App, component 14g — needed the identical dance
@@ -808,7 +808,7 @@
     every mechanic this file implements) and `test/author-token.test.sh`
     (component 14g's, including that the two identities' cache files never
     collide when pointed at the same directory). Must pass `shellcheck`.
-14g. `lib/author-token.sh` — the forge authoring App's own installation-token
+14g. <a id="impl-c-14g"></a>`lib/author-token.sh` — the forge authoring App's own installation-token
     minting wrapper (D25, agent-ops#607), the same thin-wrapper shape
     component 14b now has: `author_token_credential_present [OWNER]`,
     `author_token_get [NOW_EPOCH] [OWNER]` and `author_token_identity_login
@@ -881,7 +881,7 @@
     contract of each of the five functions, and that two owners' minted
     tokens land in two cache files and are never served for each other.
     Must pass `shellcheck`.
-14h. `lib/forge-auth.sh` — which identity a cycle authors as (D25,
+14h. <a id="impl-c-14h"></a>`lib/forge-auth.sh` — which identity a cycle authors as (D25,
     agent-ops#607), and the name of the on-demand credential seam's
     degrade-path variable (D25 as amended, agent-ops#1021, component 22c). No
     single point in a cycle's process resolves a credential once for the
@@ -941,7 +941,7 @@
     with and without one set, the App path (fresh mint and a cached reuse),
     and the degraded path on both a refused mint and an unreachable API,
     each asserting both `TOKEN` and `SOURCE`. Must pass `shellcheck`.
-14i. `lib/stage-boundary.sh`, `lib/forge-token-broker.sh` and the image's
+14i. <a id="impl-c-14i"></a>`lib/stage-boundary.sh`, `lib/forge-token-broker.sh` and the image's
     side of the boundary — `deploy/docker/stage-exec.sh`,
     `deploy/docker/forge-token.sh`, `deploy/docker/forge-token-request.sh`,
     `deploy/docker/claude-shim.sh`, `deploy/docker/sudoers-agent-ops` and
@@ -959,13 +959,13 @@
     tag on two lines, exit 0, 1 (nothing to give) or 2 (a malformed
     request).
 
-15. `lib/labels.sh` implementing requirement 6a: `labels_catalogue` (what a
+15. <a id="impl-c-15"></a>`lib/labels.sh` implementing requirement 6a: `labels_catalogue` (what a
     repository in a given role — `target`, `review`, `escalation` — needs, as
     `name`/`colour`/`description`, with the names taken from the config as
     `config_defaults` merges it — so a label name absent from `config.json`
     is the schema's own default rather than a literal repeated here — and an
     empty name yielding nothing) — except role `review`'s own pr_label, which
-    (requirement 342) is resolved per repository rather than read once from
+    (issue #342) is resolved per repository rather than read once from
     the config, so `labels_catalogue` takes it as an explicit optional
     argument the caller (already holding that repository's own resolved
     value) passes through — and `labels_ensure` (create what is absent in
@@ -995,7 +995,7 @@
     invocation (`test/labels.test.sh`, `test/refiner-verdicts.test.sh`,
     `test/implementer-labels-wiring.test.sh`, `test/pr-label-ensure.test.sh`,
     `test/pr-label-ensure-wiring.test.sh`); must pass `shellcheck`.
-16. `scripts/render-config-table.sh` implementing requirement 1b's generated-
+16. <a id="impl-c-16"></a>`scripts/render-config-table.sh` implementing requirement 1b's generated-
     table property: renders the Markdown table body rows of the three prose
     configuration tables (this document's, `docs/spec/review.md`'s,
     and the two in `docs/reference/configuration.md`) from `config.schema.json`'s leaf keys, in the
@@ -1101,7 +1101,7 @@
     Regression-tested end to end, against the shipped script copied into a
     scratch fixture repository rather than a reimplementation of its logic,
     in `test/render-config-table.test.sh`; must pass `shellcheck`.
-17. `scripts/check-closing-keyword.sh` and `.github/workflows/closing-keyword.yml`
+17. <a id="impl-c-17"></a>`scripts/check-closing-keyword.sh` and `.github/workflows/closing-keyword.yml`
     implementing requirement 25a: given a pull request body, extracts every
     `<!-- agent-ops:closes-issue item=N -->` marker (requirement 23b) and
     exits non-zero, naming the missing number, for any that has no matching
@@ -1212,7 +1212,7 @@
     `tech-debt/` register of their own — get the marker/keyword half only,
     unchanged. Unit-tested (`test/check-closing-keyword.test.sh`); must pass
     `shellcheck`.
-17a. `lib/closing-keyword-gate.sh` implementing requirement 25a's other
+17a. <a id="impl-c-17a"></a>`lib/closing-keyword-gate.sh` implementing requirement 25a's other
     layer: given a pull request URL, `closing_keyword_gate` reads its
     current body and head branch with `gh pr view --json body,headRefName`
     and runs both through `scripts/check-closing-keyword.sh` unmodified,
@@ -1238,7 +1238,7 @@
     uses there). `CLOSING_KEYWORD_GATE_GH` stubs `gh` for tests, and
     `CLOSING_KEYWORD_GATE_CHECK` the checker's path. Unit-tested
     (`test/closing-keyword-gate.test.sh`); must pass `shellcheck`.
-17b. `scripts/check-changelog-section.sh` and
+17b. <a id="impl-c-17b"></a>`scripts/check-changelog-section.sh` and
     `.github/workflows/changelog-section.yml` implementing requirement 25c:
     given a pull request's description and title, decides from the title
     whether a `## Changelog` section is owed (`feat`, `fix`, `perf`, or any
@@ -1264,7 +1264,7 @@
     classification, driving both a validator and an extractor from the same
     tab-separated event stream. Unit-tested
     (`test/check-changelog-section.test.sh`); must pass `shellcheck`.
-17c. `scripts/assemble-changelog.sh` implementing requirement 25d: given
+17c. <a id="impl-c-17c"></a>`scripts/assemble-changelog.sh` implementing requirement 25d: given
     `[--check] [--since <ref>] [<path>]`, resolves the commit range from
     `<path>`'s own `<!-- changelog:assembled-through sha=… -->` marker (or
     `--since`, required when the file carries neither), walks each
@@ -1292,7 +1292,7 @@
     manifests, each repository's own adoption issue adding the manifest
     line. Unit-tested against a fixture git repository of squash-shaped
     commits (`test/assemble-changelog.test.sh`); must pass `shellcheck`.
-17d. `lib/changelog-section-gate.sh` implementing requirement 25c's other
+17d. <a id="impl-c-17d"></a>`lib/changelog-section-gate.sh` implementing requirement 25c's other
     layer, on `lib/closing-keyword-gate.sh`'s own pattern (17a above,
     agent-ops#1808): given a pull request URL, `changelog_section_gate` reads
     its current body and title with `gh pr view --json body,title` and runs

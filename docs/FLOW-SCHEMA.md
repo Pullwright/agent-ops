@@ -552,7 +552,7 @@ silent on the same terms whenever the condition holds. The
 implementation-cycle check is the last ending in `review-cycle.sh` that can
 fire while `agent-cycle.sh` is mid-stage, but it is not the first: both
 switch stand-downs, both `repository_review.defaults.not_before` stand-downs,
-the tier-two every-repository-held one (requirement 342) and the usage-limit
+the tier-two every-repository-held one (issue #342) and the usage-limit
 cooldown all `exit 0` before it is reached, and each records a terminal state
 of its own. Each therefore calls `suppress_node_state_if_peer_owns_node`
 beside its `set_node_state_terminal`, which runs two probes of the same

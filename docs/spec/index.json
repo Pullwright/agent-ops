@@ -1,0 +1,4685 @@
+{
+  "generated_by": "scripts/spec.sh index",
+  "labels": {
+    "IMPL AC 1": {
+      "kind": "impl-ac",
+      "label": "1",
+      "anchor": "impl-ac-1",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 18,
+      "title": "`shellcheck agent-cycle.sh scripts/*.sh lib/*.sh` is clean."
+    },
+    "IMPL AC 1a": {
+      "kind": "impl-ac",
+      "label": "1a",
+      "anchor": "impl-ac-1a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 19,
+      "title": "The role guard holds in both directions."
+    },
+    "IMPL AC 1b": {
+      "kind": "impl-ac",
+      "label": "1b",
+      "anchor": "impl-ac-1b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 23,
+      "title": "The image builds and carries the whole toolchain, on both"
+    },
+    "IMPL AC 1c": {
+      "kind": "impl-ac",
+      "label": "1c",
+      "anchor": "impl-ac-1c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 104,
+      "title": "The stack comes up from nothing and is idempotent."
+    },
+    "IMPL AC 1d": {
+      "kind": "impl-ac",
+      "label": "1d",
+      "anchor": "impl-ac-1d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 334,
+      "title": "State replicates per node, and comes back as peers."
+    },
+    "IMPL AC 1e": {
+      "kind": "impl-ac",
+      "label": "1e",
+      "anchor": "impl-ac-1e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 408,
+      "title": "The fleet flags reach every node."
+    },
+    "IMPL AC 1f": {
+      "kind": "impl-ac",
+      "label": "1f",
+      "anchor": "impl-ac-1f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 530,
+      "title": "A provider-qualified model id resolves; an unsupported one fails fast"
+    },
+    "IMPL AC 1g": {
+      "kind": "impl-ac",
+      "label": "1g",
+      "anchor": "impl-ac-1g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 548,
+      "title": "Every shell script in the repository is shellcheck-clean, and a caller"
+    },
+    "IMPL AC 2m": {
+      "kind": "impl-ac",
+      "label": "2m",
+      "anchor": "impl-ac-2m",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 5,
+      "title": "The installation has one push-notification channel, and everything the"
+    },
+    "IMPL AC 2n": {
+      "kind": "impl-ac",
+      "label": "2n",
+      "anchor": "impl-ac-2n",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 184,
+      "title": "A cycle does not start work the host has no room to finish, on either"
+    },
+    "IMPL AC 2c": {
+      "kind": "impl-ac",
+      "label": "2c",
+      "anchor": "impl-ac-2c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 369,
+      "title": "`scripts/gather-merge-conflicts.sh Poetic-Poems/does-not-exist autonomous-agent agent/`"
+    },
+    "IMPL AC 2z": {
+      "kind": "impl-ac",
+      "label": "2z",
+      "anchor": "impl-ac-2z",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 378,
+      "title": "`scripts/gather-dequeued.sh Poetic-Poems/does-not-exist autonomous-agent"
+    },
+    "IMPL AC 53": {
+      "kind": "impl-ac",
+      "label": "53",
+      "anchor": "impl-ac-53",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 390,
+      "title": "`scripts/gather-landing-refusals.sh o/r autonomous-agent agent/"
+    },
+    "IMPL AC 62": {
+      "kind": "impl-ac",
+      "label": "62",
+      "anchor": "impl-ac-62",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 427,
+      "title": "A persistent landing refusal posts, and a cleared one edits, the one"
+    },
+    "IMPL AC 2h": {
+      "kind": "impl-ac",
+      "label": "2h",
+      "anchor": "impl-ac-2h",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 477,
+      "title": "Dependabot's own conflicted PRs are nudged, then — only after a full"
+    },
+    "IMPL AC 2d": {
+      "kind": "impl-ac",
+      "label": "2d",
+      "anchor": "impl-ac-2d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 490,
+      "title": "Issue priority is read, defaulted and fingerprinted."
+    },
+    "IMPL AC 2e": {
+      "kind": "impl-ac",
+      "label": "2e",
+      "anchor": "impl-ac-2e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 501,
+      "title": "Issues arrive pre-fetched, filtered, whole-thread and fingerprinted."
+    },
+    "IMPL AC 2j": {
+      "kind": "impl-ac",
+      "label": "2j",
+      "anchor": "impl-ac-2j",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 520,
+      "title": "Tech-debt arrives pre-fetched, pre-excluded, and its verdict is"
+    },
+    "IMPL AC 2k": {
+      "kind": "impl-ac",
+      "label": "2k",
+      "anchor": "impl-ac-2k",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 557,
+      "title": "Blocked/void exclusion reaches every pre-fetched band, `issues`"
+    },
+    "IMPL AC 2f": {
+      "kind": "impl-ac",
+      "label": "2f",
+      "anchor": "impl-ac-2f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 799,
+      "title": "A preview nobody can reach is never reported as a healthy one"
+    },
+    "IMPL AC 2g": {
+      "kind": "impl-ac",
+      "label": "2g",
+      "anchor": "impl-ac-2g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 847,
+      "title": "Every pipeline comment is visibly attributed (requirement 9d)."
+    },
+    "IMPL AC 3": {
+      "kind": "impl-ac",
+      "label": "3",
+      "anchor": "impl-ac-3",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 866,
+      "title": "A second invocation while one holds the lock exits without acting."
+    },
+    "IMPL AC 3a": {
+      "kind": "impl-ac",
+      "label": "3a",
+      "anchor": "impl-ac-3a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 867,
+      "title": "The lock-held case above costs a `stat` and a `kill -0`, never the"
+    },
+    "IMPL AC 4": {
+      "kind": "impl-ac",
+      "label": "4",
+      "anchor": "impl-ac-4",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 880,
+      "title": "A simulated stale lock (fake lock file, old timestamp, dead PID) is taken"
+    },
+    "IMPL AC 4a": {
+      "kind": "impl-ac",
+      "label": "4a",
+      "anchor": "impl-ac-4a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 886,
+      "title": "A signal leaves a record, a released claim, and no orphaned model"
+    },
+    "IMPL AC 5": {
+      "kind": "impl-ac",
+      "label": "5",
+      "anchor": "impl-ac-5",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 897,
+      "title": "An injected `limit-hit` event with a future `resume_at` and"
+    },
+    "IMPL AC 5a": {
+      "kind": "impl-ac",
+      "label": "5a",
+      "anchor": "impl-ac-5a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 907,
+      "title": "A crash loop, of either class and in each configured repository"
+    },
+    "IMPL AC 5b": {
+      "kind": "impl-ac",
+      "label": "5b",
+      "anchor": "impl-ac-5b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1023,
+      "title": "A personal access token's own expiry is read, recorded, and escalated"
+    },
+    "IMPL AC 6a": {
+      "kind": "impl-ac",
+      "label": "6a",
+      "anchor": "impl-ac-6a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1048,
+      "title": "The switch stops both pipelines and lets go by itself."
+    },
+    "IMPL AC 6c": {
+      "kind": "impl-ac",
+      "label": "6c",
+      "anchor": "impl-ac-6c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1058,
+      "title": "A review round is answered exactly once."
+    },
+    "IMPL AC 6d": {
+      "kind": "impl-ac",
+      "label": "6d",
+      "anchor": "impl-ac-6d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1073,
+      "title": "Back-pressure cannot deadlock the pipeline (requirement 2.2a)."
+    },
+    "IMPL AC 6e": {
+      "kind": "impl-ac",
+      "label": "6e",
+      "anchor": "impl-ac-6e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1085,
+      "title": "An abandoned draft is finished, not restarted (requirements 3e, 15c)."
+    },
+    "IMPL AC 6f": {
+      "kind": "impl-ac",
+      "label": "6f",
+      "anchor": "impl-ac-6f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1097,
+      "title": "A conflicted PR is rebased, not restarted (requirements 3g, 15d)."
+    },
+    "IMPL AC 6i": {
+      "kind": "impl-ac",
+      "label": "6i",
+      "anchor": "impl-ac-6i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1110,
+      "title": "A merge-group-checks-failure dequeue is fixed, not restarted"
+    },
+    "IMPL AC 6g": {
+      "kind": "impl-ac",
+      "label": "6g",
+      "anchor": "impl-ac-6g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1135,
+      "title": "The review runs at the tier the work graded itself (requirements 26a,"
+    },
+    "IMPL AC 6b": {
+      "kind": "impl-ac",
+      "label": "6b",
+      "anchor": "impl-ac-6b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1146,
+      "title": "The no-op short-circuit skips only what it can prove, and stops skipping"
+    },
+    "IMPL AC 7": {
+      "kind": "impl-ac",
+      "label": "7",
+      "anchor": "impl-ac-7",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1171,
+      "title": "A blocked verdict round-trips."
+    },
+    "IMPL AC 7a": {
+      "kind": "impl-ac",
+      "label": "7a",
+      "anchor": "impl-ac-7a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1178,
+      "title": "The mandatory re-check round-trips too (requirement 18a)."
+    },
+    "IMPL AC 7b": {
+      "kind": "impl-ac",
+      "label": "7b",
+      "anchor": "impl-ac-7b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1198,
+      "title": "An orphaned claim branch is put back in front of the pipeline"
+    },
+    "IMPL AC 7c": {
+      "kind": "impl-ac",
+      "label": "7c",
+      "anchor": "impl-ac-7c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1237,
+      "title": "Claim visibility is deterministic, both shapes and both directions"
+    },
+    "IMPL AC 7d": {
+      "kind": "impl-ac",
+      "label": "7d",
+      "anchor": "impl-ac-7d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1250,
+      "title": "The PR-keyed claim outlives the PR's own raising (requirement 17a,"
+    },
+    "IMPL AC 7e": {
+      "kind": "impl-ac",
+      "label": "7e",
+      "anchor": "impl-ac-7e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1269,
+      "title": "The back-pressure block hands its parts to each other correctly"
+    },
+    "IMPL AC 7f": {
+      "kind": "impl-ac",
+      "label": "7f",
+      "anchor": "impl-ac-7f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 1288,
+      "title": "The decision site folds in what requirement 2.2's count could not see"
+    },
+    "IMPL AC 7g": {
+      "kind": "impl-ac",
+      "label": "7g",
+      "anchor": "impl-ac-7g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 5,
+      "title": "A candidate's refinement is made to trace back to it, and one that"
+    },
+    "IMPL AC 7h": {
+      "kind": "impl-ac",
+      "label": "7h",
+      "anchor": "impl-ac-7h",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 54,
+      "title": "Retired (requirement 65, agent-ops#1156, resolving TD-PPagop-26090604)."
+    },
+    "IMPL AC 7i": {
+      "kind": "impl-ac",
+      "label": "7i",
+      "anchor": "impl-ac-7i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 66,
+      "title": "The Script re-applies `pr_label` to a raised pull request the"
+    },
+    "IMPL AC 8": {
+      "kind": "impl-ac",
+      "label": "8",
+      "anchor": "impl-ac-8",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 84,
+      "title": "A no-op Implementer is recorded."
+    },
+    "IMPL AC 8e": {
+      "kind": "impl-ac",
+      "label": "8e",
+      "anchor": "impl-ac-8e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 90,
+      "title": "A stage that leaves a bare fence or a resumable session is recovered,"
+    },
+    "IMPL AC 8a": {
+      "kind": "impl-ac",
+      "label": "8a",
+      "anchor": "impl-ac-8a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 105,
+      "title": "A void survives an agent trying to clear it."
+    },
+    "IMPL AC 8c": {
+      "kind": "impl-ac",
+      "label": "8c",
+      "anchor": "impl-ac-8c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 113,
+      "title": "A void must be earned (requirement 34d)."
+    },
+    "IMPL AC 8d": {
+      "kind": "impl-ac",
+      "label": "8d",
+      "anchor": "impl-ac-8d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 242,
+      "title": "A `pr-ready` event means the pull request is not a draft (requirement"
+    },
+    "IMPL AC 69": {
+      "kind": "impl-ac",
+      "label": "69",
+      "anchor": "impl-ac-69",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 441,
+      "title": "A pull request nobody could hand off reaches the Enabler, not the human"
+    },
+    "IMPL AC 8f": {
+      "kind": "impl-ac",
+      "label": "8f",
+      "anchor": "impl-ac-8f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 579,
+      "title": "A human can reopen a void from where they actually are (requirement"
+    },
+    "IMPL AC 8b": {
+      "kind": "impl-ac",
+      "label": "8b",
+      "anchor": "impl-ac-8b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 593,
+      "title": "The two states are visible apart, and so is \"waiting on you\"."
+    },
+    "IMPL AC 8g": {
+      "kind": "impl-ac",
+      "label": "8g",
+      "anchor": "impl-ac-8g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 603,
+      "title": "An item in both states reads as void, everywhere (requirement 34h)."
+    },
+    "IMPL AC 8h": {
+      "kind": "impl-ac",
+      "label": "8h",
+      "anchor": "impl-ac-8h",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 615,
+      "title": "A block outlives its impediment, never its work (requirement 34i)."
+    },
+    "IMPL AC 8i": {
+      "kind": "impl-ac",
+      "label": "8i",
+      "anchor": "impl-ac-8i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 678,
+      "title": "A structured dependency is held and released without a model ever"
+    },
+    "IMPL AC 8j": {
+      "kind": "impl-ac",
+      "label": "8j",
+      "anchor": "impl-ac-8j",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 726,
+      "title": "A corroborated void closes the GitHub object it names, exactly once"
+    },
+    "IMPL AC 36f": {
+      "kind": "impl-ac",
+      "label": "36f",
+      "anchor": "impl-ac-36f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 759,
+      "title": "The delegate mandate reaches exactly three things, and its act waits out"
+    },
+    "IMPL AC 8l": {
+      "kind": "impl-ac",
+      "label": "8l",
+      "anchor": "impl-ac-8l",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 865,
+      "title": "A closing keyword is enforced, not requested (requirements 23b, 25a,"
+    },
+    "IMPL AC 8m": {
+      "kind": "impl-ac",
+      "label": "8m",
+      "anchor": "impl-ac-8m",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 961,
+      "title": "The closing-keyword and changelog-section checks block, not just"
+    },
+    "IMPL AC 8n": {
+      "kind": "impl-ac",
+      "label": "8n",
+      "anchor": "impl-ac-8n",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 983,
+      "title": "A claimed item's gone work is caught before the Implementer runs, not"
+    },
+    "IMPL AC 8o": {
+      "kind": "impl-ac",
+      "label": "8o",
+      "anchor": "impl-ac-8o",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1014,
+      "title": "A void that is both actioned and old drops out of the extract; every"
+    },
+    "IMPL AC 8p": {
+      "kind": "impl-ac",
+      "label": "8p",
+      "anchor": "impl-ac-8p",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1036,
+      "title": "The closing-keyword gate applies to every target repository, not only"
+    },
+    "IMPL AC 66": {
+      "kind": "impl-ac",
+      "label": "66",
+      "anchor": "impl-ac-66",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1064,
+      "title": "The ready-gate backstop catches a required context with no check run at"
+    },
+    "IMPL AC 56": {
+      "kind": "impl-ac",
+      "label": "56",
+      "anchor": "impl-ac-56",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1082,
+      "title": "The deterministic pre-flight finds a deleted or edited-away required"
+    },
+    "IMPL AC 25b": {
+      "kind": "impl-ac",
+      "label": "25b",
+      "anchor": "impl-ac-25b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1108,
+      "title": "The tech-debt close-guard finds exactly what requirement 25b's"
+    },
+    "IMPL AC 25c": {
+      "kind": "impl-ac",
+      "label": "25c",
+      "anchor": "impl-ac-25c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1140,
+      "title": "A changelog section is enforced, not requested (requirement 25c,"
+    },
+    "IMPL AC 8q": {
+      "kind": "impl-ac",
+      "label": "8q",
+      "anchor": "impl-ac-8q",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1167,
+      "title": "A void shape with no closed-object or register-resolved signal still"
+    },
+    "IMPL AC 8r": {
+      "kind": "impl-ac",
+      "label": "8r",
+      "anchor": "impl-ac-8r",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1203,
+      "title": "A void whose source or repo the config has dropped retires too"
+    },
+    "IMPL AC 8k": {
+      "kind": "impl-ac",
+      "label": "8k",
+      "anchor": "impl-ac-8k",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1230,
+      "title": "The changelog-section gate applies to every target repository, not only"
+    },
+    "IMPL AC 9": {
+      "kind": "impl-ac",
+      "label": "9",
+      "anchor": "impl-ac-9",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1259,
+      "title": "A cron-style invocation from a minimal environment can resolve `claude`"
+    },
+    "IMPL AC 10": {
+      "kind": "impl-ac",
+      "label": "10",
+      "anchor": "impl-ac-10",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1261,
+      "title": "One supervised full cycle (`--once`) against whichever repo the ordering"
+    },
+    "IMPL AC 11": {
+      "kind": "impl-ac",
+      "label": "11",
+      "anchor": "impl-ac-11",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1265,
+      "title": "The eligibility rule round-trips through the real extract"
+    },
+    "IMPL AC 11a": {
+      "kind": "impl-ac",
+      "label": "11a",
+      "anchor": "impl-ac-11a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1293,
+      "title": "The fingerprint wakes a quiet fleet at the threshold, and lets it go"
+    },
+    "IMPL AC 11b": {
+      "kind": "impl-ac",
+      "label": "11b",
+      "anchor": "impl-ac-11b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1302,
+      "title": "An open escalation is invisible to the Co-Ordinator and to the Enabler."
+    },
+    "IMPL AC 11d": {
+      "kind": "impl-ac",
+      "label": "11d",
+      "anchor": "impl-ac-11d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 1310,
+      "title": "An under-specified item is reported, blocked, refined and carried"
+    },
+    "IMPL AC 39a": {
+      "kind": "impl-ac",
+      "label": "39a",
+      "anchor": "impl-ac-39a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 5,
+      "title": "The Refiner's candidate set is correctly bounded (requirements 39a,"
+    },
+    "IMPL AC 3y": {
+      "kind": "impl-ac",
+      "label": "3y",
+      "anchor": "impl-ac-3y",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 57,
+      "title": "The two Refiner-only gatherers read what requirement 3y says"
+    },
+    "IMPL AC 39c": {
+      "kind": "impl-ac",
+      "label": "39c",
+      "anchor": "impl-ac-39c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 75,
+      "title": "The Refiner's verdicts are recorded as stated, driving the real switch"
+    },
+    "IMPL AC 39f": {
+      "kind": "impl-ac",
+      "label": "39f",
+      "anchor": "impl-ac-39f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 116,
+      "title": "Own-label-action memory stops a failed removal reopening a block, and"
+    },
+    "IMPL AC 39g": {
+      "kind": "impl-ac",
+      "label": "39g",
+      "anchor": "impl-ac-39g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 195,
+      "title": "Priority triage bands correctly and never lowers a band"
+    },
+    "IMPL AC 11c": {
+      "kind": "impl-ac",
+      "label": "11c",
+      "anchor": "impl-ac-11c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 349,
+      "title": "A broken Enabler cannot break a cycle (requirement 37)."
+    },
+    "IMPL AC 33a": {
+      "kind": "impl-ac",
+      "label": "33a",
+      "anchor": "impl-ac-33a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 362,
+      "title": "The per-stage metering record matches `docs/METERING-SCHEMA.md`"
+    },
+    "IMPL AC 77": {
+      "kind": "impl-ac",
+      "label": "77",
+      "anchor": "impl-ac-77",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 391,
+      "title": "The configuration matches its schema, and the schema is an enforced"
+    },
+    "IMPL AC 76": {
+      "kind": "impl-ac",
+      "label": "76",
+      "anchor": "impl-ac-76",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 441,
+      "title": "The prose configuration tables are generated from the schema, and"
+    },
+    "IMPL AC 1m": {
+      "kind": "impl-ac",
+      "label": "1m",
+      "anchor": "impl-ac-1m",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 489,
+      "title": "`doctor.sh` checks write access, Claude credentials, the rendered"
+    },
+    "IMPL AC 1n": {
+      "kind": "impl-ac",
+      "label": "1n",
+      "anchor": "impl-ac-1n",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 542,
+      "title": "`--unattended` runs the GitHub section in full and skips only the two"
+    },
+    "IMPL AC 6h": {
+      "kind": "impl-ac",
+      "label": "6h",
+      "anchor": "impl-ac-6h",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 569,
+      "title": "The pipeline creates the labels it applies, and touches no others"
+    },
+    "IMPL AC 6j": {
+      "kind": "impl-ac",
+      "label": "6j",
+      "anchor": "impl-ac-6j",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 588,
+      "title": "Labels a stage asks for are minted safely, and only within the caps"
+    },
+    "IMPL AC 38": {
+      "kind": "impl-ac",
+      "label": "38",
+      "anchor": "impl-ac-38",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 636,
+      "title": "Human-visibility (requirements 38a–38c)."
+    },
+    "IMPL AC 38e": {
+      "kind": "impl-ac",
+      "label": "38e",
+      "anchor": "impl-ac-38e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 764,
+      "title": "A violation the sweep cannot heal is read back and re-verified, not"
+    },
+    "IMPL AC 38f": {
+      "kind": "impl-ac",
+      "label": "38f",
+      "anchor": "impl-ac-38f",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 871,
+      "title": "Merge-queue awareness reads the field GitHub actually exposes, and"
+    },
+    "IMPL AC 38g": {
+      "kind": "impl-ac",
+      "label": "38g",
+      "anchor": "impl-ac-38g",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 907,
+      "title": "Requirement 38c's ruleset dependency is reported, not silent"
+    },
+    "IMPL AC 39": {
+      "kind": "impl-ac",
+      "label": "39",
+      "anchor": "impl-ac-39",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 920,
+      "title": "Finish-then-continue's chain decision is a pure, tested function of what"
+    },
+    "IMPL AC 67a": {
+      "kind": "impl-ac",
+      "label": "67a",
+      "anchor": "impl-ac-67a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 929,
+      "title": "The chain only ever launches when it should, and never waits on what it"
+    },
+    "IMPL AC 39b": {
+      "kind": "impl-ac",
+      "label": "39b",
+      "anchor": "impl-ac-39b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 946,
+      "title": "A sub-hourly cycle interval is an explicit cron minute list, correct at"
+    },
+    "IMPL AC 68": {
+      "kind": "impl-ac",
+      "label": "68",
+      "anchor": "impl-ac-68",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 959,
+      "title": "A pending image roll overrides an otherwise-eligible chain, never"
+    },
+    "IMPL AC 17e": {
+      "kind": "impl-ac",
+      "label": "17e",
+      "anchor": "impl-ac-17e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 1028,
+      "title": "Contended-claim-loss reporting is correct per node and per era"
+    },
+    "IMPL AC 8s": {
+      "kind": "impl-ac",
+      "label": "8s",
+      "anchor": "impl-ac-8s",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
+      "line": 1038,
+      "title": "The Approver runs only above `human`, picks its tier correctly, and"
+    },
+    "IMPL AC 8t": {
+      "kind": "impl-ac",
+      "label": "8t",
+      "anchor": "impl-ac-8t",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 5,
+      "title": "The arming step lands only what the classifier clears, re-reads every"
+    },
+    "IMPL AC 8u": {
+      "kind": "impl-ac",
+      "label": "8u",
+      "anchor": "impl-ac-8u",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 297,
+      "title": "A pull request the arming step already approved once, but could not"
+    },
+    "IMPL AC 46": {
+      "kind": "impl-ac",
+      "label": "46",
+      "anchor": "impl-ac-46",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 452,
+      "title": "A pull request cannot rely on the cycle that owed it an Approver"
+    },
+    "IMPL AC 46a": {
+      "kind": "impl-ac",
+      "label": "46a",
+      "anchor": "impl-ac-46a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 579,
+      "title": "A newer authored commit whose diff is unchanged is not genuine"
+    },
+    "IMPL AC 8v": {
+      "kind": "impl-ac",
+      "label": "8v",
+      "anchor": "impl-ac-8v",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 606,
+      "title": "A D18 rollout stage's own exit criteria are measured, not recalled"
+    },
+    "IMPL AC 72": {
+      "kind": "impl-ac",
+      "label": "72",
+      "anchor": "impl-ac-72",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 632,
+      "title": "The Approver's verdict is paired with the pull request's eventual fate,"
+    },
+    "IMPL AC 71": {
+      "kind": "impl-ac",
+      "label": "71",
+      "anchor": "impl-ac-71",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 676,
+      "title": "The classifier-escape audit recomputes independently, never trusts"
+    },
+    "IMPL AC 8w": {
+      "kind": "impl-ac",
+      "label": "8w",
+      "anchor": "impl-ac-8w",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 749,
+      "title": "A repository's autonomy readiness is one verdict, and it never fails for"
+    },
+    "IMPL AC 70": {
+      "kind": "impl-ac",
+      "label": "70",
+      "anchor": "impl-ac-70",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 794,
+      "title": "`file_debt`/`file_issue` file what a stage found, and only the Script"
+    },
+    "IMPL AC 8y": {
+      "kind": "impl-ac",
+      "label": "8y",
+      "anchor": "impl-ac-8y",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 840,
+      "title": "A stage files inline, on its own branch, and a stale pre-#874"
+    },
+    "IMPL AC 8x": {
+      "kind": "impl-ac",
+      "label": "8x",
+      "anchor": "impl-ac-8x",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 873,
+      "title": "One durable audit record justifies every autonomous landing, and a"
+    },
+    "IMPL AC 8z": {
+      "kind": "impl-ac",
+      "label": "8z",
+      "anchor": "impl-ac-8z",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 957,
+      "title": "The untrusted-content framing is present and identical in every"
+    },
+    "IMPL AC 45e": {
+      "kind": "impl-ac",
+      "label": "45e",
+      "anchor": "impl-ac-45e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 965,
+      "title": "A stage runs as its own Unix user (requirement 45e)."
+    },
+    "IMPL AC 47": {
+      "kind": "impl-ac",
+      "label": "47",
+      "anchor": "impl-ac-47",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 1003,
+      "title": "The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at"
+    },
+    "IMPL AC 48": {
+      "kind": "impl-ac",
+      "label": "48",
+      "anchor": "impl-ac-48",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 1018,
+      "title": "Expensive per-repository gather runs for one repository per cycle,"
+    },
+    "IMPL AC 49": {
+      "kind": "impl-ac",
+      "label": "49",
+      "anchor": "impl-ac-49",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 1066,
+      "title": "The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key"
+    },
+    "IMPL AC 50": {
+      "kind": "impl-ac",
+      "label": "50",
+      "anchor": "impl-ac-50",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
+      "line": 1131,
+      "title": "The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`"
+    },
+    "IMPL AC 51": {
+      "kind": "impl-ac",
+      "label": "51",
+      "anchor": "impl-ac-51",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 5,
+      "title": "The pager framework files once per firing key, closes once the fact"
+    },
+    "IMPL AC 73": {
+      "kind": "impl-ac",
+      "label": "73",
+      "anchor": "impl-ac-73",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 217,
+      "title": "An open question the Reviewer could not settle holds unattended landing,"
+    },
+    "IMPL AC 63": {
+      "kind": "impl-ac",
+      "label": "63",
+      "anchor": "impl-ac-63",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 315,
+      "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
+    },
+    "IMPL AC 74": {
+      "kind": "impl-ac",
+      "label": "74",
+      "anchor": "impl-ac-74",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 391,
+      "title": "The egress fence holds its shape (D24)."
+    },
+    "IMPL AC 75": {
+      "kind": "impl-ac",
+      "label": "75",
+      "anchor": "impl-ac-75",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 405,
+      "title": "Overrun-slot skips are computed and logged correctly (requirement 11a,"
+    },
+    "IMPL AC 52": {
+      "kind": "impl-ac",
+      "label": "52",
+      "anchor": "impl-ac-52",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 444,
+      "title": "The table of contents is generated from headings, and regenerating it"
+    },
+    "IMPL AC 52a": {
+      "kind": "impl-ac",
+      "label": "52a",
+      "anchor": "impl-ac-52a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 469,
+      "title": "The documentation benchmark's questions hold, and its runner"
+    },
+    "IMPL AC 57": {
+      "kind": "impl-ac",
+      "label": "57",
+      "anchor": "impl-ac-57",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 529,
+      "title": "Node health, readiness and liveness (requirements 57-60, issue #608)."
+    },
+    "IMPL AC 55": {
+      "kind": "impl-ac",
+      "label": "55",
+      "anchor": "impl-ac-55",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 579,
+      "title": "Resource usage is self-measured, both cgroup layouts are handled, and"
+    },
+    "IMPL AC 52b": {
+      "kind": "impl-ac",
+      "label": "52b",
+      "anchor": "impl-ac-52b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 636,
+      "title": "The documentation's links, map, size, citations and phrasing are"
+    },
+    "IMPL AC 52c": {
+      "kind": "impl-ac",
+      "label": "52c",
+      "anchor": "impl-ac-52c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 670,
+      "title": "Every requirement, acceptance-check and component label is unique,"
+    },
+    "IMPL AC 1h": {
+      "kind": "impl-ac",
+      "label": "1h",
+      "anchor": "impl-ac-1h",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 5,
+      "title": "A log past `log_retained_bytes` rotates, keeps `log_generations`, and"
+    },
+    "IMPL AC 1i": {
+      "kind": "impl-ac",
+      "label": "1i",
+      "anchor": "impl-ac-1i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 33,
+      "title": "Per-installation prompt overrides extend or replace a stage's prompt,"
+    },
+    "IMPL AC 1j": {
+      "kind": "impl-ac",
+      "label": "1j",
+      "anchor": "impl-ac-1j",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 57,
+      "title": "The Co-Ordinator's repo/work-sources table is config-driven, and names"
+    },
+    "IMPL AC 1ja": {
+      "kind": "impl-ac",
+      "label": "1ja",
+      "anchor": "impl-ac-1ja",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 69,
+      "title": "The assembled Co-Ordinator prompt cannot outgrow its model's context"
+    },
+    "IMPL AC 1k": {
+      "kind": "impl-ac",
+      "label": "1k",
+      "anchor": "impl-ac-1k",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 137,
+      "title": "A stage prompt reaches `claude` on stdin, at a size argv could not"
+    },
+    "IMPL AC 1k0": {
+      "kind": "impl-ac",
+      "label": "1k0",
+      "anchor": "impl-ac-1k0",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 150,
+      "title": "The stage launcher is provider-neutral, the Claude adapter behind it"
+    },
+    "IMPL AC 1k1": {
+      "kind": "impl-ac",
+      "label": "1k1",
+      "anchor": "impl-ac-1k1",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 198,
+      "title": "A stage streams as it runs, and leaves the envelope its readers"
+    },
+    "IMPL AC 1k2": {
+      "kind": "impl-ac",
+      "label": "1k2",
+      "anchor": "impl-ac-1k2",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 219,
+      "title": "A stage's inter-event gaps are measured while it runs (requirement"
+    },
+    "IMPL AC 1k3": {
+      "kind": "impl-ac",
+      "label": "1k3",
+      "anchor": "impl-ac-1k3",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 236,
+      "title": "A stage that stops producing is stopped, and the two kills are told"
+    },
+    "IMPL AC 1k4": {
+      "kind": "impl-ac",
+      "label": "1k4",
+      "anchor": "impl-ac-1k4",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 294,
+      "title": "Both stage caps derive themselves, and in the safe direction"
+    },
+    "IMPL AC 1k5": {
+      "kind": "impl-ac",
+      "label": "1k5",
+      "anchor": "impl-ac-1k5",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 344,
+      "title": "A killed stage's uncommitted work is not lost with it (requirement"
+    },
+    "IMPL AC 1l": {
+      "kind": "impl-ac",
+      "label": "1l",
+      "anchor": "impl-ac-1l",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 361,
+      "title": "Repos are walked most-overdue-first by nice-weighted effective age,"
+    },
+    "IMPL AC 78": {
+      "kind": "impl-ac",
+      "label": "78",
+      "anchor": "impl-ac-78",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 381,
+      "title": "A guard reports its degradation and still answers exactly what it"
+    },
+    "IMPL AC 2": {
+      "kind": "impl-ac",
+      "label": "2",
+      "anchor": "impl-ac-2",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 428,
+      "title": "`--dry-run` completes against the real repos: stand-down checks pass,"
+    },
+    "IMPL AC 2a": {
+      "kind": "impl-ac",
+      "label": "2a",
+      "anchor": "impl-ac-2a",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 432,
+      "title": "`scripts/gather-findings.sh Poetic-Poems/poetic` prints a valid JSON"
+    },
+    "IMPL AC 2b": {
+      "kind": "impl-ac",
+      "label": "2b",
+      "anchor": "impl-ac-2b",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 435,
+      "title": "`scripts/gather-abandoned-drafts.sh Poetic-Poems/does-not-exist autonomous-agent agent/ 3`"
+    },
+    "IMPL AC 2i": {
+      "kind": "impl-ac",
+      "label": "2i",
+      "anchor": "impl-ac-2i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 439,
+      "title": "The GitHub API budget gates the cycle, and a short refusal is waited"
+    },
+    "IMPL AC 2o": {
+      "kind": "impl-ac",
+      "label": "2o",
+      "anchor": "impl-ac-2o",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 466,
+      "title": "The budget is recorded, and the record adds up (requirement 2.0d)."
+    },
+    "IMPL AC 2p": {
+      "kind": "impl-ac",
+      "label": "2p",
+      "anchor": "impl-ac-2p",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 491,
+      "title": "The `gh` transport shim conditions a cacheable read, serves"
+    },
+    "IMPL AC 2q": {
+      "kind": "impl-ac",
+      "label": "2q",
+      "anchor": "impl-ac-2q",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 589,
+      "title": "The on-demand credential seam mints a fresh token once the previous"
+    },
+    "IMPL AC 2r": {
+      "kind": "impl-ac",
+      "label": "2r",
+      "anchor": "impl-ac-2r",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 614,
+      "title": "The seam mints against the installation covering the repository the"
+    },
+    "IMPL AC 2l": {
+      "kind": "impl-ac",
+      "label": "2l",
+      "anchor": "impl-ac-2l",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 652,
+      "title": "A rejected or missing credential is classified apart from an outage,"
+    },
+    "IMPL AC 2s": {
+      "kind": "impl-ac",
+      "label": "2s",
+      "anchor": "impl-ac-2s",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 675,
+      "title": "A refused model credential stands the cycle down before the Co-Ordinator"
+    },
+    "IMPL AC 11e": {
+      "kind": "impl-ac",
+      "label": "11e",
+      "anchor": "impl-ac-11e",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-08.md",
+      "line": 5,
+      "title": "A human's own label is read back, and only where this mechanism put it"
+    },
+    "IMPL C 1": {
+      "kind": "impl-c",
+      "label": "1",
+      "anchor": "impl-c-1",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 5,
+      "title": "`config.json` with the values above."
+    },
+    "IMPL C 2": {
+      "kind": "impl-c",
+      "label": "2",
+      "anchor": "impl-c-2",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 6,
+      "title": "`agent-cycle.sh` implementing requirements 1–13 (including the findings"
+    },
+    "IMPL C 2a": {
+      "kind": "impl-c",
+      "label": "2a",
+      "anchor": "impl-c-2a",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 28,
+      "title": "`lib/standdown.sh` implementing requirement 2, the stand-down reason"
+    },
+    "IMPL C 2b": {
+      "kind": "impl-c",
+      "label": "2b",
+      "anchor": "impl-c-2b",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 45,
+      "title": "`lib/candidate-select.sh` implementing the claim loop and candidate"
+    },
+    "IMPL C 2c": {
+      "kind": "impl-c",
+      "label": "2c",
+      "anchor": "impl-c-2c",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 71,
+      "title": "`lib/stage-attempt.sh` implementing the Co-Ordinator stage-attempt"
+    },
+    "IMPL C 2d": {
+      "kind": "impl-c",
+      "label": "2d",
+      "anchor": "impl-c-2d",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 84,
+      "title": "`lib/candidate-gather.sh` implementing the repo-ordering/candidate-"
+    },
+    "IMPL C 2e": {
+      "kind": "impl-c",
+      "label": "2e",
+      "anchor": "impl-c-2e",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 107,
+      "title": "`lib/manage.sh` implementing requirement 2.3's management commands in"
+    },
+    "IMPL C 2f": {
+      "kind": "impl-c",
+      "label": "2f",
+      "anchor": "impl-c-2f",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 124,
+      "title": "`lib/eligibility.sh` implementing requirements 3t/3u, 35a/35b, 3y and 39a"
+    },
+    "IMPL C 2g": {
+      "kind": "impl-c",
+      "label": "2g",
+      "anchor": "impl-c-2g",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 178,
+      "title": "`lib/expensive-gather-cache.sh` implementing requirement 48"
+    },
+    "IMPL C 2h": {
+      "kind": "impl-c",
+      "label": "2h",
+      "anchor": "impl-c-2h",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 200,
+      "title": "`lib/gather-phase.sh` implementing the phase between the repo-ordering/"
+    },
+    "IMPL C 2i": {
+      "kind": "impl-c",
+      "label": "2i",
+      "anchor": "impl-c-2i",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 224,
+      "title": "`lib/coordinator-phase.sh` implementing the Co-Ordinator-through-"
+    },
+    "IMPL C 3": {
+      "kind": "impl-c",
+      "label": "3",
+      "anchor": "impl-c-3",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 251,
+      "title": "`scripts/gather-findings.sh` implementing requirement 3a: given a repo"
+    },
+    "IMPL C 3c": {
+      "kind": "impl-c",
+      "label": "3c",
+      "anchor": "impl-c-3c",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 255,
+      "title": "`scripts/gather-review-feedback.sh` implementing requirement 3c: given a"
+    },
+    "IMPL C 3f": {
+      "kind": "impl-c",
+      "label": "3f",
+      "anchor": "impl-c-3f",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 260,
+      "title": "`scripts/gather-abandoned-drafts.sh` implementing requirement 3e: given a"
+    },
+    "IMPL C 3g": {
+      "kind": "impl-c",
+      "label": "3g",
+      "anchor": "impl-c-3g",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 299,
+      "title": "`scripts/gather-merge-conflicts.sh` implementing requirement 3g (extended by"
+    },
+    "IMPL C 3s": {
+      "kind": "impl-c",
+      "label": "3s",
+      "anchor": "impl-c-3s",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 308,
+      "title": "`lib/dependabot-bump.sh` and `scripts/nudge-dependabot-rebase.sh`"
+    },
+    "IMPL C 3z": {
+      "kind": "impl-c",
+      "label": "3z",
+      "anchor": "impl-c-3z",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 339,
+      "title": "`scripts/gather-dequeued.sh` implementing requirement 3z: given a repo"
+    },
+    "IMPL C 53": {
+      "kind": "impl-c",
+      "label": "53",
+      "anchor": "impl-c-53",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 351,
+      "title": "`scripts/gather-landing-refusals.sh` implementing requirement 53: given a"
+    },
+    "IMPL C 25": {
+      "kind": "impl-c",
+      "label": "25",
+      "anchor": "impl-c-25",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 405,
+      "title": "`scripts/gather-human-visibility-hygiene.sh` implementing requirement 38e:"
+    },
+    "IMPL C 3j": {
+      "kind": "impl-c",
+      "label": "3j",
+      "anchor": "impl-c-3j",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 472,
+      "title": "`scripts/gather-issues.sh` implementing requirement 3j: given a repo slug,"
+    },
+    "IMPL C 3t": {
+      "kind": "impl-c",
+      "label": "3t",
+      "anchor": "impl-c-3t",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 491,
+      "title": "`scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo"
+    },
+    "IMPL C 3y": {
+      "kind": "impl-c",
+      "label": "3y",
+      "anchor": "impl-c-3y",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 511,
+      "title": "`scripts/gather-project-review.sh` implementing requirement 3y's"
+    },
+    "IMPL C 3q": {
+      "kind": "impl-c",
+      "label": "3q",
+      "anchor": "impl-c-3q",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 589,
+      "title": "`lib/dependency-gate.sh` implementing requirement 34j: `dependency_refs`,"
+    },
+    "IMPL C 3r": {
+      "kind": "impl-c",
+      "label": "3r",
+      "anchor": "impl-c-3r",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 599,
+      "title": "`lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j"
+    },
+    "IMPL C 3k": {
+      "kind": "impl-c",
+      "label": "3k",
+      "anchor": "impl-c-3k",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 616,
+      "title": "`scripts/gather-register-status.sh` implementing requirement 34i's register"
+    },
+    "IMPL C 3o": {
+      "kind": "impl-c",
+      "label": "3o",
+      "anchor": "impl-c-3o",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 627,
+      "title": "`scripts/gather-review-status.sh` implementing requirement 34i's"
+    },
+    "IMPL C 3p": {
+      "kind": "impl-c",
+      "label": "3p",
+      "anchor": "impl-c-3p",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 642,
+      "title": "`scripts/gather-plan-status.sh` implementing requirement 34i's"
+    },
+    "IMPL C 3v": {
+      "kind": "impl-c",
+      "label": "3v",
+      "anchor": "impl-c-3v",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 652,
+      "title": "`scripts/gather-workflow-basenames.sh` implementing the one read"
+    },
+    "IMPL C 3b": {
+      "kind": "impl-c",
+      "label": "3b",
+      "anchor": "impl-c-3b",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 664,
+      "title": "`scripts/gather-source-state.sh` implementing requirement 3b's sampling:"
+    },
+    "IMPL C 3d": {
+      "kind": "impl-c",
+      "label": "3d",
+      "anchor": "impl-c-3d",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 675,
+      "title": "`scripts/state-sync.sh` implementing requirement 2.5: `push` and `fetch`."
+    },
+    "IMPL C 3i": {
+      "kind": "impl-c",
+      "label": "3i",
+      "anchor": "impl-c-3i",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 683,
+      "title": "`scripts/rotate-logs.sh` implementing requirement 2.6: rotates"
+    },
+    "IMPL C 3e": {
+      "kind": "impl-c",
+      "label": "3e",
+      "anchor": "impl-c-3e",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 692,
+      "title": "`lib/claim.sh` implementing requirement 17a: `claim` (kinds `branch` and"
+    },
+    "IMPL C 3h": {
+      "kind": "impl-c",
+      "label": "3h",
+      "anchor": "impl-c-3h",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 710,
+      "title": "`lib/refinement.sh` implementing the refinement class: requirement 16a's"
+    },
+    "IMPL C 26": {
+      "kind": "impl-c",
+      "label": "26",
+      "anchor": "impl-c-26",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 733,
+      "title": "`lib/label-marker.sh` implementing requirement 39f's own-label-action"
+    },
+    "IMPL C 3m": {
+      "kind": "impl-c",
+      "label": "3m",
+      "anchor": "impl-c-3m",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 748,
+      "title": "`lib/work-gone.sh` implementing requirement 34i's decision:"
+    },
+    "IMPL C 3w": {
+      "kind": "impl-c",
+      "label": "3w",
+      "anchor": "impl-c-3w",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 757,
+      "title": "`lib/void-liveness.sh` implementing requirement 34n's third, fourth,"
+    },
+    "IMPL C 27": {
+      "kind": "impl-c",
+      "label": "27",
+      "anchor": "impl-c-27",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 787,
+      "title": "`lib/preflight.sh` implementing requirement 34m's decision:"
+    },
+    "IMPL C 3n": {
+      "kind": "impl-c",
+      "label": "3n",
+      "anchor": "impl-c-3n",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 816,
+      "title": "`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:"
+    },
+    "IMPL C 28": {
+      "kind": "impl-c",
+      "label": "28",
+      "anchor": "impl-c-28",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 830,
+      "title": "`scripts/sweep-human-visibility.sh` implementing requirement 38c's sweep:"
+    },
+    "IMPL C 3a": {
+      "kind": "impl-c",
+      "label": "3a",
+      "anchor": "impl-c-3a",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 846,
+      "title": "The shared library (`lib/cycle-state.sh`, `lib/limit-detect.sh`,"
+    },
+    "IMPL C 3l": {
+      "kind": "impl-c",
+      "label": "3l",
+      "anchor": "impl-c-3l",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 993,
+      "title": "`lib/repo-order.sh` implementing requirement 3's two pure functions:"
+    },
+    "IMPL C 4": {
+      "kind": "impl-c",
+      "label": "4",
+      "anchor": "impl-c-4",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1006,
+      "title": "`prompts/coordinator.md`, `prompts/implementer.md`, `prompts/reviewer.md`,"
+    },
+    "IMPL C 4e": {
+      "kind": "impl-c",
+      "label": "4e",
+      "anchor": "impl-c-4e",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1014,
+      "title": "`prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge"
+    },
+    "IMPL C 4f": {
+      "kind": "impl-c",
+      "label": "4f",
+      "anchor": "impl-c-4f",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1021,
+      "title": "`prompts/enabler-adjudicate.md` implementing requirement 36b's"
+    },
+    "IMPL C 4a": {
+      "kind": "impl-c",
+      "label": "4a",
+      "anchor": "impl-c-4a",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1031,
+      "title": "`lib/prompt-overrides.sh` implementing requirement 4a: `stage_prompt_text`"
+    },
+    "IMPL C 4b": {
+      "kind": "impl-c",
+      "label": "4b",
+      "anchor": "impl-c-4b",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1050,
+      "title": "`lib/coordinator-brief.sh` implementing requirement 4b:"
+    },
+    "IMPL C 4i": {
+      "kind": "impl-c",
+      "label": "4i",
+      "anchor": "impl-c-4i",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1059,
+      "title": "`lib/coordinator-input.sh` implementing requirement 4i:"
+    },
+    "IMPL C 5": {
+      "kind": "impl-c",
+      "label": "5",
+      "anchor": "impl-c-5",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1098,
+      "title": "`README.md`: a landing page naming what the system does and pointing at"
+    },
+    "IMPL C 6": {
+      "kind": "impl-c",
+      "label": "6",
+      "anchor": "impl-c-6",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1108,
+      "title": "The crontab line: never installed by hand on a containerized node — it is"
+    },
+    "IMPL C 7": {
+      "kind": "impl-c",
+      "label": "7",
+      "anchor": "impl-c-7",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1113,
+      "title": "`deploy/docker/` — the node image and the node stack (see \"The node image\""
+    },
+    "IMPL C 8": {
+      "kind": "impl-c",
+      "label": "8",
+      "anchor": "impl-c-8",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1124,
+      "title": "`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy"
+    },
+    "IMPL C 9": {
+      "kind": "impl-c",
+      "label": "9",
+      "anchor": "impl-c-9",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1126,
+      "title": "`.github/workflows/build-image.yml` — the build-and-publish path for"
+    },
+    "IMPL C 10": {
+      "kind": "impl-c",
+      "label": "10",
+      "anchor": "impl-c-10",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1145,
+      "title": "`scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the"
+    },
+    "IMPL C 10a": {
+      "kind": "impl-c",
+      "label": "10a",
+      "anchor": "impl-c-10a",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1161,
+      "title": "`scripts/check-graphql-drift.sh` and"
+    },
+    "IMPL C 11": {
+      "kind": "impl-c",
+      "label": "11",
+      "anchor": "impl-c-11",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1244,
+      "title": "`scripts/watch-node.sh` — a read-only wrapper around"
+    },
+    "IMPL C 12": {
+      "kind": "impl-c",
+      "label": "12",
+      "anchor": "impl-c-12",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1253,
+      "title": "`scripts/check-node-compose.sh` — the host-side half of the compose-drift"
+    },
+    "IMPL C 12a": {
+      "kind": "impl-c",
+      "label": "12a",
+      "anchor": "impl-c-12a",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 1288,
+      "title": "`scripts/check-node-image.sh` — asks whether this node is running the"
+    },
+    "IMPL C 12b": {
+      "kind": "impl-c",
+      "label": "12b",
+      "anchor": "impl-c-12b",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 5,
+      "title": "`scripts/reconcile-compose.sh` and `lib/compose-reconcile.sh`"
+    },
+    "IMPL C 13": {
+      "kind": "impl-c",
+      "label": "13",
+      "anchor": "impl-c-13",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 31,
+      "title": "`scripts/preview-deploy.sh` implementing requirement 24a: given a"
+    },
+    "IMPL C 14": {
+      "kind": "impl-c",
+      "label": "14",
+      "anchor": "impl-c-14",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 55,
+      "title": "`config.schema.json`, `lib/config-schema.sh` and `scripts/doctor.sh`"
+    },
+    "IMPL C 14a": {
+      "kind": "impl-c",
+      "label": "14a",
+      "anchor": "impl-c-14a",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 440,
+      "title": "`lib/merge-autonomy.sh` implementing requirement 2.3b: the D18 trust"
+    },
+    "IMPL C 14b": {
+      "kind": "impl-c",
+      "label": "14b",
+      "anchor": "impl-c-14b",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 509,
+      "title": "`lib/approver-token.sh` — the Pullwright Approver's installation-token"
+    },
+    "IMPL C 14c": {
+      "kind": "impl-c",
+      "label": "14c",
+      "anchor": "impl-c-14c",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 641,
+      "title": "`lib/approver.sh` implementing requirements 8b, 8c, 40–43 and 46: the"
+    },
+    "IMPL C 14d": {
+      "kind": "impl-c",
+      "label": "14d",
+      "anchor": "impl-c-14d",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 698,
+      "title": "`lib/merge-budget.sh` implementing requirement 2.3c: the"
+    },
+    "IMPL C 14e": {
+      "kind": "impl-c",
+      "label": "14e",
+      "anchor": "impl-c-14e",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 754,
+      "title": "`lib/escalation-autonomy.sh` implementing the `escalation_autonomy`"
+    },
+    "IMPL C 14f": {
+      "kind": "impl-c",
+      "label": "14f",
+      "anchor": "impl-c-14f",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 780,
+      "title": "`lib/github-app-token.sh` — the GitHub App installation-token minting"
+    },
+    "IMPL C 14g": {
+      "kind": "impl-c",
+      "label": "14g",
+      "anchor": "impl-c-14g",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 811,
+      "title": "`lib/author-token.sh` — the forge authoring App's own installation-token"
+    },
+    "IMPL C 14h": {
+      "kind": "impl-c",
+      "label": "14h",
+      "anchor": "impl-c-14h",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 884,
+      "title": "`lib/forge-auth.sh` — which identity a cycle authors as (D25,"
+    },
+    "IMPL C 14i": {
+      "kind": "impl-c",
+      "label": "14i",
+      "anchor": "impl-c-14i",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 944,
+      "title": "`lib/stage-boundary.sh`, `lib/forge-token-broker.sh` and the image's"
+    },
+    "IMPL C 15": {
+      "kind": "impl-c",
+      "label": "15",
+      "anchor": "impl-c-15",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 962,
+      "title": "`lib/labels.sh` implementing requirement 6a: `labels_catalogue` (what a"
+    },
+    "IMPL C 16": {
+      "kind": "impl-c",
+      "label": "16",
+      "anchor": "impl-c-16",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 998,
+      "title": "`scripts/render-config-table.sh` implementing requirement 1b's generated-"
+    },
+    "IMPL C 17": {
+      "kind": "impl-c",
+      "label": "17",
+      "anchor": "impl-c-17",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 1104,
+      "title": "`scripts/check-closing-keyword.sh` and `.github/workflows/closing-keyword.yml`"
+    },
+    "IMPL C 17a": {
+      "kind": "impl-c",
+      "label": "17a",
+      "anchor": "impl-c-17a",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 1215,
+      "title": "`lib/closing-keyword-gate.sh` implementing requirement 25a's other"
+    },
+    "IMPL C 17b": {
+      "kind": "impl-c",
+      "label": "17b",
+      "anchor": "impl-c-17b",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 1241,
+      "title": "`scripts/check-changelog-section.sh` and"
+    },
+    "IMPL C 17c": {
+      "kind": "impl-c",
+      "label": "17c",
+      "anchor": "impl-c-17c",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 1267,
+      "title": "`scripts/assemble-changelog.sh` implementing requirement 25d: given"
+    },
+    "IMPL C 17d": {
+      "kind": "impl-c",
+      "label": "17d",
+      "anchor": "impl-c-17d",
+      "file": "docs/spec/implementation/components/components-02.md",
+      "line": 1295,
+      "title": "`lib/changelog-section-gate.sh` implementing requirement 25c's other"
+    },
+    "IMPL C 17e": {
+      "kind": "impl-c",
+      "label": "17e",
+      "anchor": "impl-c-17e",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 5,
+      "title": "`scripts/roll-changelog.sh` implementing requirement 25e: with no"
+    },
+    "IMPL C 18": {
+      "kind": "impl-c",
+      "label": "18",
+      "anchor": "impl-c-18",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 26,
+      "title": "`scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:"
+    },
+    "IMPL C 19": {
+      "kind": "impl-c",
+      "label": "19",
+      "anchor": "impl-c-19",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 38,
+      "title": "`scripts/close-void-github-items.sh` implementing requirement 34k: given"
+    },
+    "IMPL C 20": {
+      "kind": "impl-c",
+      "label": "20",
+      "anchor": "impl-c-20",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 63,
+      "title": "`lib/review-gate.sh` implementing requirement 31c: given a pull request"
+    },
+    "IMPL C 20a": {
+      "kind": "impl-c",
+      "label": "20a",
+      "anchor": "impl-c-20a",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 160,
+      "title": "`lib/reconciliation-gate.sh` implementing requirement 31c's"
+    },
+    "IMPL C 21": {
+      "kind": "impl-c",
+      "label": "21",
+      "anchor": "impl-c-21",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 228,
+      "title": "`scripts/pickup-metrics.sh` — a read-only operator report, like"
+    },
+    "IMPL C 22": {
+      "kind": "impl-c",
+      "label": "22",
+      "anchor": "impl-c-22",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 303,
+      "title": "`scripts/autonomy-stage-report.sh` — a read-only operator report, like"
+    },
+    "IMPL C 22a": {
+      "kind": "impl-c",
+      "label": "22a",
+      "anchor": "impl-c-22a",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 394,
+      "title": "`lib/verdict-fate.sh` and `scripts/verdict-fate-report.sh` implement the"
+    },
+    "IMPL C 22b": {
+      "kind": "impl-c",
+      "label": "22b",
+      "anchor": "impl-c-22b",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 498,
+      "title": "`scripts/github-budget-report.sh` — a read-only operator report, like"
+    },
+    "IMPL C 22c": {
+      "kind": "impl-c",
+      "label": "22c",
+      "anchor": "impl-c-22c",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 525,
+      "title": "`lib/gh-shim.sh` and `scripts/gh-shim.sh` — the `gh` transport shim"
+    },
+    "IMPL C 23d": {
+      "kind": "impl-c",
+      "label": "23d",
+      "anchor": "impl-c-23d",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 658,
+      "title": "`lib/tech-debt-file.sh` implementing the filing half of requirements 36c,"
+    },
+    "IMPL C 23f": {
+      "kind": "impl-c",
+      "label": "23f",
+      "anchor": "impl-c-23f",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 806,
+      "title": "`scripts/release-pending-reservations.sh` implementing requirement 17g's"
+    },
+    "IMPL C 23g": {
+      "kind": "impl-c",
+      "label": "23g",
+      "anchor": "impl-c-23g",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 848,
+      "title": "`.github/workflows/tech-debt-close-guard.yml` and"
+    },
+    "IMPL C 24": {
+      "kind": "impl-c",
+      "label": "24",
+      "anchor": "impl-c-24",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 892,
+      "title": "`scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing"
+    },
+    "IMPL C 24a": {
+      "kind": "impl-c",
+      "label": "24a",
+      "anchor": "impl-c-24a",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 933,
+      "title": "`scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh`,"
+    },
+    "IMPL C 24b": {
+      "kind": "impl-c",
+      "label": "24b",
+      "anchor": "impl-c-24b",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1014,
+      "title": "`scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,"
+    },
+    "IMPL C 24c": {
+      "kind": "impl-c",
+      "label": "24c",
+      "anchor": "impl-c-24c",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1051,
+      "title": "`scripts/spec.sh` and `.github/workflows/spec.yml` implementing"
+    },
+    "IMPL 40": {
+      "kind": "impl",
+      "label": "40",
+      "anchor": "impl-40",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 15,
+      "title": "One engagement, judge only, never fix."
+    },
+    "IMPL 41": {
+      "kind": "impl",
+      "label": "41",
+      "anchor": "impl-41",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 27,
+      "title": "Posture follows tier, and `prompts/approver.md` defines one for every"
+    },
+    "IMPL 42": {
+      "kind": "impl",
+      "label": "42",
+      "anchor": "impl-42",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 55,
+      "title": "Never writes to GitHub."
+    },
+    "IMPL 42a": {
+      "kind": "impl",
+      "label": "42a",
+      "anchor": "impl-42a",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 65,
+      "title": "`file_debt`/`file_issue` (agent-ops#631): filing what the Approver"
+    },
+    "IMPL 43": {
+      "kind": "impl",
+      "label": "43",
+      "anchor": "impl-43",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 108,
+      "title": "Ends with a single JSON object:"
+    },
+    "IMPL 44": {
+      "kind": "impl",
+      "label": "44",
+      "anchor": "impl-44",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 121,
+      "title": "One-shot, no resumption, same foreground-wait discipline every other"
+    },
+    "IMPL 46": {
+      "kind": "impl",
+      "label": "46",
+      "anchor": "impl-46",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 134,
+      "title": "A pull request cannot rely on the cycle that owed it an Approver"
+    },
+    "IMPL 46a": {
+      "kind": "impl",
+      "label": "46a",
+      "anchor": "impl-46a",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 346,
+      "title": "The stale trigger's own \"genuine progress\" test also asks whether the"
+    },
+    "IMPL 47": {
+      "kind": "impl",
+      "label": "47",
+      "anchor": "impl-47",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 391,
+      "title": "Rework record."
+    },
+    "IMPL 48": {
+      "kind": "impl",
+      "label": "48",
+      "anchor": "impl-48",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 488,
+      "title": "Expensive per-repository gather runs for one repository per cycle, not"
+    },
+    "IMPL 49": {
+      "kind": "impl",
+      "label": "49",
+      "anchor": "impl-49",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 635,
+      "title": "Item lifecycle record."
+    },
+    "IMPL 50": {
+      "kind": "impl",
+      "label": "50",
+      "anchor": "impl-50",
+      "file": "docs/spec/implementation/requirements/approver-01.md",
+      "line": 749,
+      "title": "Node time-state record."
+    },
+    "IMPL 51": {
+      "kind": "impl",
+      "label": "51",
+      "anchor": "impl-51",
+      "file": "docs/spec/implementation/requirements/approver-02.md",
+      "line": 5,
+      "title": "Fleet-level invariants (the pager)."
+    },
+    "IMPL 53": {
+      "kind": "impl",
+      "label": "53",
+      "anchor": "impl-53",
+      "file": "docs/spec/implementation/requirements/approver-02.md",
+      "line": 765,
+      "title": "Landing-refusal pre-fetch (issue #979)."
+    },
+    "IMPL 55": {
+      "kind": "impl",
+      "label": "55",
+      "anchor": "impl-55",
+      "file": "docs/spec/implementation/requirements/approver-02.md",
+      "line": 890,
+      "title": "Resource usage and budgets, self-measured (D14, issue #606)."
+    },
+    "IMPL 14": {
+      "kind": "impl",
+      "label": "14",
+      "anchor": "impl-14",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 5,
+      "title": "Works read-only: `gh` reads (runs, PRs, file contents via"
+    },
+    "IMPL 14a": {
+      "kind": "impl",
+      "label": "14a",
+      "anchor": "impl-14a",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 16,
+      "title": "An issue is its whole thread, not just the opening post."
+    },
+    "IMPL 15": {
+      "kind": "impl",
+      "label": "15",
+      "anchor": "impl-15",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 29,
+      "title": "One Co-Ordinator engagement per configured repository, launched in the"
+    },
+    "IMPL 15z": {
+      "kind": "impl",
+      "label": "15z",
+      "anchor": "impl-15z",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 60,
+      "title": "The Script reconciles the six cross-repository tiers itself, once"
+    },
+    "IMPL 15y": {
+      "kind": "impl",
+      "label": "15y",
+      "anchor": "impl-15y",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 86,
+      "title": "An engagement that produces no verdict costs its own repository's"
+    },
+    "IMPL 15b": {
+      "kind": "impl",
+      "label": "15b",
+      "anchor": "impl-15b",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 140,
+      "title": "Review feedback comes third, across repositories."
+    },
+    "IMPL 15d": {
+      "kind": "impl",
+      "label": "15d",
+      "anchor": "impl-15d",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 152,
+      "title": "Merge conflicts come fourth, across repositories."
+    },
+    "IMPL 15f": {
+      "kind": "impl",
+      "label": "15f",
+      "anchor": "impl-15f",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 178,
+      "title": "Dequeued pull requests come fifth, across repositories."
+    },
+    "IMPL 15c": {
+      "kind": "impl",
+      "label": "15c",
+      "anchor": "impl-15c",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 191,
+      "title": "Abandoned drafts come sixth, across repositories."
+    },
+    "IMPL 15g": {
+      "kind": "impl",
+      "label": "15g",
+      "anchor": "impl-15g",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 203,
+      "title": "landing-refusals and human-visibility carry no cross-repository tier"
+    },
+    "IMPL 15a": {
+      "kind": "impl",
+      "label": "15a",
+      "anchor": "impl-15a",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 211,
+      "title": "Security is always prioritised."
+    },
+    "IMPL 15e": {
+      "kind": "impl",
+      "label": "15e",
+      "anchor": "impl-15e",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 238,
+      "title": "Issues rank by their `Priority` field."
+    },
+    "IMPL 16": {
+      "kind": "impl",
+      "label": "16",
+      "anchor": "impl-16",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 297,
+      "title": "Excludes from candidacy any item that is:"
+    },
+    "IMPL 16a": {
+      "kind": "impl",
+      "label": "16a",
+      "anchor": "impl-16a",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 446,
+      "title": "Under-specified and decision-gated skips are reported, not silent."
+    },
+    "IMPL 17": {
+      "kind": "impl",
+      "label": "17",
+      "anchor": "impl-17",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 496,
+      "title": "From the remaining candidates, ranks the qualifying items best-first and"
+    },
+    "IMPL 64": {
+      "kind": "impl",
+      "label": "64",
+      "anchor": "impl-64",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 506,
+      "title": "A refined item is selected on what the refinement says."
+    },
+    "IMPL 17f": {
+      "kind": "impl",
+      "label": "17f",
+      "anchor": "impl-17f",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 522,
+      "title": "The Script verifies traceability before claiming, rather than trusting"
+    },
+    "IMPL 65": {
+      "kind": "impl",
+      "label": "65",
+      "anchor": "impl-65",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 694,
+      "title": "No check verifies a trimmed candidate's `acceptance` against the"
+    },
+    "IMPL 17h": {
+      "kind": "impl",
+      "label": "17h",
+      "anchor": "impl-17h",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 736,
+      "title": "The Script composes `context`/`acceptance`/`title` for a Co-Ordinator"
+    },
+    "IMPL 17a": {
+      "kind": "impl",
+      "label": "17a",
+      "anchor": "impl-17a",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 825,
+      "title": "The claim."
+    },
+    "IMPL 17b": {
+      "kind": "impl",
+      "label": "17b",
+      "anchor": "impl-17b",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 1043,
+      "title": "The orphan-branch sweep."
+    },
+    "IMPL 17c": {
+      "kind": "impl",
+      "label": "17c",
+      "anchor": "impl-17c",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 1146,
+      "title": "The post-merge closing-keyword sweep."
+    },
+    "IMPL 17g": {
+      "kind": "impl",
+      "label": "17g",
+      "anchor": "impl-17g",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 1210,
+      "title": "The reservation-release retry sweep."
+    },
+    "IMPL 18": {
+      "kind": "impl",
+      "label": "18",
+      "anchor": "impl-18",
+      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
+      "line": 1271,
+      "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
+    },
+    "IMPL 18a": {
+      "kind": "impl",
+      "label": "18a",
+      "anchor": "impl-18a",
+      "file": "docs/spec/implementation/requirements/co-ordinator-02.md",
+      "line": 5,
+      "title": "Fresh evidence on a blocked issue makes requirement 18's re-check"
+    },
+    "IMPL 19": {
+      "kind": "impl",
+      "label": "19",
+      "anchor": "impl-19",
+      "file": "docs/spec/implementation/requirements/co-ordinator-02.md",
+      "line": 79,
+      "title": "Chooses the Implementer's model: `implementer_model_trivial` only when"
+    },
+    "IMPL 20": {
+      "kind": "impl",
+      "label": "20",
+      "anchor": "impl-20",
+      "file": "docs/spec/implementation/requirements/co-ordinator-02.md",
+      "line": 83,
+      "title": "Emits its entire final message as one JSON object: `selected`,"
+    },
+    "IMPL 35": {
+      "kind": "impl",
+      "label": "35",
+      "anchor": "impl-35",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 5,
+      "title": "Engagement."
+    },
+    "IMPL 35a": {
+      "kind": "impl",
+      "label": "35a",
+      "anchor": "impl-35a",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 49,
+      "title": "Eligibility."
+    },
+    "IMPL 35b": {
+      "kind": "impl",
+      "label": "35b",
+      "anchor": "impl-35b",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 192,
+      "title": "The eligible set is part of the no-op fingerprint"
+    },
+    "IMPL 35c": {
+      "kind": "impl",
+      "label": "35c",
+      "anchor": "impl-35c",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 212,
+      "title": "One engagement per item, fleet-wide."
+    },
+    "IMPL 35d": {
+      "kind": "impl",
+      "label": "35d",
+      "anchor": "impl-35d",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 237,
+      "title": "Refinement items are capped per engagement."
+    },
+    "IMPL 35e": {
+      "kind": "impl",
+      "label": "35e",
+      "anchor": "impl-35e",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 254,
+      "title": "A stale merge-conflict/abandoned-draft ref, or a retired tech-debt"
+    },
+    "IMPL 36": {
+      "kind": "impl",
+      "label": "36",
+      "anchor": "impl-36",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 310,
+      "title": "The Enabler's powers."
+    },
+    "IMPL 36a": {
+      "kind": "impl",
+      "label": "36a",
+      "anchor": "impl-36a",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 357,
+      "title": "What the Script does with a verdict."
+    },
+    "IMPL 36b": {
+      "kind": "impl",
+      "label": "36b",
+      "anchor": "impl-36b",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 537,
+      "title": "The refinement duty."
+    },
+    "IMPL 36c": {
+      "kind": "impl",
+      "label": "36c",
+      "anchor": "impl-36c",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 760,
+      "title": "`file_debt`/`file_issue` (agent-ops#631): filing what the Enabler"
+    },
+    "IMPL 36d": {
+      "kind": "impl",
+      "label": "36d",
+      "anchor": "impl-36d",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 814,
+      "title": "`decide-tactical` (D18, agent-ops#936)."
+    },
+    "IMPL 36e": {
+      "kind": "impl",
+      "label": "36e",
+      "anchor": "impl-36e",
+      "file": "docs/spec/implementation/requirements/enabler-01.md",
+      "line": 1026,
+      "title": "The decision log and veto (D18, agent-ops#937)."
+    },
+    "IMPL 36f": {
+      "kind": "impl",
+      "label": "36f",
+      "anchor": "impl-36f",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 5,
+      "title": "The delegate mandate (D18, PR #1389, recommendation 3 of"
+    },
+    "IMPL 37": {
+      "kind": "impl",
+      "label": "37",
+      "anchor": "impl-37",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 264,
+      "title": "Failure containment."
+    },
+    "IMPL 38": {
+      "kind": "impl",
+      "label": "38",
+      "anchor": "impl-38",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 298,
+      "title": "Human-visibility."
+    },
+    "IMPL 38a": {
+      "kind": "impl",
+      "label": "38a",
+      "anchor": "impl-38a",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 322,
+      "title": "A ready pull request's live review request is kept, not only made"
+    },
+    "IMPL 38b": {
+      "kind": "impl",
+      "label": "38b",
+      "anchor": "impl-38b",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 433,
+      "title": "A Co-Ordinator-recorded block gated on a human decision is labelled"
+    },
+    "IMPL 38c": {
+      "kind": "impl",
+      "label": "38c",
+      "anchor": "impl-38c",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 789,
+      "title": "An idle, approved pull request is nudged, not left silent."
+    },
+    "IMPL 38d": {
+      "kind": "impl",
+      "label": "38d",
+      "anchor": "impl-38d",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 930,
+      "title": "Scope note."
+    },
+    "IMPL 38e": {
+      "kind": "impl",
+      "label": "38e",
+      "anchor": "impl-38e",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 942,
+      "title": "A violation the sweep cannot heal is selectable work, not only a log"
+    },
+    "IMPL 38f": {
+      "kind": "impl",
+      "label": "38f",
+      "anchor": "impl-38f",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 1103,
+      "title": "Merge-queue awareness (D17)."
+    },
+    "IMPL 38g": {
+      "kind": "impl",
+      "label": "38g",
+      "anchor": "impl-38g",
+      "file": "docs/spec/implementation/requirements/enabler-02.md",
+      "line": 1314,
+      "title": "The ruleset setting behind requirement 38c's own approval derivation"
+    },
+    "IMPL 45": {
+      "kind": "impl",
+      "label": "45",
+      "anchor": "impl-45",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 5,
+      "title": "Forge-authored free text is data, never instructions."
+    },
+    "IMPL 45a": {
+      "kind": "impl",
+      "label": "45a",
+      "anchor": "impl-45a",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 19,
+      "title": "One canonical wording, pinned."
+    },
+    "IMPL 45b": {
+      "kind": "impl",
+      "label": "45b",
+      "anchor": "impl-45b",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 49,
+      "title": "Pinned mechanically."
+    },
+    "IMPL 45c": {
+      "kind": "impl",
+      "label": "45c",
+      "anchor": "impl-45c",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 57,
+      "title": "Application stays the prompt's own."
+    },
+    "IMPL 45d": {
+      "kind": "impl",
+      "label": "45d",
+      "anchor": "impl-45d",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 62,
+      "title": "Overrides carry the duty forward."
+    },
+    "IMPL 45e": {
+      "kind": "impl",
+      "label": "45e",
+      "anchor": "impl-45e",
+      "file": "docs/spec/implementation/requirements/every-stage.md",
+      "line": 68,
+      "title": "A stage runs as its own Unix user."
+    },
+    "IMPL 21": {
+      "kind": "impl",
+      "label": "21",
+      "anchor": "impl-21",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 5,
+      "title": "Operates as a single non-interactive `claude -p` invocation with no"
+    },
+    "IMPL 22": {
+      "kind": "impl",
+      "label": "22",
+      "anchor": "impl-22",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 13,
+      "title": "Runs inside the cycle's clone. First reads the repo's `AGENTS.md` — or"
+    },
+    "IMPL 23": {
+      "kind": "impl",
+      "label": "23",
+      "anchor": "impl-23",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 19,
+      "title": "Makes the claim visible before implementing."
+    },
+    "IMPL 23b": {
+      "kind": "impl",
+      "label": "23b",
+      "anchor": "impl-23b",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 53,
+      "title": "Stamps an issue-sourced draft PR with a machine-readable marker naming"
+    },
+    "IMPL 23a": {
+      "kind": "impl",
+      "label": "23a",
+      "anchor": "impl-23a",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 63,
+      "title": "Pushes at checkpoints, not only at the claim and at the end."
+    },
+    "IMPL 24": {
+      "kind": "impl",
+      "label": "24",
+      "anchor": "impl-24",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 81,
+      "title": "Implements the item, then runs the same checks the repo's CI runs (as"
+    },
+    "IMPL 24a": {
+      "kind": "impl",
+      "label": "24a",
+      "anchor": "impl-24a",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 84,
+      "title": "Checks the preview deployment its own pull request produced, for a"
+    },
+    "IMPL 24b": {
+      "kind": "impl",
+      "label": "24b",
+      "anchor": "impl-24b",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 165,
+      "title": "Filing deferred work inline, instead of losing it to scope creep or a"
+    },
+    "IMPL 24c": {
+      "kind": "impl",
+      "label": "24c",
+      "anchor": "impl-24c",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 192,
+      "title": "A large test suite is run in pieces, never as one invocation, when the"
+    },
+    "IMPL 25": {
+      "kind": "impl",
+      "label": "25",
+      "anchor": "impl-25",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 207,
+      "title": "Updates the originating record: an issue — tech-debt or otherwise —"
+    },
+    "IMPL 25a": {
+      "kind": "impl",
+      "label": "25a",
+      "anchor": "impl-25a",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 265,
+      "title": "The closing keyword requirement 25 asks for is enforced deterministically"
+    },
+    "IMPL 25b": {
+      "kind": "impl",
+      "label": "25b",
+      "anchor": "impl-25b",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 450,
+      "title": "A `pw::type:tech-debt` issue closed some other way still gets an"
+    },
+    "IMPL 56": {
+      "kind": "impl",
+      "label": "56",
+      "anchor": "impl-56",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 512,
+      "title": "A pull request that deletes, or edits away, the workflow job producing"
+    },
+    "IMPL 25c": {
+      "kind": "impl",
+      "label": "25c",
+      "anchor": "impl-25c",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 588,
+      "title": "The changelog entry is a section of the pull-request description, and"
+    },
+    "IMPL 25d": {
+      "kind": "impl",
+      "label": "25d",
+      "anchor": "impl-25d",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 697,
+      "title": "`CHANGELOG.md` is assembled from merged pull-request descriptions,"
+    },
+    "IMPL 25e": {
+      "kind": "impl",
+      "label": "25e",
+      "anchor": "impl-25e",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 797,
+      "title": "A repository that cuts no releases still gets its `[Unreleased]`"
+    },
+    "IMPL 26": {
+      "kind": "impl",
+      "label": "26",
+      "anchor": "impl-26",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 880,
+      "title": "Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`"
+    },
+    "IMPL 26a": {
+      "kind": "impl",
+      "label": "26a",
+      "anchor": "impl-26a",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 891,
+      "title": "Grades the complexity of the work, ex post, and labels the PR with"
+    },
+    "IMPL 26b": {
+      "kind": "impl",
+      "label": "26b",
+      "anchor": "impl-26b",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 917,
+      "title": "May name labels for its own pull request (requirement 6c, issue"
+    },
+    "IMPL 26c": {
+      "kind": "impl",
+      "label": "26c",
+      "anchor": "impl-26c",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 928,
+      "title": "Re-verifies the PR description against the diff when resolving a"
+    },
+    "IMPL 26d": {
+      "kind": "impl",
+      "label": "26d",
+      "anchor": "impl-26d",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 948,
+      "title": "Re-verifies the PR description against the diff when a"
+    },
+    "IMPL 27": {
+      "kind": "impl",
+      "label": "27",
+      "anchor": "impl-27",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 980,
+      "title": "Ends with a single JSON object as its entire final message:"
+    },
+    "IMPL 33": {
+      "kind": "impl",
+      "label": "33",
+      "anchor": "impl-33",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 5,
+      "title": "The shared log is a single JSON Lines file, `state_dir/log.jsonl`,"
+    },
+    "IMPL 33a": {
+      "kind": "impl",
+      "label": "33a",
+      "anchor": "impl-33a",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 591,
+      "title": "Metering."
+    },
+    "IMPL 34": {
+      "kind": "impl",
+      "label": "34",
+      "anchor": "impl-34",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 649,
+      "title": "Blocked semantics: an item is blocked iff the most recent"
+    },
+    "IMPL 34a": {
+      "kind": "impl",
+      "label": "34a",
+      "anchor": "impl-34a",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 677,
+      "title": "Whatever computes requirement 34 must be the **only** definition of it."
+    },
+    "IMPL 34c": {
+      "kind": "impl",
+      "label": "34c",
+      "anchor": "impl-34c",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 696,
+      "title": "Void semantics: an item is void iff the most recent `item-void` /"
+    },
+    "IMPL 34d": {
+      "kind": "impl",
+      "label": "34d",
+      "anchor": "impl-34d",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 721,
+      "title": "Every `item-void` a stage writes is corroborated before it is made"
+    },
+    "IMPL 34e": {
+      "kind": "impl",
+      "label": "34e",
+      "anchor": "impl-34e",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 992,
+      "title": "Under-specification is a class of block, not a parallel state."
+    },
+    "IMPL 34f": {
+      "kind": "impl",
+      "label": "34f",
+      "anchor": "impl-34f",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 1123,
+      "title": "The human's escape hatch reaches the human."
+    },
+    "IMPL 34g": {
+      "kind": "impl",
+      "label": "34g",
+      "anchor": "impl-34g",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 1193,
+      "title": "A human's own hand-applied label is a report, not a state."
+    },
+    "IMPL 34h": {
+      "kind": "impl",
+      "label": "34h",
+      "anchor": "impl-34h",
+      "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
+      "line": 1261,
+      "title": "Where the two states meet, void wins."
+    },
+    "IMPL 34i": {
+      "kind": "impl",
+      "label": "34i",
+      "anchor": "impl-34i",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 5,
+      "title": "A block whose work is gone is cleared without asking anyone."
+    },
+    "IMPL 34j": {
+      "kind": "impl",
+      "label": "34j",
+      "anchor": "impl-34j",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 126,
+      "title": "A structured dependency is held, and released, by code — never by a"
+    },
+    "IMPL 34k": {
+      "kind": "impl",
+      "label": "34k",
+      "anchor": "impl-34k",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 220,
+      "title": "Act on void: close the GitHub object a void names."
+    },
+    "IMPL 34m": {
+      "kind": "impl",
+      "label": "34m",
+      "anchor": "impl-34m",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 367,
+      "title": "A freshly claimed item gets the same gone-work check, before the"
+    },
+    "IMPL 34n": {
+      "kind": "impl",
+      "label": "34n",
+      "anchor": "impl-34n",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 487,
+      "title": "A void that is both actioned and old retires from the extract."
+    },
+    "IMPL 34o": {
+      "kind": "impl",
+      "label": "34o",
+      "anchor": "impl-34o",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "line": 797,
+      "title": "A refined specification is exactly what a `needs-refinement` block was"
+    },
+    "IMPL 39": {
+      "kind": "impl",
+      "label": "39",
+      "anchor": "impl-39",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 5,
+      "title": "Engagement."
+    },
+    "IMPL 39a": {
+      "kind": "impl",
+      "label": "39a",
+      "anchor": "impl-39a",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 32,
+      "title": "The candidate set and per-source policy."
+    },
+    "IMPL 39b": {
+      "kind": "impl",
+      "label": "39b",
+      "anchor": "impl-39b",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 125,
+      "title": "Claims and the engagement cap."
+    },
+    "IMPL 39c": {
+      "kind": "impl",
+      "label": "39c",
+      "anchor": "impl-39c",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 150,
+      "title": "The Refiner's powers."
+    },
+    "IMPL 39d": {
+      "kind": "impl",
+      "label": "39d",
+      "anchor": "impl-39d",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 245,
+      "title": "The default-first rule (agent-ops#938)."
+    },
+    "IMPL 39e": {
+      "kind": "impl",
+      "label": "39e",
+      "anchor": "impl-39e",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 304,
+      "title": "Failure containment."
+    },
+    "IMPL 39f": {
+      "kind": "impl",
+      "label": "39f",
+      "anchor": "impl-39f",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 313,
+      "title": "Own-label-action memory, extending requirement 34g."
+    },
+    "IMPL 39g": {
+      "kind": "impl",
+      "label": "39g",
+      "anchor": "impl-39g",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 451,
+      "title": "Priority triage, a one-way ratchet the Refiner sets and the Script"
+    },
+    "IMPL 39h": {
+      "kind": "impl",
+      "label": "39h",
+      "anchor": "impl-39h",
+      "file": "docs/spec/implementation/requirements/refiner.md",
+      "line": 726,
+      "title": "May name labels for the item behind its verdict (requirement 6c, issue"
+    },
+    "IMPL 28": {
+      "kind": "impl",
+      "label": "28",
+      "anchor": "impl-28",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 5,
+      "title": "Operates under the same one-shot constraint as the Implementer"
+    },
+    "IMPL 29": {
+      "kind": "impl",
+      "label": "29",
+      "anchor": "impl-29",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 9,
+      "title": "Reviews the PR against the work order's item and acceptance notes, and"
+    },
+    "IMPL 29a": {
+      "kind": "impl",
+      "label": "29a",
+      "anchor": "impl-29a",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 14,
+      "title": "A large test suite is run in pieces, never as one invocation"
+    },
+    "IMPL 30": {
+      "kind": "impl",
+      "label": "30",
+      "anchor": "impl-30",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 35,
+      "title": "Where it finds a problem it can fix with confidence, it fixes it"
+    },
+    "IMPL 30a": {
+      "kind": "impl",
+      "label": "30a",
+      "anchor": "impl-30a",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 50,
+      "title": "Emits as it goes, not only at the end."
+    },
+    "IMPL 30b": {
+      "kind": "impl",
+      "label": "30b",
+      "anchor": "impl-30b",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 69,
+      "title": "Reports completion, unconditionally."
+    },
+    "IMPL 30c": {
+      "kind": "impl",
+      "label": "30c",
+      "anchor": "impl-30c",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 91,
+      "title": "Reconciles every standing human comment before marking a pull request"
+    },
+    "IMPL 30d": {
+      "kind": "impl",
+      "label": "30d",
+      "anchor": "impl-30d",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 130,
+      "title": "Filing deferred work inline, and the scope carve-out that goes with it"
+    },
+    "IMPL 30e": {
+      "kind": "impl",
+      "label": "30e",
+      "anchor": "impl-30e",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 145,
+      "title": "Verifying every `Defers:` link (D15 as revised, #869/#875/#879)."
+    },
+    "IMPL 31": {
+      "kind": "impl",
+      "label": "31",
+      "anchor": "impl-31",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 158,
+      "title": "Confirms CI is passing — every one of the target repo's branch-ruleset"
+    },
+    "IMPL 31a": {
+      "kind": "impl",
+      "label": "31a",
+      "anchor": "impl-31a",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 175,
+      "title": "The handoff is verified, not reported."
+    },
+    "IMPL 31b": {
+      "kind": "impl",
+      "label": "31b",
+      "anchor": "impl-31b",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 205,
+      "title": "The second half of the handoff: the re-request."
+    },
+    "IMPL 31c": {
+      "kind": "impl",
+      "label": "31c",
+      "anchor": "impl-31c",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 265,
+      "title": "A `ready` verdict is confirmed against GitHub before it is acted on, not"
+    },
+    "IMPL 31d": {
+      "kind": "impl",
+      "label": "31d",
+      "anchor": "impl-31d",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 477,
+      "title": "A pull request that already merged is not handed off, not reviewed by"
+    },
+    "IMPL 31e": {
+      "kind": "impl",
+      "label": "31e",
+      "anchor": "impl-31e",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 508,
+      "title": "A `merge-conflicts` item's rebase-only push carries the standing"
+    },
+    "IMPL 31f": {
+      "kind": "impl",
+      "label": "31f",
+      "anchor": "impl-31f",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 605,
+      "title": "The Implementer's own stage-start pays the same advisory merge check"
+    },
+    "IMPL 66": {
+      "kind": "impl",
+      "label": "66",
+      "anchor": "impl-66",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 642,
+      "title": "`review_gate_required_checks` also compares the base branch's own"
+    },
+    "IMPL 61": {
+      "kind": "impl",
+      "label": "61",
+      "anchor": "impl-61",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 685,
+      "title": "A required context reported more than once against the same head"
+    },
+    "IMPL 63": {
+      "kind": "impl",
+      "label": "63",
+      "anchor": "impl-63",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 746,
+      "title": "A repository that configures no CI at all is `clean`, not requirement"
+    },
+    "IMPL 32": {
+      "kind": "impl",
+      "label": "32",
+      "anchor": "impl-32",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 780,
+      "title": "Ends with a single JSON object:"
+    },
+    "IMPL 32a": {
+      "kind": "impl",
+      "label": "32a",
+      "anchor": "impl-32a",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 819,
+      "title": "A Reviewer that cannot hand off hands back, not out."
+    },
+    "IMPL 32b": {
+      "kind": "impl",
+      "label": "32b",
+      "anchor": "impl-32b",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 845,
+      "title": "`complete_handoff`."
+    },
+    "IMPL 32c": {
+      "kind": "impl",
+      "label": "32c",
+      "anchor": "impl-32c",
+      "file": "docs/spec/implementation/requirements/reviewer.md",
+      "line": 917,
+      "title": "A subject that merges mid-stage is a completion, not a hand-back"
+    },
+    "IMPL 1": {
+      "kind": "impl",
+      "label": "1",
+      "anchor": "impl-1",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 5,
+      "title": "Lock."
+    },
+    "IMPL 1a": {
+      "kind": "impl",
+      "label": "1a",
+      "anchor": "impl-1a",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 41,
+      "title": "Model id resolution, against a configured set of providers (D12,"
+    },
+    "IMPL 1b": {
+      "kind": "impl",
+      "label": "1b",
+      "anchor": "impl-1b",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 167,
+      "title": "The configuration has a machine-readable schema, and it is the startup"
+    },
+    "IMPL 1c": {
+      "kind": "impl",
+      "label": "1c",
+      "anchor": "impl-1c",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 352,
+      "title": "The model-tier floor (agent-ops#822)."
+    },
+    "IMPL 1d": {
+      "kind": "impl",
+      "label": "1d",
+      "anchor": "impl-1d",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 583,
+      "title": "Every timing sized against a once-an-hour cycle derives from the"
+    },
+    "IMPL 52": {
+      "kind": "impl",
+      "label": "52",
+      "anchor": "impl-52",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 834,
+      "title": "The table of contents is generated from headings, not hand-maintained,"
+    },
+    "IMPL 52a": {
+      "kind": "impl",
+      "label": "52a",
+      "anchor": "impl-52a",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 869,
+      "title": "The documentation is measured against a fixed benchmark of real"
+    },
+    "IMPL 52b": {
+      "kind": "impl",
+      "label": "52b",
+      "anchor": "impl-52b",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 895,
+      "title": "The documentation's links, map, size budget, section citations and"
+    },
+    "IMPL 52c": {
+      "kind": "impl",
+      "label": "52c",
+      "anchor": "impl-52c",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 948,
+      "title": "Every requirement, acceptance-check and component label across"
+    },
+    "IMPL 2": {
+      "kind": "impl",
+      "label": "2",
+      "anchor": "impl-2",
+      "file": "docs/spec/implementation/requirements/the-script-02.md",
+      "line": 5,
+      "title": "Stand-down checks."
+    },
+    "IMPL 3": {
+      "kind": "impl",
+      "label": "3",
+      "anchor": "impl-3",
+      "file": "docs/spec/implementation/requirements/the-script-05.md",
+      "line": 1250,
+      "title": "Repo ordering."
+    },
+    "IMPL 3a": {
+      "kind": "impl",
+      "label": "3a",
+      "anchor": "impl-3a",
+      "file": "docs/spec/implementation/requirements/the-script-05.md",
+      "line": 1276,
+      "title": "Findings pre-fetch (cost control)."
+    },
+    "IMPL 3c": {
+      "kind": "impl",
+      "label": "3c",
+      "anchor": "impl-3c",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 5,
+      "title": "Review-feedback pre-fetch (requirement 3c)."
+    },
+    "IMPL 3e": {
+      "kind": "impl",
+      "label": "3e",
+      "anchor": "impl-3e",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 138,
+      "title": "Abandoned-drafts pre-fetch."
+    },
+    "IMPL 3g": {
+      "kind": "impl",
+      "label": "3g",
+      "anchor": "impl-3g",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 246,
+      "title": "Merge-conflicts pre-fetch."
+    },
+    "IMPL 3s": {
+      "kind": "impl",
+      "label": "3s",
+      "anchor": "impl-3s",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 332,
+      "title": "Dependabot conflicts: nudge, then take over (issue #250)."
+    },
+    "IMPL 3z": {
+      "kind": "impl",
+      "label": "3z",
+      "anchor": "impl-3z",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 459,
+      "title": "Dequeued-PR pre-fetch (TD-PPagop-26081409, issue #374)."
+    },
+    "IMPL 3j": {
+      "kind": "impl",
+      "label": "3j",
+      "anchor": "impl-3j",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 576,
+      "title": "Issues pre-fetch."
+    },
+    "IMPL 3k": {
+      "kind": "impl",
+      "label": "3k",
+      "anchor": "impl-3k",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 679,
+      "title": "Implementation-plan path and report-directory passthrough."
+    },
+    "IMPL 3h": {
+      "kind": "impl",
+      "label": "3h",
+      "anchor": "impl-3h",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 739,
+      "title": "Refinement carry-forward."
+    },
+    "IMPL 3o": {
+      "kind": "impl",
+      "label": "3o",
+      "anchor": "impl-3o",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 799,
+      "title": "Claim visibility (issue #175)."
+    },
+    "IMPL 3p": {
+      "kind": "impl",
+      "label": "3p",
+      "anchor": "impl-3p",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 843,
+      "title": "PR-level candidate exclusion (issue #238)."
+    },
+    "IMPL 3q": {
+      "kind": "impl",
+      "label": "3q",
+      "anchor": "impl-3q",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 866,
+      "title": "Item-level candidate exclusion."
+    },
+    "IMPL 3t": {
+      "kind": "impl",
+      "label": "3t",
+      "anchor": "impl-3t",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 893,
+      "title": "Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue"
+    },
+    "IMPL 3u": {
+      "kind": "impl",
+      "label": "3u",
+      "anchor": "impl-3u",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 1032,
+      "title": "Blocked/void exclusion, extended to every other pre-fetched band, and"
+    },
+    "IMPL 3v": {
+      "kind": "impl",
+      "label": "3v",
+      "anchor": "impl-3v",
+      "file": "docs/spec/implementation/requirements/the-script-06.md",
+      "line": 1134,
+      "title": "Corroboration, scoped to the repositories that said no, and mechanical"
+    },
+    "IMPL 3w": {
+      "kind": "impl",
+      "label": "3w",
+      "anchor": "impl-3w",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 5,
+      "title": "Verdict quality is a rate, and every verdict pays for its own"
+    },
+    "IMPL 3x": {
+      "kind": "impl",
+      "label": "3x",
+      "anchor": "impl-3x",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 77,
+      "title": "Verdict corroboration, generalised to every pre-fetched band (issue"
+    },
+    "IMPL 3y": {
+      "kind": "impl",
+      "label": "3y",
+      "anchor": "impl-3y",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 195,
+      "title": "Refiner-only pre-fetch: `project-review` and `implementation-plan`."
+    },
+    "IMPL 3b": {
+      "kind": "impl",
+      "label": "3b",
+      "anchor": "impl-3b",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 279,
+      "title": "No-op short-circuit (cost control)."
+    },
+    "IMPL 4": {
+      "kind": "impl",
+      "label": "4",
+      "anchor": "impl-4",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 412,
+      "title": "Co-Ordinator stage."
+    },
+    "IMPL 4a": {
+      "kind": "impl",
+      "label": "4a",
+      "anchor": "impl-4a",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 418,
+      "title": "Per-installation prompt overrides."
+    },
+    "IMPL 4b": {
+      "kind": "impl",
+      "label": "4b",
+      "anchor": "impl-4b",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 523,
+      "title": "The repo/work-sources table is generated from `config.json`, not"
+    },
+    "IMPL 4c": {
+      "kind": "impl",
+      "label": "4c",
+      "anchor": "impl-4c",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 551,
+      "title": "An assembled prompt reaches its stage on stdin, never in argv."
+    },
+    "IMPL 4d": {
+      "kind": "impl",
+      "label": "4d",
+      "anchor": "impl-4d",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 578,
+      "title": "One stage launcher, provider-neutral, and it streams."
+    },
+    "IMPL 4e": {
+      "kind": "impl",
+      "label": "4e",
+      "anchor": "impl-4e",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 674,
+      "title": "Two caps on a stage, and they answer different questions."
+    },
+    "IMPL 4f": {
+      "kind": "impl",
+      "label": "4f",
+      "anchor": "impl-4f",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 789,
+      "title": "Both caps are derived, per (actor, repository, model), from the"
+    },
+    "IMPL 4g": {
+      "kind": "impl",
+      "label": "4g",
+      "anchor": "impl-4g",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 938,
+      "title": "Fleet-state JSON reaches `jq` on stdin, never in argv."
+    },
+    "IMPL 4h": {
+      "kind": "impl",
+      "label": "4h",
+      "anchor": "impl-4h",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 1099,
+      "title": "A guard that answers with a literal says on the union log that it"
+    },
+    "IMPL 4l": {
+      "kind": "impl",
+      "label": "4l",
+      "anchor": "impl-4l",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "line": 1182,
+      "title": "Killing a stage never throws away uncommitted work it already did"
+    },
+    "IMPL 4i": {
+      "kind": "impl",
+      "label": "4i",
+      "anchor": "impl-4i",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 5,
+      "title": "The assembled Co-Ordinator prompt is bounded by its model's context"
+    },
+    "IMPL 4j": {
+      "kind": "impl",
+      "label": "4j",
+      "anchor": "impl-4j",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 275,
+      "title": "The unsheddable half of the Co-Ordinator's input is bounded too, and"
+    },
+    "IMPL 4k": {
+      "kind": "impl",
+      "label": "4k",
+      "anchor": "impl-4k",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 393,
+      "title": "A stage runs nothing that the checkout it runs in, or the Claude"
+    },
+    "IMPL 5": {
+      "kind": "impl",
+      "label": "5",
+      "anchor": "impl-5",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 490,
+      "title": "If the work order is `{\"selected\": false}`, log `none-selected` with the"
+    },
+    "IMPL 6": {
+      "kind": "impl",
+      "label": "6",
+      "anchor": "impl-6",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 496,
+      "title": "Workspace."
+    },
+    "IMPL 6b": {
+      "kind": "impl",
+      "label": "6b",
+      "anchor": "impl-6b",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 536,
+      "title": "The workspace root is reclaimed, because the exit trap cannot be"
+    },
+    "IMPL 6a": {
+      "kind": "impl",
+      "label": "6a",
+      "anchor": "impl-6a",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 576,
+      "title": "The pipeline creates its own labels."
+    },
+    "IMPL 6c": {
+      "kind": "impl",
+      "label": "6c",
+      "anchor": "impl-6c",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 782,
+      "title": "Labels a stage asks for (issue #714)."
+    },
+    "IMPL 7": {
+      "kind": "impl",
+      "label": "7",
+      "anchor": "impl-7",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 861,
+      "title": "Implementer stage."
+    },
+    "IMPL 8": {
+      "kind": "impl",
+      "label": "8",
+      "anchor": "impl-8",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 867,
+      "title": "Reviewer stage."
+    },
+    "IMPL 8a": {
+      "kind": "impl",
+      "label": "8a",
+      "anchor": "impl-8a",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 872,
+      "title": "The Reviewer's model follows the item's complexity."
+    },
+    "IMPL 8b": {
+      "kind": "impl",
+      "label": "8b",
+      "anchor": "impl-8b",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 890,
+      "title": "Approver stage (D18 WI-5, `docs/reviews/2026-08-14-autonomy-investigation.md`"
+    },
+    "IMPL 8c": {
+      "kind": "impl",
+      "label": "8c",
+      "anchor": "impl-8c",
+      "file": "docs/spec/implementation/requirements/the-script-08.md",
+      "line": 1025,
+      "title": "Refuse-wins, and the adjudication path (D18 WI-5, same design §5.2)."
+    },
+    "IMPL 8e": {
+      "kind": "impl",
+      "label": "8e",
+      "anchor": "impl-8e",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 5,
+      "title": "The classifier-escape audit re-checks the outcome, not just the"
+    },
+    "IMPL 8f": {
+      "kind": "impl",
+      "label": "8f",
+      "anchor": "impl-8f",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 153,
+      "title": "An open question the Reviewer could not settle holds unattended"
+    },
+    "IMPL 8w": {
+      "kind": "impl",
+      "label": "8w",
+      "anchor": "impl-8w",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 299,
+      "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
+    },
+    "IMPL 62": {
+      "kind": "impl",
+      "label": "62",
+      "anchor": "impl-62",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 392,
+      "title": "A persistent landing refusal says why, on the pull request itself, not"
+    },
+    "IMPL 9": {
+      "kind": "impl",
+      "label": "9",
+      "anchor": "impl-9",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 514,
+      "title": "Failure handling."
+    },
+    "IMPL 9a": {
+      "kind": "impl",
+      "label": "9a",
+      "anchor": "impl-9a",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 544,
+      "title": "A reported verdict is not a failure."
+    },
+    "IMPL 9b": {
+      "kind": "impl",
+      "label": "9b",
+      "anchor": "impl-9b",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 552,
+      "title": "`blocked` and `void` are different states and must not share one."
+    },
+    "IMPL 9c": {
+      "kind": "impl",
+      "label": "9c",
+      "anchor": "impl-9c",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 578,
+      "title": "A signal is a failure with a record."
+    },
+    "IMPL 9d": {
+      "kind": "impl",
+      "label": "9d",
+      "anchor": "impl-9d",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 608,
+      "title": "Visible attribution."
+    },
+    "IMPL 9e": {
+      "kind": "impl",
+      "label": "9e",
+      "anchor": "impl-9e",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 641,
+      "title": "Salvage before discard."
+    },
+    "IMPL 9f": {
+      "kind": "impl",
+      "label": "9f",
+      "anchor": "impl-9f",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 696,
+      "title": "`needs-refinement` is the Implementer's own escape hatch, and a third"
+    },
+    "IMPL 9g": {
+      "kind": "impl",
+      "label": "9g",
+      "anchor": "impl-9g",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 733,
+      "title": "A stage killed abruptly states, in its own comment, whether it"
+    },
+    "IMPL 10": {
+      "kind": "impl",
+      "label": "10",
+      "anchor": "impl-10",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 785,
+      "title": "Usage-limit detection."
+    },
+    "IMPL 11": {
+      "kind": "impl",
+      "label": "11",
+      "anchor": "impl-11",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 834,
+      "title": "Cleanup."
+    },
+    "IMPL 11a": {
+      "kind": "impl",
+      "label": "11a",
+      "anchor": "impl-11a",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 839,
+      "title": "Overrun-slot skips"
+    },
+    "IMPL 12": {
+      "kind": "impl",
+      "label": "12",
+      "anchor": "impl-12",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 950,
+      "title": "Flags."
+    },
+    "IMPL 13": {
+      "kind": "impl",
+      "label": "13",
+      "anchor": "impl-13",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 985,
+      "title": "The Script must pass `shellcheck` and must set its own `PATH` explicitly"
+    },
+    "IMPL 67": {
+      "kind": "impl",
+      "label": "67",
+      "anchor": "impl-67",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 990,
+      "title": "Finish-then-continue"
+    },
+    "IMPL 68": {
+      "kind": "impl",
+      "label": "68",
+      "anchor": "impl-68",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1056,
+      "title": "A pending image roll overrides the chain, and widens the gap at every"
+    },
+    "IMPL 17d": {
+      "kind": "impl",
+      "label": "17d",
+      "anchor": "impl-17d",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1145,
+      "title": "Race-loss observability"
+    },
+    "IMPL 54": {
+      "kind": "impl",
+      "label": "54",
+      "anchor": "impl-54",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1171,
+      "title": "Wake-poll: an event-driven wake between cron firings (D14, issue"
+    },
+    "IMPL 57": {
+      "kind": "impl",
+      "label": "57",
+      "anchor": "impl-57",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1322,
+      "title": "Liveness: is supercronic still firing this node's jobs at all (issue"
+    },
+    "IMPL 58": {
+      "kind": "impl",
+      "label": "58",
+      "anchor": "impl-58",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1340,
+      "title": "Readiness: could a cycle start now."
+    },
+    "IMPL 58a": {
+      "kind": "impl",
+      "label": "58a",
+      "anchor": "impl-58a",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1372,
+      "title": "No network call beyond the one exempt read, and no live fetch of"
+    },
+    "IMPL 59": {
+      "kind": "impl",
+      "label": "59",
+      "anchor": "impl-59",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1428,
+      "title": "Health: is this node doing its job over time, composed from named"
+    },
+    "IMPL 59a": {
+      "kind": "impl",
+      "label": "59a",
+      "anchor": "impl-59a",
+      "file": "docs/spec/implementation/requirements/the-script-09.md",
+      "line": 1450,
+      "title": "`updater` and `image` component mappings."
+    },
+    "IMPL 60": {
+      "kind": "impl",
+      "label": "60",
+      "anchor": "impl-60",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 5,
+      "title": "The CLI surface: `scripts/node-health.sh`."
+    },
+    "IMPL 60a": {
+      "kind": "impl",
+      "label": "60a",
+      "anchor": "impl-60a",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 18,
+      "title": "Read-only throughout."
+    },
+    "IMPL 60b": {
+      "kind": "impl",
+      "label": "60b",
+      "anchor": "impl-60b",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 41,
+      "title": "The three verdicts genuinely diverge, from one CLI, in one"
+    },
+    "IMPL 60c": {
+      "kind": "impl",
+      "label": "60c",
+      "anchor": "impl-60c",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 50,
+      "title": "The container-runtime healthcheck runs the identical CLI."
+    },
+    "IMPL 60d": {
+      "kind": "impl",
+      "label": "60d",
+      "anchor": "impl-60d",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 60,
+      "title": "The HTTP surface is a second front over the identical"
+    },
+    "IMPL 60e": {
+      "kind": "impl",
+      "label": "60e",
+      "anchor": "impl-60e",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 91,
+      "title": "`--metrics`' field list is the node metrics shape"
+    },
+    "IMPL 60f": {
+      "kind": "impl",
+      "label": "60f",
+      "anchor": "impl-60f",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 112,
+      "title": "New config keys, documented and rendered."
+    },
+    "IMPL 8d": {
+      "kind": "impl",
+      "label": "8d",
+      "anchor": "impl-8d",
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 5,
+      "title": "The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410)."
+    },
+    "MON M1": {
+      "kind": "mon",
+      "label": "M1",
+      "anchor": "mon-m1",
+      "file": "docs/spec/monitor.md",
+      "line": 145,
+      "title": "The boundary."
+    },
+    "MON M2": {
+      "kind": "mon",
+      "label": "M2",
+      "anchor": "mon-m2",
+      "file": "docs/spec/monitor.md",
+      "line": 153,
+      "title": "Its own lock."
+    },
+    "MON M2a": {
+      "kind": "mon",
+      "label": "M2a",
+      "anchor": "mon-m2a",
+      "file": "docs/spec/monitor.md",
+      "line": 164,
+      "title": "The switch."
+    },
+    "MON M2b": {
+      "kind": "mon",
+      "label": "M2b",
+      "anchor": "mon-m2b",
+      "file": "docs/spec/monitor.md",
+      "line": 171,
+      "title": "The role guard."
+    },
+    "MON M3": {
+      "kind": "mon",
+      "label": "M3",
+      "anchor": "mon-m3",
+      "file": "docs/spec/monitor.md",
+      "line": 176,
+      "title": "CronJob-shaped."
+    },
+    "MON M4": {
+      "kind": "mon",
+      "label": "M4",
+      "anchor": "mon-m4",
+      "file": "docs/spec/monitor.md",
+      "line": 207,
+      "title": "Cadence: an hourly tick and a due gate."
+    },
+    "MON M5": {
+      "kind": "mon",
+      "label": "M5",
+      "anchor": "mon-m5",
+      "file": "docs/spec/monitor.md",
+      "line": 234,
+      "title": "One run per slot, fleet-wide."
+    },
+    "MON M6": {
+      "kind": "mon",
+      "label": "M6",
+      "anchor": "mon-m6",
+      "file": "docs/spec/monitor.md",
+      "line": 249,
+      "title": "The model never reads a primary record."
+    },
+    "MON M6a": {
+      "kind": "mon",
+      "label": "M6a",
+      "anchor": "mon-m6a",
+      "file": "docs/spec/monitor.md",
+      "line": 298,
+      "title": "Deterministic."
+    },
+    "MON M6b": {
+      "kind": "mon",
+      "label": "M6b",
+      "anchor": "mon-m6b",
+      "file": "docs/spec/monitor.md",
+      "line": 308,
+      "title": "Degrade, never fail."
+    },
+    "MON M7": {
+      "kind": "mon",
+      "label": "M7",
+      "anchor": "mon-m7",
+      "file": "docs/spec/monitor.md",
+      "line": 314,
+      "title": "Bounded by `monitor_max_input_bytes`, on a stated ladder."
+    },
+    "MON M8": {
+      "kind": "mon",
+      "label": "M8",
+      "anchor": "mon-m8",
+      "file": "docs/spec/monitor.md",
+      "line": 342,
+      "title": "Every exit leaves a record."
+    },
+    "MON M8a": {
+      "kind": "mon",
+      "label": "M8a",
+      "anchor": "mon-m8a",
+      "file": "docs/spec/monitor.md",
+      "line": 354,
+      "title": "A signal stops the stage first."
+    },
+    "MON M9": {
+      "kind": "mon",
+      "label": "M9",
+      "anchor": "mon-m9",
+      "file": "docs/spec/monitor.md",
+      "line": 369,
+      "title": "One stage, one model."
+    },
+    "MON M9a": {
+      "kind": "mon",
+      "label": "M9a",
+      "anchor": "mon-m9a",
+      "file": "docs/spec/monitor.md",
+      "line": 382,
+      "title": "Its caps are derived."
+    },
+    "MON M10": {
+      "kind": "mon",
+      "label": "M10",
+      "anchor": "mon-m10",
+      "file": "docs/spec/monitor.md",
+      "line": 394,
+      "title": "What the stage is asked for."
+    },
+    "MON M10a": {
+      "kind": "mon",
+      "label": "M10a",
+      "anchor": "mon-m10a",
+      "file": "docs/spec/monitor.md",
+      "line": 402,
+      "title": "The untrusted-content framing."
+    },
+    "MON M10b": {
+      "kind": "mon",
+      "label": "M10b",
+      "anchor": "mon-m10b",
+      "file": "docs/spec/monitor.md",
+      "line": 411,
+      "title": "`prompt_overrides.monitor`."
+    },
+    "MON M11": {
+      "kind": "mon",
+      "label": "M11",
+      "anchor": "mon-m11",
+      "file": "docs/spec/monitor.md",
+      "line": 418,
+      "title": "Every filing carries a provenance line and a finding key."
+    },
+    "MON M12": {
+      "kind": "mon",
+      "label": "M12",
+      "anchor": "mon-m12",
+      "file": "docs/spec/monitor.md",
+      "line": 441,
+      "title": "A filing budget."
+    },
+    "MON M13": {
+      "kind": "mon",
+      "label": "M13",
+      "anchor": "mon-m13",
+      "file": "docs/spec/monitor.md",
+      "line": 452,
+      "title": "Search-first dedup."
+    },
+    "MON M13a": {
+      "kind": "mon",
+      "label": "M13a",
+      "anchor": "mon-m13a",
+      "file": "docs/spec/monitor.md",
+      "line": 463,
+      "title": "Promoting a repeat finding into a pager invariant, autonomously"
+    },
+    "MON M13b": {
+      "kind": "mon",
+      "label": "M13b",
+      "anchor": "mon-m13b",
+      "file": "docs/spec/monitor.md",
+      "line": 513,
+      "title": "Retirement."
+    },
+    "MON M14": {
+      "kind": "mon",
+      "label": "M14",
+      "anchor": "mon-m14",
+      "file": "docs/spec/monitor.md",
+      "line": 527,
+      "title": "Filing by class"
+    },
+    "MON M14a": {
+      "kind": "mon",
+      "label": "M14a",
+      "anchor": "mon-m14a",
+      "file": "docs/spec/monitor.md",
+      "line": 529,
+      "title": "Mechanical"
+    },
+    "MON M14b": {
+      "kind": "mon",
+      "label": "M14b",
+      "anchor": "mon-m14b",
+      "file": "docs/spec/monitor.md",
+      "line": 538,
+      "title": "Tactical"
+    },
+    "MON M14c": {
+      "kind": "mon",
+      "label": "M14c",
+      "anchor": "mon-m14c",
+      "file": "docs/spec/monitor.md",
+      "line": 550,
+      "title": "Strategic, or owner-only under requirement 36a"
+    },
+    "MON M14c1": {
+      "kind": "mon",
+      "label": "M14c1",
+      "anchor": "mon-m14c1",
+      "file": "docs/spec/monitor.md",
+      "line": 558,
+      "title": "A filing reaches GitHub and nothing else."
+    },
+    "MON M14d": {
+      "kind": "mon",
+      "label": "M14d",
+      "anchor": "mon-m14d",
+      "file": "docs/spec/monitor.md",
+      "line": 568,
+      "title": "Nowhere to file is not a failure."
+    },
+    "MON M15": {
+      "kind": "mon",
+      "label": "M15",
+      "anchor": "mon-m15",
+      "file": "docs/spec/monitor.md",
+      "line": 578,
+      "title": "The Monitor is the consumer of pager pages."
+    },
+    "MON M15a": {
+      "kind": "mon",
+      "label": "M15a",
+      "anchor": "mon-m15a",
+      "file": "docs/spec/monitor.md",
+      "line": 595,
+      "title": "The Monitor never closes a page."
+    },
+    "MON M16": {
+      "kind": "mon",
+      "label": "M16",
+      "anchor": "mon-m16",
+      "file": "docs/spec/monitor.md",
+      "line": 611,
+      "title": "A dated report in the state store."
+    },
+    "MON M17": {
+      "kind": "mon",
+      "label": "M17",
+      "anchor": "mon-m17",
+      "file": "docs/spec/monitor.md",
+      "line": 635,
+      "title": "A stage-health verdict, from day one."
+    },
+    "MON M18": {
+      "kind": "mon",
+      "label": "M18",
+      "anchor": "mon-m18",
+      "file": "docs/spec/monitor.md",
+      "line": 664,
+      "title": "Streams."
+    },
+    "MON M18a": {
+      "kind": "mon",
+      "label": "M18a",
+      "anchor": "mon-m18a",
+      "file": "docs/spec/monitor.md",
+      "line": 690,
+      "title": "`monitor-log.jsonl` is never rotated."
+    },
+    "MON M19": {
+      "kind": "mon",
+      "label": "M19",
+      "anchor": "mon-m19",
+      "file": "docs/spec/monitor.md",
+      "line": 698,
+      "title": "No `node-state` transition."
+    },
+    "MON C 1": {
+      "kind": "mon-c",
+      "label": "1",
+      "anchor": "mon-c-1",
+      "file": "docs/spec/monitor.md",
+      "line": 709,
+      "title": "`monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both"
+    },
+    "MON C 2": {
+      "kind": "mon-c",
+      "label": "2",
+      "anchor": "mon-c-2",
+      "file": "docs/spec/monitor.md",
+      "line": 720,
+      "title": "`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the"
+    },
+    "MON C 3": {
+      "kind": "mon-c",
+      "label": "3",
+      "anchor": "mon-c-3",
+      "file": "docs/spec/monitor.md",
+      "line": 724,
+      "title": "`prompts/monitor.md` implementing M10, M10a and M15."
+    },
+    "MON C 4": {
+      "kind": "mon-c",
+      "label": "4",
+      "anchor": "mon-c-4",
+      "file": "docs/spec/monitor.md",
+      "line": 725,
+      "title": "`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,"
+    },
+    "MON C 5": {
+      "kind": "mon-c",
+      "label": "5",
+      "anchor": "mon-c-5",
+      "file": "docs/spec/monitor.md",
+      "line": 727,
+      "title": "`lib/stage-budget.sh`'s `monitor` prior, implementing M9a."
+    },
+    "MON C 6": {
+      "kind": "mon-c",
+      "label": "6",
+      "anchor": "mon-c-6",
+      "file": "docs/spec/monitor.md",
+      "line": 728,
+      "title": "`lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s"
+    },
+    "MON C 7": {
+      "kind": "mon-c",
+      "label": "7",
+      "anchor": "mon-c-7",
+      "file": "docs/spec/monitor.md",
+      "line": 730,
+      "title": "`deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s"
+    },
+    "MON C 8": {
+      "kind": "mon-c",
+      "label": "8",
+      "anchor": "mon-c-8",
+      "file": "docs/spec/monitor.md",
+      "line": 732,
+      "title": "`config.schema.json`'s `monitor_*`, `schedule.monitor_*` and"
+    },
+    "MON AC 1": {
+      "kind": "mon-ac",
+      "label": "1",
+      "anchor": "mon-ac-1",
+      "file": "docs/spec/monitor.md",
+      "line": 745,
+      "title": "`shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are"
+    },
+    "MON AC 2": {
+      "kind": "mon-ac",
+      "label": "2",
+      "anchor": "mon-ac-2",
+      "file": "docs/spec/monitor.md",
+      "line": 747,
+      "title": "The digest is what it says it is (M6, M6a)."
+    },
+    "MON AC 3": {
+      "kind": "mon-ac",
+      "label": "3",
+      "anchor": "mon-ac-3",
+      "file": "docs/spec/monitor.md",
+      "line": 759,
+      "title": "The bound holds exactly (M7)."
+    },
+    "MON AC 4": {
+      "kind": "mon-ac",
+      "label": "4",
+      "anchor": "mon-ac-4",
+      "file": "docs/spec/monitor.md",
+      "line": 763,
+      "title": "Four findings file three and defer the fourth by key (M12)."
+    },
+    "MON AC 5": {
+      "kind": "mon-ac",
+      "label": "5",
+      "anchor": "mon-ac-5",
+      "file": "docs/spec/monitor.md",
+      "line": 769,
+      "title": "Dedup (M13)."
+    },
+    "MON AC 5a": {
+      "kind": "mon-ac",
+      "label": "5a",
+      "anchor": "mon-ac-5a",
+      "file": "docs/spec/monitor.md",
+      "line": 772,
+      "title": "Promotion (M13a)."
+    },
+    "MON AC 5b": {
+      "kind": "mon-ac",
+      "label": "5b",
+      "anchor": "mon-ac-5b",
+      "file": "docs/spec/monitor.md",
+      "line": 778,
+      "title": "Retirement (M13b)."
+    },
+    "MON AC 5c": {
+      "kind": "mon-ac",
+      "label": "5c",
+      "anchor": "mon-ac-5c",
+      "file": "docs/spec/monitor.md",
+      "line": 783,
+      "title": "Promotion spends the M12 budget (M12/M13a)."
+    },
+    "MON AC 6": {
+      "kind": "mon-ac",
+      "label": "6",
+      "anchor": "mon-ac-6",
+      "file": "docs/spec/monitor.md",
+      "line": 789,
+      "title": "The tactical gate is closed by default (M14b)."
+    },
+    "MON AC 6a": {
+      "kind": "mon-ac",
+      "label": "6a",
+      "anchor": "mon-ac-6a",
+      "file": "docs/spec/monitor.md",
+      "line": 793,
+      "title": "The pages read targets the repository the pager writes to (M6/M15)."
+    },
+    "MON AC 7": {
+      "kind": "mon-ac",
+      "label": "7",
+      "anchor": "mon-ac-7",
+      "file": "docs/spec/monitor.md",
+      "line": 801,
+      "title": "The stage-health verdict exists (M17)."
+    },
+    "MON AC 8": {
+      "kind": "mon-ac",
+      "label": "8",
+      "anchor": "mon-ac-8",
+      "file": "docs/spec/monitor.md",
+      "line": 805,
+      "title": "The untrusted framing is byte-identical (M10a)."
+    },
+    "MON AC 9": {
+      "kind": "mon-ac",
+      "label": "9",
+      "anchor": "mon-ac-9",
+      "file": "docs/spec/monitor.md",
+      "line": 808,
+      "title": "The cadence gate (M4)."
+    },
+    "MON AC 10": {
+      "kind": "mon-ac",
+      "label": "10",
+      "anchor": "mon-ac-10",
+      "file": "docs/spec/monitor.md",
+      "line": 812,
+      "title": "The role guard and the switch stand this pipeline down too (M2a/M2b)."
+    },
+    "MON AC 11": {
+      "kind": "mon-ac",
+      "label": "11",
+      "anchor": "mon-ac-11",
+      "file": "docs/spec/monitor.md",
+      "line": 816,
+      "title": "The config tables regenerate clean."
+    },
+    "REV R1": {
+      "kind": "rev",
+      "label": "R1",
+      "anchor": "rev-r1",
+      "file": "docs/spec/review.md",
+      "line": 384,
+      "title": "Bootstrap."
+    },
+    "REV R1a": {
+      "kind": "rev",
+      "label": "R1a",
+      "anchor": "rev-r1a",
+      "file": "docs/spec/review.md",
+      "line": 389,
+      "title": "Model id resolution, against a configured set of providers (D12,"
+    },
+    "REV R1b": {
+      "kind": "rev",
+      "label": "R1b",
+      "anchor": "rev-r1b",
+      "file": "docs/spec/review.md",
+      "line": 416,
+      "title": "Duplicate-slug refusal."
+    },
+    "REV R1c": {
+      "kind": "rev",
+      "label": "R1c",
+      "anchor": "rev-r1c",
+      "file": "docs/spec/review.md",
+      "line": 429,
+      "title": "Review-instructions/context path validation (issue #589, D7)."
+    },
+    "REV R2": {
+      "kind": "rev",
+      "label": "R2",
+      "anchor": "rev-r2",
+      "file": "docs/spec/review.md",
+      "line": 451,
+      "title": "Lock."
+    },
+    "REV R3": {
+      "kind": "rev",
+      "label": "R3",
+      "anchor": "rev-r3",
+      "file": "docs/spec/review.md",
+      "line": 476,
+      "title": "Stand-down checks."
+    },
+    "REV R2a": {
+      "kind": "rev",
+      "label": "R2a",
+      "anchor": "rev-r2a",
+      "file": "docs/spec/review.md",
+      "line": 527,
+      "title": "The switch."
+    },
+    "REV R2b": {
+      "kind": "rev",
+      "label": "R2b",
+      "anchor": "rev-r2b",
+      "file": "docs/spec/review.md",
+      "line": 569,
+      "title": "The role guard."
+    },
+    "REV R2c": {
+      "kind": "rev",
+      "label": "R2c",
+      "anchor": "rev-r2c",
+      "file": "docs/spec/review.md",
+      "line": 582,
+      "title": "The fleet's memory and state publication."
+    },
+    "REV R4": {
+      "kind": "rev",
+      "label": "R4",
+      "anchor": "rev-r4",
+      "file": "docs/spec/review.md",
+      "line": 625,
+      "title": "Per-repo skip-guard (idempotency; this is how \"once a week\" is"
+    },
+    "REV R4a": {
+      "kind": "rev",
+      "label": "R4a",
+      "anchor": "rev-r4a",
+      "file": "docs/spec/review.md",
+      "line": 658,
+      "title": "Report directory (issue #761)."
+    },
+    "REV R5": {
+      "kind": "rev",
+      "label": "R5",
+      "anchor": "rev-r5",
+      "file": "docs/spec/review.md",
+      "line": 729,
+      "title": "Per non-skipped repo"
+    },
+    "REV R6": {
+      "kind": "rev",
+      "label": "R6",
+      "anchor": "rev-r6",
+      "file": "docs/spec/review.md",
+      "line": 893,
+      "title": "Usage-limit detection."
+    },
+    "REV R7": {
+      "kind": "rev",
+      "label": "R7",
+      "anchor": "rev-r7",
+      "file": "docs/spec/review.md",
+      "line": 906,
+      "title": "Cleanup (always, via a trap)."
+    },
+    "REV R7a": {
+      "kind": "rev",
+      "label": "R7a",
+      "anchor": "rev-r7a",
+      "file": "docs/spec/review.md",
+      "line": 912,
+      "title": "A signal is a failure with a record."
+    },
+    "REV R7b": {
+      "kind": "rev",
+      "label": "R7b",
+      "anchor": "rev-r7b",
+      "file": "docs/spec/review.md",
+      "line": 927,
+      "title": "One stage launcher, shared, provider-neutral."
+    },
+    "REV R8": {
+      "kind": "rev",
+      "label": "R8",
+      "anchor": "rev-r8",
+      "file": "docs/spec/review.md",
+      "line": 972,
+      "title": "Flags."
+    },
+    "REV R9": {
+      "kind": "rev",
+      "label": "R9",
+      "anchor": "rev-r9",
+      "file": "docs/spec/review.md",
+      "line": 982,
+      "title": "One-shot constraint"
+    },
+    "REV R10": {
+      "kind": "rev",
+      "label": "R10",
+      "anchor": "rev-r10",
+      "file": "docs/spec/review.md",
+      "line": 990,
+      "title": "Obey the repo."
+    },
+    "REV R11": {
+      "kind": "rev",
+      "label": "R11",
+      "anchor": "rev-r11",
+      "file": "docs/spec/review.md",
+      "line": 996,
+      "title": "Run the skill end-to-end."
+    },
+    "REV R11a": {
+      "kind": "rev",
+      "label": "R11a",
+      "anchor": "rev-r11a",
+      "file": "docs/spec/review.md",
+      "line": 1017,
+      "title": "State a recommendation's default fix."
+    },
+    "REV R12": {
+      "kind": "rev",
+      "label": "R12",
+      "anchor": "rev-r12",
+      "file": "docs/spec/review.md",
+      "line": 1034,
+      "title": "File review-sourced debt as labelled issues."
+    },
+    "REV R12a": {
+      "kind": "rev",
+      "label": "R12a",
+      "anchor": "rev-r12a",
+      "file": "docs/spec/review.md",
+      "line": 1061,
+      "title": "Cross-reference every mirrored recommendation."
+    },
+    "REV R13": {
+      "kind": "rev",
+      "label": "R13",
+      "anchor": "rev-r13",
+      "file": "docs/spec/review.md",
+      "line": 1085,
+      "title": "Raise one pull request."
+    },
+    "REV R14": {
+      "kind": "rev",
+      "label": "R14",
+      "anchor": "rev-r14",
+      "file": "docs/spec/review.md",
+      "line": 1102,
+      "title": "Prove it is landable."
+    },
+    "REV R15": {
+      "kind": "rev",
+      "label": "R15",
+      "anchor": "rev-r15",
+      "file": "docs/spec/review.md",
+      "line": 1113,
+      "title": "Final message."
+    },
+    "REV R18": {
+      "kind": "rev",
+      "label": "R18",
+      "anchor": "rev-r18",
+      "file": "docs/spec/review.md",
+      "line": 1117,
+      "title": "Untrusted external content."
+    },
+    "REV R16": {
+      "kind": "rev",
+      "label": "R16",
+      "anchor": "rev-r16",
+      "file": "docs/spec/review.md",
+      "line": 1130,
+      "title": "Streams."
+    },
+    "REV R17": {
+      "kind": "rev",
+      "label": "R17",
+      "anchor": "rev-r17",
+      "file": "docs/spec/review.md",
+      "line": 1188,
+      "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
+    },
+    "REV R19": {
+      "kind": "rev",
+      "label": "R19",
+      "anchor": "rev-r19",
+      "file": "docs/spec/review.md",
+      "line": 1196,
+      "title": "Per-stage health, mirrored (agent-ops#996)."
+    },
+    "REV C 1": {
+      "kind": "rev-c",
+      "label": "1",
+      "anchor": "rev-c-1",
+      "file": "docs/spec/review.md",
+      "line": 1258,
+      "title": "`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,"
+    },
+    "REV C 2": {
+      "kind": "rev-c",
+      "label": "2",
+      "anchor": "rev-c-2",
+      "file": "docs/spec/review.md",
+      "line": 1268,
+      "title": "`prompts/project-reviewer.md` implementing R9–R15. It must embed the"
+    },
+    "REV C 3": {
+      "kind": "rev-c",
+      "label": "3",
+      "anchor": "rev-c-3",
+      "file": "docs/spec/review.md",
+      "line": 1271,
+      "title": "`.claude/skills/project-review/` — the vendored skill (pinned; re-sync"
+    },
+    "REV C 4": {
+      "kind": "rev-c",
+      "label": "4",
+      "anchor": "rev-c-4",
+      "file": "docs/spec/review.md",
+      "line": 1273,
+      "title": "`config.json` — the `repository_review` block."
+    },
+    "REV C 5": {
+      "kind": "rev-c",
+      "label": "5",
+      "anchor": "rev-c-5",
+      "file": "docs/spec/review.md",
+      "line": 1274,
+      "title": "`docs/guides/operating/README.md` names the review pipeline under \"How"
+    },
+    "REV C 6": {
+      "kind": "rev-c",
+      "label": "6",
+      "anchor": "rev-c-6",
+      "file": "docs/spec/review.md",
+      "line": 1278,
+      "title": "The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in th..."
+    },
+    "REV AC 1": {
+      "kind": "rev-ac",
+      "label": "1",
+      "anchor": "rev-ac-1",
+      "file": "docs/spec/review.md",
+      "line": 1293,
+      "title": "`shellcheck review-cycle.sh` is clean."
+    },
+    "REV AC 2": {
+      "kind": "rev-ac",
+      "label": "2",
+      "anchor": "rev-ac-2",
+      "file": "docs/spec/review.md",
+      "line": 1294,
+      "title": "`--dry-run` completes against the real repos: the stand-down and skip-guard"
+    },
+    "REV AC 3": {
+      "kind": "rev-ac",
+      "label": "3",
+      "anchor": "rev-ac-3",
+      "file": "docs/spec/review.md",
+      "line": 1297,
+      "title": "A second invocation while the review lock is held exits without acting; and"
+    },
+    "REV AC 4": {
+      "kind": "rev-ac",
+      "label": "4",
+      "anchor": "rev-ac-4",
+      "file": "docs/spec/review.md",
+      "line": 1300,
+      "title": "Skip-guard: with today's report directory present on a repo's default"
+    },
+    "REV AC 4b": {
+      "kind": "rev-ac",
+      "label": "4b",
+      "anchor": "rev-ac-4b",
+      "file": "docs/spec/review.md",
+      "line": 1305,
+      "title": "The role guard stands this pipeline down too (R2b)."
+    },
+    "REV AC 4c": {
+      "kind": "rev-ac",
+      "label": "4c",
+      "anchor": "rev-ac-4c",
+      "file": "docs/spec/review.md",
+      "line": 1309,
+      "title": "A peer's usage-limit hit stands this pipeline down too (R2c/R6)."
+    },
+    "REV AC 4a": {
+      "kind": "rev-ac",
+      "label": "4a",
+      "anchor": "rev-ac-4a",
+      "file": "docs/spec/review.md",
+      "line": 1314,
+      "title": "The switch stands this pipeline down too (R2a)."
+    },
+    "REV AC 4d": {
+      "kind": "rev-ac",
+      "label": "4d",
+      "anchor": "rev-ac-4d",
+      "file": "docs/spec/review.md",
+      "line": 1325,
+      "title": "The review-branch claim gates the review (R5.0)."
+    },
+    "REV AC 4e": {
+      "kind": "rev-ac",
+      "label": "4e",
+      "anchor": "rev-ac-4e",
+      "file": "docs/spec/review.md",
+      "line": 1334,
+      "title": "Per-repository resolution, and duplicate slugs refused (R1b)."
+    },
+    "REV AC 4f": {
+      "kind": "rev-ac",
+      "label": "4f",
+      "anchor": "rev-ac-4f",
+      "file": "docs/spec/review.md",
+      "line": 1352,
+      "title": "The dated stand-down is two-tier (R3.3)."
+    },
+    "REV AC 4g": {
+      "kind": "rev-ac",
+      "label": "4g",
+      "anchor": "rev-ac-4g",
+      "file": "docs/spec/review.md",
+      "line": 1367,
+      "title": "The report directory is configurable, and unset is unchanged (R4a)."
+    },
+    "REV AC 4h": {
+      "kind": "rev-ac",
+      "label": "4h",
+      "anchor": "rev-ac-4h",
+      "file": "docs/spec/review.md",
+      "line": 1405,
+      "title": "Instructions and context reach the review, and a broken configured path"
+    },
+    "REV AC 5": {
+      "kind": "rev-ac",
+      "label": "5",
+      "anchor": "rev-ac-5",
+      "file": "docs/spec/review.md",
+      "line": 1446,
+      "title": "Injected-skill isolation:"
+    },
+    "REV AC 6": {
+      "kind": "rev-ac",
+      "label": "6",
+      "anchor": "rev-ac-6",
+      "file": "docs/spec/review.md",
+      "line": 1455,
+      "title": "Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review"
+    },
+    "REV AC 7": {
+      "kind": "rev-ac",
+      "label": "7",
+      "anchor": "rev-ac-7",
+      "file": "docs/spec/review.md",
+      "line": 1458,
+      "title": "One supervised full run (`--once`): for each non-skipped repo it produces a"
+    },
+    "REV AC 8": {
+      "kind": "rev-ac",
+      "label": "8",
+      "anchor": "rev-ac-8",
+      "file": "docs/spec/review.md",
+      "line": 1463,
+      "title": "Cross-references land (R12a):"
+    },
+    "REV AC 9": {
+      "kind": "rev-ac",
+      "label": "9",
+      "anchor": "rev-ac-9",
+      "file": "docs/spec/review.md",
+      "line": 1470,
+      "title": "The untrusted-content framing holds for the Reviewer-Agent too"
+    },
+    "REV AC 10": {
+      "kind": "rev-ac",
+      "label": "10",
+      "anchor": "rev-ac-10",
+      "file": "docs/spec/review.md",
+      "line": 1476,
+      "title": "A stage-health verdict for `project-reviewer` (R19, agent-ops#996)."
+    }
+  }
+}

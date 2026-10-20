@@ -126,7 +126,7 @@ assert_rejected() {
 # config.json counterparts unset before a fixture's own mutation runs: on a
 # host where these are set for real (the deployed container, where doctor.sh
 # ordinarily runs), lib/approver-token.sh's own reconciliation
-# (scripts/doctor.sh, requirement 14b) compares a fixture's constructed
+# (scripts/doctor.sh, component 14b) compares a fixture's constructed
 # approver_app_id against that real value rather than an absent one, and a
 # fixture that never mentions the Approver's runtime credential must not
 # silently inherit it (TD-PPagop-26082201). A fixture that wants one of these
@@ -1220,7 +1220,7 @@ assert_repository_review "a repo may override every key defaults carries" \
      review_instructions: ["custom-instructions.md"], review_context: ["a.md", "b.md"],
      repo_context_file: ".github/REVIEW-CONTEXT.md"}'
 
-# --- review_instructions/review_context/repo_context_file: requirement 342's
+# --- review_instructions/review_context/repo_context_file: issue #342's
 #     resolution rule applied to issue #589/D7's own keys. review_instructions/
 #     review_context are always arrays (never a bare string, like
 #     prompt_overrides' extend) — config_repository_review_repos only needs to
@@ -1796,7 +1796,7 @@ shipped_merge_autonomy="$(config_defaults "$SHIPPED_CONFIG" "$SCHEMA" | jq -r '.
 assert_doctor_shipped "the shipped configuration's own merge_autonomy is paired with both Approver keys" \
   '.' 0 "merge_autonomy is \"$shipped_merge_autonomy\""
 
-# --- requirement 14b: the reconciliation between the environment's
+# --- component 14b: the reconciliation between the environment's
 #     PULLWRIGHT_APPROVER_APP_ID and the configured approver_app_id
 #     (lib/approver-token.sh) is a rule of its own, distinct from the pairing
 #     above — that one is about approver_app_id being set at all, this one is
@@ -1814,10 +1814,10 @@ mismatch_out="$(env -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVE
 mismatch_status=$?
 if (( mismatch_status == 1 )) \
   && [[ "$mismatch_out" == *'PULLWRIGHT_APPROVER_APP_ID is "999999" but approver_app_id is "555555"'* ]] \
-  && [[ "$mismatch_out" == *'requirement 14b'* ]]; then
+  && [[ "$mismatch_out" == *'component 14b'* ]]; then
   pass "doctor fails a PULLWRIGHT_APPROVER_APP_ID that disagrees with approver_app_id, naming both the mismatch and the reconciliation rule"
 else
-  printf 'FAIL - doctor fails a PULLWRIGHT_APPROVER_APP_ID that disagrees with approver_app_id, naming both the mismatch and the reconciliation rule\n     expected exit 1, output naming both values and "requirement 14b"\n     actual exit: %s\n     actual output: %s\n' \
+  printf 'FAIL - doctor fails a PULLWRIGHT_APPROVER_APP_ID that disagrees with approver_app_id, naming both the mismatch and the reconciliation rule\n     expected exit 1, output naming both values and "component 14b"\n     actual exit: %s\n     actual output: %s\n' \
     "$mismatch_status" "$mismatch_out"
   failures=$(( failures + 1 ))
 fi

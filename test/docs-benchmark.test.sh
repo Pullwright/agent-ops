@@ -192,7 +192,7 @@ cat >"$root/docs/SPEC.md" <<'EOF'
 
 ## Components
 
-22c. A component.
+999z. A component.
 
 ## Acceptance checks
 
@@ -259,8 +259,8 @@ expect_problem "a tilde line does not close a backtick fence" "heading Hidden by
 expect_problem "a numbered line inside an indented fence is not a label" \
   "requirement 9 not found in the Requirements section of docs/SPEC.md" \
   "$(mutate '.sources = [{"path": "docs/SPEC.md", "requirement": "9"}]')"
-expect_problem "a component is not a requirement" "requirement 22c not found" \
-  "$(mutate '.sources = [{"path": "docs/SPEC.md", "requirement": "22c"}]')"
+expect_problem "a component is not a requirement" "requirement 999z not found" \
+  "$(mutate '.sources = [{"path": "docs/SPEC.md", "requirement": "999z"}]')"
 expect_problem "an actor is not a requirement" "requirement 10 not found" \
   "$(mutate '.sources = [{"path": "docs/SPEC.md", "requirement": "10"}]')"
 expect_problem "an acceptance check cited as a requirement" "requirement 8 not found" \

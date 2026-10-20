@@ -622,7 +622,7 @@ _fleet_flag_memo_clear() {
 # A memo root that already exists when this file is first sourced is not this
 # process's. `$$` is unique among the processes running *now*, but $TMPDIR
 # outlives them all and PIDs are recycled, so a node chaining cycle after
-# cycle (requirement 39) eventually starts one whose PID a long-dead cycle's
+# cycle (requirement 67) eventually starts one whose PID a long-dead cycle's
 # memos are still filed under — neither this file nor its callers own an exit
 # trap to clean up with. In a process that entered a scratch directory of its
 # own (lib/scratch.sh) the root lies inside it and goes with it; anywhere

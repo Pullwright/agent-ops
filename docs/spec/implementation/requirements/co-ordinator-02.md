@@ -2,7 +2,7 @@
 
 ### The Co-Ordinator — requirements, continued (part 2 of 2; 18a–20: Fresh evidence on a blocked issue makes requirement 18's r…)
 
-18a. **Fresh evidence on a blocked issue makes requirement 18's re-check
+18a. <a id="impl-18a"></a>**Fresh evidence on a blocked issue makes requirement 18's re-check
     mandatory, not discretionary.** For a blocked item that is a GitHub
     issue, before excluding it under requirement 16 the Co-Ordinator compares
     the issue's own `updated_at` against the later of two timestamps carried
@@ -76,11 +76,11 @@
     requirement 20): a human reviewing again,
     or a commit landing on the branch, mints a fresh item id that no block
     covers, so evidence arriving there is never held behind a stale marker.
-19. Chooses the Implementer's model: `implementer_model_trivial` only when
+19. <a id="impl-19"></a>Chooses the Implementer's model: `implementer_model_trivial` only when
     the item can be completed without changing any file that affects runtime
     behaviour (docs, comments, register entries); otherwise
     `implementer_model_default`. Records the reasoning.
-20. Emits its entire final message as one JSON object: `selected`,
+20. <a id="impl-20"></a>Emits its entire final message as one JSON object: `selected`,
     `unblocked`, `recheck_clean` (entries of `{item, repo}`, for requirement
     18a's mandatory re-check finding the blocker still holds — repo-scoped,
     unlike `unblocked`, because this marker suppresses a mandatory re-read

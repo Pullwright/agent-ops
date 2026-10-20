@@ -165,7 +165,7 @@ while IFS= read -r entry; do
     continue
   fi
 
-  # Requirement 3f/3e's envelope, not a bare body. Every write this system
+  # Component 3f/3e's envelope, not a bare body. Every write this system
   # makes lands under the maintainer's own GitHub account, so author alone
   # cannot tell a human's comment from the pipeline's: the visible header is
   # what tells a human reading the thread who wrote this, and the invisible

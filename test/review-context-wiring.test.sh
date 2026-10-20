@@ -22,7 +22,7 @@
 #                 an operator can fix it without reading the source
 #   per-repo      the same for a `review_context` override on one
 #                 repository's own `repos[]` entry — the sweep reads
-#                 requirement 342's resolved view, not `defaults` alone
+#                 issue #342's resolved view, not `defaults` alone
 #   resolvable    a path that does resolve is silently fine: no refusal, and
 #                 the tick ends 0
 #   unconfigured  and neither key configured at all is vacuously fine, which
@@ -110,7 +110,7 @@ run_review() {  # run_review <dir> -> writes $tmp_dir/out.txt, sets RC
 
 # `state_repo: ""` keeps the fleet switch from reaching for one; the repos
 # list stands in for a real installation's, since the sweep must see
-# requirement 342's per-repository view rather than `defaults` alone.
+# issue #342's per-repository view rather than `defaults` alone.
 BASE='.state_repo = "" | .repository_review.repos = [{slug: "Test-Org/one"}, {slug: "Test-Org/two"}]'
 
 # --- A configured path that does not resolve refuses the whole cycle ---------
@@ -126,7 +126,7 @@ assert_contains "and the configured path as written" "absent-instructions.md" "$
 assert_contains "and what it resolved to, which is where the typo shows" \
   "$d/home/.local/state/poetic-agents/absent-instructions.md" "$out"
 
-# --- A per-repository override is swept too (requirement 342) ---------------
+# --- A per-repository override is swept too (issue #342) ---------------
 # `defaults` is untouched here: a sweep reading it alone would find nothing
 # wrong and run the cycle against a repository whose own configured context
 # is missing.

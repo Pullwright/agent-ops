@@ -105,7 +105,7 @@ merge_autonomy_configured_level() {
 # resolution, mirroring `merge_autonomy_configured_level`'s own precedence
 # exactly rather than threaded out of that function — every existing caller
 # of the level wants only the level, and the one caller that also wants the
-# source (the D18 landing audit record, requirement 8x, agent-ops#578) reads
+# source (the D18 landing audit record, acceptance check 8x, agent-ops#578) reads
 # it here instead, at gate 1 of `_landing_stage_attempt`. Read only once that
 # gate has already confirmed the effective level is `agent-merges-routine` or
 # `agent-merges-all` — at that point the kill switch is known clear and no

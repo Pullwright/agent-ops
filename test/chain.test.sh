@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/chain.test.sh — regression test for lib/chain.sh (finish-then-continue,
-# requirement 39).
+# requirement 67).
 #
 # The two ways this can go wrong are opposite failures, and both are silent
 # in production: chaining when it should not (a fleet that never yields the
@@ -105,7 +105,7 @@ assert_stops "a non-numeric chain_count fails closed" "banana" "3" "$one_source"
 assert_stops "a non-numeric max_chained_cycles fails closed" "1" "banana" "$one_source"
 assert_stops "a negative-looking chain_count fails closed" "-1" "3" "$one_source"
 
-# --- chain_image_behind (requirement 39, agent-ops#1096) --------------------
+# --- chain_image_behind (requirement 67, agent-ops#1096) --------------------
 # A healthy node running long or chained cycles never presents watchtower a
 # gap to poll into, so a cycle that is about to chain must check whether the
 # image has fallen behind before it does — reusing the heartbeat's own
@@ -138,7 +138,7 @@ assert_not_behind "the JSON literal null (a developer checkout) is not" "null"
 assert_not_behind "no argument at all defaults closed" ""
 assert_not_behind "malformed JSON fails closed" "not json"
 
-# --- chain_write_roll_pending (requirement 39, agent-ops#1096) --------------
+# --- chain_write_roll_pending (requirement 67, agent-ops#1096) --------------
 # What deploy/docker/watchtower-pre-update.sh reads back to override its
 # ordinary in-flight-cycle deferral for exactly the window this cycle
 # yielded, and no longer.

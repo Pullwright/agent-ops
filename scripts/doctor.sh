@@ -254,7 +254,7 @@ providers_load "$(cfg_json '.providers')"
 model_tiers_load "$(cfg_json '.model_tiers')" 2>/dev/null || true
 
 # repository_review.repos, each resolved against repository_review.defaults
-# (requirement 342) — the same lib/config-schema.sh helper review-cycle.sh
+# (issue #342) — the same lib/config-schema.sh helper review-cycle.sh
 # uses, so the two scripts cannot resolve the same repository two different
 # ways. `[]` when repository_review is absent or malformed.
 repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
@@ -467,7 +467,7 @@ else
   ok "every repos entry names a distinct repository"
 fi
 
-# Requirement 342's resolution rule assumes exactly one repository_review.repos
+# Issue #342's resolution rule assumes exactly one repository_review.repos
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather
 # than silently letting the later entry win (lib/config-schema.sh's
@@ -475,7 +475,7 @@ fi
 # requirement R1b).
 duplicate_review_slugs="$(config_duplicate_repository_review_slugs "$repository_review_repos_json")"
 if [[ -n "$duplicate_review_slugs" ]]; then
-  fail "repository_review.repos lists [$duplicate_review_slugs] more than once — review-cycle.sh refuses to start, since requirement 342's resolution rule cannot tell which entry's overrides should apply"
+  fail "repository_review.repos lists [$duplicate_review_slugs] more than once — review-cycle.sh refuses to start, since issue #342's resolution rule cannot tell which entry's overrides should apply"
 else
   ok "every repository_review.repos entry names a distinct repository"
 fi
@@ -524,7 +524,7 @@ if [[ -n "$merge_autonomy_sources" ]]; then
   done <<<"$merge_autonomy_sources"
 fi
 
-# The token wrapper (lib/approver-token.sh, requirement 14b) reads
+# The token wrapper (lib/approver-token.sh, component 14b) reads
 # PULLWRIGHT_APPROVER_APP_ID from the environment; approver_app_id above is
 # the operator's declaration in config.json. Nothing else reconciles the two,
 # so doctor does. A set env id differing from a set config id is a fail, not
@@ -541,7 +541,7 @@ fi
 # a warn is for.
 env_app_id="${PULLWRIGHT_APPROVER_APP_ID:-}"
 if [[ -n "$env_app_id" && -n "$approver_app_id" && "$env_app_id" != "$approver_app_id" ]]; then
-  fail "PULLWRIGHT_APPROVER_APP_ID is \"$env_app_id\" but approver_app_id is \"$approver_app_id\" — the token wrapper mints against the environment's App, not the configured one, and nothing else reports the divergence (D18, requirement 14b)"
+  fail "PULLWRIGHT_APPROVER_APP_ID is \"$env_app_id\" but approver_app_id is \"$approver_app_id\" — the token wrapper mints against the environment's App, not the configured one, and nothing else reports the divergence (D18, component 14b)"
 elif [[ -n "$env_app_id" && -z "$approver_app_id" ]]; then
   warn "PULLWRIGHT_APPROVER_APP_ID is set but approver_app_id is empty — the Approver credential is wired into this environment without being declared in config.json, so nothing validates the identity it mints as"
 elif [[ -n "$env_app_id" ]]; then
@@ -869,7 +869,7 @@ for key in pr_label enabler_escalation_label needs_refinement_label refined_labe
   fi
 done
 
-# repository_review's pr_label is resolved per repository (requirement 342), so
+# repository_review's pr_label is resolved per repository (issue #342), so
 # every distinct value in force — repository_review.defaults.pr_label, plus any
 # repository's own override — is checked here rather than one global key.
 while IFS= read -r review_label; do
@@ -893,7 +893,7 @@ elif ((excluded_count > 0)); then
 fi
 
 # Checked per configured repository, since repository_review's pr_label is
-# resolved per repository (requirement 342) and may no longer be the same
+# resolved per repository (issue #342) and may no longer be the same
 # value everywhere.
 while IFS=$'\t' read -r review_slug review_label; do
   [[ -n "$review_slug" ]] || continue
@@ -1645,7 +1645,7 @@ if ((gh_ready)); then
   # run (`docs/spec/review.md` R5.0b), so there is no interval to
   # quote there — the next review of that repository is the whole answer.
   # REVIEW_PR_LABEL (optional) is this repository's own resolved
-  # repository_review pr_label (requirement 342) — only ROLE "review" needs it;
+  # repository_review pr_label (issue #342) — only ROLE "review" needs it;
   # see lib/labels.sh's labels_catalogue for why it can no longer be derived
   # from the config alone.
   check_repo_labels() {
@@ -3012,7 +3012,7 @@ else
   else
     ok "direct egress is blocked (the internal-only network holds)"
   fi
-  # issue #1279, requirement 2m: a configured notify webhook whose host is
+  # issue #1279, acceptance check 2m: a configured notify webhook whose host is
   # not in this node's EGRESS_EXTRA_ALLOW is inert, not broken, and looks
   # exactly like a webhook that is simply down — a silent channel is a
   # `warn` here, not a discovery the day an escalation needed it. No `-f`:

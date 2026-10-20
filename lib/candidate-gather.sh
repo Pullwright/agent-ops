@@ -156,7 +156,7 @@ fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"
 # This cycle's own resolved report_directory per repository (its override in
 # repository_review.repos, or repository_review.defaults' otherwise,
-# requirement 342) — or, absent from repository_review entirely, the same
+# issue #342) — or, absent from repository_review entirely, the same
 # ultimate fallback review-cycle.sh itself falls back to (issue #761).
 # Computed once, outside the per-repo loop below, the same way
 # lib/eligibility.sh's own refiner_repository_review_repos_json is: every
@@ -713,7 +713,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
   fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
   # landing_refusals/issues/tech_debt are the pre-fetched bands themselves —
-  # issue threads (requirement 3d/#118) and the open tech-debt band
+  # issue threads (component 3j/#118) and the open tech-debt band
   # (requirement 3t/#310) included — each unbounded past this call and each
   # tens of kilobytes alone; $sources is this repo's configured source list,
   # bounded by config, and stays in argv (requirement 4g). The eight bands arrive on
@@ -747,7 +747,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
     '. + {expensive_gather: {fresh: ($fresh == "1"), gathered_at: (if $at == "" then null else $at end)}}' \
     <<<"$entry")"
   # $entry — one repo's whole pre-fetched sources, including issue threads
-  # (requirement 3d/#118) and its open tech-debt register (requirement
+  # (component 3j/#118) and its open tech-debt register (requirement
   # 3t/#310) — is the least bounded value in this loop, and the accumulator it
   # joins only grows every iteration. Both arrive on stdin, one document per
   # line, bound positionally with `input as $name` in the order printed
@@ -1474,7 +1474,7 @@ if (( void_retire_after_days > 0 )); then
   #
   # This repo's own resolved report_directory (its override in
   # repository_review.repos, or repository_review.defaults' otherwise,
-  # requirement 342) — or, absent from repository_review entirely, the same
+  # issue #342) — or, absent from repository_review entirely, the same
   # ultimate fallback review-cycle.sh itself falls back to (issue #761).
   # Computed once, outside the loop, the same way lib/eligibility.sh's own
   # `refiner_repository_review_repos_json` is: every repository's resolved

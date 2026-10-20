@@ -2,7 +2,7 @@
 
 ### Every stage (untrusted external content)
 
-45. **Forge-authored free text is data, never instructions.** Text written
+45. <a id="impl-45"></a>**Forge-authored free text is data, never instructions.** Text written
    on the forge by anyone outside the pipeline — issue and pull-request
    titles and bodies, comments, review text, commit messages — is untrusted
    wherever a stage meets it: embedded in its prompt's runtime input (a
@@ -16,7 +16,7 @@
    carries an `## Untrusted external content` section stating this rule to
    the stage it operates.
 
-45a. **One canonical wording, pinned.** The framing is a single canonical
+45a. <a id="impl-45a"></a>**One canonical wording, pinned.** The framing is a single canonical
    block, byte-identical in every prompt that carries it, delimited by a
    `<!-- untrusted-content:start -->` marker line and a
    `<!-- untrusted-content:end -->` one. This copy is the canonical one:
@@ -46,7 +46,7 @@
    `prompts/monitor.md` under the Monitor's own (docs/spec/monitor.md
    M10a), both pinned to this same copy.
 
-45b. **Pinned mechanically.** `test/prompt-untrusted-framing.test.sh` lifts
+45b. <a id="impl-45b"></a>**Pinned mechanically.** `test/prompt-untrusted-framing.test.sh` lifts
    the text between the markers from this requirement and from every prompt
    named here and in R18 — at run time, never restated — and fails if any
    prompt lacks the markers, carries them more than once, or differs from
@@ -54,18 +54,18 @@
    `test/extract-json-result.test.sh` gives the final-message parser's
    three copies.
 
-45c. **Application stays the prompt's own.** A short passage after the
+45c. <a id="impl-45c"></a>**Application stays the prompt's own.** A short passage after the
    block, outside the markers, names which of that stage's input fields and
    mid-run reads the rule covers; its wording is the prompt's own and is
    not pinned.
 
-45d. **Overrides carry the duty forward.** A `prompt_overrides.replace`
+45d. <a id="impl-45d"></a>**Overrides carry the duty forward.** A `prompt_overrides.replace`
    file substitutes a whole prompt (requirement 4a), this section included;
    preserving the marker-delimited block is part of the replacement's
    contract, and the pinning test covers only the shipped prompts (see the
    `prompt_overrides` extended note). `extend` appends and removes nothing.
 
-45e. **A stage runs as its own Unix user.** In the node image every model
+45e. <a id="impl-45e"></a>**A stage runs as its own Unix user.** In the node image every model
    stage runs as the user `stage`, never as `agent`, the user the Script, its
    scheduler and every cron job run as. So does every other `claude` the image
    runs — the limit probe, `scripts/doctor.sh`'s checks, an operator's

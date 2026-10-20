@@ -1,8 +1,8 @@
 ## Requirements
 
-### The Script — requirements, continued (part 5 of 10; 2.5a–3a: Compose reconciliation…)
+### The Script — requirements, continued (part 5 of 11; 2.5a–3a: Compose reconciliation…)
 
-2.5a. **Compose reconciliation.** A node's `compose.yaml` lives on that node's
+2.5a. <a id="impl-2-5a"></a>**Compose reconciliation.** A node's `compose.yaml` lives on that node's
    host, and no image roll can replace it: watchtower recreates a container
    from the *old* container's `Config`, so a label, a service's environment,
    a mount or a whole new service merged to `main` reaches a node only when
@@ -61,7 +61,7 @@
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
-     `roll-pending.json` (requirement 39c (Finish-then-continue)) defers it as well, and on its own,
+     `roll-pending.json` (requirement 68 (Finish-then-continue)) defers it as well, and on its own,
      and is read *before* either lock: the marker the pre-update hook reads as
      licence to destroy a container is read here as a reason to wait, because
      watchtower and this actor recreate the same containers and must never be
@@ -74,7 +74,7 @@
      marker.** `chain_write_roll_pending` re-arms the marker at every cycle
      boundary whose image still reads `behind`, and
      `chain_clear_landed_roll_pending` leaves it alone while that is true
-     (requirement 39c (Finish-then-continue)), so a node whose roll cannot land — watchtower
+     (requirement 68 (Finish-then-continue)), so a node whose roll cannot land — watchtower
      crash-looping, a registry it cannot reach — carries a live marker for as
      long as the condition lasts, and a deferral that followed the marker and
      nothing else would leave that node running a `compose.yaml` none of its
@@ -341,7 +341,7 @@
    accepted on the same terms as watchtower's own socket. D24's staged
    containment is of untrusted *content* reaching a stage; it does not speak
    to the image supply chain, and this does not change that.
-2.6. **Log rotation.** Requirement 2.5 bounds the *records* in `state_dir` —
+2.6. <a id="impl-2-6"></a>**Log rotation.** Requirement 2.5 bounds the *records* in `state_dir` —
    `cycles/` and `reviews/` are pruned on every push — but its logs are
    appended to forever otherwise. `scripts/rotate-logs.sh`, on its own
    crontab line independent of the pipelines, bounds eight of them:
@@ -378,7 +378,7 @@
    itself from growing unbounded. `.doctor-status.json` itself is not in
    this rotation set at all — each unattended pass overwrites it in place
    (`mv -f` over the previous run), so it never grows.
-2.6a. **The unattended doctor pass** (agent-ops#543). `scripts/doctor.sh
+2.6a. <a id="impl-2-6a"></a>**The unattended doctor pass** (agent-ops#543). `scripts/doctor.sh
    --unattended`, on its own hourly crontab line, runs unprompted the same
    configuration and GitHub checks requirement 1b's acceptance check 1m
    covers for an operator running the command by hand — `issue_priority_options_complete`
@@ -427,7 +427,7 @@
    `null` when that header is absent (an installation token, or any other
    credential GitHub states no expiry for) — never a warning or
    a failure, since an absent header says nothing about the token's health.
-2.6b. **The revert-rate publishing tick** (D18 issue #579, a WI of umbrella
+2.6b. <a id="impl-2-6b"></a>**The revert-rate publishing tick** (D18 issue #579, a WI of umbrella
    #402). `scripts/publish-revert-rate.sh`, on its own daily crontab line,
    runs `scripts/mine-merge-history.sh` unprompted so Stage 2's exit
    criterion ("revert rate ≤ baseline") is measured continuously rather than
@@ -534,7 +534,7 @@
    `scripts/publish-dashboard.sh` reads the union and surfaces it as
    `revert_rate` (`docs/spec/dashboard/site.md`, "Revert rate by repository"),
    reduced to the newest row per repository across every node.
-2.6c. **The tech-debt archive publishing tick** (D15 as revised, issue #878,
+2.6c. <a id="impl-2-6c"></a>**The tech-debt archive publishing tick** (D15 as revised, issue #878,
    following #869/#875/#879). `scripts/publish-tech-debt-archive.sh`, on its
    own daily crontab line, mirrors every `pw::type:tech-debt`-labelled issue,
    per configured repository, into the state repository (`state_repo`) as
@@ -600,7 +600,7 @@
    next scheduled run rather than being fabricated or silently dropped. The
    crontab line's own `|| true` keeps a partial run from reading as a
    crashed script, the same reasoning 2.6b's own line uses.
-2.6d. **Analytics retention** (D21, agent-ops#598). `log.jsonl` and
+2.6d. <a id="impl-2-6d"></a>**Analytics retention** (D21, agent-ops#598). `log.jsonl` and
    `review-log.jsonl` already carry every analytics record this pipeline
    produces — the per-stage metering record (requirement 33a,
    `docs/METERING-SCHEMA.md`), the rework record (requirement 47,
@@ -655,7 +655,7 @@
    directly for the item-lifecycle fold by `test/item-lifecycle.test.sh`'s
    two-node fixture, and for the rework record by
    `test/rework-panel.test.sh`'s own "first-wins" fixture.
-2.7. **Crash-loop escalation.** A Co-Ordinator failure pins no item
+2.7. <a id="impl-2-7"></a>**Crash-loop escalation.** A Co-Ordinator failure pins no item
    (requirement 33's fields are set only after selection), so the entire
    blocked → Enabler → escalation ladder that covers item failures never
    sees it — and the cycle still ends 0, so the dashboard shows a healthy
@@ -1000,7 +1000,7 @@
    success exactly as an escalating run does; `escalate` changes only what
    the Script does with a verdict that already fired, never whether one
    fires.
-2.7a. **Token-expiry escalation** (agent-ops#694). GitHub states a
+2.7a. <a id="impl-2-7a"></a>**Token-expiry escalation** (agent-ops#694). GitHub states a
    personal access token's own expiry on every authenticated API response,
    in the `GitHub-Authentication-Token-Expiration` response header. On 2026-08-22
    that date arrived unread and every node lost GitHub at once — requirement
@@ -1045,7 +1045,7 @@
    retries next cycle, same as 1b and 2.0b. Skipped entirely on `--dry-run`
    and when `crash_loop_repo` or `enabler_assignee` is unset, the same as
    both of those checks.
-2.8. **Per-stage health.** During the 2026-08-21 incident (01:38-12:09Z)
+2.8. <a id="impl-2-8"></a>**Per-stage health.** During the 2026-08-21 incident (01:38-12:09Z)
    every stage in every node's cycles failed for 10.5 hours, and every signal
    an operator had said otherwise: `agent-cycle.sh --status` reported
    `cycle: RUNNING — held by pid …` (the process was alive), no
@@ -1163,7 +1163,7 @@
    `review-cycle.sh` run's own id can cover several repositories) that R19
    keeps them computed, written and rendered separately rather than implying
    a shared computation that does not exist.
-2.9. **Drain at-rest detection and reporting** (agent-ops#865, `lib/drain.sh`).
+2.9. <a id="impl-2-9"></a>**Drain at-rest detection and reporting** (agent-ops#865, `lib/drain.sh`).
    While `DRAINING` is set (requirement 2.3d), the site that applies
    requirement 2.2c's unconditional narrowing also decides whether the drain
    has reached rest, and caches that decision for the readers that must not
@@ -1243,11 +1243,11 @@
    back-pressured cycle. The Refiner needs no special-casing at all: it reads
    only the `issues`/`tech_debt` arrays requirement 2.2c already empties, so
    it goes idle by construction the moment intake is narrowed, whether by
-   back-pressure or by a drain. Chaining (requirement 39) is unchanged — a
+   back-pressure or by a drain. Chaining (requirement 67) is unchanged — a
    drain that finished something still chains under its existing rule,
    `chain_sources_remain`'s own count of `.sources` lengths, unaffected by
    which mechanism narrowed them.
-3. **Repo ordering.** For each configured repo, fetch the timestamp of the
+3. <a id="impl-3"></a>**Repo ordering.** For each configured repo, fetch the timestamp of the
    most recent commit on its default branch via `gh api`. A repo entry may
    also carry `nice`, an optional integer from `-19` to `19` (absent means
    `0`), read from that repo's `config.json` entry. Compute each repo's
@@ -1273,7 +1273,7 @@
    configured repo's `nice` is not an integer in `-19`..`19`, failing fast
    and naming every offending slug, the same guard as
    `implementation_plan_path` (requirement 3k).
-3a. **Findings pre-fetch (cost control).** For each configured repo whose
+3a. <a id="impl-3a"></a>**Findings pre-fetch (cost control).** For each configured repo whose
    `sources` include `security` or `code-quality` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
    `scripts/gather-findings.sh <repo-slug>` — a deterministic script that uses
    `gh api` to pull the repo's open Dependabot alerts and open code-scanning

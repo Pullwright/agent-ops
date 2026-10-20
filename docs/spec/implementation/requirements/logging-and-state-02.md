@@ -2,7 +2,7 @@
 
 ### Logging and state — requirements, continued (part 2 of 2; 34i–34o: A block whose work is gone is cleared without asking anyone…)
 
-34i. **A block whose work is gone is cleared without asking anyone.** The
+34i. <a id="impl-34i"></a>**A block whose work is gone is cleared without asking anyone.** The
     common way a block ends is not that the impediment lifts — it is that
     somebody finishes the work: the issue is closed, the pull request merged,
     the register entry flipped to `resolved`. None of that emits an event, and
@@ -123,7 +123,7 @@
     `lib/work-gone.sh`, which is pure: it decides from the blocked set, the
     digests and the three side-channel status maps (register, review, plan) it
     is handed, and reads nothing itself.
-34j. **A structured dependency is held, and released, by code — never by a
+34j. <a id="impl-34j"></a>**A structured dependency is held, and released, by code — never by a
     model re-reading prose.** `Blocked-by: #195` (same repo) or
     `Blocked-by: owner/repo#195` (a repo this pipeline also walks), one or
     more comma- or whitespace-separated references on their own line in a
@@ -217,7 +217,7 @@
     spending nothing new); the comment becomes part of the thread this
     convention already reads, so a human — or the Co-Ordinator, next time it
     is asked to select this item — can adopt it verbatim.
-34k. **Act on void: close the GitHub object a void names.** A void
+34k. <a id="impl-34k"></a>**Act on void: close the GitHub object a void names.** A void
     (requirement 34c) already stops the item being selected again, but
     nothing before this touched the *object* it is about — an obsolete draft
     pull request or a superseded issue stayed open on GitHub, visible to
@@ -364,7 +364,7 @@
     reported, never silent, same as every other sweep here), and a `gh` read
     before every close means the worst outcome of two nodes racing is both
     finding nothing left to do. Skipped on `--dry-run`.
-34m. **A freshly claimed item gets the same gone-work check, before the
+34m. <a id="impl-34m"></a>**A freshly claimed item gets the same gone-work check, before the
     Implementer runs, not inside it.** 34i clears a *blocked* item's void
     without asking anyone, from digests the cycle already gathered; a
     candidate this cycle just won the claim on has never been blocked, but
@@ -484,7 +484,7 @@
     with an open pull request) and is kept as defence in depth: it is cheap,
     pure, and the state it names — however it arose — is one this cycle must
     not spend an Implementer on either way.
-34n. **A void that is both actioned and old retires from the extract.**
+34n. <a id="impl-34n"></a>**A void that is both actioned and old retires from the extract.**
     Requirement 34c's only exit from void is a human's hand-appended
     `unvoided` — deliberately, since nothing else may reason its way out of a
     terminal state — so the *set* nothing ever leaves grows by one entry for
@@ -794,7 +794,7 @@
     a live signal that retirement itself has fallen behind (a burst of new
     voids, `void_retire_after_days` set too high, or 34k failing to
     action items), well before any cap could bite.
-34o. **A refined specification is exactly what a `needs-refinement` block was
+34o. <a id="impl-34o"></a>**A refined specification is exactly what a `needs-refinement` block was
     waiting for, and clears it deterministically, whoever originally recorded
     it (agent-ops#2477).** The common way a refinement block ends is that
     somebody writes the missing specification — a human comment on the

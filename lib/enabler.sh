@@ -58,7 +58,7 @@ enabler_claim_key() {
 
 # escalation_webhook_notify REPO ITEM TITLE BODY_FILE
 # The `escalation-unfiled` class of the installation's one notification
-# channel (requirement 2m, lib/notify.sh, issue #1279) — what a filing
+# channel (acceptance check 2m, lib/notify.sh, issue #1279) — what a filing
 # failure from `create_escalation_issue` posts. Every escalation route
 # ultimately reaches GitHub through the same credential its own trigger may
 # have just shown GitHub rejects — requirement 2.0b's is the expected case,

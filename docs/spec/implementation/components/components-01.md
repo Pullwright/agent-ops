@@ -2,8 +2,8 @@
 
 What exists, and the requirements each part answers to:
 
-1. `config.json` with the values above.
-2. `agent-cycle.sh` implementing requirements 1–13 (including the findings
+1. <a id="impl-c-1"></a>`config.json` with the values above.
+2. <a id="impl-c-2"></a>`agent-cycle.sh` implementing requirements 1–13 (including the findings
    pre-fetch, requirement 3a; the switches, requirements 2.3, 2.3a and 2.3b;
    the role guard, requirement 2.4; and the
    implementation-plan path passthrough and its startup validation,
@@ -25,7 +25,7 @@ What exists, and the requirements each part answers to:
    actions), `enabler_claim_key` and `create_escalation_issue` — is
    `lib/enabler.sh` (#771), sourced and called from the cleanup trap exactly
    as it was inline.
-2a. `lib/standdown.sh` implementing requirement 2, the stand-down reason
+2a. <a id="impl-c-2a"></a>`lib/standdown.sh` implementing requirement 2, the stand-down reason
    ladder in full: `run_standdown_checks`, called once from `agent-cycle.sh`
    in place of the inline block it replaces (#771) — the GitHub API budget,
    credential and free-disk-space checks (2.0, 2.0b, 2.0c), the fleet-wide
@@ -42,7 +42,7 @@ What exists, and the requirements each part answers to:
    same way the inline block it replaces did — deliberately not `local`, so
    the call is indistinguishable, to the rest of the cycle, from the code it
    replaces. Sourced, never executed. Must pass `shellcheck`.
-2b. `lib/candidate-select.sh` implementing the claim loop and candidate
+2b. <a id="impl-c-2b"></a>`lib/candidate-select.sh` implementing the claim loop and candidate
    selection (requirements 3o, 3p, 3t, 3u, 17f, among others; #771): the
    per-source gatherers (`gather_findings`, `gather_review_feedback`,
    `gather_abandoned_drafts`, `gather_merge_conflicts`, `gather_dequeued`,
@@ -68,7 +68,7 @@ What exists, and the requirements each part answers to:
    `release_claim`/`release_pr_claim`/`claim_branch_for` (requirement 17a's
    own item-keyed and PR-keyed claim release, moved beside the code that
    calls them). Sourced, never executed. Must pass `shellcheck`.
-2c. `lib/stage-attempt.sh` implementing the Co-Ordinator stage-attempt
+2c. <a id="impl-c-2c"></a>`lib/stage-attempt.sh` implementing the Co-Ordinator stage-attempt
    sequence and the failure handling every stage shares (requirement 3v,
    4d and 4i; #771; issue #587): `run_coordinator_stage_attempt` (one
    launch/parse/salvage attempt, called once per configured repository —
@@ -81,7 +81,7 @@ What exists, and the requirements each part answers to:
    `stage_api_refusal`/`stage_api_refusal_message`/`handle_stage_failure`,
    used by every stage this pipeline runs. Sourced, never executed. Must
    pass `shellcheck`.
-2d. `lib/candidate-gather.sh` implementing the repo-ordering/candidate-
+2d. <a id="impl-c-2d"></a>`lib/candidate-gather.sh` implementing the repo-ordering/candidate-
    gathering loop and the skip-list extracts built directly on top of it
    (requirement 3, the requirement-34 blocked/void skip-lists; #771):
    `gather_ordered_repos` orders every configured repository by effective
@@ -104,7 +104,7 @@ What exists, and the requirements each part answers to:
    and writing the cycle's own globals exactly as they did inline. Sourced,
    never executed, called once each from `agent-cycle.sh` in place of the
    inline block they replace. Must pass `shellcheck`.
-2e. `lib/manage.sh` implementing requirement 2.3's management commands in
+2e. <a id="impl-c-2e"></a>`lib/manage.sh` implementing requirement 2.3's management commands in
    full (#771): `run_manage_command`, called once from `agent-cycle.sh` in
    place of the inline block it replaces, before the lock and before any `gh`
    call — `--status`, `--disable`, `--enable`, `--clear-limit` and
@@ -121,7 +121,7 @@ What exists, and the requirements each part answers to:
    (acceptance check for #454), and the whole of it is exercised end-to-end
    through `agent-cycle.sh --disable`/`--enable`/`--status` in
    `test/toggle.test.sh`. Must pass `shellcheck`.
-2f. `lib/eligibility.sh` implementing requirements 3t/3u, 35a/35b, 3y and 39a
+2f. <a id="impl-c-2f"></a>`lib/eligibility.sh` implementing requirements 3t/3u, 35a/35b, 3y and 39a
    (The Refiner) (#771): what this cycle is allowed to act on, once the gatherers have
    finished and before anything is offered to a model.
    `compute_band_eligibility` runs every pre-fetched band but `issues`
@@ -175,7 +175,7 @@ What exists, and the requirements each part answers to:
    this file and `test/refiner-priority-triage.test.sh` lifts the Refiner
    pre-flight's own `refiner_model` call-site guard from it. Must pass
    `shellcheck`.
-2g. `lib/expensive-gather-cache.sh` implementing requirement 48
+2g. <a id="impl-c-2g"></a>`lib/expensive-gather-cache.sh` implementing requirement 48
    (agent-ops#1086): the per-node cache `gather_ordered_repos` reads and
    writes so its eight expensive bands are read fresh from GitHub for one
    configured repository per cycle rather than every one of them.
@@ -197,7 +197,7 @@ What exists, and the requirements each part answers to:
    nothing, a corrupt cache file loading as empty rather than raising a
    parse error, and a configured set past one pipe buffer picking cleanly
    rather than 141.
-2h. `lib/gather-phase.sh` implementing the phase between the repo-ordering/
+2h. <a id="impl-c-2h"></a>`lib/gather-phase.sh` implementing the phase between the repo-ordering/
    candidate-gathering loop and the Co-Ordinator stage itself (requirements
    3b, 3y and 2.2a among them; #1958, continuing #771's split):
    `run_gather_phase`, called once from `agent-cycle.sh` in place of the
@@ -221,7 +221,7 @@ What exists, and the requirements each part answers to:
    way `lib/candidate-gather.sh`'s and `lib/eligibility.sh`'s do — reading
    and writing the cycle's own globals exactly as it did inline. Sourced,
    never executed. Must pass `shellcheck`.
-2i. `lib/coordinator-phase.sh` implementing the Co-Ordinator-through-
+2i. <a id="impl-c-2i"></a>`lib/coordinator-phase.sh` implementing the Co-Ordinator-through-
    finishing phase sequence, the whole of the cycle from the Co-Ordinator
    stage to the exit (requirements 4, 8b, 15, 17a and 31c among them; #1958,
    continuing #771's split): `run_coordinator_through_finishing_phase`,
@@ -248,16 +248,16 @@ What exists, and the requirements each part answers to:
    the same way they did out of `agent-cycle.sh` before the move. Sourced,
    never executed, last of every `lib/*.sh` file its body calls into. Must
    pass `shellcheck`.
-3. `scripts/gather-findings.sh` implementing requirement 3a: given a repo
+3. <a id="impl-c-3"></a>`scripts/gather-findings.sh` implementing requirement 3a: given a repo
    slug, prints a normalised JSON array of the repo's open Dependabot and
    code-scanning alerts, degrading to `[]` (exit 0) when a feature is
    disabled or inaccessible. Must pass `shellcheck`.
-3c. `scripts/gather-review-feedback.sh` implementing requirement 3c: given a
+3c. <a id="impl-c-3c"></a>`scripts/gather-review-feedback.sh` implementing requirement 3c: given a
    repo slug, PR label and branch prefix, prints the JSON array of PRs awaiting
    our reply to a human's review, each carrying every review body and inline
    comment in the round verbatim. Fails safe to `[]` (exit 0). Must pass
    `shellcheck`.
-3f. `scripts/gather-abandoned-drafts.sh` implementing requirement 3e: given a
+3f. <a id="impl-c-3f"></a>`scripts/gather-abandoned-drafts.sh` implementing requirement 3e: given a
    repo slug, PR label, branch prefix and staleness threshold, prints the JSON
    array of this system's own abandoned draft PRs (open, draft, ours, whose last
    real activity — the head commit, and the reviews and comments not carrying
@@ -296,7 +296,7 @@ What exists, and the requirements each part answers to:
    (a model reads prose, not shell), and `test/comment-identity.test.sh`
    asserts it against `pipeline_reconciles_marker`'s own output, the same way
    it pins the header above.
-3g. `scripts/gather-merge-conflicts.sh` implementing requirement 3g (extended by
+3g. <a id="impl-c-3g"></a>`scripts/gather-merge-conflicts.sh` implementing requirement 3g (extended by
    requirement 3s for Dependabot's own PRs): given a
    repo slug, PR label and branch prefix, prints the JSON array of ready-but-
    conflicted PRs — this system's own (open, non-draft, ours, `mergeable`
@@ -305,7 +305,7 @@ What exists, and the requirements each part answers to:
    and a head-SHA-scoped ref; a Dependabot entry additionally carries `bot:
    true`, `rebase_requested`, `superseded_by` and (when superseded)
    `superseded_evidence`. Fails safe to `[]` (exit 0). Must pass `shellcheck`.
-3s. `lib/dependabot-bump.sh` and `scripts/nudge-dependabot-rebase.sh`
+3s. <a id="impl-c-3s"></a>`lib/dependabot-bump.sh` and `scripts/nudge-dependabot-rebase.sh`
    implementing requirement 3s. The library holds `DEPENDABOT_LOGIN`
    (`app/dependabot`, the login Dependabot's PRs carry through `gh`'s
    GraphQL-backed `--json` reads), `dependabot_rebase_marker` (the
@@ -336,7 +336,7 @@ What exists, and the requirements each part answers to:
    nudge/drop/pass-through behaviour in `test/nudge-dependabot-rebase.test.sh`,
    and the two together (through the real `gather-merge-conflicts.sh`, via
    `MERGE_CONFLICTS_GH`) in `test/merge-conflicts.test.sh`.
-3z. `scripts/gather-dequeued.sh` implementing requirement 3z: given a repo
+3z. <a id="impl-c-3z"></a>`scripts/gather-dequeued.sh` implementing requirement 3z: given a repo
    slug, PR label and branch prefix, prints the JSON array of this system's
    own PRs (open, non-draft, ours, `mergeable` exactly `MERGEABLE`) whose most
    recent `lib/merge-queue.sh` `merge_queue_probe` reports `queued: false`, a
@@ -348,7 +348,7 @@ What exists, and the requirements each part answers to:
    oldest first. Fails safe to `[]` (exit 0), including on a reviews or
    comments read it cannot make. Must pass `shellcheck`; its candidate rule is
    regression-tested in `test/gather-dequeued.test.sh`.
-53. `scripts/gather-landing-refusals.sh` implementing requirement 53: given a
+53. <a id="impl-c-53"></a>`scripts/gather-landing-refusals.sh` implementing requirement 53: given a
    repo slug, PR label, branch prefix and the fleet-wide union log, prints the
    JSON array of this system's own PRs (open, non-draft, ours) whose most
    recent `landing-refused` event (read from the union log via
@@ -402,7 +402,7 @@ What exists, and the requirements each part answers to:
    suppression unchanged. `lib/standdown.sh`'s own call site passes
    `union_log` as this fourth argument. Regression-tested in
    `test/sweep-human-visibility.test.sh`.
-3t. `scripts/gather-human-visibility-hygiene.sh` implementing requirement 38e:
+25. <a id="impl-c-25"></a>`scripts/gather-human-visibility-hygiene.sh` implementing requirement 38e:
    given a repo slug and this repo's slice of
    `human_visibility_violations` (`lib/human-visibility-hygiene.sh`, a pure
    reduction over the log union), prints a JSON array holding at most one
@@ -469,7 +469,7 @@ What exists, and the requirements each part answers to:
    (the reduction) `test/human-visibility-hygiene.test.sh` and (the Script's
    own gate and assignment between the two) `test/human-visibility-wiring.test.sh`;
    must pass `shellcheck`.
-3j. `scripts/gather-issues.sh` implementing requirement 3j: given a repo slug,
+3j. <a id="impl-c-3j"></a>`scripts/gather-issues.sh` implementing requirement 3j: given a repo slug,
    prints `{"candidates": […], "excluded": […]|null}`. `candidates` is the
    JSON
    array of the repo's candidate issues — open, unassigned, not labelled
@@ -488,7 +488,7 @@ What exists, and the requirements each part answers to:
    completion does not know the set to be empty (requirement 3j).
    Its filter and shape are regression-tested in `test/issues-prefetch.test.sh`
    and `test/dependency-gate.test.sh`; must pass `shellcheck`.
-3t. `scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo
+3t. <a id="impl-c-3t"></a>`scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo
    slug — and nothing else, since an issue is not read off a branch — lists
    that repo's open issues carrying the `pw::type:tech-debt` label and prints
    the JSON array of the ones that survive the deterministic filter it shares
@@ -508,7 +508,7 @@ What exists, and the requirements each part answers to:
    each exclusion rather than one per gatherer. Its shape is
    regression-tested in `test/gather-tech-debt.test.sh`; must pass
    `shellcheck`.
-3y. `scripts/gather-project-review.sh` implementing requirement 3y's
+3y. <a id="impl-c-3y"></a>`scripts/gather-project-review.sh` implementing requirement 3y's
    project-review half: given a repo slug, default branch and — optionally —
    that repository's own resolved `report_directory`
    (`docs/spec/review.md` R4a: a GNU `date`(1) format string,
@@ -571,7 +571,7 @@ What exists, and the requirements each part answers to:
    to tell a void'd `review-<date>-R-NN` ref whose folder is still current
    from one whose folder has been superseded. The default mode's own
    behaviour is unchanged by this flag's presence.
-3y. `scripts/gather-implementation-plan.sh` implementing requirement 3y's
+3y-ii. <a id="impl-c-3y-ii"></a>`scripts/gather-implementation-plan.sh` implementing requirement 3y's
    implementation-plan half: given a repo slug, default branch and
    `implementation_plan_path`, prints the JSON array of the document's open
    tasks — every task-list line whose checkbox is empty (`- [ ]`, `* [ ]`,
@@ -586,7 +586,7 @@ What exists, and the requirements each part answers to:
    `gh`'s diagnosis on stderr. Fails safe to `[]` (exit 0). Its shape is
    regression-tested in `test/gather-implementation-plan.test.sh`; must pass
    `shellcheck`.
-3q. `lib/dependency-gate.sh` implementing requirement 34j: `dependency_refs`,
+3q. <a id="impl-c-3q"></a>`lib/dependency-gate.sh` implementing requirement 34j: `dependency_refs`,
    which parses every `Blocked-by:` reference out of a body of text into a
    normalized JSON array (same-repo references as a bare number, cross-repo
    as `owner/repo#N`), and `dependency_clearances`, which given the open
@@ -596,7 +596,7 @@ What exists, and the requirements each part answers to:
    `scripts/gather-issues.sh` (the holding half) and `agent-cycle.sh` (the
    releasing half, in the same pre-extract window as requirement 34i).
    Unit-tested (`test/dependency-gate.test.sh`); must pass `shellcheck`.
-3r. `lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j
+3r. <a id="impl-c-3r"></a>`lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j
    and 3t share: `ISSUE_DETERMINISTIC_FILTER_JQ`, the jq definitions
    `issue_deterministic_ok` (not a pull request, not assigned, not labelled
    `blocked` whatever the case) and `issue_exclude_reason` (which of
@@ -613,7 +613,7 @@ What exists, and the requirements each part answers to:
    to each caller. Regression-tested through both callers'
    own tests (`test/issues-prefetch.test.sh`, `test/gather-tech-debt.test.sh`);
    must pass `shellcheck`.
-3k. `scripts/gather-register-status.sh` implementing requirement 34i's register
+3k. <a id="impl-c-3k"></a>`scripts/gather-register-status.sh` implementing requirement 34i's register
    half: given a repo slug, default branch and item ids, prints a JSON object
    mapping each id to the `status` its own item file declares on that branch.
    An id resolves only when exactly one file claims it by `id` or `legacy-id`
@@ -624,7 +624,7 @@ What exists, and the requirements each part answers to:
    repo that has blocked register items and not at all otherwise, so it is
    bounded by the backlog rather than by the register. Fails safe to `{}` (exit
    0); regression-tested in `test/work-gone.test.sh`; must pass `shellcheck`.
-3o. `scripts/gather-review-status.sh` implementing requirement 34i's
+3o. <a id="impl-c-3o"></a>`scripts/gather-review-status.sh` implementing requirement 34i's
    project-review half: given a repo slug, default branch and recommendation
    refs, prints a JSON object mapping each ref either of two signals confirms
    to that signal's own status string — a merged pull request's title or body
@@ -639,7 +639,7 @@ What exists, and the requirements each part answers to:
    has blocked project-review items and not at all otherwise. Fails safe to
    `{}` (exit 0); regression-tested in `test/work-gone.test.sh`; must pass
    `shellcheck`.
-3p. `scripts/gather-plan-status.sh` implementing requirement 34i's
+3p. <a id="impl-c-3p"></a>`scripts/gather-plan-status.sh` implementing requirement 34i's
    implementation-plan half: given a repo slug, default branch,
    `implementation_plan_path` and task ids, prints a JSON object mapping each
    id to `"done"` or `"open"`, read off that task's own checkbox
@@ -649,7 +649,7 @@ What exists, and the requirements each part answers to:
    items and an `implementation_plan_path` configured, and not at all
    otherwise. Fails safe to `{}` (exit 0); regression-tested in
    `test/work-gone.test.sh`; must pass `shellcheck`.
-3v. `scripts/gather-workflow-basenames.sh` implementing the one read
+3v. <a id="impl-c-3v"></a>`scripts/gather-workflow-basenames.sh` implementing the one read
    requirement 34n's liveness rule needs and no other source provides: given a
    repo slug, prints `{ok, basenames}` mapping each of the repo's workflow ids
    to its file's basename without extension — the half requirement 19 mints a
@@ -661,7 +661,7 @@ What exists, and the requirements each part answers to:
    34n reads `ok` before trusting the map for anything. Fails safe (exit 0);
    unit-tested (`test/gather-workflow-basenames.test.sh`); must pass
    `shellcheck`.
-3b. `scripts/gather-source-state.sh` implementing requirement 3b's sampling:
+3b. <a id="impl-c-3b"></a>`scripts/gather-source-state.sh` implementing requirement 3b's sampling:
    given a repo slug and default branch, prints one JSON object holding that
    repo's head SHA and its issues, workflows and open-PR digests, with `ok:
    false` if any of it could not be fetched cleanly. The issues digest carries
@@ -672,7 +672,7 @@ What exists, and the requirements each part answers to:
    cost-control feature must not become a reliability risk — but must not
    pretend a failed call is an empty result either (see requirement 3b). Must
    pass `shellcheck`.
-3d. `scripts/state-sync.sh` implementing requirement 2.5: `push` and `fetch`.
+3d. <a id="impl-c-3d"></a>`scripts/state-sync.sh` implementing requirement 2.5: `push` and `fetch`.
    Called by both pipelines (the push from the cleanup that ends a cycle) and
    by the container crontab (the every-few-minutes push and the fetch).
    Every mode is a no-op when `state_repo` is unset. Needs `rsync`, `git`
@@ -680,7 +680,7 @@ What exists, and the requirements each part answers to:
    is missing, because a node that cannot replicate is still a node that can
    run. Unit-tested against a local bare repository
    (`test/state-sync.test.sh`); must pass `shellcheck`.
-3i. `scripts/rotate-logs.sh` implementing requirement 2.6: rotates
+3i. <a id="impl-c-3i"></a>`scripts/rotate-logs.sh` implementing requirement 2.6: rotates
    `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`,
    `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and
    `review-cron.log` by size,
@@ -689,7 +689,7 @@ What exists, and the requirements each part answers to:
    own container crontab line, independent of both pipelines. Unit-tested
    against a synthesised `state_dir` (`test/rotate-logs.test.sh`); must pass
    `shellcheck`.
-3e. `lib/claim.sh` implementing requirement 17a: `claim` (kinds `branch` and
+3e. <a id="impl-c-3e"></a>`lib/claim.sh` implementing requirement 17a: `claim` (kinds `branch` and
    `file`), `release`, `count` and `gc`, exit codes 0 won/done, 3 lost, 1
    error; requirement 3o's `claims` and `branches` — read-only listings
    that always print a JSON array (empty on any read failure) and exit 0,
@@ -707,7 +707,7 @@ What exists, and the requirements each part answers to:
    `CLAIM_GH` substitutes a stub for tests, following
    `STATE_SYNC_GH`. Unit-tested with concurrent-claim races against a
    filesystem-CAS stub (`test/claim.test.sh`); must pass `shellcheck`.
-3h. `lib/refinement.sh` implementing the refinement class: requirement 16a's
+3h. <a id="impl-c-3h"></a>`lib/refinement.sh` implementing the refinement class: requirement 16a's
    well-formedness bar for a `needs_refinement` entry, requirement 34e's block
    fields and label projection and requirement 38b's `blocked`/`blocked:<reason>`
    label projection beside it (`REFINEMENT_GH` substitutes a stub for tests,
@@ -730,7 +730,7 @@ What exists, and the requirements each part answers to:
    trap exactly as they were inline.
    Unit-tested (`test/needs-refinement.test.sh`, `test/refiner-eligibility.test.sh`);
    must pass `shellcheck`.
-3s. `lib/label-marker.sh` implementing requirement 39f's own-label-action
+26. <a id="impl-c-26"></a>`lib/label-marker.sh` implementing requirement 39f's own-label-action
    memory: `label_own_action_fields` (the payload an `own-label-action` event
    carries), `label_own_actions_map` (every such event for one label, reduced
    to the latest per repo+item), `label_filter_own_applications` (a gathered
@@ -745,7 +745,7 @@ What exists, and the requirements each part answers to:
    call site in `agent-cycle.sh`, alongside the `refinement_label_add`/`_remove`
    calls requirement 39f's writes extend. Unit-tested
    (`test/label-marker.test.sh`); must pass `shellcheck`.
-3m. `lib/work-gone.sh` implementing requirement 34i's decision:
+3m. <a id="impl-c-3m"></a>`lib/work-gone.sh` implementing requirement 34i's decision:
    `work_gone_clearances`, which given the open blocked set, the cycle's
    source-state digests and the register, review and plan status maps prints
    one entry per block whose work no longer exists, and
@@ -754,7 +754,7 @@ What exists, and the requirements each part answers to:
    above is asked for those and no others. Pure — it reads nothing itself — and
    every unknown resolves to no clearance. Unit-tested (`test/work-gone.test.sh`);
    must pass `shellcheck`.
-3w. `lib/void-liveness.sh` implementing requirement 34n's third, fourth,
+3w. <a id="impl-c-3w"></a>`lib/void-liveness.sh` implementing requirement 34n's third, fourth,
    fifth and seventh actioned signals: `void_liveness_actioned`, which given
    the void extract and
    this cycle's own per-repo, per-shape gather (`{ok, ids}` for `alert`,
@@ -784,7 +784,7 @@ What exists, and the requirements each part answers to:
    `lib/work-gone.sh`'s own
    (requirement 34a), so this file is sourced after it. Unit-tested
    (`test/cycle-state.test.sh`); must pass `shellcheck`.
-3s. `lib/preflight.sh` implementing requirement 34m's decision:
+27. <a id="impl-c-27"></a>`lib/preflight.sh` implementing requirement 34m's decision:
    `preflight_done_reason`, which given a repo, an item, its claim branch, the
    cycle's source-state digests and (for a tech-debt item) its one freshly
    read register row, wraps them into the one-entry blocked list
@@ -813,7 +813,7 @@ What exists, and the requirements each part answers to:
    wraps, and after `lib/handoff.sh`, whose `handoff_latest_positions`
    `preflight_review_feedback_reason` calls. Unit-tested
    (`test/preflight.test.sh`); must pass `shellcheck`.
-3n. `scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
+3n. <a id="impl-c-3n"></a>`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
    given a repo slug, examines every `<branch_prefix>*` and
    `td-record/*` ref, and
    prints one JSON action object per orphan handled (`recovered`, `released`,
@@ -827,7 +827,7 @@ What exists, and the requirements each part answers to:
    unanswered question; `SWEEP_GH` stubs `gh` and `AGENT_OPS_CONFIG`
    overrides the config for tests. Unit-tested
    (`test/sweep-orphan-branches.test.sh`); must pass `shellcheck`.
-3r. `scripts/sweep-human-visibility.sh` implementing requirement 38c's sweep:
+28. <a id="impl-c-28"></a>`scripts/sweep-human-visibility.sh` implementing requirement 38c's sweep:
    given a repo slug (and, for the nudge comment's header and marker, a cycle
    id and a node name), examines every open, non-draft, `pr_label`-carrying
    pull request and prints one JSON action object per pull request it acted on
@@ -843,7 +843,7 @@ What exists, and the requirements each part answers to:
    the sweep's decisions are `lib/handoff.sh`'s) and `AGENT_OPS_CONFIG`
    overrides the config for tests. Unit-tested
    (`test/sweep-human-visibility.test.sh`); must pass `shellcheck`.
-3a. The shared library (`lib/cycle-state.sh`, `lib/limit-detect.sh`,
+3a. <a id="impl-c-3a"></a>The shared library (`lib/cycle-state.sh`, `lib/limit-detect.sh`,
    `lib/github-limit.sh` (requirement 2.0's `github_limit_snapshot`,
    `github_limit_verdict` and `github_limit_describe`; requirement 2.0a's `gh`
    wrapper, `github_limit_kind` and the pure `github_limit_wait_plan`;
@@ -990,7 +990,7 @@ What exists, and the requirements each part answers to:
    framework) and `shellcheck`-clean. These rules are the system's memory of
    what it has already tried; a second copy of one is a bug with a delay
    fuse, and both copies read correctly right up until they disagree.
-3l. `lib/repo-order.sh` implementing requirement 3's two pure functions:
+3l. <a id="impl-c-3l"></a>`lib/repo-order.sh` implementing requirement 3's two pure functions:
    `repo_order_by_effective_age`, given the cycle's now-epoch and the repos
    array, reorders the Script's timestamp lines most-overdue-first by
    nice-weighted effective age, ordering identically to a plain
@@ -1003,7 +1003,7 @@ What exists, and the requirements each part answers to:
    empty map is not the same bytes as an omitted key). Sourced by
    `agent-cycle.sh` only. Unit-tested (`test/repo-order.test.sh`); must
    pass `shellcheck`.
-4. `prompts/coordinator.md`, `prompts/implementer.md`, `prompts/reviewer.md`,
+4. <a id="impl-c-4"></a>`prompts/coordinator.md`, `prompts/implementer.md`, `prompts/reviewer.md`,
    `prompts/enabler.md` and `prompts/refiner.md` implementing requirements
    14–20, 21–27, 28–32, 36/36b and 39c/39d respectively. Each prompt must
    embed the relevant shared-repo conventions from this document so a stage
@@ -1011,14 +1011,14 @@ What exists, and the requirements each part answers to:
    carries the escalation issue's template, since the quality of that issue is
    the whole of requirement 36a's ask of a human; the Refiner's carries no
    such template, since it has no escalation power of its own.
-4e. `prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge
+4e. <a id="impl-c-4e"></a>`prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge
    only, never fix, posture keyed to the tier word it is told — one defined
    for each of `standard`, `high`, `critical` and `adjudication`, the four
    the `## Tier` section can carry (requirement 41) — no GitHub-write
    instruction of any kind, ends with a
    verdict-only JSON object. Sourced by `lib/approver.sh`'s `run_approver_stage`
    only.
-4f. `prompts/enabler-adjudicate.md` implementing requirement 36b's
+4f. <a id="impl-c-4f"></a>`prompts/enabler-adjudicate.md` implementing requirement 36b's
    `escalation_autonomy: "adjudicate-first"` adjudication pass
    (agent-ops#627): one item, judged from the existing refinement, the
    re-flag's own reason and the drafted escalation issue; no power to write a
@@ -1028,7 +1028,7 @@ What exists, and the requirements each part answers to:
    Absent from `prompt_overrides`' enumeration for the same reason `approver`
    is (requirement 4a): it is the pass that decides whether a human is asked,
    so no installation may extend or replace it.
-4a. `lib/prompt-overrides.sh` implementing requirement 4a: `stage_prompt_text`
+4a. <a id="impl-c-4a"></a>`lib/prompt-overrides.sh` implementing requirement 4a: `stage_prompt_text`
    (the assembled prompt for a stage, honouring `config.json`'s
    `prompt_overrides.<stage>.extend`/`.replace`) and `stage_prompt_sha` (the
    same assembly's contribution to the no-op fingerprint, requirements 3b and
@@ -1047,7 +1047,7 @@ What exists, and the requirements each part answers to:
    the Implementer's (requirement 7) and Reviewer's (requirement 8) prompts,
    the two call sites `prompt_overrides_json` (the plain installation-wide
    object) still feeds directly for every other stage.
-4b. `lib/coordinator-brief.sh` implementing requirement 4b:
+4b. <a id="impl-c-4b"></a>`lib/coordinator-brief.sh` implementing requirement 4b:
    `coordinator_work_sources_table`, given `config.json`'s `repos` array,
    renders the Markdown table naming each repo and its numbered `sources`
    that `agent-cycle.sh` substitutes into the Co-Ordinator's assembled
@@ -1056,7 +1056,7 @@ What exists, and the requirements each part answers to:
    the row-per-repo shape, in-order numbering, an input reordered from
    `config.json`'s own order, and the empty-array edge case; must pass
    `shellcheck`.
-4i. `lib/coordinator-input.sh` implementing requirement 4i:
+4i. <a id="impl-c-4i"></a>`lib/coordinator-input.sh` implementing requirement 4i:
    `coordinator_fit_bands`, given a byte allowance on argv and the cycle's
    repo array on stdin, walks the ten-rung prose ladder and then the
    per-band entry caps until the array renders inside that allowance, and
@@ -1095,7 +1095,7 @@ What exists, and the requirements each part answers to:
    match/no-match/malformed-input cases) and exercised through the real
    `record_needs_refinement_block`/`unaccounted_items` in
    `test/fit-trim-block-refusal.test.sh`.
-5. `README.md`: a landing page naming what the system does and pointing at
+5. <a id="impl-c-5"></a>`README.md`: a landing page naming what the system does and pointing at
    the guides under `docs/guides/` and the configuration reference at
    `docs/reference/configuration.md` — `docs/guides/working-with-pullwright/README.md`
    (what it does, review, merge autonomy), `docs/guides/operating/README.md`
@@ -1105,12 +1105,12 @@ What exists, and the requirements each part answers to:
    branch workflow, development). The operating guide documents the
    container as the only way a node runs, and points at the runbook
    (component 7) for the detail.
-6. The crontab line: never installed by hand on a containerized node — it is
+6. <a id="impl-c-6"></a>The crontab line: never installed by hand on a containerized node — it is
    the cycle line of `deploy/docker/crontab.tmpl`, rendered per node at
    container start and run by supercronic inside the scheduler service, with
    the node's role coming from `ROLE` in its `deploy/docker/.env`
    (requirement 2.4) rather than from a crontab environment variable.
-7. `deploy/docker/` — the node image and the node stack (see "The node image"
+7. <a id="impl-c-7"></a>`deploy/docker/` — the node image and the node stack (see "The node image"
    and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab`, the
    minimal `claude-settings.json` seed and `claude-managed-settings.json`, the
    managed policy of requirement 4k that the image installs root-owned at
@@ -1121,9 +1121,9 @@ What exists, and the requirements each part answers to:
    runbook is the operator-facing counterpart to those two sections: bring-up,
    everyday commands, updating, changing a node's role, the failover drill and
    a symptom-to-cause table.
-8. `deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
+8. <a id="impl-c-8"></a>`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
-9. `.github/workflows/build-image.yml` — the build-and-publish path for
+9. <a id="impl-c-9"></a>`.github/workflows/build-image.yml` — the build-and-publish path for
    component 7's image: build, verify the toolchain, validate the crontab, run
    the `test/` suite inside the image, and check the role guard; then publish
    to GHCR on `main` only. It carries `packages: write` and authenticates as
@@ -1142,7 +1142,7 @@ What exists, and the requirements each part answers to:
    job stops falling back to Actions' implicit six-hour default, where a test
    that hangs — this suite exercises real signal and process-group handling —
    would spin unexplained for hours before anyone noticed.
-10. `scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the
+10. <a id="impl-c-10"></a>`scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the
     shell linter and the job that enforces it (acceptance checks 1g and 1g-i).
     The file set and the invocation live in the script, so a developer's run
     and CI's are the same run — with one deliberate asymmetry, the size guard
@@ -1158,7 +1158,7 @@ What exists, and the requirements each part answers to:
     this workflow's — so an Implementer working inside the node image can run
     `scripts/lint-shell.sh` itself before pushing, rather than pushing blind
     and finding out from this workflow (requirement 1b).
-10a. `scripts/check-graphql-drift.sh` and
+10a. <a id="impl-c-10a"></a>`scripts/check-graphql-drift.sh` and
     `.github/workflows/graphql-drift.yml` — the GraphQL schema-drift check and
     the nightly job that runs it (acceptance check 1g-ii,
     TD-PPagop-26082930). Every GitHub read in this repository is asserted only
@@ -1241,7 +1241,7 @@ What exists, and the requirements each part answers to:
     over this repository's own tree so a document added in a shape the scanner
     cannot see fails there rather than going unchecked; must pass
     `shellcheck`.
-11. `scripts/watch-node.sh` — a read-only wrapper around
+11. <a id="impl-c-11"></a>`scripts/watch-node.sh` — a read-only wrapper around
     `docker compose exec -T scheduler tail` for watching a node's `cron.log`
     or cycle log (`log.jsonl`, requirement 33) from outside, in place of the
     docker-exec incantation. Resolves the stack directory from `STACK_DIR` or
@@ -1250,7 +1250,7 @@ What exists, and the requirements each part answers to:
     (component 7, including `cloud-init.yaml`) so every node carries it from
     the start. Unit-tested against a stubbed `docker` on `PATH`
     (`test/watch-node.test.sh`); must pass `shellcheck`.
-12. `scripts/check-node-compose.sh` — the host-side half of the compose-drift
+12. <a id="impl-c-12"></a>`scripts/check-node-compose.sh` — the host-side half of the compose-drift
     answer (see "The node stack"; the in-container half is
     `lib/compose-drift.sh`). Run on a node's host from the stack directory
     (or `STACK_DIR`; a host running two stacks, once per directory), it
@@ -1285,7 +1285,7 @@ What exists, and the requirements each part answers to:
     each match — a leftover from an ad-hoc token-rotation backup, which the
     same runbook section says to make instead as an in-place edit or a
     `0600` temporary file, never a dated copy.
-12a. `scripts/check-node-image.sh` — asks whether this node is running the
+12a. <a id="impl-c-12a"></a>`scripts/check-node-image.sh` — asks whether this node is running the
     newest image the repository has published (see "The node stack"; the
     library is `lib/image-drift.sh`). Rather than a second, host-side
     registry client, it runs the check inside the scheduler container over

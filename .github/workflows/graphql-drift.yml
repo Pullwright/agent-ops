@@ -1,7 +1,7 @@
 name: GraphQL schema drift check
 
 # Asks GitHub whether the GraphQL documents this repository sends still mean
-# anything to its schema (TD-PPagop-26082930, requirement 1g-ii). The check
+# anything to its schema (TD-PPagop-26082930, acceptance check 1g-ii). The check
 # itself is scripts/check-graphql-drift.sh; the reasoning about how a document
 # is validated without being executed lives in its header, and the file set is
 # discovered there rather than listed here, for the same reason

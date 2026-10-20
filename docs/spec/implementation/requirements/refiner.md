@@ -2,7 +2,7 @@
 
 ### The Refiner
 
-39. **Engagement.** From the same cleanup as requirement 35, immediately after
+39. <a id="impl-39"></a>**Engagement.** From the same cleanup as requirement 35, immediately after
     the Enabler engages (or declines to) — one further call site, not a second
     one, since both run from `cleanup()` inside the lock, after the workspace
     is deleted and before `cycle-end`. A headless invocation (model
@@ -29,7 +29,7 @@
     Every claimed item goes to **one** invocation, for the same reason
     requirement 35 batches the Enabler's.
 
-39a. **The candidate set and per-source policy.** An item is a Refiner
+39a. <a id="impl-39a"></a>**The candidate set and per-source policy.** An item is a Refiner
     candidate iff **all** of:
     1. it appears in this cycle's pre-fetched source arrays — `findings`
        (`security`/`code-quality`), `review_feedback`, `abandoned_drafts`,
@@ -122,7 +122,7 @@
     has no Refiner configured (`refiner_model` empty), since with none,
     nothing of any source could ever be restored either.
 
-39b. **Claims and the engagement cap.** Before claiming, the candidate set is
+39b. <a id="impl-39b"></a>**Claims and the engagement cap.** Before claiming, the candidate set is
     reduced to at most `refiner_max_per_engagement` items, sorted by
     `(repo, source, item)` — deterministic, so every node in the fleet reduces
     to the same set and they contend on the same claims rather than each
@@ -147,7 +147,7 @@
     item's registry entry instead of leaving the tombstone standing its full
     life, exactly as requirement 37 already does for the Enabler.
 
-39c. **The Refiner's powers.** For each claimed item the Refiner reaches
+39c. <a id="impl-39c"></a>**The Refiner's powers.** For each claimed item the Refiner reaches
     exactly one of two verdicts, `refined` or `needs-refinement` (39d) —
     deliberately narrower than the Enabler's four: no escalation, no void, no
     handoff. A `refined` verdict must carry the specification, in the shape
@@ -242,7 +242,7 @@
     must not gold-plate an adequate entry — rewriting or elaborating it —
     merely to make refinement look additive.
 
-39d. **The default-first rule (agent-ops#938).** Before reaching for
+39d. <a id="impl-39d"></a>**The default-first rule (agent-ops#938).** Before reaching for
     `needs-refinement` on the strength of enumerated alternatives alone, the
     Refiner checks whether the item already answers its own question:
 
@@ -301,7 +301,7 @@
     is the same opinion recorded twice, which 39c's corroboration accepts
     without asking a human anything.
 
-39e. **Failure containment.** Whatever happens inside one Refiner engagement,
+39e. <a id="impl-39e"></a>**Failure containment.** Whatever happens inside one Refiner engagement,
     this cycle's own exit code — computed before the exit trap ran — is the
     one recorded (the same containment requirement 37 states for the
     Enabler). A verdict for an item this cycle did not claim is discarded with
@@ -310,7 +310,7 @@
     release it, recorded as a `warning` naming the item rather than silently
     dropped.
 
-39f. **Own-label-action memory, extending requirement 34g.** Every label this
+39f. <a id="impl-39f"></a>**Own-label-action memory, extending requirement 34g.** Every label this
     system adds or removes is recorded as an `own-label-action` event
     (requirement 33): `refinement_label_add`/`_remove`'s callers in
     `agent-cycle.sh` log one alongside every successful call, for both
@@ -448,7 +448,7 @@
     finds it with its block gone, rather than sitting on the issue meaning
     nothing until a human removes it by hand.
 
-39g. **Priority triage, a one-way ratchet the Refiner sets and the Script
+39g. <a id="impl-39g"></a>**Priority triage, a one-way ratchet the Refiner sets and the Script
     alone enforces (D18 WI-11; agent-ops#414).** Every open `issues`-source
     item carries GitHub's own `Priority` `IssueFieldSingleSelect` — the band
     requirement 15e already ranks the Co-Ordinator's walk by — and most of
@@ -723,7 +723,7 @@
     `sources` never carries the bare name, so an equality test against it
     would match no valid configuration and the check would never run.
 
-39h. **May name labels for the item behind its verdict (requirement 6c, issue
+39h. <a id="impl-39h"></a>**May name labels for the item behind its verdict (requirement 6c, issue
     #714).** A verdict entry's optional `labels` field
     (`[{name, colour?, description?}, …]`), independent of `verdict` itself —
     an ordinary `refined` item, a `needs-refinement` decline, or a

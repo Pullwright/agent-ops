@@ -677,6 +677,11 @@ rules, anything else it states). Where this prompt and that file overlap, they
 should agree; where it is more specific (exact commands, exact file
 locations), defer to it.
 
+When `repo` is agent-ops itself and you need to resolve a citation of a
+specific requirement, acceptance check or component — `requirement 17a`,
+`IMPL AC 1g`, `REV R5`, `MON M4` — run `scripts/spec.sh show <label>`
+rather than opening and grepping the spec file by hand.
+
 ## Shared repository conventions
 
 All target repos follow these rules:

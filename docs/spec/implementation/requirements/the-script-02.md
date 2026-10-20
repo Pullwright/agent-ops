@@ -1,8 +1,8 @@
 ## Requirements
 
-### The Script — requirements, continued (part 2 of 10; 2–2.3: Stand-down checks…)
+### The Script — requirements, continued (part 2 of 11; 2–2.3: Stand-down checks…)
 
-2. **Stand-down checks.** Each check logs its reason and exits cleanly:
+2. <a id="impl-2"></a>**Stand-down checks.** Each check logs its reason and exits cleanly:
 
    Before check 0 below, and before every other check in this list: which
    GitHub credential this cycle *would* currently use is logged
@@ -1140,7 +1140,7 @@
       PRs while the sum stays small. Of the two ways to be wrong here,
       deferring a cycle that could have run is recoverable next cycle and
       opening work past a full cap is not.
-2.2a. **Back-pressure throttles starting work, not finishing it.** Compute the
+2.2a. <a id="impl-2-2a"></a>**Back-pressure throttles starting work, not finishing it.** Compute the
    count in 2.2 but **defer the stand-down** until the sources are gathered
    (requirements 3c, 3g, 3z and 3e). If back-pressure has tripped *and* any
    `review_feedback`, `merge_conflicts`, `dequeued` or `abandoned_drafts`
@@ -1180,7 +1180,7 @@
    after this narrowing, so a back-pressured `selected: false` — which forbade
    the tech-debt source outright and therefore owes no account of it — is never
    scored as contradicting a band it was not allowed to walk.
-2.2b. **The decision site folds in what 2.2's count missed.** 2.2a's own
+2.2b. <a id="impl-2-2b"></a>**The decision site folds in what 2.2's count missed.** 2.2a's own
    justification for treating a conflicted or dequeued PR as doubly apt —
    "occupies one nothing can land to free until it is fixed" — is only
    true if that PR is actually counted somewhere. It usually is not: 2.2's
@@ -1220,7 +1220,7 @@
    cross-cycle read of live PR state rather than one cycle's stand-down
    decision, and has no access to the `mergeable`/queue-membership data this
    fold-in needs.
-2.2c. **A drain (requirement 2.3d) narrows unconditionally.** 2.2a's own
+2.2c. <a id="impl-2-2c"></a>**A drain (requirement 2.3d) narrows unconditionally.** 2.2a's own
    restriction — every repo's `sources` cut to `["review-feedback",
    "merge-conflicts", "dequeued", "abandoned-drafts"]`, `issues` and
    `tech_debt` emptied — is not only a back-pressure response: while a
@@ -1246,7 +1246,7 @@
    stack — and 2.9's own bookkeeping (the cached remaining count, the
    `drained` event) runs whenever `DRAINING` is set, whether or not
    back-pressure was what would have narrowed anyway.
-2.3. **The switch.** A file, `state_dir/disabled.json`, whose presence stops
+2.3. <a id="impl-2-3"></a>**The switch.** A file, `state_dir/disabled.json`, whose presence stops
    cycles starting. Checked *before* the lock and before any `gh` call — a
    disabled pipeline should cost nothing — and honoured by both this Script and
    `review-cycle.sh` (`docs/spec/review.md`, R2a) through one shared

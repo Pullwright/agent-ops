@@ -149,7 +149,7 @@ Nothing above re-attempts a held or refused pull request from *within* the
 round that held or refused it — a human merging it by hand, or a later
 round's own fresh Approver approval re-entering the arming step, are both
 still real paths. What closes the gap between those and never is the
-landing-retry sweep (requirement 8u, `_landing_stage_attempt`,
+landing-retry sweep (acceptance check 8u, `_landing_stage_attempt`,
 TD-PPagop-26081701): once per cycle, for every repository at
 `agent-merges-routine` or above, it re-enters the same seven gates above —
 unchanged, not a second copy of them — for every open, non-draft pull request

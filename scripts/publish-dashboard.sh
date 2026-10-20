@@ -3767,7 +3767,7 @@ if (( FULL )); then
 # landing armed on any node appears on every node's dashboard. Three parts:
 #
 #   armed    — one row per `landing-armed` inside the window, joined to the
-#              `landing-audit-record` (requirement 8x, agent-ops#578) that
+#              `landing-audit-record` (acceptance check 8x, agent-ops#578) that
 #              `_landing_stage_attempt` wrote at the same moment it armed —
 #              its tier and verdict are the audit's whole point: "which model
 #              tier passed this, and did it approve or merely not refuse" —
@@ -3794,16 +3794,16 @@ if (( FULL )); then
 # that follows it, so the cycle `log_event` stamps on both stands in for one
 # — which is what keeps a *second* arm of the same pull request from being
 # answered by the wrong cycle's record. A `landing-armed` with no
-# matching record at all — an event from before requirement 8x shipped, or a
+# matching record at all — an event from before acceptance check 8x shipped, or a
 # write this process died between the two log_event calls for — is
 # `anomaly: true`: reported, never silently dropped nor rendered with nulls
 # as though the join had simply come up empty. This is the one property WI-8
-# existed to promise and, before requirement 8x, could not always keep: every
+# existed to promise and, before acceptance check 8x, could not always keep: every
 # landing this digest shows is either fully explained or flagged as
 # unexplained, never quietly incomplete. A pre-8x `landing-armed` can still
 # have its tier/verdict explained, even though it stays `anomaly: true`
 # forever (it genuinely has no audit record) — the older `approver-verdict`
-# join this panel used before requirement 8x lives on purely as that
+# join this panel used before acceptance check 8x lives on purely as that
 # fallback, so "the record could not be found" and "the record said so" stay
 # distinguishable without also going back to reading every landing's
 # tier/verdict as `unknown` for events this old.
@@ -3894,14 +3894,14 @@ landings_json="$(jq -c -s \
   # itself).
   def stale($t): ($t // "" | length) == 0
       or (try ($t | fromdateiso8601) catch 0) < $from_s;
-  # Every landing-audit-record (requirement 8x, agent-ops#578), oldest last,
+  # Every landing-audit-record (acceptance check 8x, agent-ops#578), oldest last,
   # so a lookup can take the earliest one at or after a given arm. Not
   # restricted to the window: the record that justified a landing early in
   # the window may predate the window itself. The audit record itself
   # already carries, in its own `approver` field, the tier/verdict/
   # adjudication the older `$verdicts` join below used to reconstruct — this
   # is the primary source for both now, with `$verdicts` kept only as a
-  # fallback for a `landing-armed` event that predates requirement 8x and so
+  # fallback for a `landing-armed` event that predates acceptance check 8x and so
   # can never have a matching record at all (see `audit_record_for` below).
   ([ .[] | select(.event == "landing-audit-record") ]
     | sort_by(.ts // "")) as $audit_records

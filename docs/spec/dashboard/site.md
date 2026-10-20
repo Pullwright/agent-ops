@@ -351,7 +351,7 @@ tick, the work source, the complexity it was armed at, the `enqueued`/
 `auto-merge` method `landing_arm` actually used, and the node that armed it.
 
 Each row is joined to the **`landing-audit-record` that justified it**
-(requirement 8x, D18, agent-ops#578) — the one durable record
+(acceptance check 8x, D18, agent-ops#578) — the one durable record
 `_landing_stage_attempt` assembles and writes at the same moment it arms a
 pull request, rather than a fact this panel re-joins from separate events
 at report time. The join is by `pr_url` and the arming cycle, earliest
@@ -372,11 +372,11 @@ summary line naming how many landings in the window carry no record: an
 unexplained landing is the single most important row this panel can carry,
 and now that a durable per-landing record exists, "the record could not be
 found" and "the record said so" read as different facts, never the same
-silent null. A `landing-armed` from before requirement 8x shipped can
+silent null. A `landing-armed` from before acceptance check 8x shipped can
 never have a matching record — the write it would join to did not yet
 exist — so its Record cell stays `missing` permanently; its tier and
 verdict still render where locatable, from the older `approver-verdict`
-join this panel used before requirement 8x, kept on purely as that
+join this panel used before acceptance check 8x, kept on purely as that
 fallback.
 
 Three things it will not hide, each a way a digest could mislead by omission:

@@ -197,7 +197,7 @@ not a risk to the suite.
 | `.github/workflows/docs.yml` | product | Runs `scripts/check-docs.sh` over agent-ops's own documentation |
 | `.github/workflows/docs-benchmark.yml` | product | Benchmarks agent-ops's own documentation |
 | `.github/workflows/graphql-drift.yml` | product | Checks GraphQL query drift in agent-ops's own `lib/*.sh` |
-| `.github/workflows/requirement-id-collisions.yml` | product | Checks requirement-ID collisions in agent-ops's own `docs/spec/` |
+| `.github/workflows/spec.yml` | product | Checks requirement/acceptance-check/component labels and citations in agent-ops's own `docs/spec/` |
 | `.github/workflows/compose-deploy-reminder.yml` | product | Reminds on a PR touching `deploy/docker/compose.yaml`, which stays product (below) |
 | `.github/workflows/commit-format.yml` | both | Generic Conventional-Commits check any repository in the convention needs |
 | `.github/workflows/closing-keyword.yml` | both | Generic `agent/<n>`-branch closing-keyword check any pipeline-target repository needs |

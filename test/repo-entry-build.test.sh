@@ -10,7 +10,7 @@
 # `ordered_repos_json` — the Co-Ordinator's whole per-repo runtime input.
 #
 # Each of the eight bands is unbounded past this call — issue threads
-# (requirement 3d/#118) and the open tech-debt band (requirement 3t/#310)
+# (component 3d/#118) and the open tech-debt band (requirement 3t/#310)
 # included — and used to ride into jq as eight separate --argjson flags. Past
 # MAX_ARG_STRLEN (131072 bytes) the build died at execve, silently dropping
 # the repo's whole entry from the Co-Ordinator's input for the cycle.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/landing-audit-record.test.sh — the D18 landing audit record
-# (requirement 8x, agent-ops#578): one durable `landing-audit-record` event,
+# (acceptance check 8x, agent-ops#578): one durable `landing-audit-record` event,
 # written by `_landing_stage_attempt` (agent-cycle.sh) at the exact moment it
 # arms a pull request, and the WI-8 dashboard digest's own consumption of it.
 #

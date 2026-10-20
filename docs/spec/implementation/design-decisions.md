@@ -379,7 +379,7 @@ requirements above, which state only what is.
   firings — a day at the historical hourly cadence.
 
 - **Finish-then-continue chains to its cap after real work, and that cost is
-  accepted** (requirement 39, issue #248; surfaced in the review of #268).
+  accepted** (requirement 67, issue #248; surfaced in the review of #268).
   The "sources remain" half of the chain gate counts enabled source
   *categories*, not items, and back-pressure (2.2a) narrows a repo's
   `.sources` to the four finish-work sources rather than to empty — so for
@@ -947,7 +947,7 @@ confirmed by the repo owner on 2026-07-13; no open questions remain.
   the stage produces even when this earlier one could not be answered.
 - **The escalation webhook was promoted to the installation's one notify
   channel rather than left as a filing-failure fallback (issue #1279,
-  requirement 2m).** Everything the pipeline already knew to log — an
+  acceptance check 2m).** Everything the pipeline already knew to log — an
   escalation, a pager transition (requirement 51), a fleet-wide stand-down —
   ended on the dashboard and nowhere else; two incidents (the 2026-08-14
   watchtower stall and the 2026-08-08 mirror corruption) each ran for days

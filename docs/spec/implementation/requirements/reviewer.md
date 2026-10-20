@@ -2,16 +2,16 @@
 
 ### The Reviewer
 
-28. Operates under the same one-shot constraint as the Implementer
+28. <a id="impl-28"></a>Operates under the same one-shot constraint as the Implementer
     (requirement 21): no resumption, no background notification. It waits
     for slow commands — installs, builds, `gh pr checks --watch` — in the
     foreground within the same session rather than ending its turn early.
-29. Reviews the PR against the work order's item and acceptance notes, and
+29. <a id="impl-29"></a>Reviews the PR against the work order's item and acceptance notes, and
     against the target repo's own standards and conventions; re-runs the
     repo's checks, and re-runs requirement 24a's preview check rather than
     trusting the Implementer's — a preview deployment is per head SHA, and any
     fix this stage pushes mints a new one.
-29a. **A large test suite is run in pieces, never as one invocation
+29a. <a id="impl-29a"></a>**A large test suite is run in pieces, never as one invocation
     (agent-ops#734).** The Bash tool this stage's own tool-calling harness
     provides enforces a fixed 10-minute ceiling per command: a command still
     running there is killed and returns no output at all, not even what had
@@ -32,7 +32,7 @@
     findings included, was recorded as a failed attempt with nothing to show
     for it (requirement 30a exists for the same reason, on the findings'
     side; this is the same failure on the test-evidence side).
-30. Where it finds a problem it can fix with confidence, it fixes it
+30. <a id="impl-30"></a>Where it finds a problem it can fix with confidence, it fixes it
     directly on the branch — committing, rebasing onto the current default
     branch, or force-pushing as it judges best, always with
     `--force-with-lease` (permitted only on `branch_prefix` branches, per
@@ -47,7 +47,7 @@
     merge-queue check applies to it here; the `review-feedback` source is the
     one case where it does, since that pull request is never a draft during
     the Reviewer's session (requirement 38f).
-30a. **Emits as it goes, not only at the end.** Requirement 23a's counterpart
+30a. <a id="impl-30a"></a>**Emits as it goes, not only at the end.** Requirement 23a's counterpart
     for the Reviewer, and it binds harder here: an Implementer that is killed
     at least leaves the branch it has been building, whereas a review exists
     only as commits and comments that have reached GitHub. Everything else is
@@ -66,7 +66,7 @@
     review and no comment, so 45 minutes of Opus review produced nothing that
     outlived the clone. A stage cannot be stopped from dying mid-review, but it
     can be stopped from dying with everything still inside it.
-30b. **Reports completion, unconditionally.** Every run posts exactly one more
+30b. <a id="impl-30b"></a>**Reports completion, unconditionally.** Every run posts exactly one more
     comment beyond requirement 30a's findings: a completion comment stating the
     review has finished and what it concluded, posted whether or not
     requirement 30 found anything — a clean PR is otherwise indistinguishable
@@ -88,7 +88,7 @@
     does not become a `blocked` outcome — a comment that could not be written
     is not a review that did not happen — the Reviewer carries on and reports
     its verdict as normal.
-30c. **Reconciles every standing human comment before marking a pull request
+30c. <a id="impl-30c"></a>**Reconciles every standing human comment before marking a pull request
     ready (requirement 31c, agent-ops#533).** A human cannot leave a formal
     `REQUEST_CHANGES` review on this system's own pull requests — every
     pipeline write and every human comment on them land under the same
@@ -127,7 +127,7 @@
     `ready` verdict, refuses the hand-off for any standing comment it finds
     uncited, and — unlike the Reviewer's own read above — also puts the pull
     request back in draft when it does.
-30d. **Filing deferred work inline, and the scope carve-out that goes with it
+30d. <a id="impl-30d"></a>**Filing deferred work inline, and the scope carve-out that goes with it
     (agent-ops#631).** Like the Implementer (requirement 24b), the Reviewer
     may notice genuine deferred work that does not belong in this pull
     request — a design gap in code the diff merely touches, something worth a
@@ -142,7 +142,7 @@
     accompanying code change is, for both stages, never itself grounds to
     flag a defect, correct the `complexity:*` label upward, or read the diff
     as having grown beyond its scope.
-30e. **Verifying every `Defers:` link (D15 as revised, #869/#875/#879).** A
+30e. <a id="impl-30e"></a>**Verifying every `Defers:` link (D15 as revised, #869/#875/#879).** A
     `Defers: #<n>` line the Implementer (or an earlier Reviewer pass) added
     is a claim that issue `#<n>` exists and carries `pw::type:tech-debt` —
     the label is what makes it selectable as this band's own work later, and
@@ -155,7 +155,7 @@
     line is never also a closing keyword for the same `N`: a body caught
     both resolving and deferring the same number is a defect in the body,
     fixed by keeping whichever the diff actually does.
-31. **Confirms CI is passing — every one of the target repo's branch-ruleset
+31. <a id="impl-31"></a>**Confirms CI is passing — every one of the target repo's branch-ruleset
     required status checks green at the pull request's current head commit
     (`gh pr checks --required`), the same subset requirement 31c
     independently re-verifies — and the PR is mergeable, then marks it ready
@@ -172,7 +172,7 @@
     It never approves and never merges. A `ready` verdict is itself re-verified
     against GitHub before any of this runs (requirement 31c) — the Reviewer's
     own confirmation is a model's, and the Script's is not.
-31a. **The handoff is verified, not reported.** Requirement 31 is the pipeline's
+31a. <a id="impl-31a"></a>**The handoff is verified, not reported.** Requirement 31 is the pipeline's
     only irreversible outward act, and requirement 32 has the Reviewer *describe*
     it — two different things. Before recording `pr-ready` the Script asks GitHub
     whether the pull request is a draft (`gh pr view --json isDraft`), and:
@@ -202,7 +202,7 @@
     work — which it would have gone on doing hourly, each round looking
     productive. No component could have noticed: the Reviewer believed it had
     handed off, the Script believed the Reviewer, and only GitHub disagreed.
-31b. **The second half of the handoff: the re-request.** Requirement 31a's flip
+31b. <a id="impl-31b"></a>**The second half of the handoff: the re-request.** Requirement 31a's flip
     is the whole handoff exactly once per pull request. Every round after the
     first begins with a PR that is already ready — a review round the Implementer
     has just answered, above all — so `gh pr ready` is truthfully a no-op, and
@@ -262,7 +262,7 @@
     the model may still do it, the Script asks GitHub whether it happened, and
     where it did not the Script does it. One definition, in `lib/handoff.sh`
     (requirement 34a).
-31c. **A `ready` verdict is confirmed against GitHub before it is acted on, not
+31c. <a id="impl-31c"></a>**A `ready` verdict is confirmed against GitHub before it is acted on, not
     trusted from the Reviewer — and the same confirmation binds every path
     that can flip a draft to ready, not the Reviewer's own handoff alone
     (agent-ops#440).** poetic-fiddle #216 reached
@@ -474,7 +474,7 @@
     the flagged constant, commit `8e62ff6`) before this requirement existed to
     check it, which is itself the confirmation that a script-side gate would
     have found nothing further to do once that fix landed.
-31d. **A pull request that already merged is not handed off, not reviewed by
+31d. <a id="impl-31d"></a>**A pull request that already merged is not handed off, not reviewed by
     the Approver, and not landed against — the Script's own read decides,
     never the Reviewer verdict's word (agent-ops#916, escalation #922).**
     `lib/handoff.sh`'s `pr_merge_state` is the one helper both reads share:
@@ -505,7 +505,7 @@
     merges while you are still reviewing it" is the instruction that
     replaces the improvisation: no replacement pull request, ever.
 
-31e. **A `merge-conflicts` item's rebase-only push carries the standing
+31e. <a id="impl-31e"></a>**A `merge-conflicts` item's rebase-only push carries the standing
     Reviewer verdict forward instead of paying for the engagement again
     (agent-ops#1806).** Resolving a conflict costs three stage runs in the
     ordinary path — Implementer, Reviewer, Approver — because the push moves
@@ -583,7 +583,7 @@
     the head SHA moving and knows nothing of patch-id identity, so a
     `merge-conflicts` push, necessarily a force-push, dismisses the standing
     approval whether or not the diff changed. `run_approver_stage` is the
-    only thing that mints a replacement, and the requirement 8u landing-retry
+    only thing that mints a replacement, and the acceptance check 8u landing-retry
     sweep cannot recover one it never finds: `_landing_retry_sweep_repo`
     requires a currently standing approval and excludes `complexity:high`
     outright. Ending the cycle at this point would therefore leave the pull
@@ -602,7 +602,7 @@
     Anything else — a resolution that changed the diff, a follow-up fix — runs
     the engagement below unchanged.
 
-31f. **The Implementer's own stage-start pays the same advisory merge check
+31f. <a id="impl-31f"></a>**The Implementer's own stage-start pays the same advisory merge check
     requirement 31d already gives the Reviewer, for the same five finishing
     sources whose work order hands it a subject pull request before it ever
     runs (agent-ops#1062).** `review-feedback`, `merge-conflicts` (less a
@@ -612,7 +612,7 @@
     claim a `pr_url` the Co-Ordinator never minted and the Implementer did not
     just raise, so it can be stale the same way the Reviewer's own subject
     can: merged in the gap between the cycle's gather and this stage's
-    launch. Requirement 5c's own pre-flight already asks a related question
+    launch. Requirement 34m's own pre-flight already asks a related question
     earlier in the same cycle (`preflight_branch_merged_reason`, gated to the
     same five sources), but against an ancestry compare and a `source_states_
     json` digest both sampled before the Co-Ordinator engagement — exactly
@@ -639,7 +639,7 @@
     landing attempt is, and the Reviewer's own handoff-time read (requirement
     31d) still guards whatever this stage goes on to produce regardless.
 
-55. **`review_gate_required_checks` also compares the base branch's own
+66. <a id="impl-66"></a>**`review_gate_required_checks` also compares the base branch's own
     ruleset against what actually ran, so a required context with no run at
     all is caught, not read as a vacuous pass (issue #1543).** `gh pr checks
     --required` lists check *runs*; a branch that deletes the workflow, or
@@ -682,7 +682,7 @@
     This is the backstop half of a two-seam fix; requirement 56 is the
     earlier, deterministic half, run once at pull-request time rather than
     waiting for this backstop to catch it at handoff.
-61. **A required context reported more than once against the same head
+61. <a id="impl-61"></a>**A required context reported more than once against the same head
     commit, with at least one of those runs already green, is repaired
     rather than read as a real failure (agent-ops#1978).** A duplicate
     `pull_request` webhook delivery for one push starts every triggered
@@ -743,7 +743,7 @@
     either way, exactly as `review_gate_verdict`'s existing `unknown` already
     treats a `gh` failure as a fact about the platform rather than the pull
     request.
-63. **A repository that configures no CI at all is `clean`, not requirement
+63. <a id="impl-63"></a>**A repository that configures no CI at all is `clean`, not requirement
     31c's conflicting-PR-runs-no-CI trap (agent-ops#2194).** `gh pr checks
     --required` reports both "checks were expected on this pull request and
     are absent" (poetic-fiddle #190's trap) and "this repository runs no CI at
@@ -777,7 +777,7 @@
     security-severity code-scanning alert only when the gate's own reason
     names one, never as a blanket addition to a required-checks failure that
     never implicated one.
-32. Ends with a single JSON object:
+32. <a id="impl-32"></a>Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
     the block's own `detail` under requirement 32a. `blocked` is the only
@@ -816,7 +816,7 @@
     one), so the verdict field *is* the record: requirement 32c's completion
     path files whatever it names, and nothing else the Reviewer writes that
     round survives.
-32a. **A Reviewer that cannot hand off hands back, not out.** Any ending other
+32a. <a id="impl-32a"></a>**A Reviewer that cannot hand off hands back, not out.** Any ending other
     than a pull request the human can see — `blocked`, an unparseable status, or
     a `ready` whose handoff requirement 31a could not make true — is recorded as
     an `attempt-failed` against the item, carrying the `pr_url`. That is a
@@ -842,7 +842,7 @@
     the item is recorded blocked and that the Enabler will re-examine it —
     never that the PR has been left for a human, which under this requirement
     is not true.
-32b. **`complete_handoff`.** An Enabler `unblocked` verdict may carry
+32b. <a id="impl-32b"></a>**`complete_handoff`.** An Enabler `unblocked` verdict may carry
     `complete_handoff: true` on an item whose `pr_url` is set (requirement 35a),
     meaning: this block *is* an unfinished handoff — an open draft this system
     raised, checks green, work done, no unanswered concern — take it out of
@@ -914,7 +914,7 @@
     never a draft. Completing only the flip would clear the block, log a handoff,
     and leave the human as unasked as before. Both handoff paths run both halves,
     or the one that recovers a failure is the one that recovers it incompletely.
-32c. **A subject that merges mid-stage is a completion, not a hand-back
+32c. <a id="impl-32c"></a>**A subject that merges mid-stage is a completion, not a hand-back
     (agent-ops#916, escalation #922).** Requirement 31d's `pr_merge_state`
     read confirming `merged` — at the Reviewer's own stage-start or at the
     handoff, ahead of the stage-failure exit and `$rev_status`'s own branch

@@ -6,7 +6,7 @@
 # The decision recorded on that issue, restated here because it is what this
 # file implements: **both layered, configuration winning** — a repository's
 # own resolved `review_instructions`/`review_context` (its override, or
-# `repository_review.defaults`', requirement 342) hold installation-supplied
+# `repository_review.defaults`', issue #342) hold installation-supplied
 # text; `repo_context_file` additionally admits one file read from the
 # repository under review's own clone, but *only* as context, never as
 # instruction. The reasoning is D19's: text a reviewed repository's
@@ -124,7 +124,7 @@ _review_context_within_clone() {
 
 # review_context_build_json STATE_DIR CLONE_DIR ENTRY_JSON
 # ENTRY_JSON is one config_repository_review_repos() entry (already resolved
-# per requirement 342). Prints `{"instructions": [...], "context": [...]}`:
+# per issue #342). Prints `{"instructions": [...], "context": [...]}`:
 # every configured review_instructions path becomes one `instructions`
 # entry (source "config"); every configured review_context path, plus
 # repo_context_file when it resolves to a readable file inside CLONE_DIR,

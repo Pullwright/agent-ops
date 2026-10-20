@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/chain.sh — finish-then-continue (requirement 39): whether a cycle that
+# lib/chain.sh — finish-then-continue (requirement 67): whether a cycle that
 # just won a claim should chain another selection cycle immediately, instead
 # of waiting for the next cron firing.
 #
@@ -96,7 +96,7 @@ chain_image_behind() {
 # chain_write_roll_pending STATE_DIR MINUTES
 # Write STATE_DIR/roll-pending.json — {"until": <ISO8601, MINUTES from now>}
 # — recording that this cycle yielded a pending image roll instead of
-# chaining (requirement 39, agent-ops#1096).
+# chaining (requirement 67, agent-ops#1096).
 # deploy/docker/watchtower-pre-update.sh reads this back and honours it as an
 # unconditional allow until `until`, which is what actually gets the roll to
 # the node: with nothing chaining, the next cron firing is still MINUTES

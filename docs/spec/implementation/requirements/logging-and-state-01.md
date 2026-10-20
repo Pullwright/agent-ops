@@ -2,7 +2,7 @@
 
 ### Logging and state
 
-33. The shared log is a single JSON Lines file, `state_dir/log.jsonl`,
+33. <a id="impl-33"></a>The shared log is a single JSON Lines file, `state_dir/log.jsonl`,
     appended by the Script (agents report via their final messages; the
     Script translates those into log events) and, for the one event class
     that is mined outside any cycle, by `scripts/publish-revert-rate.sh`'s
@@ -78,7 +78,7 @@
     `merge_budget_apply_decision`) are logged whenever gate 5 of
     `_landing_stage_attempt` (requirement 8d) reaches `merge_budget_decide`
     and the decision is not `arm` — from `run_landing_stage`'s own round and
-    from the requirement 8u landing-retry sweep alike, since both enter that
+    from the acceptance check 8u landing-retry sweep alike, since both enter that
     gate through the same function — carrying `repo`, `cap` and `count`
     throughout, plus `waiting_backlog` on `merge-budget-hold`; `fleet_flag`
     (the write outcome), `reason` (a short, deterministic rendering of the
@@ -485,7 +485,7 @@
     requirement 1b also logs a `stage-end` alone, `stage: "limit-probe"`
     (issue #2239, D30, `lib/standdown.sh`) — ignored by `lib/stage-health.sh`,
     whose stage list does not name it. The model-credential probe of
-    requirement 0h logs a `stage-end` alone the same way, `stage:
+    requirement 2.0h logs a `stage-end` alone the same way, `stage:
     "credential-probe"` (agent-ops#2308, `lib/standdown.sh`) — also ignored by
     `lib/stage-health.sh`, whose stage list does not name it either. An
     `enabler-examined` carries
@@ -578,7 +578,7 @@
     local record, the fleet flag, or both — including a `--enable` run on a
     node with no local record of its own but a live fleet flag, which a
     `record`-only condition used to leave silently absent from the log. A
-    `chained` event (requirement 39 (Finish-then-continue)) is logged by the parent cycle, from its
+    `chained` event (requirement 67 (Finish-then-continue)) is logged by the parent cycle, from its
     own cleanup, immediately before it launches its continuation: `depth` is
     the launching child's own place in the lineage (the parent's plus one) and
     `max_chained_cycles` is the cap in force, so a lineage's length is
@@ -588,7 +588,7 @@
     and `item` — requirements 34 and 34c key on them, so an event that omits
     them cannot pin any state on the item it names, and the omission is
     invisible until you notice the same work being redone.
-33a. **Metering.** Every `stage-end` event additionally carries the per-stage
+33a. <a id="impl-33a"></a>**Metering.** Every `stage-end` event additionally carries the per-stage
     metering record: `model` (the model id passed to the invocation),
     `provider` (the provider that model resolves to, per `lib/model-id.sh` —
     `anthropic` for every record this system has ever written, until a
@@ -646,7 +646,7 @@
     `docs/METERING-SCHEMA.md` is the field-by-field contract: types, units,
     the per-cycle aggregation rule, and what future change is additive versus
     breaking.
-34. Blocked semantics: an item is blocked iff the most recent
+34. <a id="impl-34"></a>Blocked semantics: an item is blocked iff the most recent
     `attempt-failed` / `unblocked` event *for that item* is `attempt-failed`.
     An `attempt-failed` event must carry enough detail for a future
     Co-Ordinator to judge whether the blocker has since been removed.
@@ -674,7 +674,7 @@
       under the slug the repository had before the rename is never cleared
       by an `unblocked`/`item-void` logged under the slug it has now
       (agent-ops#2359).
-34a. Whatever computes requirement 34 must be the **only** definition of it.
+34a. <a id="impl-34a"></a>Whatever computes requirement 34 must be the **only** definition of it.
     Anything else that reports blocked items — notably the monitoring
     dashboard (`docs/spec/dashboard/README.md`) — shares that one
     implementation rather than reimplementing the rule. Two copies drift, and
@@ -693,7 +693,7 @@
     builds, rather than each deriving its own answer from `PROVIDER_LANES`
     and `fleet/mix.json`. A second computation of any of these is the same
     fault this requirement describes, wearing a different value.
-34c. Void semantics: an item is void iff the most recent `item-void` /
+34c. <a id="impl-34c"></a>Void semantics: an item is void iff the most recent `item-void` /
     `unvoided` event *for that item* is `item-void`. The rule is requirement
     34's shape over a different pair of events, and all four of its details
     apply unchanged — key on `repo`+`item`, an event naming no item voids
@@ -718,7 +718,7 @@
       safe where clearing is not — a wrong unvoid costs a full cycle, cycle after
       cycle, until someone notices — but it is not free, and requirement 34d is
       what makes it safe enough to keep.
-34d. **Every `item-void` a stage writes is corroborated before it is made
+34d. <a id="impl-34d"></a>**Every `item-void` a stage writes is corroborated before it is made
     permanent.** `void_guard_reason` in `lib/void-guard.sh` is the one
     entry point the Co-Ordinator (requirement 18), the Enabler (requirement
     36a's `void` row) and the Implementer (requirement 9b) all call before
@@ -989,7 +989,7 @@
     and carried the same gap regardless — only checking the citation does,
     which is why the guard is shared rather than duplicated per stage.
 
-34e. **Under-specification is a class of block, not a parallel state.** Each
+34e. <a id="impl-34e"></a>**Under-specification is a class of block, not a parallel state.** Each
     well-formed `needs_refinement` entry (requirement 16a) is recorded by the
     **Script** as an `attempt-failed` against that repo+item with
     `stage: "coordinator"` and `kind: "needs-refinement"`, the entry's `missing`
@@ -1120,7 +1120,7 @@
     Co-Ordinator, Implementer, or a stage not yet written — inherits the same
     risk the moment its own verdict's free-text fields can describe the label
     this requirement is about to add.
-34f. **The human's escape hatch reaches the human.** Requirement 34c reserves
+34f. <a id="impl-34f"></a>**The human's escape hatch reaches the human.** Requirement 34c reserves
     clearing a void to a human and gives them one interface: a line appended by
     hand to `state_dir/log.jsonl`. That interface is unreachable in the
     deployment this system actually has — the nodes are containers and
@@ -1190,7 +1190,7 @@
     whose void has been settled, actioned and stale for a month is
     unambiguously asking for the work back, and demanding the label on top
     of the reopen would be ceremony with no added authority.
-34g. **A human's own hand-applied label is a report, not a state.** Requirement
+34g. <a id="impl-34g"></a>**A human's own hand-applied label is a report, not a state.** Requirement
     34e's projection is deliberately one-way for the block *it* creates: the
     label mirrors what the Co-Ordinator already reported, and nothing reads it
     back. That left the one person the mechanism serves unable to invoke it —
@@ -1258,7 +1258,7 @@
     label is only ever read here, never applied or removed by this mechanism),
     so there is no outward change for requirement 12 to forbid.
 
-34h. **Where the two states meet, void wins.** An item may carry both marks at
+34h. <a id="impl-34h"></a>**Where the two states meet, void wins.** An item may carry both marks at
     once, and routinely does: `item-void` is a state of its own and clears no
     block, so a `void` verdict — the Enabler's ordinary way of retiring work
     that turned out to be already done (requirement 36a) — leaves the

@@ -2,7 +2,7 @@
 
 ### The Approver — requirements, continued (part 2 of 2; 51–55: Fleet-level invariants (the pager)…)
 
-51. **Fleet-level invariants (the pager).** Issue #1126's own four-week
+51. <a id="impl-51"></a>**Fleet-level invariants (the pager).** Issue #1126's own four-week
     incident table named fourteen fleet-wide failures, none surfaced by a
     pipeline-filed ticket: the silent ones sat four days to a month while
     the repair loop that does escalate closes what it catches at a 2.0 h
@@ -79,7 +79,7 @@
     evaluates clear and its issue is closed. `pager_state_for`/
     `pager_last_event` derive the current state (`clear`/`candidate`/`fired`)
     purely from the latest of these four for a key, on the same no-state-file
-    terms `token_expiry_escalated_for` (requirement 2m) already uses for a
+    terms `token_expiry_escalated_for` (acceptance check 2m) already uses for a
     single-shot escalation — any node, in any window, agrees with every
     other about what has already happened.
 
@@ -762,7 +762,7 @@
     page-rendering section documents the `pager-firing` banner and node-card
     badge this requirement's `nodes` field feeds.
 
-53. **Landing-refusal pre-fetch (issue #979).** Requirement 8d gate 4
+53. <a id="impl-53"></a>**Landing-refusal pre-fetch (issue #979).** Requirement 8d gate 4
     (`_landing_stage_attempt`, `lib/landing.sh`) refuses to arm a pull request
     over an unreconciled human comment (`reconciliation-unanswered:`) or an
     unreadable comment-reconciliation read (`reconciliation-unreadable:`) —
@@ -887,7 +887,7 @@
     `lib/standdown.sh`'s own call site passes `union_log` alongside the
     existing `cycle_id`/`node_name` arguments.
 
-55. **Resource usage and budgets, self-measured (D14, issue #606).** #755
+55. <a id="impl-55"></a>**Resource usage and budgets, self-measured (D14, issue #606).** #755
     gave every container a `mem_limit`/`cpus` ceiling (this file's own
     "Every container carries a resource ceiling" design decision, above) and
     requirement 2.0g checks the declared sum against the host, but neither

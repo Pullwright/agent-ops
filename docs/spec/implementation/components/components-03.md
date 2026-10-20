@@ -1,8 +1,8 @@
 ## Components
 
-### Components — continued (part 3 of 3; 17e–24b)
+### Components — continued (part 3 of 3; 17e–24c)
 
-17e. `scripts/roll-changelog.sh` implementing requirement 25e: with no
+17e. <a id="impl-c-17e"></a>`scripts/roll-changelog.sh` implementing requirement 25e: with no
     marker present, renames the file's whole `[Unreleased]` section
     unchanged to the fixed migration heading and sets the marker to the
     fixed migration commit, running the assembler not at all; otherwise
@@ -23,7 +23,7 @@
     `deploy/docker/render-crontab.sh`; unit-tested against a fixture git
     repository and a stubbed `gh` (`test/roll-changelog.test.sh`); must pass
     `shellcheck`.
-18. `scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
+18. <a id="impl-c-18"></a>`scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
     `pr_label`-labelled pull requests (bounded to the most recently updated),
     and for each carrying an `agent-ops:closes-issue` marker whose named
@@ -35,7 +35,7 @@
     for the Script to log. Capped at three actions per repo per call, the
     overflow reported rather than silent. `SWEEP_GH` stubs `gh` for tests.
     Unit-tested (`test/sweep-closed-issues.test.sh`); must pass `shellcheck`.
-19. `scripts/close-void-github-items.sh` implementing requirement 34k: given
+19. <a id="impl-c-19"></a>`scripts/close-void-github-items.sh` implementing requirement 34k: given
     a repo slug, a node name, a cycle id and (on stdin) that repo's void
     candidates already filtered to the id shapes `lib/work-gone.sh` defines
     (a bare issue number, `pr-<n>-…`) and to what
@@ -60,7 +60,7 @@
     overflow reported rather than silent. `SWEEP_GH` stubs `gh` for tests.
     Unit-tested (`test/close-void-github-items.test.sh`); must pass
     `shellcheck`.
-20. `lib/review-gate.sh` implementing requirement 31c: given a pull request
+20. <a id="impl-c-20"></a>`lib/review-gate.sh` implementing requirement 31c: given a pull request
     URL and the repository's default branch, `review_gate_verdict` prints
     `clean`, `dirty<TAB>reason` or `unknown<TAB>reason` — every required
     status check green at the current head commit
@@ -157,7 +157,7 @@
     `review_gate_unknown_streak_verdict`/`review_gate_degraded_since` above.
 
     Unit-tested (`test/review-gate.test.sh`); must pass `shellcheck`.
-20a. `lib/reconciliation-gate.sh` implementing requirement 31c's
+20a. <a id="impl-c-20a"></a>`lib/reconciliation-gate.sh` implementing requirement 31c's
     reconciliation gate (agent-ops#533): given a pull request URL,
     `reconciliation_gate` prints `clean`, `dirty<TAB>reason` or
     `unknown<TAB>reason` — the same three-way shape `lib/review-gate.sh` and
@@ -225,7 +225,7 @@
     empty URL is `dirty`, a bug in the caller rather than a degraded node.
     `RECONCILIATION_GATE_GH` stubs `gh` for tests. Unit-tested
     (`test/reconciliation-gate.test.sh`); must pass `shellcheck`.
-21. `scripts/pickup-metrics.sh` — a read-only operator report, like
+21. <a id="impl-c-21"></a>`scripts/pickup-metrics.sh` — a read-only operator report, like
     `scripts/watch-node.sh` (component 11) and `scripts/check-node-compose.sh`
     (component 12): answers issue #248's acceptances 4 and 5 from the union
     event log and this repository's own `config.json`, itself adding no event
@@ -300,7 +300,7 @@
     first-seen race between two nodes, and a legacy numeric-`item`,
     node-less `selection` (`test/pickup-metrics.test.sh`); must pass
     `shellcheck`.
-22. `scripts/autonomy-stage-report.sh` — a read-only operator report, like
+22. <a id="impl-c-22"></a>`scripts/autonomy-stage-report.sh` — a read-only operator report, like
     `scripts/pickup-metrics.sh` (component 21): for each `config.json` repository
     (or `--repo` override), prints its `merge_autonomy_configured_level`, the
     D18 rollout stage (agent-ops#402, 2026-08-18 amendment) that level
@@ -391,7 +391,7 @@
     reporting `divergence` `unavailable`, never `met`, proving a zero over an
     incomplete read is never mistaken for a confirmed zero; must pass
     `shellcheck`.
-22a. `lib/verdict-fate.sh` and `scripts/verdict-fate-report.sh` implement the
+22a. <a id="impl-c-22a"></a>`lib/verdict-fate.sh` and `scripts/verdict-fate-report.sh` implement the
     D18 Approver-verdict/human-action divergence record (agent-ops#573, a WI
     of umbrella #402) — the pairing component 22's own `divergence` criterion
     consumes rather than recomputes.
@@ -495,7 +495,7 @@
     no benefit — but shares `lib/verdict-fate.sh`'s join and classification
     logic unchanged, so a change to the classification rules changes both
     call sites at once, deliberately.
-22b. `scripts/github-budget-report.sh` — a read-only operator report, like
+22b. <a id="impl-c-22b"></a>`scripts/github-budget-report.sh` — a read-only operator report, like
     components 21, 22 and 22a: over the `github-budget` events requirement
     2.0d records — this node's `state_dir/log.jsonl` plus every peer's
     mirrored copy, or exactly the log files given as arguments — prints, per
@@ -522,7 +522,7 @@
     event, makes no network call and changes nothing. Unit-tested
     (`test/github-budget-report.test.sh`); must pass `shellcheck`.
 
-22c. `lib/gh-shim.sh` and `scripts/gh-shim.sh` — the `gh` transport shim
+22c. <a id="impl-c-22c"></a>`lib/gh-shim.sh` and `scripts/gh-shim.sh` — the `gh` transport shim
     (requirement 2.0e, agent-ops#1084), and, since agent-ops#1021, the front
     door for the forge authoring App's on-demand credential seam (D18
     decision 1 as amended, component 14h): the executable, installed on
@@ -655,7 +655,7 @@
     none prints nothing;
     must pass `shellcheck`.
 
-23d. `lib/tech-debt-file.sh` implementing the filing half of requirements 36c,
+23d. <a id="impl-c-23d"></a>`lib/tech-debt-file.sh` implementing the filing half of requirements 36c,
     42a and 32c — the Approver and Enabler must never write to GitHub or a
     branch themselves, and the Reviewer whose subject merged mid-pass no
     longer has one to write to (requirement 31d), so this is what the Script
@@ -745,7 +745,7 @@
       Default` section plus `PROVENANCE`. A labelled create that fails is
       retried once unlabelled (`issue_create_with_retry`, `lib/issue-file.sh`)
       — a repository whose `pw::type:tech-debt` label the ensure pass
-      (component 6a) has not reached yet — exactly as `techdebt_file_issue`'s
+      (requirement 6a) has not reached yet — exactly as `techdebt_file_issue`'s
       own `pw::owner-decision` retry above, logged to `tech-debt-file.err`.
       Nothing reconciles the result: the filed issue
       carries no `pw::type:tech-debt` label, so it is invisible by
@@ -762,7 +762,7 @@
       replaced, this function has no rollback of its own to test.
     - `TOKEN`, given to either function, runs every `gh` call under that
       identity (`GH_TOKEN="$TOKEN"`) — the Approver's own minted App token
-      (`approver_token_get`, `lib/approver-token.sh`, requirement 14b), the
+      (`approver_token_get`, `lib/approver-token.sh`, component 14b), the
       same one `approver_post_review` (component 14c) already posts its
       review under. Omitted, every call runs under the
       ordinary pipeline login, explicitly (`env -u GH_TOKEN`) rather than
@@ -803,7 +803,7 @@
     `lib/enabler.sh` and `lib/merge-observed.sh` the same way
     `test/approver-wiring.test.sh` and `test/enabler-verdicts.test.sh` already
     do for the rest of either stage's own wiring. Must pass `shellcheck`.
-23f. `scripts/release-pending-reservations.sh` implementing requirement 17g's
+23f. <a id="impl-c-23f"></a>`scripts/release-pending-reservations.sh` implementing requirement 17g's
     reservation-release retry sweep — the durable half of TD-PPagop-26082427,
     behind component 23d's own marker-writing half. A no-op (exit 0, no `gh`
     call at all) where `state_repo` is unset. Otherwise: lists every
@@ -845,7 +845,7 @@
     two markers naming different target repositories each handled
     independently); must pass
     `shellcheck`.
-23g. `.github/workflows/tech-debt-close-guard.yml` and
+23g. <a id="impl-c-23g"></a>`.github/workflows/tech-debt-close-guard.yml` and
     `scripts/tech-debt-close-guard.sh` implement requirement 25b's advisory
     close-guard: on every `issues` `closed` event carrying `pw::type:tech-debt`
     (filtered at the job level, so an unlabelled issue's close never checks
@@ -889,7 +889,7 @@
     reported as a warning; a failed comments fetch reported as a warning with
     no comment posted and no graphql call made; malformed arguments exiting
     2); must pass `shellcheck`.
-24. `scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
+24. <a id="impl-c-24"></a>`scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
    requirement 52's generated-table-of-contents property, for the files
    `lib/markdown-scan.sh`'s `TOC_FILES` (the own-heading kind) and
    `TOC_DIR_FILES` (the directory-wide kind) list, matching the markers by
@@ -930,7 +930,7 @@
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`
    runs `--check` on every pull request and on push to `main`, modelled on
    `config-table.yml`. Must pass `shellcheck`.
-24a. `scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh`,
+24a. <a id="impl-c-24a"></a>`scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh`,
    `lib/docs-benchmark-report.sh`, `test/docs-benchmark/questions.jsonl` and
    `.github/workflows/docs-benchmark.yml` implementing requirement 52a: the
    documentation benchmark, a developer tool that no pipeline runs. Each
@@ -1011,7 +1011,7 @@
    `DOCS_BENCHMARK_QUESTIONS`, `DOCS_BENCHMARK_REPORT_DIR` and
    `DOCS_BENCHMARK_SOURCE` let the test run the whole script against a stub
    `claude`. Acceptance check 52a. Must pass `shellcheck`.
-24b. `scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,
+24b. <a id="impl-c-24b"></a>`scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,
    `scripts/docs-phrasing-ratchet.tsv` and `.github/workflows/docs.yml`
    implementing requirement 52b: the five offline documentation checks
    `toc.yml` and `config-table.yml` do not make. With no arguments or with
@@ -1048,4 +1048,23 @@
    of fixture documents and runs the shipped script against it, so no
    scenario's break leaks into another's baseline. Acceptance check 52b.
    Must pass `shellcheck`.
+24c. <a id="impl-c-24c"></a>`scripts/spec.sh` and `.github/workflows/spec.yml` implementing
+   requirement 52c: unique, linkable requirement/acceptance-check/component
+   labels and a validated citation of one, across `docs/spec/implementation/`,
+   `docs/spec/review.md` and `docs/spec/monitor.md` (issue #2095). `show`
+   and `where` look a label up against the committed `docs/spec/index.json`
+   rather than the raw spec files; `check` re-derives every anchored label
+   from those files directly, fails on a duplicate within a (specification,
+   sequence) pair, and fails on a citation elsewhere in the repository that
+   dangles or names the wrong one of the nine (specification, sequence)
+   kinds, a known violation ratcheted away in `scripts/spec-check-ratchet.tsv`
+   only at the exact file and line it names; `index` renders the committed
+   index, or (`--check`) fails if it is stale against the specs' own current
+   anchors. Read-only except for `index` writing `docs/spec/index.json`
+   itself; bash and `jq` only, no network. `.github/workflows/spec.yml` runs
+   `check` and `index --check` on every pull request, on `merge_group` and
+   on push to `main`, ungated by `paths:`. `test/spec.test.sh` builds a
+   scratch repository carrying one fixture label of each of the nine kinds,
+   plus a wrong-kind and a dangling citation to break `check` against.
+   Acceptance check 52c. Must pass `shellcheck`.
 

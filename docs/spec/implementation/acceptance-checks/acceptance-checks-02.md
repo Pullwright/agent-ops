@@ -1,8 +1,8 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 2 of 7; items 2m–7f)
+### Acceptance checks — continued (part 2 of 8; items 2m–7f)
 
-2m. **The installation has one push-notification channel, and everything the
+2m. <a id="impl-ac-2m"></a>**The installation has one push-notification channel, and everything the
    fleet already knows to log about an escalation, a page, or a stand-down
    also reaches it (issue #1279).** `notify_post` (`lib/notify.sh`) is the
    whole of it: given `notify_webhook_url` (fleet-wide, `escalation_webhook_url`
@@ -15,7 +15,7 @@
    - `escalation` — `escalation-filed` on every fresh issue
      `create_escalation_issue` creates (never its own duplicate-guard reuse);
      `escalation-unfiled` on every filing failure (`escalation_webhook_notify`,
-     `lib/enabler.sh` — the whole of requirement 2m before this rewrite, now
+     `lib/enabler.sh` — the whole of acceptance check 2m before this rewrite, now
      one event class among three rather than the channel's only job);
      `escalation-closed` on the one retire path living alongside
      `create_escalation_issue` in the same file, `crash_loop_retire_resolved`
@@ -49,7 +49,7 @@
 
    An event whose class is not a member of `notify_events` is dropped before
    `notify_webhook_url` is even read — never sent, never logged. Every
-   guarantee requirement 2m always made carries over unchanged: no `gh`/
+   guarantee acceptance check 2m always made carries over unchanged: no `gh`/
    `GH_TOKEN` anywhere in this path, best-effort (a POST failure logs one
    local `notify-failed` and never propagates), `https://`-only on
    `notify_webhook_url` and `escalation_webhook_url` (the schema's own
@@ -181,7 +181,7 @@
    `notify-failed` naming the key while leaving the verdict on both paths
    exactly as it was — 1 for the failed filing, 0 and the issue URL for the
    successful one.
-2n. **A cycle does not start work the host has no room to finish, on either
+2n. <a id="impl-ac-2n"></a>**A cycle does not start work the host has no room to finish, on either
    its clone or its writable state, and the threshold it is judged against is
    derived from what the fleet's clones actually need rather than a fixed
    constant alone (requirement 2.0c, agent-ops#756, agent-ops#992 and
@@ -260,7 +260,7 @@
    free space actually remains and whatever footprint is recorded — the same
    unconditional off switch the gate short-circuits on, so the two cannot
    disagree about whether the check is on at all.
-2n-i. **A cycle does not start work the host has no memory to run (requirement
+2n-i. <a id="impl-ac-2n-i"></a>**A cycle does not start work the host has no memory to run (requirement
    2.0f).** `test/memory.test.sh` passes: `memory_available_kb` reads
    MemAvailable rather than MemFree and is empty (never `0`) when
    `/proc/meminfo` cannot be read; `memory_verdict` reads `low` only when
@@ -323,7 +323,7 @@
    first sample establishes the baseline silently — this check needs no
    ceiling to be correctly configured first, so it still fires on a
    `livelocked` or `unconfirmed` node.
-2n-ii. **A cycle does not start work that overcommits the host it shares with
+2n-ii. <a id="impl-ac-2n-ii"></a>**A cycle does not start work that overcommits the host it shares with
    its siblings (requirement 2.0g, agent-ops#757).** `test/host-budget.test.sh`
    passes: `host_budget_declared_mem_bytes`/`host_budget_declared_cpu_nanos`
    sum only `"running"` entries carrying a numeric ceiling, read `0` for an
@@ -366,7 +366,7 @@
    `lib/memory.sh`'s own already-tested `memory_total_kb` closely enough that
    a second dedicated unreadable-path test would add no coverage `test/
    memory.test.sh` does not already give the same arithmetic.
-2c. `scripts/gather-merge-conflicts.sh Poetic-Poems/does-not-exist autonomous-agent agent/`
+2c. <a id="impl-ac-2c"></a>`scripts/gather-merge-conflicts.sh Poetic-Poems/does-not-exist autonomous-agent agent/`
    prints `[]` and exits 0 — a missing repo, a disabled feature, or an API error
    never aborts the cycle. Its candidate rule, including the `bot`,
    `rebase_requested`, `superseded_by` and `superseded_evidence` fields on a
@@ -375,7 +375,7 @@
    API, `scripts/gather-merge-conflicts.sh Poetic-Poems/poetic-fiddle
    autonomous-agent agent/` reports poetic-fiddle #129 (issue #250's acceptance
    test) as a `bot: true` candidate.
-2z. `scripts/gather-dequeued.sh Poetic-Poems/does-not-exist autonomous-agent
+2z. <a id="impl-ac-2z"></a>`scripts/gather-dequeued.sh Poetic-Poems/does-not-exist autonomous-agent
    agent/` prints `[]` and exits 0 — a missing repo, a disabled feature, or an
    API error never aborts the cycle (TD-PPagop-26081409, requirement 3z). Its
    candidate rule — the `MERGEABLE`-only gate that keeps it from ever
@@ -387,7 +387,7 @@
    the `dequeued_at` ordering, and the head-SHA-scoped ref — is
    regression-tested (through the real script, via `DEQUEUED_GH`/
    `MERGE_QUEUE_GH`) in `test/gather-dequeued.test.sh`.
-53. `scripts/gather-landing-refusals.sh o/r autonomous-agent agent/
+53. <a id="impl-ac-53"></a>`scripts/gather-landing-refusals.sh o/r autonomous-agent agent/
    /path/to/empty-union-log` prints `[]` and exits 0 — a missing repo, an
    empty or unreadable union log, or an API error never aborts the cycle
    (requirement 53, issue #979). Its candidate rule — the class filter on the
@@ -424,7 +424,7 @@
    dispatch and `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m) name the
    same set, since the two disagreeing is what mints a fresh branch for a
    source whose pull request already exists.
-62. **A persistent landing refusal posts, and a cleared one edits, the one
+62. <a id="impl-ac-62"></a>**A persistent landing refusal posts, and a cleared one edits, the one
    notice comment (requirement 62, issue #1979).** `test/landing.test.sh`
    passes: `_landing_refusal_persistent` reads `ineligible`, `autonomy-level`,
    `kill-switch`, `open-question`, `protected-path-cooloff`,
@@ -474,7 +474,7 @@
    `merge_budget_decide`'s own `hold`/`refuse` — out of scope, per
    requirement 62's own note that it is a distinct vocabulary `_landing_
    refuse` never sees.
-2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
+2h. <a id="impl-ac-2h"></a>**Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its
    strictly-newer-version supersession pick are regression-tested in
@@ -487,7 +487,7 @@
    array it returns; an already-nudged or superseded candidate is neither
    commented on nor dropped; a non-bot candidate is untouched; a failed post is
    recorded but still drops nothing extra to retry next cycle.
-2d. **Issue priority is read, defaulted and fingerprinted.**
+2d. <a id="impl-ac-2d"></a>**Issue priority is read, defaulted and fingerprinted.**
    `test/issue-priority.test.sh` passes: against a stubbed issues endpoint,
    `scripts/gather-source-state.sh` bands each issue by its `Priority` issue
    field; an issue with no `issue_field_values`, with values but no `Priority`
@@ -498,7 +498,7 @@
    run. Against the real API,
    `scripts/gather-source-state.sh Poetic-Poems/poetic-fiddle main` prints
    `ok: true` with a `p` on every issue.
-2e. **Issues arrive pre-fetched, filtered, whole-thread and fingerprinted.**
+2e. <a id="impl-ac-2e"></a>**Issues arrive pre-fetched, filtered, whole-thread and fingerprinted.**
    `test/issues-prefetch.test.sh` passes: against a stubbed issues endpoint,
    `scripts/gather-issues.sh` drops an assigned issue, a `Blocked`-labelled
    issue (whatever the case), and a pull request from `candidates`, while a
@@ -517,7 +517,7 @@
    carries. Against the real API, `scripts/gather-issues.sh
    Poetic-Poems/poetic-fiddle` prints a `candidates` array whose entries all
    carry `comments` and a four-name `priority`.
-2j. **Tech-debt arrives pre-fetched, pre-excluded, and its verdict is
+2j. <a id="impl-ac-2j"></a>**Tech-debt arrives pre-fetched, pre-excluded, and its verdict is
    corroborated (requirement 3t).** `test/gather-tech-debt.test.sh` passes:
    against a stubbed issues endpoint, `scripts/gather-tech-debt.sh` prints one
    entry per open `pw::type:tech-debt`-labelled issue that survives the
@@ -554,7 +554,7 @@
    `none-selected` logs **no** contradiction warning and keeps its fingerprint,
    because requirement 2.2a empties `tech_debt` along with `issues` and the
    eligible set is read after that narrowing.
-2k. **Blocked/void exclusion reaches every pre-fetched band, `issues`
+2k. <a id="impl-ac-2k"></a>**Blocked/void exclusion reaches every pre-fetched band, `issues`
    included, and `void` never reaches the Co-Ordinator (requirement 3u, issue
    #320).** `test/cycle-state.test.sh` passes: `exclude_blocked_or_void_items`,
    lifted the same way `test/verdict-corroboration.test.sh` already lifts it,
@@ -610,7 +610,7 @@
    (`test/noop-skip.test.sh`) is unaffected and still hashes both extracts,
    untrimmed, exactly as before this requirement.
 
-2j-i. **The merge reconciles repositories correctly, and a rejected verdict
+2j-i. <a id="impl-ac-2j-i"></a>**The merge reconciles repositories correctly, and a rejected verdict
    costs a mechanical pick, never the cycle (requirements 15z, 3v; issue
    #587).** `test/coordinator-merge-fallback.test.sh` passes, against
    `run_coordinator_stage_attempt`, `fallback_select_candidate`,
@@ -709,7 +709,7 @@
      naming the contract violation ("selected:true but returned no candidates"),
      contributes nothing to the merged candidates, and is distinguished from a
      non-empty list, which is carried into the merge as before.
-2j-ii. **The corroboration covers every pre-fetched band (requirement 3x,
+2j-ii. <a id="impl-ac-2j-ii"></a>**The corroboration covers every pre-fetched band (requirement 3x,
    issue #322).** `test/verdict-corroboration.test.sh` passes:
    `coordinator_eligible_items` emits `{repo, item, source}` for each band the
    repo's own `sources` lists and nothing for a band it does not (the
@@ -747,7 +747,7 @@
    exempts nothing, matching the function's behaviour before this change; and
    malformed trimmed JSON degrades to exempting nothing rather than
    everything.
-2j-iii. **A `needs_refinement` block against an entry the fit ladder trimmed
+2j-iii. <a id="impl-ac-2j-iii"></a>**A `needs_refinement` block against an entry the fit ladder trimmed
    this cycle is refused, never recorded, and the completeness check owes no
    account of it either (requirement 34e's fourth refusal, requirement 3x's
    matching exemption; agent-ops#683).** `test/coordinator-input.test.sh`
@@ -796,7 +796,7 @@
    trimmed, refuses it and names the rung. Every one of those assertions
    fails against the pre-fix gate, which is what the empty-input fixtures
    above could not do.
-2f. **A preview nobody can reach is never reported as a healthy one
+2f. <a id="impl-ac-2f"></a>**A preview nobody can reach is never reported as a healthy one
    (requirement 24a).** `test/preview-deploy.test.sh` passes: against a stubbed
    `gh` and a stubbed Vercel that answers the login flow to any request not
    carrying the project's bypass secret, a built and reachable preview is exit
@@ -844,7 +844,7 @@
    credential-presence check through a real `scripts/doctor.sh` run, asserting
    it warns rather than fails when a `"vercel"`-configured repo's named
    variable is unset on the node it runs on.
-2g. **Every pipeline comment is visibly attributed (requirement 9d).**
+2g. <a id="impl-ac-2g"></a>**Every pipeline comment is visibly attributed (requirement 9d).**
    `test/comment-identity.test.sh` passes: `pipeline_actor_label` returns the
    right display name for each of `script`, `coordinator`, `implementer`,
    `reviewer`, `enabler`, `review-script`, `project-reviewer` and `monitor`,
@@ -863,8 +863,8 @@
    a comment from the activity clock, and that all three prompts (now
    including `prompts/implementer.md`) still carry
    `PIPELINE_COMMENT_MARKER_PREFIX`.
-3. A second invocation while one holds the lock exits without acting.
-3a. **The lock-held case above costs a `stat` and a `kill -0`, never the
+3. <a id="impl-ac-3"></a>A second invocation while one holds the lock exits without acting.
+3a. <a id="impl-ac-3a"></a>**The lock-held case above costs a `stat` and a `kill -0`, never the
    fleet-log union (requirement 1; agent-ops#2312).** `test/lock-skip-before-
    union.test.sh` passes: the lock pre-check that recognises a live,
    not-yet-stale holder is defined and called in `agent-cycle.sh` before the
@@ -877,13 +877,13 @@
    the correct answer under a `ulimit -v` of 50,000 KB — a bound neither
    reader's pre-fix form (a whole-union `jq -s`/`jq -rs` slurp) can pass —
    and `label_own_actions_map`, audited against the same question, does too.
-4. A simulated stale lock (fake lock file, old timestamp, dead PID) is taken
+4. <a id="impl-ac-4"></a>A simulated stale lock (fake lock file, old timestamp, dead PID) is taken
    over with a logged warning. A simulated foreign lock (fake lock file
    naming a different `host`, fresh timestamp, a pid that is alive here
    because it collides with an unrelated local process) is taken over
    immediately with a logged warning, and that local process is left
    running.
-4a. **A signal leaves a record, a released claim, and no orphaned model
+4a. <a id="impl-ac-4a"></a>**A signal leaves a record, a released claim, and no orphaned model
    (requirement 9c).** `test/signal-exit.test.sh` passes: with the signal
    machinery lifted from `agent-cycle.sh` (and from `review-cycle.sh`), a
    TERM delivered mid-stage kills the stub stage's own process group, logs
@@ -894,7 +894,7 @@
    requirement-1 takeover grace TERMs a live stale holder, proceeds as soon
    as the holder exits rather than sleeping out the full grace, and still
    takes the lock over.
-5. An injected `limit-hit` event with a future `resume_at` and
+5. <a id="impl-ac-5"></a>An injected `limit-hit` event with a future `resume_at` and
    `reset_known: true` causes a stand-down with no probe launched; an expired
    one does not stand down. With `reset_known: false`, the cycle launches
    exactly one probe: a stubbed `claude` answering a clean envelope yields a
@@ -904,7 +904,7 @@
    with no output changes no limit state and the reason ends
    `(probe: inconclusive)`. `--dry-run` with the same injected event launches
    no probe.
-5a. **A crash loop, of either class and in each configured repository
+5a. <a id="impl-ac-5a"></a>**A crash loop, of either class and in each configured repository
    independently, is detected once and escalated once (requirement 2.7).**
    `test/crash-loop.test.sh` passes: for
    `crash_loop_verdict`, a stream of threshold-many consecutive same-detail
@@ -1020,7 +1020,7 @@
    nothing extra and names no credential.
    back-pressure, and the logged reason states the count's composition
    (`N ready + N draft + N unraised claim(s)`).
-5b. **A personal access token's own expiry is read, recorded, and escalated
+5b. <a id="impl-ac-5b"></a>**A personal access token's own expiry is read, recorded, and escalated
    once per credential (requirement 2.7a).** `test/token-expiry.test.sh` passes:
    `token_expiry_parse` turns a `GitHub-Authentication-Token-Expiration`
    header value into an ISO-8601 UTC instant and a day count that floors
@@ -1045,7 +1045,7 @@
    block falls through and the cycle proceeds — unlike requirement 2.0b's,
    this check never stands the cycle down, because a token that has not yet
    expired blocks nothing the cycle needs.
-6a. **The switch stops both pipelines and lets go by itself.**
+6a. <a id="impl-ac-6a"></a>**The switch stops both pipelines and lets go by itself.**
    `--disable 'testing'` then a plain invocation of *both* `agent-cycle.sh` and
    `review-cycle.sh`: each logs a stand-down carrying the reason, exits 0, and
    launches no `claude`. `--enable` restores both. Then plant a record whose
@@ -1055,7 +1055,7 @@
    future one. Assert the ambiguous cases resolve toward *disabled*: a
    truncated record, and one whose `expires_at` is gibberish, both keep the
    pipeline down.
-6c. **A review round is answered exactly once.** With a PR carrying an
+6c. <a id="impl-ac-6c"></a>**A review round is answered exactly once.** With a PR carrying an
    unanswered `CHANGES_REQUESTED`, a cycle must select it (`source:
    "review-feedback"`, `item` the round's ref, `branch` the PR's existing
    branch) and the Implementer must push to that branch without opening
@@ -1070,7 +1070,7 @@
    cycle looks productive. Assert the reopen too: a *new* review after the
    agent's push makes it a candidate again under a *new* ref, or a round that
    once went `blocked` will swallow the human's next attempt to unstick it.
-6d. **Back-pressure cannot deadlock the pipeline (requirement 2.2a).** Set
+6d. <a id="impl-ac-6d"></a>**Back-pressure cannot deadlock the pipeline (requirement 2.2a).** Set
    `max_open_agent_prs` to 0 with a *finishing* candidate present — a
    review-feedback round, a merge-conflicted PR, a dequeued PR *or* an abandoned
    draft: the cycle
@@ -1082,7 +1082,7 @@
    conflicts, the very slots the cap is counting — can still dig itself out;
    without it, the state the pipeline is least able to escape is the one it is
    guaranteed to reach.
-6e. **An abandoned draft is finished, not restarted (requirements 3e, 15c).**
+6e. <a id="impl-ac-6e"></a>**An abandoned draft is finished, not restarted (requirements 3e, 15c).**
    With an open *draft* PR carrying `pr_label` on a `branch_prefix`
    branch whose `updatedAt` is older than `abandoned_draft_after_hours`, a cycle
    must select it (`source: "abandoned-drafts"`, `item` the head-SHA-scoped ref,
@@ -1094,7 +1094,7 @@
    review-feedback's job). And assert the claim uses a file claim, not a
    create-ref against the already-existing branch (requirement 17a), or every
    attempt would 422 and no abandoned draft could ever be picked up.
-6f. **A conflicted PR is rebased, not restarted (requirements 3g, 15d).** With an
+6f. <a id="impl-ac-6f"></a>**A conflicted PR is rebased, not restarted (requirements 3g, 15d).** With an
    open *non-draft* PR carrying `pr_label` on a `branch_prefix` branch
    whose `mergeable` is `CONFLICTING`, a cycle must select it (`source:
    "merge-conflicts"`, `item` the head-SHA-scoped ref, `branch` the PR's existing
@@ -1107,7 +1107,7 @@
    uses a file claim, not a create-ref against the already-existing branch
    (requirement 17a), or every attempt would 422 and no conflicted PR could be
    picked up.
-6i. **A merge-group-checks-failure dequeue is fixed, not restarted
+6i. <a id="impl-ac-6i"></a>**A merge-group-checks-failure dequeue is fixed, not restarted
    (requirements 3z, 15d; TD-PPagop-26081409).** With an open *non-draft* PR
    carrying `pr_label` on a `branch_prefix` branch whose `mergeable`
    is `MERGEABLE` and whose most recent `merge_queue_probe` reports
@@ -1132,7 +1132,7 @@
    And assert the claim uses a file claim, not a create-ref against the
    already-existing branch (requirement 17a), or every attempt would 422 and no
    dequeued PR could be picked up.
-6g. **The review runs at the tier the work graded itself (requirements 26a,
+6g. <a id="impl-ac-6g"></a>**The review runs at the tier the work graded itself (requirements 26a,
    8a).** `test/cycle-state.test.sh`'s reviewer-complexity section passes: the
    resolution takes the highest valid grade among the summary's `complexity`
    and the PR's `complexity:*` label values (a label `high` outranks a summary
@@ -1143,7 +1143,7 @@
    its summary carries `complexity`, and the reviewer's `stage-start` event
    records the resolved `complexity` and a `model` equal to
    `reviewer_model_complex` when and only when the grade is `high`.
-6b. **The no-op short-circuit skips only what it can prove, and stops skipping
+6b. <a id="impl-ac-6b"></a>**The no-op short-circuit skips only what it can prove, and stops skipping
    when anything moves.** Drive a cycle that ends `none-selected`, confirm the
    event carries a fingerprint, then run a second cycle: it must stand down
    *without launching the Co-Ordinator* — that saving is the entire feature, so
@@ -1168,14 +1168,14 @@
    scheduled workflow rerunning green does *not* change it (see requirement 3b
    — this is where the feature quietly dies), and that a repo whose state could
    not be sampled makes the cycle unfingerprintable rather than skippable.
-7. **A blocked verdict round-trips.** Append an `attempt-failed` for a
+7. <a id="impl-ac-7"></a>**A blocked verdict round-trips.** Append an `attempt-failed` for a
    selected item, then run a cycle: the Co-Ordinator's input must list that
    item as blocked, with its detail. This is the one check that catches the
    writer and the reader disagreeing about the event key (requirements 33/34)
    — nothing else in the system will tell you they disagree, because both
    halves look correct in isolation and the only symptom is work being
    silently redone.
-7a. **The mandatory re-check round-trips too (requirement 18a).**
+7a. <a id="impl-ac-7a"></a>**The mandatory re-check round-trips too (requirement 18a).**
    `test/cycle-state.test.sh`'s requirement-18a section passes, proving both
    halves the requirement adds on top of check 7's general case. The
    comparison itself — a blocked GitHub issue's `updated_at` against the
@@ -1195,7 +1195,7 @@
    (`recheck-clean`, requirement 33) and the reader (`blocked_items`'s fold)
    agreeing on both timestamps a blocked GitHub issue carries, the same way
    check 7 catches them agreeing on one.
-7b. **An orphaned claim branch is put back in front of the pipeline
+7b. <a id="impl-ac-7b"></a>**An orphaned claim branch is put back in front of the pipeline
    (requirement 17b).** `test/sweep-orphan-branches.test.sh` passes: with a
    stubbed `gh`, a stale moved ref with no PR and no registry entry yields a
    draft PR carrying `pr_label` and a `recovered` action; a stale unmoved
@@ -1234,7 +1234,7 @@
    headroom left defers the
    declined pair whole — neither ref touched — so the per-run cap holds
    strictly rather than overshooting by the release.
-7c. **Claim visibility is deterministic, both shapes and both directions
+7c. <a id="impl-ac-7c"></a>**Claim visibility is deterministic, both shapes and both directions
    (requirement 3o, issue #175).** `test/claim.test.sh`'s `claims`/`branches`
    section passes: a fresh branch claim's registry entry appears in `claims`'
    output tagged `kind: "branch"` with its item; an entry older than
@@ -1247,7 +1247,7 @@
    absent key, so a claim ageing back out of the array changes it too — the
    same silent-stall shape `abandoned_drafts` and `merge_conflicts` close for
    their own transitions.
-7d. **The PR-keyed claim outlives the PR's own raising (requirement 17a,
+7d. <a id="impl-ac-7d"></a>**The PR-keyed claim outlives the PR's own raising (requirement 17a,
    issue #360).** `test/pr-claim-hold-through-review.test.sh` passes: with
    `release_claim` and `release_pr_claim` lifted from `lib/candidate-select.sh`
    and
@@ -1266,7 +1266,7 @@
    caller has already counted, it drops an item claim naming one of them
    while keeping a claim on a PR the caller's sum does not hold — matching
    whole numbers, so a claim on PR 90 survives a caller that counted PR 9.
-7e. **The back-pressure block hands its parts to each other correctly
+7e. <a id="impl-ac-7e"></a>**The back-pressure block hands its parts to each other correctly
    (requirement 2.2).** The counting seam, not the parts: issue #427 and the
    over-correction in PR #434 were both defects of this wiring, and both
    shipped past a suite that tested `lib/claim.sh count` thoroughly and its
@@ -1285,7 +1285,7 @@
    `agent-merges-routine`, and in the counted case its claim does not
    double-count on top of it — so the difference is demonstrably the level
    and not a change to the underlying rule.
-7f. **The decision site folds in what requirement 2.2's count could not see
+7f. <a id="impl-ac-7f"></a>**The decision site folds in what requirement 2.2's count could not see
    yet (requirement 2.2b, issue #459).** `test/backpressure-decision.test.sh`
    passes, against the fold-in block lifted verbatim from `agent-cycle.sh`: a
    repo with no `merge_conflicts`/`dequeued` candidates adds nothing and

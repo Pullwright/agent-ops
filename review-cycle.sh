@@ -270,9 +270,9 @@ export PW_GH_STATE_DIR="$state_dir"
 # own override in repository_review.repos — lib/config-schema.sh's
 # config_repository_review_repos is the one implementation, shared with
 # scripts/doctor.sh, so the two scripts cannot resolve the same repository two
-# different ways (requirement 342).
+# different ways (issue #342).
 repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
-# Requirement 342's resolution rule assumes exactly one entry per repository;
+# Issue #342's resolution rule assumes exactly one entry per repository;
 # two entries for the same slug leave no way to say which one's overrides
 # apply, so this refuses to start rather than silently letting the later
 # entry win (lib/config-schema.sh's config_duplicate_repository_review_slugs,
@@ -732,7 +732,7 @@ fi
 # Checked before the lock, like the switches, and for the same reason: a review
 # that must not start should not take a lock, however briefly, that a roll would
 # then defer for. This is the installation-wide value only — a repository's own
-# `not_before` override (requirement 342) is resolved separately, per
+# `not_before` override (issue #342) is resolved separately, per
 # repository, into repository_review_repos_json above, and is checked again
 # inside skip_reason (R4) once the cycle is under way; that lets an override
 # hold one repository off *longer* than this value, but not escape it while it
@@ -770,7 +770,7 @@ fi
 # The check above reads only `repository_review.defaults.not_before` — the
 # installation-wide gate a repository with no override inherits. A
 # repository can also be held individually, on its own `not_before` override
-# (requirement 342), already resolved into repository_review_repos_json above.
+# (issue #342), already resolved into repository_review_repos_json above.
 # When `defaults.not_before` itself does not trip the check above — absent,
 # or already past — but *every* configured repository is still individually
 # held (each one's own resolved not_before, override or inherited default,
@@ -797,10 +797,10 @@ if [[ "$(jq 'length' <<<"$repository_review_repos_json")" != "0" ]]; then
   if (( all_repos_held )); then
     log_event "review-stand-down" "$(jq -nc --argjson repos \
       "$(jq -c '[.[] | {slug, not_before}]' <<<"$repository_review_repos_json")" \
-      '{reason: "every configured repository'"'"'s own not_before holds it off (requirement 342)", repos: $repos, cause: "no-demand"}')"
+      '{reason: "every configured repository'"'"'s own not_before holds it off (issue #342)", repos: $repos, cause: "no-demand"}')"
     set_node_state_terminal idle-without-demand no-demand
     suppress_node_state_if_peer_owns_node
-    (( ONCE )) && echo "review-cycle: standing down — every configured repository's own not_before (requirement 342) holds it off" >&2
+    (( ONCE )) && echo "review-cycle: standing down — every configured repository's own not_before (issue #342) holds it off" >&2
     exit 0
   fi
 fi
@@ -1013,7 +1013,7 @@ fi
 # --- Per-repo skip-guard (R4) ---
 # Echoes the reason to skip (a non-empty string) or nothing (proceed). Every
 # tunable this reads is that repository's own resolved value — its override in
-# repository_review.repos, or repository_review.defaults otherwise (requirement 342)
+# repository_review.repos, or repository_review.defaults otherwise (issue #342)
 # — passed in rather than read off a global, since none of them is
 # installation-wide any more.
 skip_reason() {
@@ -1180,7 +1180,7 @@ review_one() {
   local slug default_branch model pr_label branch_prefix report_directory_format report_dir
   slug="$(jq -r '.slug' <<<"$entry")"
   default_branch="$(jq -r '.default_branch' <<<"$entry")"
-  # This repository's own resolved settings (requirement 342) — its override
+  # This repository's own resolved settings (issue #342) — its override
   # in repository_review.repos, or repository_review.defaults otherwise. Already
   # validated (the model-id sweep before the lock, above), so this is a
   # straight re-derivation rather than a fresh check.

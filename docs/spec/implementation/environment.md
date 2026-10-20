@@ -31,7 +31,7 @@ a node updates by pulling a new image rather than by pulling a branch.
   `/usr/bin/claude`.
 - Toolchain: `bash`, `git`, `jq`, `curl`, `python3`, `perl`, `coreutils`,
   `flock` and `rsync` (requirement 2.5); `openssl`, which RS256-signs the
-  Approver App's JWT (requirement 14b) and is installed explicitly rather
+  Approver App's JWT (component 14b) and is installed explicitly rather
   than relied on to arrive transitively, since a missing binary would
   surface only as a mint failure at run time; `gh` from GitHub's apt repository (the distro package is too old for
   the flags the pipelines use), installed unpinned and therefore guarded at
@@ -178,7 +178,7 @@ a node updates by pulling a new image rather than by pulling a branch.
   laptop's personal
   `update-main-branches.sh` entry: that refreshes interactive checkouts, and
   a node has none.
-- **The cycle and review minutes are per-node** (design decision D5). At
+- **The cycle and review minutes are per-node**. At
   every container start, `entrypoint.sh` runs
   `deploy/docker/render-crontab.sh`, which renders `crontab.tmpl` over the
   baked crontab with this node's offsets: `CYCLE_MINUTE` from the
@@ -457,7 +457,7 @@ file and carries placeholders only; `.env` itself is never committed.
   nodes on that host catching a gap and rolling while its neighbour kept
   missing it and stayed ninety minutes behind, unreported. Surfacing that is
   #603's business, not this hook's. What was missing is agent-ops#1096's
-  `roll-pending` marker (requirement 39c (Finish-then-continue)): at its own cycle boundary, a node
+  `roll-pending` marker (requirement 68 (Finish-then-continue)): at its own cycle boundary, a node
   whose image has fallen behind the registry's newest declines the chain it
   would otherwise take and writes the marker instead, which the hook honours
   as an unconditional allow against `lock.json` alone — never

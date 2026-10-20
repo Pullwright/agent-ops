@@ -1,8 +1,8 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 4 of 7; items 39a–8s)
+### Acceptance checks — continued (part 4 of 8; items 39a–8s)
 
-39a. **The Refiner's candidate set is correctly bounded (requirements 39a,
+39a. <a id="impl-ac-39a"></a>**The Refiner's candidate set is correctly bounded (requirements 39a,
     39b).** `test/refiner-eligibility.test.sh` passes: `refiner_candidate_items`
     includes a pre-fetched item only when its source is not
     `refinement_policy`-exempt, excludes one `refinements_map` already names,
@@ -54,7 +54,7 @@
     withheld — with no Refiner configured, nothing could ever supersede the
     decision regardless of policy, so no cycle limit on the withholding could
     ever be realised.
-3y. **The two Refiner-only gatherers read what requirement 3y says
+3y. <a id="impl-ac-3y"></a>**The two Refiner-only gatherers read what requirement 3y says
     (requirement 3y).** `test/gather-project-review.test.sh` and
     `test/gather-implementation-plan.test.sh` pass, each driving its script
     against a stubbed `gh`: the review gatherer reads only the latest dated
@@ -72,7 +72,7 @@
     tasks in document order, skips checked ones and lines whose leading token
     is not a `WORK_GONE_PLAN_RE` id, and prints `[]` for a missing document.
     Neither ever exits non-zero.
-39c. **The Refiner's verdicts are recorded as stated, driving the real switch
+39c. <a id="impl-ac-39c"></a>**The Refiner's verdicts are recorded as stated, driving the real switch
     (requirements 39c, 39d, 39e).** `test/refiner-verdicts.test.sh` passes:
     driving `maybe_run_refiner` itself — lifted verbatim from
     `lib/refinement.sh`, the file that now carries it — a `refined` verdict on an
@@ -113,7 +113,7 @@
     engagement that exits non-zero or returns an unparseable final message
     (its salvage resume also failing) records no verdict events at all,
     expires every claim, and still returns 0.
-39f. **Own-label-action memory stops a failed removal reopening a block, and
+39f. <a id="impl-ac-39f"></a>**Own-label-action memory stops a failed removal reopening a block, and
     tolerates clock skew and log propagation lag (requirement 39f;
     agent-ops#526).** `test/label-marker.test.sh` passes:
     `label_own_actions_map` reduces to the latest action per repo+item+label
@@ -192,7 +192,7 @@
     rather than through the cycle script — so an append reordered ahead of the
     capture would otherwise make the horizon track wall clock again through
     this node's own fresh events and silently undo the fix.
-39g. **Priority triage bands correctly and never lowers a band
+39g. <a id="impl-ac-39g"></a>**Priority triage bands correctly and never lowers a band
     (requirement 39g).** `test/refiner-priority-triage.test.sh` passes:
     `refiner_candidate_items` admits an already-refined `issues` entry only
     when `priority_set` is literally `false`, marks it `triage_only: true`,
@@ -346,7 +346,7 @@
     `refiner_filter_unbandable_triage` counting its own invocations — with
     `refiner_model` empty the pre-flight is never called at all, and with it
     set the pre-flight still runs exactly once, unchanged.
-11c. **A broken Enabler cannot break a cycle (requirement 37).** With a stubbed
+11c. <a id="impl-ac-11c"></a>**A broken Enabler cannot break a cycle (requirement 37).** With a stubbed
     stage that times out, exits non-zero, or (after requirement 9e's salvage
     resume also fails to parse) returns prose instead of JSON: the
     cycle still exits 0, logs `stage-end` and one `warning`, writes **no**
@@ -359,7 +359,7 @@
     Assert the ordering too — the engagement's events precede
     `cycle-end` — and that a limit phrase in that transcript produces an ordinary
     `limit-hit` rather than being swallowed with the rest of the failure.
-33a. **The per-stage metering record matches `docs/METERING-SCHEMA.md`
+33a. <a id="impl-ac-33a"></a>**The per-stage metering record matches `docs/METERING-SCHEMA.md`
     (requirement 33a).** `test/metering.test.sh` passes: `lib/metering.sh`'s
     `metering_fields` derives `model`, `provider` (read from
     `lib/model-id.sh`'s `MODEL_PROVIDER`, falling back to `anthropic` for a
@@ -388,7 +388,7 @@
     `lib/metering.sh` and merge its output into every `stage-end` /
     `review-stage-end` event they log, so this one function's correctness is
     what "both pipelines emit conforming records" reduces to.
-1c. **The configuration matches its schema, and the schema is an enforced
+77. <a id="impl-ac-77"></a>**The configuration matches its schema, and the schema is an enforced
     startup gate, not merely a checkable one (requirement 1b).**
     `test/config-schema.test.sh` passes: this repository's own `config.json`
     validates, so a key added to the config without a schema entry fails
@@ -438,7 +438,7 @@
     own default; and the shipped `config.json`, unmodified, is asserted to
     report no such mismatch at all — closing the loop #568 opened by
     installing `refiner_model` for real.
-1d. **The prose configuration tables are generated from the schema, and
+76. <a id="impl-ac-76"></a>**The prose configuration tables are generated from the schema, and
     regenerating them is gated (requirement 1b, component 16).**
     `scripts/render-config-table.sh` with no arguments run against this
     repository's own `config.schema.json`, `docs/reference/configuration.md`,
@@ -486,7 +486,7 @@
     matching doc regeneration (or the reverse) fails CI rather than drifting
     the way `unvoid_label` and `state_local_cycles_retained` both did before
     this requirement existed.
-1m. **`doctor.sh` checks write access, Claude credentials, the rendered
+1m. <a id="impl-ac-1m"></a>**`doctor.sh` checks write access, Claude credentials, the rendered
     crontab and `nice` reordering, and `--offline` still runs the two that
     need no network (requirement 1b, component 14).** `test/doctor.test.sh`
     passes, against a stubbed `gh` and `claude` on `PATH` — the seam
@@ -539,7 +539,7 @@
     at all; and `--offline` still renders the crontab and reports `nice`
     reordering while reporting write access and Claude credentials as
     `skip`. Must pass `shellcheck`.
-1n. **`--unattended` runs the GitHub section in full and skips only the two
+1n. <a id="impl-ac-1n"></a>**`--unattended` runs the GitHub section in full and skips only the two
     checks that spend, with wording distinct from `--offline`'s, and writes
     `state_dir/.doctor-status.json` (requirement 2.6a).** `test/doctor.test.sh`
     passes: against the same stubbed `gh` and `claude`, a run with
@@ -566,7 +566,7 @@
     header and `null` when it did not; an ordinary run
     with neither flag writes no such file and runs the Claude section for
     real, against the stub. Must pass `shellcheck`.
-6h. **The pipeline creates the labels it applies, and touches no others
+6h. <a id="impl-ac-6h"></a>**The pipeline creates the labels it applies, and touches no others
     (requirement 6a).** `test/labels.test.sh` passes against a stubbed `gh`
     that records every invocation and refuses a duplicate the way GitHub
     does: an empty repository receives every label of its role and each is
@@ -585,7 +585,7 @@
     and claimed no failures it did not observe, and a guarded call survives a
     total failure under `set -e`.
 
-6j. **Labels a stage asks for are minted safely, and only within the caps
+6j. <a id="impl-ac-6j"></a>**Labels a stage asks for are minted safely, and only within the caps
     (requirement 6c, issue #714).** `test/labels.test.sh` passes:
     `labels_reserved_names` lists the fixed set (`blocked`, `blocked:*`,
     `obsolete`, `complexity:*`, `pw::type:tech-debt`, `pw::owner-decision`,
@@ -633,7 +633,7 @@
     `agent-cycle.sh`, `lib/` or `scripts/` branches on a label name that is
     not in `labels_reserved_names`'s own list.
 
-38. **Human-visibility (requirements 38a–38c).** `test/handoff.test.sh` passes:
+38. <a id="impl-ac-38"></a>**Human-visibility (requirements 38a–38c).** `test/handoff.test.sh` passes:
     `_handoff_pr_approved` reads `true` for a standing `APPROVED` review with
     nothing `CHANGES_REQUESTED`-blocking, `false` for the reverse, and `false`
     again when the two positions are held by different reviewers (one
@@ -761,7 +761,7 @@
     produces no action at all. Confirm the nudge
     comment carries the visible attribution header and both markers
     (`agent-ops:pipeline-comment` and `agent-ops:human-nudge`).
-38e. **A violation the sweep cannot heal is read back and re-verified, not
+38e. <a id="impl-ac-38e"></a>**A violation the sweep cannot heal is read back and re-verified, not
     guessed at.** `test/human-visibility-hygiene.test.sh` passes:
     `human_visibility_violations` keeps a repo-level (empty `pr_url`) warning
     with nothing to clear it; a later `human-review-requested` event clears a
@@ -868,7 +868,7 @@
     each repo is handed its own slice of the violations rather than the
     fleet-wide array; and a re-check that drops everything, or a cycle with no
     violations at all, still leaves every entry a valid `[]`.
-38f. **Merge-queue awareness reads the field GitHub actually exposes, and
+38f. <a id="impl-ac-38f"></a>**Merge-queue awareness reads the field GitHub actually exposes, and
     never guesses when it cannot.** `test/merge-queue.test.sh` passes against
     a stubbed `gh`: `merge_queue_probe` reports `queued: true`/`false`
     correctly from a fixture GraphQL response; a dequeue event's `createdAt`/
@@ -904,7 +904,7 @@
     disables the notice outright, even for a same-second dequeue whose age
     (`0`) does not exceed the zero-width threshold arithmetic alone would
     apply (agent-ops#429).
-38g. **Requirement 38c's ruleset dependency is reported, not silent
+38g. <a id="impl-ac-38g"></a>**Requirement 38c's ruleset dependency is reported, not silent
     (agent-ops#391).** `test/doctor.test.sh` passes, over the same
     single-target-repo fixture and `gh`/`rulesets` stub requirement 25a's own
     ruleset-drift cases (acceptance check 8m) use: an active default-branch
@@ -917,7 +917,7 @@
     default-branch rulesets requiring `0` and `1` report the strictest — `ok`
     at `1` — in both list orders, so the verdict does not depend on what the
     API returned last; and none of these fail `doctor.sh` itself.
-39. **Finish-then-continue's chain decision is a pure, tested function of what
+39. <a id="impl-ac-39"></a>**Finish-then-continue's chain decision is a pure, tested function of what
     a cycle already gathered.** `test/chain.test.sh` passes: `chain_sources_remain`
     sums `.sources` across every repo, zero when every repo's is empty, summed
     across repos rather than stopping at the first; `chain_should_continue`
@@ -926,7 +926,7 @@
     cap (including `max_chained_cycles: 1`, which disables chaining outright
     even on the first cycle), and fails closed (never chains) on a
     non-numeric `chain_count` or `max_chained_cycles`.
-39a. **The chain only ever launches when it should, and never waits on what it
+67a. <a id="impl-ac-67a"></a>**The chain only ever launches when it should, and never waits on what it
     launches.** `test/finish-then-continue.test.sh` passes, against the real
     `cleanup` block lifted out of `agent-cycle.sh`: `chain_eligible=1` with
     `exit_code == 0` launches exactly one child, carrying
@@ -943,7 +943,7 @@
     having it report back which of `TERM`, `INT` and `HUP` arrived already
     ignored, which must be none — so a chained cycle stays killable by
     requirement 1's takeover and by a container stop.
-39b. **A sub-hourly cycle interval is an explicit cron minute list, correct at
+39b. <a id="impl-ac-39b"></a>**A sub-hourly cycle interval is an explicit cron minute list, correct at
     every occurrence, and backward-compatible at the boundary.**
     `test/render-crontab.test.sh` passes: the rendered cycle line lists the
     node's own minute then every `schedule.cycle_interval_minutes` after it
@@ -956,13 +956,13 @@
     every other malformed schedule key already gets. `test/doctor.test.sh`
     passes: the crontab report names the full comma list, not just the
     first occurrence.
-39c. **A pending image roll overrides an otherwise-eligible chain, never
+68. <a id="impl-ac-68"></a>**A pending image roll overrides an otherwise-eligible chain, never
     grants one, widens the gap at every clean, non-`--once`, non-`--dry-run`
     cycle-end whether or not there was a chain to give up, is honoured at
     the hook against `lock.json` alone, is cleared once landed, and — while
     it is not — idles the next cycle at most once rather than letting it
     run underneath the
-    marker** (requirement 39c (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
+    marker** (requirement 68 (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
     widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
@@ -1025,7 +1025,7 @@
     clock; and a second eligible cycle under a marker whose cap is already
     spent logs a `roll-standdown-capped` event naming the marker and the spent
     count instead of standing down, then still reaches its own end.
-17e. **Contended-claim-loss reporting is correct per node and per era
+17e. <a id="impl-ac-17e"></a>**Contended-claim-loss reporting is correct per node and per era
     (component 21).** `test/pickup-metrics.test.sh` passes against a fixture
     union log: `selection` and `claim-lost` events split "before"/"after" at
     each node's own first `chained` event, never at a fixed timestamp; a node
@@ -1035,7 +1035,7 @@
     malformed trailing line is skipped rather than aborting the read; and
     `--since` bounds the window reported. `scripts/pickup-metrics.sh` passes
     `shellcheck`.
-8s. **The Approver runs only above `human`, picks its tier correctly, and
+8s. <a id="impl-ac-8s"></a>**The Approver runs only above `human`, picks its tier correctly, and
     refuse-wins (requirements 8b, 8c).** `test/approver.test.sh` passes
     against a stubbed `gh`: `approver_tier_for` maps `low`/`medium`/`high` to
     `trivial`/`standard`/`high` and anything else to `standard`;

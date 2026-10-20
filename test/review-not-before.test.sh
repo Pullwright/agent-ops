@@ -23,7 +23,7 @@
 #                 to hold reviews off; running through a value we could not
 #                 read would spend exactly the quota they were protecting
 #   tier two      `repository_review.defaults.not_before` is only the
-#                 installation-wide half (requirement 342); when it is itself
+#                 installation-wide half (issue #342); when it is itself
 #                 unset but every configured repository's own override still
 #                 holds it off, the whole cycle stands down before the lock
 #                 too, rather than taking it for a run R4's skip-guard would
@@ -204,13 +204,13 @@ d="$(make_node tier-two-all-held ".repository_review.defaults.not_before = \"\" 
 out="$(run_review "$d")"
 assert_contains "every repository held on its own override stands the whole cycle down" \
   "every configured repository's own not_before" "$out"
-assert_contains "naming requirement 342, the resolution rule tier one alone would miss" \
-  "every configured repository's own not_before holds it off (requirement 342)" \
+assert_contains "naming issue #342, the resolution rule tier one alone would miss" \
+  "every configured repository's own not_before holds it off (issue #342)" \
   "$(stand_down_reason "$d")"
 assert_eq "and the tick still ends 0" "0" "$RC"
 
 # --- Mixed: one repository held on its own override, one not ---------------------
-# The other half of requirement 342's two-tier rule, and the half with nothing
+# The other half of issue #342's two-tier rule, and the half with nothing
 # above it to catch a regression: neither tier may stand the *cycle* down here,
 # because one repository is free to be reviewed — the held one has to be turned
 # away by R4's per-repository skip-guard instead, once the cycle is under way.

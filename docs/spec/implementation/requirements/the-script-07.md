@@ -1,8 +1,8 @@
 ## Requirements
 
-### The Script — requirements, continued (part 7 of 10; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)
+### The Script — requirements, continued (part 7 of 11; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)
 
-3w. **Verdict quality is a rate, and every verdict pays for its own
+3w. <a id="impl-3w"></a>**Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict
    detectable and requirement 3v made it recoverable, and between them they
    answer "did it happen on this cycle, and did the fleet survive it". Neither
@@ -74,7 +74,7 @@
    the fallback path with nothing to pick, and both for a clean stand-down, so
    the two records are read per cycle and the `corroboration` wins where there
    is one.
-3x. **Verdict corroboration, generalised to every pre-fetched band (issue
+3x. <a id="impl-3x"></a>**Verdict corroboration, generalised to every pre-fetched band (issue
    #322).** Requirement 3t machine-checks a `none-selected` verdict against
    exactly one band. A verdict claiming "no candidates" over a non-empty
    `issues` array — or `findings`, `review_feedback`, `abandoned_drafts`,
@@ -192,7 +192,7 @@
    once (requirement 34e refuses a re-report of an already-blocked item); the
    alternative was a band nobody could check.
 
-3y. **Refiner-only pre-fetch: `project-review` and `implementation-plan`.**
+3y. <a id="impl-3y"></a>**Refiner-only pre-fetch: `project-review` and `implementation-plan`.**
    These two sources have no array in `ordered_repos_json` and gain none: the
    Co-Ordinator reads the repository's latest review folder — its own
    `report_directory_resolved` where present (requirement 3k), the path
@@ -276,7 +276,7 @@
    `scripts/gather-plan-status.sh`). Minting a ref of any other shape would
    produce items nothing downstream could ever clear.
 
-3b. **No-op short-circuit (cost control).** The Co-Ordinator costs the same to
+3b. <a id="impl-3b"></a>**No-op short-circuit (cost control).** The Co-Ordinator costs the same to
    say "nothing to do" as it does to select work. On a quiet week that is 24
    identical answers a day, every one of them paid for. Before launching it,
    compute a **fingerprint** of every input its verdict depends on; if the most
@@ -409,13 +409,13 @@
      an answer, not a cached verdict) but still *compute and record* the
      fingerprint, so a `--once` that finds nothing spares the next cron tick
      the same question.
-4. **Co-Ordinator stage.** Launch the Co-Ordinator (headless, model
+4. <a id="impl-4"></a>**Co-Ordinator stage.** Launch the Co-Ordinator (headless, model
    `coordinator_model`, `--dangerously-skip-permissions`, stage timeout),
    passing it the ordered repo list (each entry carrying its work sources and
    its pre-fetched `findings`) and the blocked-item extract from the shared
    log. Capture its final message from the stage's own transcript
    (requirement 4d) and parse the work order from it.
-4a. **Per-installation prompt overrides.** Every stage prompt this Script
+4a. <a id="impl-4a"></a>**Per-installation prompt overrides.** Every stage prompt this Script
    assembles — the Co-Ordinator's here, the Implementer's (requirement 7), the
    Reviewer's (requirement 8), the Enabler's (requirement 35), and the
    Refiner's (requirement 39) — is built by
@@ -520,7 +520,7 @@
    `enabler`, `refiner` or `monitor` key there into the same schema-gate
    fatal misconfiguration (requirement 1b) as any other unknown key — none of
    those four stages has a single repository to scope an override to yet.
-4b. **The repo/work-sources table is generated from `config.json`, not
+4b. <a id="impl-4b"></a>**The repo/work-sources table is generated from `config.json`, not
    hand-maintained in the prompt (issue #78).** `prompts/coordinator.md`
    carries a `@@WORK_SOURCES_TABLE@@` marker where a table naming consumer
    repos and their `sources` used to be hand-written — the prompt file names
@@ -548,7 +548,7 @@
    regardless, so a config edit to a non-finishing source landing during
    such a cycle would otherwise change the assembled prompt without busting
    the fingerprint.
-4c. **An assembled prompt reaches its stage on stdin, never in argv.** Every
+4c. <a id="impl-4c"></a>**An assembled prompt reaches its stage on stdin, never in argv.** Every
    stage this Script launches — the Co-Ordinator here, the Implementer
    (requirement 7), the Reviewer (requirement 8) and the Enabler
    (requirement 35) — is invoked as `claude -p` with the prompt written to
@@ -575,7 +575,7 @@
    the same function (requirement 4d), so the review pipeline's smaller
    prompt — the one that would sit broken longest before anyone noticed — is
    covered by construction rather than by a second copy kept in step by hand.
-4d. **One stage launcher, provider-neutral, and it streams.** Every headless
+4d. <a id="impl-4d"></a>**One stage launcher, provider-neutral, and it streams.** Every headless
    model invocation either pipeline makes — the five stages of this document,
    the usage-limit probe of requirement 1b, and the Reviewer-Agent of
    `docs/spec/review.md` R5.3 — goes through `run_model_stage` in
@@ -671,7 +671,7 @@
    every message and every tool result, and the mirror holds `cycles_retained`
    cycles per node in git history, so replicating them would trade a bounded
    repository for an unbounded one.
-4e. **Two caps on a stage, and they answer different questions.** Every stage
+4e. <a id="impl-4e"></a>**Two caps on a stage, and they answer different questions.** Every stage
    is bounded by a **backstop** — the `timeout_<actor>` wall-clock cap, which
    `run_model_stage` enforces by killing the process group — and by a
    **liveness watchdog**: `inactivity_<actor>` minutes during which the stage
@@ -786,7 +786,7 @@
    naming the `inactivity_*` escape hatch, if the output arrived only at the
    end. It is the one check there that spends, for the reason requirement 1b's
    usage-limit probe spends: some questions can only be answered by asking.
-4f. **Both caps are derived, per (actor, repository, model), from the
+4f. <a id="impl-4f"></a>**Both caps are derived, per (actor, repository, model), from the
    pipeline's own record of itself.** Requirement 4e gives every stage a
    backstop and a watchdog; this decides what those two numbers are.
    `lib/stage-budget.sh` folds the fleet log union — the same stream the
@@ -935,7 +935,7 @@
    bounds only how long a live but hung cycle may hold on. The review
    pipeline derives its own the same way, doubling the widest Reviewer-Agent
    backstop because one lock can span two repositories reviewed back to back.
-4g. **Fleet-state JSON reaches `jq` on stdin, never in argv.** Requirement
+4g. <a id="impl-4g"></a>**Fleet-state JSON reaches `jq` on stdin, never in argv.** Requirement
    4c's cap is an `execve` fact, not a prompt fact, and prompts are not the
    only unbounded strings this Script builds: the void extract, the blocked
    extract, the refinements map, the claims array and the pre-fetched repo
@@ -1096,7 +1096,7 @@
    page that ages visibly against its own `generated_at` reports the outage,
    where an unparseable one only hides it.
 
-4h. **A guard that answers with a literal says on the union log that it
+4h. <a id="impl-4h"></a>**A guard that answers with a literal says on the union log that it
    did.** Requirement 4g changed how the fleet-state aggregates are
    *delivered*; it did not change what a read that fails anyway still
    answers. Ninety-one call sites in this Script carry the shape `cmd …
@@ -1179,7 +1179,7 @@
    the sibling of the `claim.sh count` site's own `=~ ^[0-9]+$` — reporting
    through `guard_warn` and falling back to the same literal, so a malformed
    success is treated exactly like a failure rather than trusted.
-4l. **Killing a stage never throws away uncommitted work it already did
+4l. <a id="impl-4l"></a>**Killing a stage never throws away uncommitted work it already did
    (issue #2186).** Requirement 4e's kill sequence carries a step between its
    five-second grace and its KILL: `run_model_stage` (via its
    shared `_stage_kill` helper in `lib/stage-run.sh`) commits and pushes

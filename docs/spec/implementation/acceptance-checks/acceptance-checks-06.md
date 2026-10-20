@@ -1,8 +1,8 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 6 of 7; items 51–52b)
+### Acceptance checks — continued (part 6 of 8; items 51–52c)
 
-51. **The pager framework files once per firing key, closes once the fact
+51. <a id="impl-ac-51"></a>**The pager framework files once per firing key, closes once the fact
     clears, and never twice for the same transition (requirement 51).**
     `test/pager.test.sh` drives `lib/pager.sh` directly, against fixture
     union logs built inline the same way `test/crash-loop-escalate.test.sh`
@@ -214,7 +214,7 @@
     `pager_landing_armed_within_days` added. `scripts/lint-shell.sh` is
     clean on every file this requirement touches.
 
-9. **An open question the Reviewer could not settle holds unattended landing,
+73. <a id="impl-ac-73"></a>**An open question the Reviewer could not settle holds unattended landing,
    resolves through the configured ladder, and never through a new commit
    alone (requirement 8f, agent-ops#668).** `test/landing.test.sh` passes
    against a stubbed `gh`: `landing_open_question_hit` reads `hit`/`clear`/
@@ -259,7 +259,7 @@
    open-question` reference stands, in which case one further pass runs.
    Replaying agent-ops#652's own shape — `complexity:low`, an open question
    standing — does not arm, the regression this requirement exists to close.
-   The same file's `run_case_direct` proves requirement 8u's retry sweep
+   The same file's `run_case_direct` proves acceptance check 8u's retry sweep
    reaches the identical gate, never a second copy of it: `_landing_stage_
    attempt` called directly with `RETRY` set — exactly as `_landing_retry_
    sweep_repo` calls it — refuses on the same `open-question:` reason with no
@@ -285,9 +285,9 @@
    `open-question-raised` event and keys `create_escalation_issue`'s dedup
    on a `pr-<n>-open-question` reference, distinct from `pr-<n>-approver-
    adjudication` (requirement 8c) sharing the same pull request number.
-   `test/prompt-untrusted-framing.test.sh` (requirement 8z) covers
+   `test/prompt-untrusted-framing.test.sh` (acceptance check 8z) covers
    `prompts/approver-adjudicate-open-question.md` alongside every other
-   shipped stage prompt. `test/dashboard-render.test.sh` (requirement 8x)
+   shipped stage prompt. `test/dashboard-render.test.sh` (acceptance check 8x)
    asserts an `open-question:`-classed refusal in a fixture renders as its
    own `byReason` group, exactly as `ineligible`/`kill-switch` already do,
    with no `dashboard/index.html` change required to produce it. No test
@@ -312,7 +312,7 @@
    call recorded and no trailing marker proving the block ran to its own
    end.
 
-63. **Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
+63. <a id="impl-ac-63"></a>**Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
     critical tier on a retry, rather than looping on landing alone
     (requirement 8w, issue #2514).** `test/landing-wiring.test.sh` lifts the
     modified `_landing_stage_attempt` verbatim, with `_landing_protected_
@@ -388,7 +388,7 @@
     `approver-verdict` would hand `landing_retry_tier` a critical-tier
     record for a review GitHub never received).
 
-10. **The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
+74. <a id="impl-ac-74"></a>**The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
     passes: the baked allowlist carries every domain the cycles need
     (`codeload.github.com` and `ghcr.io` included — the two no grep of the
     source would find), the squid config is default-deny with CONNECT-to-443
@@ -402,7 +402,7 @@
     Docker networks, so per-node enforcement is `scripts/doctor.sh`'s Egress
     probes' job, on every unattended run.
 
-51. **Overrun-slot skips are computed and logged correctly (requirement 11a,
+75. <a id="impl-ac-75"></a>**Overrun-slot skips are computed and logged correctly (requirement 11a,
     agent-ops#1287, agent-ops#1324).** `test/schedule-slots.test.sh` passes:
     `lib/schedule-slots.sh`'s `schedule_overrun_slots` names exactly the
     slots of the series running forward from its own base minute — a given
@@ -441,7 +441,7 @@
     the page's summary line renders the overrun count even when
     `noop_ticks.total` is `0`.
 
-52. **The table of contents is generated from headings, and regenerating it
+52. <a id="impl-ac-52"></a>**The table of contents is generated from headings, and regenerating it
     is gated (requirement 52, component 24).** `scripts/render-toc.sh` with
     no arguments run against this repository's own guides under
     `docs/guides/` (the `TOC_FILES` own-heading kind) and
@@ -466,7 +466,7 @@
     region that no longer exists (or, in the reversed case, silently
     corrupted); `test/render-toc.test.sh` exercises all of these
     marker-validation cases against the real script.
-52a. **The documentation benchmark's questions hold, and its runner
+52a. <a id="impl-ac-52a"></a>**The documentation benchmark's questions hold, and its runner
     measures what it says without launching anything in the test
     (requirement 52a, components 24 and 24a).**
     `scripts/docs-benchmark.sh --check` exits 0 against this checkout, as
@@ -526,7 +526,7 @@
     with CRLF line endings; and `markdown_unfenced_numbered` keeps the same
     lines, each tagged with its line number in the file.
 
-57. **Node health, readiness and liveness (requirements 57-60, issue #608).**
+57. <a id="impl-ac-57"></a>**Node health, readiness and liveness (requirements 57-60, issue #608).**
     `test/node-health.test.sh` passes: `lib/node-health.sh`'s
     `node_health_fold` composition rule (fail beats unknown beats ok, empty
     input reads unknown), `node_health_liveness` (no marker, a fresh marker,
@@ -576,7 +576,7 @@
     file; the new `scripts/node-health-server.py` is syntactically valid
     Python 3.
 
-55. **Resource usage is self-measured, both cgroup layouts are handled, and
+55. <a id="impl-ac-55"></a>**Resource usage is self-measured, both cgroup layouts are handled, and
     a budget breach is reportable (requirement 55, D14, issue #606).**
     Against a v2 cgroup fixture (`cgroup.controllers`, `memory.current`,
     `cpu.stat`), `resource_memory_current_bytes`/`resource_cpu_usage_nanos`
@@ -633,7 +633,7 @@
     `--window-hours`/`--now` each override what `config.json` would
     otherwise supply — `test/resource-budget-report.test.sh` exercises all
     four.
-52b. **The documentation's links, map, size, citations and phrasing are
+52b. <a id="impl-ac-52b"></a>**The documentation's links, map, size, citations and phrasing are
     checked, and each check fails on a fixture built to break it
     (requirement 52b, components 24 and 24b).** `scripts/check-docs.sh
     --check` exits 0 against this checkout, as `.github/workflows/docs.yml`
@@ -667,4 +667,24 @@
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
     heading that slugs to something else — while a fragment matching neither
     a heading nor an anchor still fails.
+52c. <a id="impl-ac-52c"></a>**Every requirement, acceptance-check and component label is unique,
+    and every citation of one resolves to the right kind (requirement 52c,
+    component 24c).** `test/spec.test.sh` builds a scratch repository
+    carrying one fixture label of each of the nine (specification, sequence)
+    kinds and asserts: `show` prints the qualified label, its `file#anchor`
+    and its own text, and surfaces a citing file, exiting non-zero on an
+    unknown label; `where` resolves every input form the convention accepts
+    — bare, the English phrasing, and the qualified form — for a
+    requirement, an acceptance check and a component in each of the
+    implementation, review and monitor specifications; `index` writes
+    `docs/spec/index.json` recording all ten labels (nine kinds plus one
+    deliberately reused number across kinds) with the right anchor, and
+    `index --check` passes when fresh and fails once the fixture spec
+    drifts from it; `check` fails against the fixture's own wrong-kind and
+    dangling citations, naming both, passes once a ratchet entry naming
+    each one's exact file and line is added, and still fails when a ratchet
+    entry names the wrong line — a ratchet cannot mask a violation it does
+    not exactly name — and fails on a duplicate label with no citation
+    involved at all, naming the duplicate. `./scripts/lint-shell.sh` is
+    clean.
 

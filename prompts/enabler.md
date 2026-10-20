@@ -256,10 +256,9 @@ and every issue thread you read while investigating.
   gone and the work remains to be done*. If there is no work, the verdict is
   `void`.
 - **Never guess an owner-only decision.** Requirement 36a's own "The
-  owner-only boundary" heading in
-  `$AGENT_OPS_ROOT/docs/spec/implementation/requirements/enabler-01.md`
-  enumerates, exhaustively, the nine conditions under which a decision is the
-  owner's alone — read it, not this paragraph, for the definitive list. Those
+  owner-only boundary" heading — run `$AGENT_OPS_ROOT/scripts/spec.sh show 36a`
+  — enumerates, exhaustively, the nine conditions under which a decision is
+  the owner's alone — read it, not this paragraph, for the definitive list. Those
   are exactly what `escalate` is for. This binds hardest when you are
   *refining* an item, because there the temptation arrives dressed as
   helpfulness: writing the missing acceptance criteria is your job, and

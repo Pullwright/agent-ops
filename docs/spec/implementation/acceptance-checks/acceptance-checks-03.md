@@ -1,8 +1,8 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 3 of 7; items 7g–11e)
+### Acceptance checks — continued (part 3 of 8; items 7g–11d)
 
-7g. **A candidate's refinement is made to trace back to it, and one that
+7g. <a id="impl-ac-7g"></a>**A candidate's refinement is made to trace back to it, and one that
    cannot be is skipped rather than claimed (requirement 17f, agent-ops#626,
    agent-ops#767).**
    The repair half is proven alongside the check: a work order missing its
@@ -51,7 +51,7 @@
    does not satisfy the normalized check, and the claim loop's own call site
    guards the check with `selected_by_fallback` so that candidate is never
    faulted.
-7h. **Retired (requirement 17g, agent-ops#1156, resolving TD-PPagop-26090604).**
+7h. <a id="impl-ac-7h"></a>**Retired (requirement 65, agent-ops#1156, resolving TD-PPagop-26090604).**
    This check existed to verify a trimmed candidate's `acceptance` against
    the item's own live text — `item_live_text`, `item_text_fault` and
    `item_text_supply` in `lib/candidate-select.sh`, exercised by
@@ -62,8 +62,8 @@
    nothing reaching the claim loop from either source could still be that,
    agent-ops#1156 removed the checked functions and retired
    `test/item-text-fabrication.test.sh` with them. There is nothing left
-   here to verify. See requirement 17g's as-built note for the history.
-7i. **The Script re-applies `pr_label` to a raised pull request the
+   here to verify. See requirement 65's as-built note for the history.
+7i. <a id="impl-ac-7i"></a>**The Script re-applies `pr_label` to a raised pull request the
    Implementer left unlabelled (requirement 17a, agent-ops#2074/#2403).**
    `test/pr-label-ensure.test.sh` passes, against `pr_label_ensure`
    (`lib/labels.sh`) and a stubbed `gh`: a pull request that already carries
@@ -81,13 +81,13 @@
    naming the pull request and the label; a `present` verdict logs nothing;
    a `failed` verdict logs a `warning` too, never aborting the cycle a pull
    request has already been raised in.
-8. **A no-op Implementer is recorded.** Drive one cycle in which the
+8. <a id="impl-ac-8"></a>**A no-op Implementer is recorded.** Drive one cycle in which the
    Implementer reports `blocked` without opening a PR: the cycle must exit 0
    having logged an `attempt-failed` carrying that item and the stage's own
    reason — not die part-way, and not log nothing. Under `errexit` this is
    where a helper returning "not found" as a non-zero status silently kills
    the run (requirement 9).
-8e. **A stage that leaves a bare fence or a resumable session is recovered,
+8e. <a id="impl-ac-8e"></a>**A stage that leaves a bare fence or a resumable session is recovered,
    not discarded (requirement 9e).** `test/extract-json-result.test.sh`
    passes: a verdict fenced ``` … ``` with no `json` info string, or with a
    different one, parses on the fenced-block fallback exactly as a
@@ -102,7 +102,7 @@
    not parse; and — given an `.out` file with no `session_id` at all —
    attempts no resume, calls `claude` not once, and logs no `salvage` event,
    since there was nothing to spend a resume on.
-8a. **A void survives an agent trying to clear it.** Append an `item-void` for
+8a. <a id="impl-ac-8a"></a>**A void survives an agent trying to clear it.** Append an `item-void` for
    an item, then an `unblocked` for the same item, then run a cycle: the item
    must still be void and absent from the Co-Ordinator's candidates. This is
    the check that would have caught requirement 9b being collapsed into one
@@ -110,7 +110,7 @@
    log fills with confident, correct-looking events and the same item is
    worked forever. Assert the negative too: `unvoided` *does* clear it, or you
    have built a state no human can escape.
-8c. **A void must be earned (requirement 34d).** `test/void-guard.test.sh`
+8c. <a id="impl-ac-8c"></a>**A void must be earned (requirement 34d).** `test/void-guard.test.sh`
    passes: an entry with no `evidence` — and `null`, `""`, whitespace, `{}` and
    `[]` all count as none — is refused before any API call; an entry whose
    `evidence` is shaped `{ref, path, expect, pattern}` is fetched and tested —
@@ -239,7 +239,7 @@
    same verdict with prose evidence, or with no `pr_url` on the item, produces
    no `draft-obsolete-flagged` event and a `warning` naming which precondition
    failed.
-8d. **A `pr-ready` event means the pull request is not a draft (requirement
+8d. <a id="impl-ac-8d"></a>**A `pr-ready` event means the pull request is not a draft (requirement
    31a).** `test/handoff.test.sh` passes: a non-draft PR reports `already`
    without calling `gh pr ready`; a draft is flipped and reports `flipped`; a
    flip that exits 0 and changes nothing reports `failed`; and a PR whose state
@@ -249,7 +249,7 @@
    log `pr-ready` with `handoff: "script"`. Assert against GitHub, not against
    the log — the whole defect was a log that agreed with a Reviewer nobody had
    checked.
-8d-i. **A handed-off pull request is in somebody's review queue (requirement
+8d-i. <a id="impl-ac-8d-i"></a>**A handed-off pull request is in somebody's review queue (requirement
    31b).** `test/handoff.test.sh` passes for `confirm_review_requested`: a PR
    nobody is blocking reports `none` and asks for nothing; a blocking reviewer
    with no request pending is re-requested and reported `requested`; one already
@@ -265,7 +265,7 @@
    `CHANGES_REQUESTED` and the PR must still be un-mergeable afterwards. A
    re-request that cleared the block would have moved the landing gate, not
    rung it.
-8d-ii. **A `ready` verdict is confirmed against GitHub, not trusted, before any
+8d-ii. <a id="impl-ac-8d-ii"></a>**A `ready` verdict is confirmed against GitHub, not trusted, before any
    handoff mechanism runs (requirement 31c).** `test/review-gate.test.sh`
    passes: every required check passing is `clean`; a failing required check
    and a pull request reporting no required checks are both `dirty`, never a
@@ -363,7 +363,7 @@
    needs against the item. The last of those is what pins the exit status as
    the discriminator: a block that read the word alone would stall every pull
    request on a node whose token cannot see code-scanning alerts.
-8d-iii. **A standing human comment is reconciled — implemented or explicitly
+8d-iii. <a id="impl-ac-8d-iii"></a>**A standing human comment is reconciled — implemented or explicitly
    contested — before a draft pull request is flipped ready, and a refusal
    survives past the round it was made in (requirement 31c, agent-ops#533,
    agent-ops#539).** `test/reconciliation-gate.test.sh` passes: no human
@@ -438,7 +438,7 @@
    Both call sites must be pinned to
    forward the round-start bound: it is a trailing positional argument, so
    dropping it silently disarms the gate rather than failing.
-8e. **A pull request nobody could hand off reaches the Enabler, not the human
+69. <a id="impl-ac-69"></a>**A pull request nobody could hand off reaches the Enabler, not the human
    (requirement 32a).** Drive a cycle whose Reviewer answers `blocked`: the
    cycle must log an `attempt-failed` for the item carrying the PR's `pr_url`,
    so that the next cycle lists it blocked and, after
@@ -462,7 +462,7 @@
    handoff: one `review-gate-checks-degraded` event naming the count, in
    place of a second per-item `warning`, with `complete_handoff` still
    recorded as `"failed"` on the `enabler-examined` event.
-8e-i. **A stage that says nothing still names its pull request (requirement
+8e-i. <a id="impl-ac-8e-i"></a>**A stage that says nothing still names its pull request (requirement
    9).** `test/handoff.test.sh` passes its `pr_url_for_branch` assertions: an
    open PR on the claimed branch is found and its URL returned; a branch with
    no open PR yields nothing; an unreachable API yields nothing rather than a
@@ -476,7 +476,7 @@
    from the branch and not from the stage — that is the whole point, and a test
    whose Implementer helpfully left a breadcrumb passes without exercising
    anything.
-8e-ii. **A subject pull request that merges mid-stage is a completion, not an
+8e-ii. <a id="impl-ac-8e-ii"></a>**A subject pull request that merges mid-stage is a completion, not an
    attempt-failed (requirements 31d/32c, agent-ops#916, agent-ops#1063).**
    Drive a cycle whose `$impl_pr_url` is confirmed merged by `pr_merge_state`
    before the Reviewer's own stage-failure exit and its ready/blocked branch
@@ -501,7 +501,7 @@
    verdict are filed under the ordinary pipeline login (no `TOKEN`) exactly as
    the Enabler's own use of the two fields already is, and against the cycle's
    own clone of the target repository rather than its state directory
-   (requirement 23d's `GIT_DIR`, which a state directory fails outright)
+   (component 23d's `GIT_DIR`, which a state directory fails outright)
    (`test/merge-observed.test.sh`), and are silently absent at the stage-start
    call site, where no verdict exists yet to carry them. Assert the fall-through: a Reviewer
    claiming a merge `pr_merge_state` does not confirm (`merge_state` `open` or
@@ -510,7 +510,7 @@
    completion; and that an unreadable `pr_merge_state` on an otherwise-`ready`
    verdict refuses the handoff (a `log_reviewer_handback`, never a silent
    pass-through).
-8e-iii. **`pr_merge_state` (requirement 31d) is fail-closed, the same
+8e-iii. <a id="impl-ac-8e-iii"></a>**`pr_merge_state` (requirement 31d) is fail-closed, the same
    convention `confirm_pr_ready` already keeps.** `test/pr-merge-state.test.sh`
    passes: a `state: "MERGED"` reply reports `merged` with the merge commit's
    `oid` when GitHub supplies one and an empty second field when it does not;
@@ -519,7 +519,7 @@
    report `failed` and exit non-zero — never `open`, since a caller that read
    an unreadable pull request as still open would run the very handoff a
    genuine merge invalidates.
-8e-iiiA. **A `merge-conflicts` work order carries `base` from both producers
+8e-iiiA. <a id="impl-ac-8e-iiia"></a>**A `merge-conflicts` work order carries `base` from both producers
    (requirement 31e, agent-ops#1806).** `test/coordinator-merge-fallback.test.sh`
    passes: the deterministic fallback's `mc_cands` composition carries the
    gathered entry's own `base` onto both an ordinary and a takeover
@@ -530,7 +530,7 @@
    Without both, requirement 31e's own capture guard (an absent `base`
    skipping the capture) is always live, and `rebase_only` never fires on a
    real cycle regardless of how correct `rebase_only_push` itself is.
-8e-iv. **A `merge-conflicts` item's rebase-only push skips the Reviewer
+8e-iv. <a id="impl-ac-8e-iv"></a>**A `merge-conflicts` item's rebase-only push skips the Reviewer
    engagement, and only the engagement, for the cycle that just ran the
    Implementer (requirement 31e, agent-ops#1806).**
    `test/rebase-only-wiring.test.sh` extracts both
@@ -558,7 +558,7 @@
    instead. `test/rebase-only.test.sh` pins
    `rebase_only_push`/`diff_patch_id` themselves — see requirement 46a's own
    acceptance check.
-8e-v. **The Implementer's own stage-start pays the same advisory merge check
+8e-v. <a id="impl-ac-8e-v"></a>**The Implementer's own stage-start pays the same advisory merge check
    before it runs, for the five finishing sources whose work order already
    names a subject pull request (requirement 31f, agent-ops#1062).**
    `test/implementer-merge-observed-wiring.test.sh` extracts the step 6c
@@ -576,7 +576,7 @@
    a subject this stage can retire; and an `open` or unreadable
    (`failed`) `pr_merge_state` result runs the Implementer stage exactly as
    an item with no pre-existing pull request would.
-8f. **A human can reopen a void from where they actually are (requirement
+8f. <a id="impl-ac-8f"></a>**A human can reopen a void from where they actually are (requirement
    34f).** `test/unvoid-label.test.sh` passes: a request clears a void recorded
    before the label; a void recorded after it, or at the same instant, stands; a
    second cycle over the same label clears nothing; and a request cannot reach
@@ -590,7 +590,7 @@
    confirm the still-present label does not clear it. A label that keeps
    clearing is a permanent exemption, and its only symptom is an item that never
    stays void.
-8b. **The two states are visible apart, and so is "waiting on you".** A human
+8b. <a id="impl-ac-8b"></a>**The two states are visible apart, and so is "waiting on you".** A human
    looking at the monitor can tell "waiting on something" from "there is nothing
    to do here" without reading the log. If both render as one list, the operator
    cannot tell an item needing their help from one needing nothing, which is how
@@ -600,7 +600,7 @@
    table carries the issue link, or the Enabler's last verdict where there is no
    open issue (`docs/spec/dashboard/README.md`). Otherwise the one row on the page that
    is addressed *to the reader* looks exactly like the rows that are not.
-8g. **An item in both states reads as void, everywhere (requirement 34h).**
+8g. <a id="impl-ac-8g"></a>**An item in both states reads as void, everywhere (requirement 34h).**
    `test/cycle-state.test.sh` passes: `open_blocked_items` drops a blocked item
    that a later `item-void` covers, keeps one whose void was itself cleared by
    an `unvoided`, honours a repo-less void across every repo, and returns the
@@ -612,7 +612,7 @@
    block beside it is still listed — because a subtraction that over-reaches
    empties the one panel that says the pipeline is stuck, and an empty panel and
    a healthy pipeline look identical.
-8h. **A block outlives its impediment, never its work (requirement 34i).**
+8h. <a id="impl-ac-8h"></a>**A block outlives its impediment, never its work (requirement 34i).**
    `test/work-gone.test.sh` passes, and every assertion in it is made in both
    directions, because the two ways this can be wrong are not alike. Too eager
    clears a block out from under real work and costs a full cycle an hour until
@@ -645,7 +645,7 @@
    `scripts/gather-review-status.sh` and `scripts/gather-plan-status.sh` each run
    for real against a stubbed `gh` in that file, so what is asserted is the
    shipped scripts rather than a copy of their logic.
-8h-i. **A `needs-refinement` block clears the moment its own specification
+8h-i. <a id="impl-ac-8h-i"></a>**A `needs-refinement` block clears the moment its own specification
    exists, whoever wrote it (requirement 34o).** `test/needs-refinement.test.sh`
    passes: `refinement_block_refined_cleared`, given the open `needs-refinement`
    blocks and a `refinements_map`-shaped repo→item→`{ts}` map, returns the full
@@ -675,7 +675,7 @@
    not at that point in the cycle. Assert the negative too: called with no
    third argument and no global `blocked_json` set, no label removal call
    reaches `gh` at all.
-8i. **A structured dependency is held and released without a model ever
+8i. <a id="impl-ac-8i"></a>**A structured dependency is held and released without a model ever
    re-reading it (requirement 34j).** `test/dependency-gate.test.sh` passes:
    `dependency_refs` parses a same-repo `#195`, a cross-repo
    `owner/repo#42`, several references on one comma-separated line, and
@@ -698,7 +698,7 @@
    both halves clear within the one cycle the dependency resolved in, and
    that neither ever spent an Enabler engagement or a Co-Ordinator judgement
    doing it.
-8i-i. **A `needs_refinement` report re-asserting a resolved dependency is
+8i-i. <a id="impl-ac-8i-i"></a>**A `needs_refinement` report re-asserting a resolved dependency is
    refused, never recorded (requirement 16's dependency third; requirement
    34e; agent-ops#566).** `test/dependency-gate.test.sh` passes:
    `dependency_refusal_reason` refuses an entry only when all three hold — its
@@ -723,7 +723,7 @@
    under-specification report on an item present in it, are both recorded
    exactly as requirement 34e already describes, proving the refusal is scoped
    to the false dependency claim and leaves the judgement half untouched.
-8j. **A corroborated void closes the GitHub object it names, exactly once
+8j. <a id="impl-ac-8j"></a>**A corroborated void closes the GitHub object it names, exactly once
    (requirement 34k).** `test/close-void-github-items.test.sh` passes against
    a stubbed `gh`: an open issue or an open, obsolete pull request named by a
    void from any of the three writers — Co-Ordinator, Enabler, Implementer,
@@ -756,7 +756,7 @@
    twice and confirming the second call still yields the recorded set, the
    fact that stops the sweep re-closing an object a human has since reopened
    by hand rather than through `unvoid_label`.
-36f. **The delegate mandate reaches exactly three things, and its act waits out
+36f. <a id="impl-ac-36f"></a>**The delegate mandate reaches exactly three things, and its act waits out
    the veto window (requirement 36f).**
    `test/escalation-autonomy.test.sh` passes:
    `escalation_autonomy_configured_level` resolves `decide-with-veto` from
@@ -862,7 +862,7 @@
    case: such a void closes its pull request through the ordinary
    `pr-<n>-…` branch, exactly as an `enabler` one does, while an
    unrecognised stage is still skipped before the action cap.
-8l. **A closing keyword is enforced, not requested (requirements 23b, 25a,
+8l. <a id="impl-ac-8l"></a>**A closing keyword is enforced, not requested (requirements 23b, 25a,
    17c).** `test/check-closing-keyword.test.sh` passes: called with only a
    body and a branch — no repo slug or pull request number, which the
    record-flip half below needs and the marker/keyword half does not — a PR
@@ -958,7 +958,7 @@
    issue GitHub reports `state_reason: "reopened"` is left alone and the
    skip reported, so a human's re-open is never undone on the hour; and the
    per-call action cap defers rather than floods.
-8m. **The closing-keyword and changelog-section checks block, not just
+8m. <a id="impl-ac-8m"></a>**The closing-keyword and changelog-section checks block, not just
    report (requirements 25a and 25c).** The one piece of requirements 25a
    and 25c that no file in this repository carries is the repo setting that
    makes a red check a blocked merge, so
@@ -980,7 +980,7 @@
    runs without it) and runs on every `doctor.sh` invocation, so a ruleset
    drifting back to report-only surfaces on the next run rather than only
    when a human reads the repo settings by hand (TD-PPagop-26080802).
-8n. **A claimed item's gone work is caught before the Implementer runs, not
+8n. <a id="impl-ac-8n"></a>**A claimed item's gone work is caught before the Implementer runs, not
    inside it (requirement 34m).** `test/preflight.test.sh` passes:
    `preflight_done_reason` returns the same reason `work_gone_clearances`
    would give the same item as a blocked entry — a closed issue, a finishing
@@ -1011,7 +1011,7 @@
    place; it decides nothing for an item not shaped `pr-<n>-review-<id>`, and
    nothing for an unreadable reviews read, without calling `gh` at all for
    the former.
-8o. **A void that is both actioned and old drops out of the extract; every
+8o. <a id="impl-ac-8o"></a>**A void that is both actioned and old drops out of the extract; every
    other one does not (requirement 34n).** `test/cycle-state.test.sh`'s
    `retire_void_items` section passes: an entry whose `{repo, item}` is in
    the actioned set and whose `ts` is at least `void_retire_after_days` old
@@ -1033,7 +1033,7 @@
    with no retirement arguments in sight, pinning that retirement is a
    property of the extract a caller requests, never of the shared
    blocked/void definition those three read directly off the log.
-8p. **The closing-keyword gate applies to every target repository, not only
+8p. <a id="impl-ac-8p"></a>**The closing-keyword gate applies to every target repository, not only
    the one carrying the workflow (requirement 25a, TD-PPagop-26080803).**
    `test/closing-keyword-gate.test.sh` passes against a stubbed `gh`:
    `closing_keyword_gate` reads a pull request's body and head branch and
@@ -1061,7 +1061,7 @@
    its prompt; an `unknown` one warns and hands the Reviewer nothing; a clean
    one does neither, and leaves the prompt byte-for-byte as it was before the
    section existed.
-55. **The ready-gate backstop catches a required context with no check run at
+66. <a id="impl-ac-66"></a>**The ready-gate backstop catches a required context with no check run at
    all, and leaves every pre-existing shape alone (issue #1543).**
    `test/review-gate.test.sh` passes, against the same stubbed `gh` its other
    assertions already use, extended to stub
@@ -1079,7 +1079,7 @@
    backstop exactly the same way. `review_gate_verdict`'s own existing
    assertions are unchanged, since `handoff_complete_review` and
    `landing_arm` already pass their own `default_branch` through unmodified.
-56. **The deterministic pre-flight finds a deleted or edited-away required
+56. <a id="impl-ac-56"></a>**The deterministic pre-flight finds a deleted or edited-away required
    check's producing job, and escalates it (issue #1543).**
    `test/required-check-preflight.test.sh` passes, against a stubbed `gh`:
    `_required_check_preflight_job_ids` extracts every top-level job id from a
@@ -1092,7 +1092,7 @@
    old side; a file outside `.github/workflows/` is never inspected; a
    dropped job that was never a required context finds nothing; and an
    unreadable ruleset, changed-file list, or base commit each find nothing
-   rather than blocking, the same non-blocking convention requirement 55's
+   rather than blocking, the same non-blocking convention requirement 66's
    own backstop applies. The finding path exits 0 — asserted both captured
    and uncaptured, with a required context deliberately sorting *after* the
    removed job id, the arrangement under which the loops' own last `grep`
@@ -1105,7 +1105,7 @@
    that used to produce it, the `required_status_checks` rule as the ask, and
    issue #1543 itself; no findings at all calls `create_escalation_issue`
    not once.
-25b. **The tech-debt close-guard finds exactly what requirement 25b's
+25b. <a id="impl-ac-25b"></a>**The tech-debt close-guard finds exactly what requirement 25b's
    evidence rules say it should, posts once per close, and never fails its
    own run (issue #877).** `test/tech-debt-close-guard.test.sh` passes,
    against a stubbed `gh`: an issue not carrying `pw::type:tech-debt` is
@@ -1137,7 +1137,7 @@
    path through the script exits 0 except that last usage failure — asserted
    directly, since a red run here must mean the guard could not operate, not
    that a close was irregular.
-25c. **A changelog section is enforced, not requested (requirement 25c,
+25c. <a id="impl-ac-25c"></a>**A changelog section is enforced, not requested (requirement 25c,
    D27).** `test/check-changelog-section.test.sh` passes: with no
    `## Changelog` section, a `chore`, `docs`, `refactor` or Dependabot
    `build(deps)`/`chore(deps)` title passes and a `feat`, `fix` or `perf`
@@ -1164,7 +1164,7 @@
    usage error (exit 2). Separately, `test/doctor.test.sh`'s ruleset cases
    (acceptance check 8m) cover the `changelog-section` context beside
    `closing-keyword`.
-8q. **A void shape with no closed-object or register-resolved signal still
+8q. <a id="impl-ac-8q"></a>**A void shape with no closed-object or register-resolved signal still
    retires, once its source stops yielding it (requirement 34n's liveness
    rule, TD-PPagop-26081303).** `test/cycle-state.test.sh`'s
    `void_liveness_actioned` section passes, against `lib/void-liveness.sh`:
@@ -1200,7 +1200,7 @@
    log still masks a liveness-retired id via `subtract_retired_voids` — the
    same round-trip the register-resolved path already proves, now covering
    every shape the rule actions.
-8r. **A void whose source or repo the config has dropped retires too
+8r. <a id="impl-ac-8r"></a>**A void whose source or repo the config has dropped retires too
    (requirement 34n's config signal, PR #340's review).**
    `test/cycle-state.test.sh`'s `void_config_actioned` section passes,
    against `lib/void-liveness.sh`: an entry naming a repo the configured
@@ -1227,7 +1227,7 @@
    dropped, an actioned-but-young one is kept — and, in `agent-cycle.sh`, that
    the array read is `all_repos_json` rather than the `--repo`-filtered
    `repos_json` or the back-pressure-narrowed `ordered_repos_json`.
-8k. **The changelog-section gate applies to every target repository, not only
+8k. <a id="impl-ac-8k"></a>**The changelog-section gate applies to every target repository, not only
    the one carrying the workflow (requirement 25c, agent-ops#1808).**
    `test/changelog-section-gate.test.sh` passes against a stubbed `gh`, on
    acceptance check 8p's own pattern: `changelog_section_gate` reads a pull
@@ -1256,13 +1256,13 @@
    verdict (with the closing-keyword gate clean) makes `safe` false without
    running the reconciliation gate or the draft flip, and an `unknown`
    verdict does not.
-9. A cron-style invocation from a minimal environment can resolve `claude`
+9. <a id="impl-ac-9"></a>A cron-style invocation from a minimal environment can resolve `claude`
    and run `claude -V` (or a tiny `claude -p` smoke test) successfully.
-10. One supervised full cycle (`--once`) against whichever repo the ordering
+10. <a id="impl-ac-10"></a>One supervised full cycle (`--once`) against whichever repo the ordering
     picks: it produces a labelled, mergeable, ready-for-review PR with the
     originating register updated and a complete log trail. Report the PR URL
     to the human rather than merging anything.
-11. **The eligibility rule round-trips through the real extract
+11. <a id="impl-ac-11"></a>**The eligibility rule round-trips through the real extract
     (requirement 35a).** `test/enabler-eligibility.test.sh` passes: an
     `attempt-failed` plus `enabler_after_coordinator_cycles` synthetic
     coordinator `stage-end`s (`exit_code: 0`) makes the item eligible with reason
@@ -1290,7 +1290,7 @@
     second, since the log is fleet-wide and `log_event`'s timestamps are
     whole-second, so the phantom set is matched on the whole
     `{repo, item, ts}` triple rather than on `ts` alone.
-11a. **The fingerprint wakes a quiet fleet at the threshold, and lets it go
+11a. <a id="impl-ac-11a"></a>**The fingerprint wakes a quiet fleet at the threshold, and lets it go
     quiet again (requirement 35b).** In `test/noop-skip.test.sh`, per the same
     discipline as the abandoned-drafts trap: an item entering the eligible set
     changes the fingerprint, its `reason` flipping to `issue-closed` changes it,
@@ -1299,7 +1299,7 @@
     Without the first three, the escalation path comes due on a quiet week and
     nothing runs until the forced recheck; without the fourth, adding the feature
     would appear to change every replayed cycle.
-11b. **An open escalation is invisible to the Co-Ordinator and to the Enabler.**
+11b. <a id="impl-ac-11b"></a>**An open escalation is invisible to the Co-Ordinator and to the Enabler.**
     Assign an issue and confirm requirement 16.4 excludes it from candidacy, and
     that the same issue's number in the repo's open-issue digest makes its item
     Enabler-ineligible. Then the half that closes the loop: with the issue gone
@@ -1307,7 +1307,7 @@
     the verification's examined event it is not eligible again. This is the check
     that the protocol the issue promises its reader — close it and the work
     resumes — is the protocol the code implements.
-11d. **An under-specified item is reported, blocked, refined and carried
+11d. <a id="impl-ac-11d"></a>**An under-specified item is reported, blocked, refined and carried
     forward (requirements 16a, 34e, 35d, 36b, 3h).**
     `test/needs-refinement.test.sh` passes: a well-formed report becomes a
     coordinator-stage `attempt-failed` marked `kind: "needs-refinement"` whose
@@ -1330,7 +1330,7 @@
     reason as requirement 35a's rule: too eager and two models re-specify each
     other's work forever, too shy and the item starves exactly as it did before
     any of this existed.
-11d-i. **An escalation the Script did not file is never claimed on the work
+11d-i. <a id="impl-ac-11d-i"></a>**An escalation the Script did not file is never claimed on the work
     item's thread (requirement 36b).** `test/enabler-verdicts.test.sh` passes,
     on both halves of the reconciliation — the call and the comment.
     Driving `maybe_run_enabler` itself with an `escalate` verdict on a
@@ -1367,16 +1367,3 @@
     kind; and a human comment landing on the thread after that same prior
     reconcile breaks the streak, so the next `escalation-failed` outcome
     posts a fresh correcting comment rather than staying silent.
-11e. **A human's own label is read back, and only where this mechanism put it
-    (requirement 34g).** `test/needs-refinement.test.sh` passes:
-    `refinement_hand_flag_new` turns a labelled, open issue with no existing
-    block — of any kind — into a fresh entry, and reports nothing for one
-    already blocked (no duplicate for the same label on the same item) or for
-    a labelled issue that is closed; `refinement_hand_flag_fields` marks what
-    it builds `hand_flagged: true` with no `unblock_condition`;
-    `refinement_hand_flag_cleared` maps a `hand_flagged` block whose issue has
-    lost the label — open or closed — to an `unblocked` candidate, but leaves
-    alone both a block still carrying the label and a block that is not marked
-    `hand_flagged` (the Script's own projection from a Co-Ordinator's report),
-    even when that one's label is also missing — proving the one-way rule
-    requirement 34e states for that population still holds.

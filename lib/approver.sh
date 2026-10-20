@@ -569,7 +569,7 @@ approver_escalation_retire() {
     *)      comment="This pull request's disagreement has ended ($detail)." ;;
   esac
   # The same envelope every other pull-request or issue comment this system
-  # posts wraps its prose in (requirement 3f, lib/pipeline-marker.sh): every
+  # posts wraps its prose in (component 3f, lib/pipeline-marker.sh): every
   # pipeline write lands under the owner's own GitHub account, so without the
   # visible header a human reading this escalation thread cannot tell this
   # close from one they wrote themselves.

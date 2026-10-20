@@ -13,4 +13,3 @@
 # removed line); never add slack by raising one. An entry for a file that is
 # missing, exempt or back within the budget fails the check: delete it.
 prompts/coordinator.md	124323	2144
-docs/spec/implementation/requirements/the-script-08.md	101213	2326

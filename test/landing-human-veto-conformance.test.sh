@@ -244,7 +244,7 @@ landing_arm() {
 # never reached once the veto already refused this attempt.
 pr_merge_state() { printf 'open\t'; }
 
-# The landing audit record's own reads (requirement 8x, agent-ops#578) —
+# The landing audit record's own reads (acceptance check 8x, agent-ops#578) —
 # stubbed the same way every other gate helper here is; this file's axis is
 # the human veto, not the audit record's own field content, which
 # test/landing-audit-record.test.sh covers directly.

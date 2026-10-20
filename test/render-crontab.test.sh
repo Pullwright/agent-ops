@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test/render-crontab.test.sh — the per-node schedule render (D5).
+# test/render-crontab.test.sh — the per-node schedule render.
 #
 # The properties that matter:
 #   - cadence for both pipelines, and bounds for the sync/heartbeat ticks,
