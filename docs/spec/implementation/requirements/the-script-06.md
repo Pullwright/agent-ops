@@ -591,8 +591,8 @@
    `comments` (author, timestamp, body — verbatim, oldest first). Each
    `issues_excluded` entry is `{number, reason}` — one per issue the
    deterministic filter below dropped, `reason` one of `"assigned"`,
-   `"blocked-label"`, or `"blocked-by: <ref>"` — see "The deterministic drop is
-   reported, not lost" below.
+   `"blocked-label"`, `"pager"`, or `"blocked-by: <ref>"` — see "The
+   deterministic drop is reported, not lost" below.
 
    - **Why this source is pre-fetched at all.** It used to be the
      Co-Ordinator's own read, and that contract failed closed: cycle
@@ -605,7 +605,11 @@
      array makes the candidate set an input rather than an errand, the same
      move every drifted source before it got (3a, 3c, 3e, 3g).
    - **The deterministic half of requirement 16.4 is applied here**: assigned
-     issues, issues labelled `blocked` (case-insensitive), issues naming an
+     issues, issues labelled `blocked` (case-insensitive), issues labelled
+     `pw::pager` (agent-ops#2564 — a Pager tracking issue is pager-owned,
+     never ordinary selectable work; merging a branch titled to fix one would
+     let GitHub's own `Fixes #N` auto-close retire the page directly,
+     bypassing `lib/pager.sh`'s own event-sourced lifecycle), issues naming an
      unresolved `Blocked-by:` reference (requirement 34j, checked live once
      each candidate's whole thread is in hand), and the pull requests the
      issues endpoint interleaves are dropped in the gatherer, so the
@@ -637,7 +641,7 @@
      and keeping the two bands disjoint is not a deterministic-filter drop
      `issues_excluded` needs to explain.
    - **The deterministic drop is reported, not lost** (agent-ops#447). Before
-     this, the three drops above left nothing behind anywhere — no line on
+     this, the drops above left nothing behind anywhere — no line on
      stdout, no line on stderr, no event in the shared log — so an issue an
      Enabler had just refined, or a human had assigned to themselves for
      their own reasons, could sit permanently unselectable with nobody able
@@ -902,8 +906,9 @@
    issue's membership of this band is trustable even though its body stays
    framed as untrusted data — that has also survived the same deterministic
    filter requirement 3j applies to the `issues` band: not assigned, not
-   labelled `blocked`, and naming no still-open `Blocked-by:` reference
-   (requirement 34j), shared between the two gatherers via
+   labelled `blocked`, not labelled `pw::pager` (agent-ops#2564), and naming
+   no still-open `Blocked-by:` reference (requirement 34j), shared between
+   the two gatherers via
    `lib/issue-prefetch.sh` rather than re-derived. `source: "tech-debt"`, the
    bare issue number as `ref` (and as `number`), `title`, `url`, `labels`,
    `author`, `created_at`, `updated_at`, and the whole issue thread — body and

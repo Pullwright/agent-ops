@@ -13,8 +13,9 @@
 #     test asserts the gatherer does not additionally require anything else.
 #   - **The deterministic filter, shared with scripts/gather-issues.sh via
 #     lib/issue-prefetch.sh, still applies**: an assigned issue, an issue
-#     labelled `blocked`, and an issue naming a still-open `Blocked-by:`
-#     reference (requirement 34j) are all dropped.
+#     labelled `blocked`, an issue labelled `pw::pager` (agent-ops#2564), and
+#     an issue naming a still-open `Blocked-by:` reference (requirement 34j)
+#     are all dropped.
 #   - **Each candidate carries the whole issue thread verbatim** — `body` and
 #     every comment — plus `source`, `ref` (the bare issue number, as a
 #     string), `number`, `url`, `title`, `labels`, `author`, `created_at` and
@@ -113,8 +114,10 @@ export PATH="$tmp_dir/bin:$PATH"
 # prove ascending sort; #18 is open but carries no `pw::type:tech-debt` label
 # at all, proving the label filter (now this script's own `select`, since
 # `issue_prefetch_open_issues` returns every open issue — agent-ops#1085)
-# still excludes it. One page (`hasNextPage: false`) is enough for this
-# fixture's five issues.
+# still excludes it; #25 carries both `pw::type:tech-debt` and `pw::pager`,
+# unassigned and not `Blocked`-labelled, proving the pager drop fires here
+# too (agent-ops#2564). One page (`hasNextPage: false`) is enough for this
+# fixture's six issues.
 export STUB_ISSUES="$tmp_dir/issues.json"
 export STUB_REFS_DIR="$tmp_dir/refs"
 mkdir -p "$STUB_REFS_DIR"
@@ -165,7 +168,14 @@ cat >"$STUB_ISSUES" <<'EOF'
    "assignees": {"totalCount": 0},
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-17T08:00:00Z", "updatedAt": "2026-07-17T08:00:00Z",
-   "body": "An ordinary issue.", "comments": {"nodes": []}}
+   "body": "An ordinary issue.", "comments": {"nodes": []}},
+  {"number": 25, "url": "https://github.com/o/r/issues/25", "title": "Pager-tagged debt",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::type:tech-debt"}, {"name": "pw::pager"}]},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Labelled pw::pager, so not a candidate (agent-ops#2564).", "comments": {"nodes": []}}
 ]}}}}
 EOF
 cat >"$STUB_REFS_DIR/24.json" <<'EOF'
@@ -186,6 +196,8 @@ assert_eq "the issue with an unresolved Blocked-by reference is dropped" \
   "false" "$(jq 'any(.[]; .number == 23)' <<<"$out")"
 assert_eq "an issue carrying no pw::type:tech-debt label at all is never a candidate" \
   "false" "$(jq 'any(.[]; .number == 18)' <<<"$out")"
+assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
+  "false" "$(jq 'any(.[]; .number == 25)' <<<"$out")"
 assert_eq "nothing on stderr on the success path" "" "$(cat "$tmp_dir/err")"
 
 # --- Sorted by issue number ascending ---

@@ -10,10 +10,11 @@
 # the model, each failing silently if broken:
 #
 #   - **The deterministic filter.** Assigned issues, `blocked`-labelled
-#     issues (whatever the case) and the pull requests the issues endpoint
-#     interleaves must be dropped by the gatherer — requirement 16.4's
-#     deterministic half — while everything else arrives whole-thread, with
-#     its `Priority` band read exactly as the source-state digest reads it.
+#     issues (whatever the case), `pw::pager`-labelled issues
+#     (agent-ops#2564) and the pull requests the issues endpoint interleaves
+#     must be dropped by the gatherer — requirement 16.4's deterministic
+#     half — while everything else arrives whole-thread, with its `Priority`
+#     band read exactly as the source-state digest reads it.
 #   - **The exclusion report.** Every issue the deterministic filter drops
 #     (never a pull request, which was never a candidate) must reappear in
 #     the sibling `excluded` array with its number and why — agent-ops#447:
@@ -97,7 +98,9 @@ export PATH="$tmp_dir/bin:$PATH"
 # case-insensitive); #8, a pull request, is simply absent — GraphQL's
 # `issues` connection never returns one to begin with, unlike the REST
 # listing this replaced, so there is nothing to fixture for it; #9 is clean,
-# untriaged (no `Priority` — the Medium default) and commentless.
+# untriaged (no `Priority` — the Medium default) and commentless; #16 is
+# labelled `pw::pager`, unassigned and not `Blocked`-labelled, proving the
+# pager drop fires on its own (agent-ops#2564).
 export STUB_ISSUES="$tmp_dir/issues.json"
 cat >"$STUB_ISSUES" <<'EOF'
 {"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
@@ -170,7 +173,15 @@ cat >"$STUB_ISSUES" <<'EOF'
      {"__typename": "IssueFieldSingleSelectValue", "name": "High",
       "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
-   "body": "This belongs to the tech-debt band instead (issue #875).", "comments": {"nodes": []}}
+   "body": "This belongs to the tech-debt band instead (issue #875).", "comments": {"nodes": []}},
+  {"number": 16, "url": "https://github.com/o/r/issues/16", "title": "Pager: blocked-label-orphaned",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::pager"}]},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "A pager tracking issue, never ordinary selectable work (agent-ops#2564).",
+   "comments": {"nodes": []}}
 ]}}}}
 EOF
 
@@ -191,14 +202,18 @@ assert_eq "a pw::type:tech-debt-labelled issue is dropped (issue #875)" \
   "false" "$(jq 'any(.[]; .number == 14)' <<<"$candidates_json")"
 assert_eq "  ... and never reported as excluded either — it belongs to the other band" \
   "false" "$(jq 'any(.[]; .number == 14)' <<<"$excluded_json")"
+assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
+  "false" "$(jq 'any(.[]; .number == 16)' <<<"$candidates_json")"
 
 # --- The exclusion report: what was dropped, and why (agent-ops#447) ---
-assert_eq "exactly the two deterministic drops are reported" \
-  "2" "$(jq 'length' <<<"$excluded_json")"
+assert_eq "exactly the three deterministic drops are reported" \
+  "3" "$(jq 'length' <<<"$excluded_json")"
 assert_eq "the assigned issue is reported, tagged assigned" \
   '{"number":6,"reason":"assigned"}' "$(jq -c '.[] | select(.number == 6)' <<<"$excluded_json")"
 assert_eq "the Blocked-labelled issue is reported, tagged blocked-label" \
   '{"number":7,"reason":"blocked-label"}' "$(jq -c '.[] | select(.number == 7)' <<<"$excluded_json")"
+assert_eq "the pw::pager-labelled issue is reported, tagged pager" \
+  '{"number":16,"reason":"pager"}' "$(jq -c '.[] | select(.number == 16)' <<<"$excluded_json")"
 assert_eq "the pull request is never reported as excluded" \
   "false" "$(jq 'any(.[]; .number == 8)' <<<"$excluded_json")"
 

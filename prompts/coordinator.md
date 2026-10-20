@@ -197,9 +197,9 @@ object ever names another repository.
   "Project-review recommendations" below for how to read it, and the
   three-step walk that serves as this field's own fallback.
 - Each entry's `tech_debt` is the repo's own open GitHub issues labelled
-  `pw::type:tech-debt`, whole thread included — **already fetched, already
-  filtered on the same deterministic terms as `issues` (assigned/
-  blocked-label/`Blocked-by:`), and already cross-referenced against
+  `pw::type:tech-debt`, whole thread included — **already fetched, filtered
+  on the same deterministic terms as `issues` (assigned/
+  blocked-label/pager/`Blocked-by:`), and cross-referenced against
   `claimed`, `blocked` and `void` for you** by the Script (see "Tech-debt
   candidates" below). Every entry present is a live candidate for the
   `tech-debt` source; the array is the candidate set the same way `issues` is
@@ -267,7 +267,7 @@ object ever names another repository.
   than shortness, is what a live read buys you.
 - Each entry's `issues_excluded` is the number and reason for every issue the
   Script's own deterministic filter just dropped from `issues` above —
-  `{"number": 125, "reason": "assigned" | "blocked-label" | "blocked-by: <ref>"}`
+  `{"number": 125, "reason": "assigned" | "blocked-label" | "pager" | "blocked-by: <ref>"}`
   — record only, not a candidate list: nothing in it is yours to select,
   re-check, or report `needs_refinement` over (agent-ops#447). It exists so a
   human reading the cycle log or the dashboard can see a drop that used to
@@ -1063,10 +1063,10 @@ is a *repair of* the item, not the item itself.
 
 **Tech-debt candidates.** The candidates are the pre-fetched `tech_debt`
 entries — every open GitHub issue in the repo carrying the label
-`pw::type:tech-debt` that the Script has already confirmed is unclaimed,
-unblocked and not void, and that has already passed the same deterministic
-filter as an `issues` candidate: not assigned, not labelled `blocked`, and
-naming no still-open `Blocked-by:` reference (requirement 34j). Do not go
+`pw::type:tech-debt` that the Script already confirmed unclaimed,
+unblocked and not void, and that already passed the same deterministic
+filter as an `issues` candidate: not assigned, not labelled `blocked`/`pw::pager`
+and naming no still-open `Blocked-by:` reference (requirement 34j). Do not go
 looking for these yourself, do not query the issues API for the label to
 check, and do not re-derive the assigned/blocked/dependency/claimed/blocked/
 void exclusions for an entry already in this array — the Script has done all

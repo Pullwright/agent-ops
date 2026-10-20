@@ -310,9 +310,10 @@
       *stale* blocked entry; only a blocked issue carrying evidence fresh
       enough to warrant requirement 18a's live re-check ever reaches the
       Co-Ordinator;
-    - a tech-debt item that is assigned, labelled `blocked`, or names an
-      unresolved `Blocked-by:` dependency (requirement 34j) — the same three
-      deterministic drops the `issues` bullet below describes, applied by
+    - a tech-debt item that is assigned, labelled `blocked`, names an
+      unresolved `Blocked-by:` dependency (requirement 34j), or is labelled
+      `pw::pager` (agent-ops#2564) — the same four deterministic drops the
+      `issues` bullet below describes, applied by
       `scripts/gather-tech-debt.sh` before the runtime input is assembled
       (requirement 3t);
     - already referenced by any open PR or draft (a claim, per the repos'
@@ -357,14 +358,16 @@
       the backstop for when it is missing anyway — the item is then
       investigated once, and the finding remembered.
     - an issue that is assigned, labelled `blocked`, names an unresolved
-      `Blocked-by:` dependency (requirement 34j), or is a question or
-      discussion rather than actionable work — the first three are
-      deterministic and already applied by the Script (requirement 3j drops
-      them from the `issues` array before the Co-Ordinator sees it, and
-      reports each drop and its reason in `issues_excluded`, below); the
-      judgement half is the Co-Ordinator's, over the whole thread
-      (requirement 14a), since a comment can block, close, re-scope, or
-      answer an issue that its body alone would make look selectable.
+      `Blocked-by:` dependency (requirement 34j), labelled `pw::pager`
+      (agent-ops#2564 — a Pager tracking issue is pager-owned, never
+      ordinary selectable work), or is a question or discussion rather than
+      actionable work — the first four are deterministic and already applied
+      by the Script (requirement 3j drops them from the `issues` array before
+      the Co-Ordinator sees it, and reports each drop and its reason in
+      `issues_excluded`, below); the judgement half is the Co-Ordinator's,
+      over the whole thread (requirement 14a), since a comment can block,
+      close, re-scope, or answer an issue that its body alone would make look
+      selectable.
 
       **The dependency third is never the Co-Ordinator's to re-derive, and the
       Script refuses it if offered anyway** (agent-ops#566). An issue reaching

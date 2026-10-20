@@ -42,11 +42,13 @@
 #
 # This gatherer now shares its deterministic filter and its `Blocked-by:`
 # live-check with scripts/gather-issues.sh, via lib/issue-prefetch.sh: an
-# issue that is assigned, labelled `blocked`, or names a still-open
-# `Blocked-by:` reference (requirement 34j) is dropped here on the same terms
-# `issues` drops it, rather than by a second copy of that logic. A pull
-# request never carries this label in practice, but is dropped anyway, the
-# same defensive way `issues` drops one.
+# issue that is assigned, labelled `blocked`, labelled `pw::pager`
+# (agent-ops#2564 — a Pager tracking issue is pager-owned, never ordinary
+# selectable work), or names a still-open `Blocked-by:` reference
+# (requirement 34j) is dropped here on the same terms `issues` drops it,
+# rather than by a second copy of that logic. A pull request never carries
+# this label in practice, but is dropped anyway, the same defensive way
+# `issues` drops one.
 #
 # **Transition note, accepted deliberately (issue #875):** between this
 # landing and a repo's own register migration, that repo's unmigrated
