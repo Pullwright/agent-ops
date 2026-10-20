@@ -51,8 +51,9 @@ Four rungs, each including the one below it unless stated otherwise:
 4. **`decide-with-veto`** — includes everything `decide-tactical` reaches,
    and widens it in exactly three named reaches: accepting residual risk in
    an owner-held repository where no credential, secret, App, ruleset, or
-   account is touched; corroborating a void for three specific abandoned or
-   superseded pull-request shapes; and relocating a misfiled item into the
+   account is touched; corroborating a void for three specific pull-request
+   shapes requirement 34k already closes (an abandoned one, a superseded
+   one, and a review-feedback one); and relocating a misfiled item into the
    pipeline's own repository. A decision that carries an *act* under this
    rung waits out a veto window before the act is taken, so a human can
    reopen the decision's own log issue to stop it first.
@@ -69,9 +70,10 @@ whenever a decision spends money or changes a cap, budget, model tier, or
 node count; touches credentials, secrets, GitHub Apps, rulesets,
 permissions, or organisation or account settings; touches licence, revenue,
 pricing, or any go-to-market matter; adds, amends, or renames a roadmap
-decision or phase gate; creates an ongoing human obligation; moves a trust
-boundary of the pipeline itself (`merge_autonomy`, `escalation_autonomy`,
-a protected path, a kill switch, an App's own identity); depends on an
+decision, a phase gate, or a roadmap item; creates an ongoing human
+obligation; moves a trust boundary of the pipeline itself (`merge_autonomy`,
+`escalation_autonomy`, a protected path, a kill switch, the Approver's own
+identity); depends on an
 external service or account the pipeline does not hold; needs information
 that exists only in someone's head; or was explicitly reserved by the
 item's own author — through the `pw::owner-decision` label or an "Owner
@@ -108,8 +110,11 @@ record (inheriting the same veto window as `decide-with-veto` above), or an
 owner-only issue assigned exactly like an ordinary escalation. Where
 `notify_webhook_url` is configured, a firing (or clearing) pager posts
 there directly, independent of whether anyone is reading the issue tracker
-at that moment; a master switch can disable filing while still letting the
-underlying checks evaluate and reach the dashboard.
+at that moment. `pager_enabled` is the master switch, and it gates
+evaluation outright — set false and the checks themselves stop running,
+dashboard included; leaving `pager_repo` empty, by contrast, still lets
+every check evaluate and reach the dashboard, only with nowhere to file an
+issue when one fires.
 
 Authoritative: `docs/spec/implementation/requirements/approver-02.md`
 § "Fleet-level invariants (the pager)", requirement 51; `config.schema.json`,

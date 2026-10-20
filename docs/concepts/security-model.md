@@ -50,7 +50,10 @@ reporting — is turned off at the source by the scheduler's own environment,
 not merely left unrouted.
 
 Authoritative: `docs/guides/operating/install-a-node.md` § "The egress
-fence".
+fence" (which names the Anthropic case only); `deploy/docker/egress-allowlist.txt`
+is where the xAI entries (`api.x.ai`, `auth.x.ai`, D29) sit alongside it,
+which is why this page says "the model provider's API" rather than naming
+just one.
 
 The monitoring dashboard follows the same boundary from the other
 direction: it is served on the host's own loopback address by default, and,
@@ -94,8 +97,8 @@ pipeline provisions exactly two, kept deliberately separate:
 Authoritative: `docs/ROADMAP.md` § "Settled decisions", decisions D18
 ("Merge autonomy") and D25 ("Forge authoring identity");
 `docs/guides/working-with-pullwright/README.md` § "Merge autonomy"; the
-exact permission triple is `docs/spec/implementation/components/components-02.md`,
-component 14's D18 Stage 3 autonomy-readiness verdict.
+exact permission triple is `docs/spec/implementation/configuration.md`
+§ "Extended notes: `merge_autonomy`" (D18 Stage 3).
 
 Underneath both identities, every model stage runs as its own Unix user,
 distinct from the user the Script and its scheduler run as. That user

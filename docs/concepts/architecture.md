@@ -106,8 +106,10 @@ actors from the other pipelines:
     agent.
 
 Authoritative: `docs/spec/implementation/README.md` § "Actors", items 1–10
-(numbered 5a and 7–10 in that document's own list); `docs/spec/review.md`
-§ "Actors"; `docs/spec/monitor.md` § "Actors".
+(numbered 5a for the Approver and 6–10 for everything from the Human
+Reviewer on, since inserting 5a shifts every item after it by one against
+this page's own sequential 1–11); `docs/spec/review.md` § "Actors";
+`docs/spec/monitor.md` § "Actors".
 
 ## The Script is the only launcher of agents
 
@@ -199,9 +201,12 @@ configuration".
 
 ## Cost
 
-A full cycle's worst case is one small selection pass, one implementation
-pass (the dominant cost of a cycle), and one review pass — Sonnet by
-default, Opus only when the work graded itself `complexity:high`. A firing
+A full cycle's worst case is one small selection pass, one Sonnet
+implementation pass (the dominant cost of a cycle), and one review pass —
+Sonnet by default, Opus only when the work graded itself `complexity:high`;
+that escalation is the Reviewer's own (`reviewer_model_complex`) and has no
+Implementer-side counterpart, so a high-complexity grade never raises the
+implementation pass's own model. A firing
 that finds nothing changed since the last one makes no model call at all:
 the Script's own no-op short-circuit answers it with a handful of `gh` calls
 and a hash instead of a full Co-Ordinator pass. The Approver stage costs

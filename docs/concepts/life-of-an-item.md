@@ -170,7 +170,7 @@ stateDiagram-v2
     blocked --> open: unblocked
     open --> voided: item-void
     voided --> open: "unvoided (a human applies the unvoided label)"
-    open --> abandoned: draft-obsolete-flagged
+    blocked --> abandoned: draft-obsolete-flagged
     abandoned --> voided: "a human applies the obsolete label"
     open --> superseded: "orphan-branch-released, reason superseded"
     landed --> [*]
@@ -180,7 +180,10 @@ stateDiagram-v2
 
 Authoritative: `docs/FLOW-SCHEMA.md` § "Terminal fates";
 `docs/spec/implementation/requirements/logging-and-state-01.md`,
-requirement 33 (the full event enum).
+requirement 33 (the event enum; `draft-obsolete-flagged` itself is
+requirement 36a's own `flag_obsolete`, logged by a `still-blocked` Enabler
+verdict on an item already blocked, in
+`docs/spec/implementation/requirements/enabler-01.md`).
 
 ## Related pages
 
