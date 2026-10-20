@@ -1098,6 +1098,21 @@ assert_eq "  ... the gh issue edit call names the current slug" "1" \
 assert_eq "  ... never the old one" "0" \
   "$(grep -c '^issue edit 7 -R old/r' "$GH_CALLS_FILE")"
 
+# And it converges: the removal the remedy just made is logged
+# `own-label-action remove` under the *canonical* slug, which the resolved
+# grouping pairs with the old-slug `add` — so the next evaluation window
+# clears instead of re-firing for ever. This is the half of #2466's own
+# acceptance that the already-paired fixture below cannot show, because
+# there the first pass finds nothing to remove and folds an empty remedy log
+# back in; here a real write had to happen first, which is the shape of
+# #1156 if its own removals never succeeded under the old slug at all.
+assert_eq "  ... and the remedy's own remove event is logged under the current slug" "new/r" \
+  "$(jq -r 'select(.event == "own-label-action") | .repo' "$PAGER_REMEDY_LOG_FILE")"
+orph_stale_alias_pass2="$WORKDIR/orphaned-stale-aliased-pass2.jsonl"
+cat "$orph_log_stale_aliased" "$PAGER_REMEDY_LOG_FILE" > "$orph_stale_alias_pass2"
+assert_eq "  ... so a second pass with that remedy event folded back in stops firing" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_blocked_label_orphaned "[]" "$orph_stale_alias_pass2")")"
+
 # Resolution collapses two slugs onto one, so a renamed repo whose history
 # names both its old and its current slug — the case this whole resolution
 # exists for — reaches the candidate list twice and must be acted on once.
