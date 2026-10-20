@@ -848,8 +848,11 @@ Retired automatically by agent-cycle.sh (requirement 2.7)."
 # issue (never filed, or already closed by hand) is not an error: there is
 # nothing to retire, and the function returns quietly.
 #
-# Returns non-zero on either failure window below — the lookup erroring, or
-# the close itself failing — rather than always 0 as before #2511: the caller
+# Returns non-zero on any of the three failure windows below — the `gh issue
+# list` call erroring, that call succeeding but returning a payload `jq`
+# cannot parse (which yields the same empty match a genuinely empty lookup
+# does, so only `jq`'s own exit status tells the two apart, agent-ops#2554),
+# or the close itself failing — rather than always 0 as before #2511: the caller
 # (`lib/standdown.sh`'s own 2.0h block) uses this to decide whether to clear
 # its own `cred_prev_verdict` state to `"ok"` or leave it at `"refused"` so a
 # future cycle retries the close instead of forfeiting it for the container's

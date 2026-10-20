@@ -823,12 +823,16 @@
       file's verdict only advances to `"ok"` when the close actually
       happened, mirroring the filing side's own "will retry next cycle"
       ordering. A `gh issue close` failure, or the `gh issue list` lookup
-      inside `credential_refused_retire_resolved` itself erroring (both
-      logged as a `warning` event, the lookup distinguishing an error from a
-      genuinely empty result rather than conflating the two), leaves the
-      state verdict at `"refused"` so the probe gate re-probes and retries
-      the close next cycle rather than forfeiting it for the container's
-      whole remaining lifetime. The same holds when the probe right after a
+      inside `credential_refused_retire_resolved` itself erroring — the `gh`
+      call failing, or succeeding and returning a payload `jq` cannot parse,
+      which yields the same empty match a genuinely empty lookup does, so
+      only `jq`'s own exit status tells the two apart (agent-ops#2554) —
+      leaves the state verdict at `"refused"` so the probe gate re-probes
+      and retries the close next cycle rather than forfeiting it for the
+      container's whole remaining lifetime. Each of the three is logged as
+      its own `warning` event, and the lookup distinguishes an error of
+      either kind from a genuinely empty result rather than conflating the
+      two. The same holds when the probe right after a
       `refused` verdict comes back `transient` (a 5xx) or crashes rather than
       clean: the state is left untouched rather than advanced to `"ok"`, so
       `cred_prev_verdict` still reads `refused` on a later probe and a

@@ -721,12 +721,17 @@
    The retirement trigger persists rather than being consumed unconditionally
    (agent-ops#2511). `test/credential-refused-retire-resolved.test.sh` shows
    `credential_refused_retire_resolved` returns non-zero, rather than always
-   0, on both failure windows: a stubbed `gh issue close` failure (logging a
-   `warning` event naming the issue and that it will retry next cycle,
-   leaving `credential-refused-retired` unlogged), and a stubbed `gh issue
-   list` failure distinct from a genuinely empty result — the former logs a
-   `warning` event and returns non-zero, the latter stays a quiet no-op
-   returning 0, exactly as before. `test/standdown-credential-preflight.test.sh`
+   0, on each of its three failure windows: a stubbed `gh issue close`
+   failure (logging a `warning` event naming the issue and that it will
+   retry next cycle, leaving `credential-refused-retired` unlogged); a
+   stubbed `gh issue list` failure distinct from a genuinely empty result —
+   the former logs a `warning` event and returns non-zero, the latter stays
+   a quiet no-op returning 0; and a `gh issue list` call that succeeds but
+   returns a payload `jq` cannot parse (agent-ops#2554), which logs its own
+   `warning` event naming the unparseable payload and the retry, attempts no
+   close, leaves `credential-refused-retired` unlogged, and returns non-zero
+   rather than reading the empty match that payload also yields as a
+   genuinely empty lookup. `test/standdown-credential-preflight.test.sh`
    shows the 2.0h block reads that return value: on a recovered probe where
    the stubbed retirement function reports success, the state file's
    verdict advances to `"ok"`; where it reports failure, the state file's
