@@ -541,7 +541,7 @@ latest_issues_excluded() {
   printf '%s' "$out"
 }
 
-# subtract_retired_voids VOID_JSON RETIRED_JSON
+# subtract_retired_voids VOID_JSON RETIRED_JSON [ALIASES_JSON]
 # Print VOID_JSON (the shape `void_items` returns) with every entry whose
 # {repo, item} pair a RETIRED_JSON record (`void_retired_items`) covers
 # dropped — "covers" meaning the retirement's `ts` is strictly later than the
@@ -557,24 +557,35 @@ latest_issues_excluded() {
 # (requirement 4g). Fails safe the same way `retire_void_items` does: a jq
 # failure on either input returns VOID_JSON verbatim — never subtracting is
 # one oversized extract, wrongly subtracting is a verdict silently dropped.
+#
+# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) maps a repo
+# slug this pipeline used to be configured under to the slug it is configured
+# under now (`config_repo_slug_aliases`), defaulting to `{}`. Applied to the
+# `repo` half of the match on both sides — the void entry and each RETIRED_JSON
+# candidate compared against it — so a void entry recorded under a pre-rename
+# slug still matches a retirement recorded under the current one. Travels as a
+# third document on stdin, alongside the two unbounded arrays above, never
+# `--argjson` — the same requirement-4g delivery.
 subtract_retired_voids() {
-  local void_json="${1:-[]}" retired_json="${2:-[]}" out=""
-  # shellcheck disable=SC2016  # jq's $void/$retired/$e, not the shell's.
+  local void_json="${1:-[]}" retired_json="${2:-[]}" aliases_json="${3:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases_json" >/dev/null 2>&1 || aliases_json='{}'
+  # shellcheck disable=SC2016  # jq's $void/$retired/$aliases/$e, not the shell's.
   out="$(jq -c -n '
-    input as $void | input as $retired
-    | $void
-    | map(. as $e
-          | select($retired
-                   | any((.repo // "") == ($e.repo // "")
-                         and (.item // "") == ($e.item // "")
-                         and ((.ts // "") > ($e.ts // "")))
-                   | not))
-  ' <<<"$void_json"$'\n'"$retired_json" 2>/dev/null || true)"
+    input as $void | input as $retired | input as $aliases
+    | def canon_repo($r): ($aliases[$r] // $r);
+      $void
+      | map(. as $e
+            | select($retired
+                     | any(canon_repo(.repo // "") == canon_repo($e.repo // "")
+                           and (.item // "") == ($e.item // "")
+                           and ((.ts // "") > ($e.ts // "")))
+                     | not))
+  ' <<<"$void_json"$'\n'"$retired_json"$'\n'"$aliases_json" 2>/dev/null || true)"
   [[ -n "$out" ]] || out="$void_json"
   printf '%s' "$out"
 }
 
-# retire_void_items VOID_JSON ACTIONED_JSON RETIRE_AFTER_DAYS [NOW_EPOCH]
+# retire_void_items VOID_JSON ACTIONED_JSON RETIRE_AFTER_DAYS [NOW_EPOCH] [ALIASES_JSON]
 # Print VOID_JSON (the shape `void_items` returns) with every entry that is
 # both **actioned** — its `{repo, item}` pair present in ACTIONED_JSON — and
 # **old** — its `ts` at least RETIRE_AFTER_DAYS old — dropped (requirement
@@ -614,29 +625,44 @@ subtract_retired_voids() {
 # `void-retired` event, and it is the recorded set (`void_retired_items`,
 # subtracted by `subtract_retired_voids` above) that keeps an id from being
 # re-evidenced and re-decided every cycle thereafter.
+#
+# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) maps a repo
+# slug this pipeline used to be configured under to the slug it is configured
+# under now (`config_repo_slug_aliases`), defaulting to `{}`. Applied to the
+# `repo` half of the key on both sides of the match — each ACTIONED_JSON pair
+# and the void entry itself — so a void entry recorded under a pre-rename slug
+# still matches an actioned pair the caller built from a live, current-slug
+# read; without it, such an entry is never actioned and so never retires,
+# growing requirement 34n's extract forever. Travels as a third document on
+# stdin, alongside the two unbounded arrays above, never `--argjson` — the
+# same requirement-4g delivery.
 retire_void_items() {
-  local void_json="${1:-[]}" actioned_json="${2:-[]}" retire_days="${3:-0}" now="${4:-}"
+  local void_json="${1:-[]}" actioned_json="${2:-[]}" retire_days="${3:-0}" now="${4:-}" aliases_json="${5:-{\}}"
   local out=""
   if ! [[ "$retire_days" =~ ^[0-9]+$ ]] || (( retire_days == 0 )); then
     printf '%s' "$void_json"
     return 0
   fi
   [[ "$now" =~ ^[0-9]+$ ]] || now="$(date +%s)"
+  jq -e 'type == "object"' <<<"$aliases_json" >/dev/null 2>&1 || aliases_json='{}'
   # Both arrays on stdin, never in argv (requirement 4g): VOID_JSON is the
   # unbounded extract itself, and ACTIONED_JSON grows with it — an --argjson
   # here is the same delivery that failed at MAX_ARG_STRLEN on 2026-08-12.
-  # shellcheck disable=SC2016  # jq's $done/$e/$key/$t/$old, not the shell's.
+  # ALIASES_JSON travels the same way, as a third document, for the same
+  # reason.
+  # shellcheck disable=SC2016  # jq's $done/$e/$key/$t/$old/$aliases, not the shell's.
   out="$(jq -c -n --argjson days "$retire_days" --argjson now "$now" '
-    input as $void | input as $actioned
-    | ($actioned | map((.repo // "") + "|" + (.item // "")) | unique) as $done
-    | $void
-    | map(. as $e
-          | (($e.repo // "") + "|" + ($e.item // "")) as $key
-          | ((try ($e.ts | fromdateiso8601) catch null)) as $t
-          | (($done | index($key)) != null) as $actioned_hit
-          | ($t != null and ($now - $t) >= ($days * 86400)) as $old
-          | select(($actioned_hit and $old) | not))
-  ' <<<"$void_json"$'\n'"$actioned_json" 2>/dev/null || true)"
+    input as $void | input as $actioned | input as $aliases
+    | def canon_repo($r): ($aliases[$r] // $r);
+      ($actioned | map(canon_repo(.repo // "") + "|" + (.item // "")) | unique) as $done
+      | $void
+      | map(. as $e
+            | (canon_repo($e.repo // "") + "|" + ($e.item // "")) as $key
+            | ((try ($e.ts | fromdateiso8601) catch null)) as $t
+            | (($done | index($key)) != null) as $actioned_hit
+            | ($t != null and ($now - $t) >= ($days * 86400)) as $old
+            | select(($actioned_hit and $old) | not))
+  ' <<<"$void_json"$'\n'"$actioned_json"$'\n'"$aliases_json" 2>/dev/null || true)"
   [[ -n "$out" ]] || out="$void_json"
   printf '%s' "$out"
 }
