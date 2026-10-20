@@ -14,6 +14,7 @@ For a map of all documentation and how to find answers, see `docs/README.md`.
 - [The as-built rule in practice](#the-as-built-rule-in-practice)
   - [Which specification to edit](#which-specification-to-edit)
   - [How to find the governing requirement](#how-to-find-the-governing-requirement)
+  - [How to resolve a citation](#how-to-resolve-a-citation)
   - [How to add a requirement](#how-to-add-a-requirement)
   - [How to bring in-flight work through a specification split](#how-to-bring-in-flight-work-through-a-specification-split)
 - [Generated and stamped regions](#generated-and-stamped-regions)
@@ -150,7 +151,7 @@ When adding new behaviour, add a new numbered requirement to the appropriate spe
 5. Update the spec's `README.md` table of contents, and `docs/README.md`'s file-by-file listing
 6. Update the code/prompts to implement the new requirement
 
-Requirements state only what is, never what used to be or what is planned; history and rationale belong in the specs' design-decision and gotcha sections. A parenthetical or subordinate aside inside a requirement may cite what used to be when that explains what is, provided deleting the aside leaves a complete and correct statement of the current system; an aside the requirement cannot stand without is history in the assertion, and belongs in the design-decision or gotcha section instead. If you find a spec and the code disagreeing, that is a bug: fix whichever is wrong rather than working around the mismatch.
+Requirements state only what is, never an earlier state or what is planned; history and rationale belong in the specs' design-decision and gotcha sections. A parenthetical or subordinate aside inside a requirement may cite an earlier state when that explains what is, provided deleting the aside leaves a complete and correct statement of the current system; an aside the requirement cannot stand without is history in the assertion, and belongs in the design-decision or gotcha section instead. If you find a spec and the code disagreeing, that is a bug: fix whichever is wrong rather than working around the mismatch.
 
 ### How to bring in-flight work through a specification split
 

@@ -298,7 +298,7 @@
     escalations get (Assigned-to-me) with no gap for a sweep to close.
 8w. <a id="impl-8w"></a>**Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
    critical tier, rather than only re-arming landing (issue #2514).** A
-   landing-retry sweep re-arm (requirement 8u) that finds gate 4.5's
+   landing-retry sweep re-arm (acceptance check 8u) that finds gate 4.5's
    protected-path-tier sub-case — the recorded tier `landing_retry_tier`
    reads back is empty or below `critical`, or no usable approval timestamp
    could be established — can never clear it by retrying landing again: that
@@ -323,7 +323,7 @@
    fleet-wide — the `union_log` snapshot, falling back to this node's own
    stream, exactly as requirement 8f's own `open_question_pass_available`
    reads its cap and as gate 4.5 reads the tier that triggered the call:
-   requirement 8u's sweep runs on every node, so a cap keyed to one node's
+   acceptance check 8u's sweep runs on every node, so a cap keyed to one node's
    stream alone would let each node spend its own pass over the same
    unchanged head commit. A head whose pass is
    already spent skips the reapproval and escalates directly, the same
