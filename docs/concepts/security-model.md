@@ -93,7 +93,9 @@ pipeline provisions exactly two, kept deliberately separate:
 
 Authoritative: `docs/ROADMAP.md` § "Settled decisions", decisions D18
 ("Merge autonomy") and D25 ("Forge authoring identity");
-`docs/guides/working-with-pullwright/README.md` § "Merge autonomy".
+`docs/guides/working-with-pullwright/README.md` § "Merge autonomy"; the
+exact permission triple is `docs/spec/implementation/components/components-02.md`,
+component 14's D18 Stage 3 autonomy-readiness verdict.
 
 Underneath both identities, every model stage runs as its own Unix user,
 distinct from the user the Script and its scheduler run as. That user
