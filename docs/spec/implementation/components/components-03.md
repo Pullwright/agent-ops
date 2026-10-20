@@ -1,6 +1,6 @@
 ## Components
 
-### Components — continued (part 3 of 3; 17e–24e)
+### Components — continued (part 3 of 3; 17e–24f)
 
 17e. <a id="impl-c-17e"></a>`scripts/roll-changelog.sh` implementing requirement 25e: with no
     marker present, renames the file's whole `[Unreleased]` section
@@ -1155,3 +1155,28 @@
    exercises the real script against this repository's own real header
    comments. Acceptance check 52d. Must pass `shellcheck`.
 
+24f. <a id="impl-c-24f"></a>`lib/ci-trigger.sh` implementing requirement 69: given a repository
+   slug, a pull request number and its branch, `ci_trigger_ensure` polls
+   `gh pr checks <n> -R <slug> --json name,bucket` — unfiltered, so a
+   pending or failing run still counts as "something ran" — up to
+   `CI_TRIGGER_POLL_ATTEMPTS` x `CI_TRIGGER_POLL_INTERVAL` seconds (default
+   10 x 30s), printing `triggered` the moment any poll reports at least one
+   check run. Where the whole window reports only a confirmed-empty list
+   (never an unreadable one, which prints `unknown` instead and pushes
+   nothing), it reads the pull request's current head commit, confirms via
+   `lib/merge-queue.sh`'s `merge_queue_probe` that it is not currently
+   queued in a merge group, and pushes one empty commit — in a disposable
+   repository it fetches by branch name alone and discards, never the
+   Implementer's own clone (requirement 45e) — printing `nudged<TAB>
+   HEAD_SHA` or `nudge-failed<TAB>HEAD_SHA` depending on whether the push
+   itself succeeded; `queued` when the pull request is mid-merge-group, and
+   never pushes in that case. `lib/coordinator-phase.sh` calls this once,
+   immediately after the Implementer stage raises or confirms its pull
+   request, logging a `ci-trigger-nudged` event on `nudged` and a warning
+   on `nudge-failed`/`unknown`, and runs the Reviewer stage regardless of
+   the outcome. `CI_TRIGGER_GH` overrides `gh` for tests.
+   Unit-tested (`test/ci-trigger.test.sh`) against a stubbed `gh`, with the
+   real nudge push stubbed as a recorder — the same technique
+   test/rebase-only-wiring.test.sh already uses for its own forge-facing
+   functions, since a unit test must never dial a real forge. Requirement
+   69. Acceptance check 79. Must pass `shellcheck`.

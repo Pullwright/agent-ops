@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 10 of 11; 60–60: The CLI surface: `scripts/node-health.sh`…)
+### The Script — requirements, continued (part 10 of 11; 60–69: The CLI surface: `scripts/node-health.sh`…)
 
 60. <a id="impl-60"></a>**The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
     --metrics] [--json] [--config FILE] [--state-dir DIR] [--peers-dir DIR]`
@@ -121,4 +121,61 @@
     dashboard's own `local` profile, since a listening port is a deployment
     topology choice, not pipeline behaviour. `scripts/render-config-table.sh
     --check` passes against both new keys.
+
+69. <a id="impl-69"></a>**A missed CI trigger is detected and retried at the push itself, not
+    only hours later at a Reviewer handoff (issue #2560).**
+    `lib/review-gate.sh`'s own backstops — `_review_gate_missing_required_
+    contexts` (issue #1543) and `_review_gate_repair_duplicate_runs` (issue
+    #1978) — both run only at the Reviewer's `ready` handoff, and neither
+    has a run id to act on when a pull request's head carries zero check
+    runs at all: agent-ops#2506 sat roughly seven hours in that state,
+    looking exactly like "CI still queued", while its head actually failed
+    `scripts/spec.sh check` — the same branch having already needed one
+    manual nudge (`6c379e10a9`, "chore(ci): nudge a missed synchronize event
+    for the previous push"). `lib/ci-trigger.sh`'s `ci_trigger_ensure` closes
+    this immediately after the Implementer stage's own push instead
+    (`lib/coordinator-phase.sh`, right after the pull request it raised or
+    confirmed is labelled and gated, ahead of the Reviewer stage): it polls
+    `gh pr checks <n> -R <slug> --json name,bucket` — unfiltered, "did
+    anything run at all" rather than `--required`'s narrower subset — up to
+    `CI_TRIGGER_POLL_ATTEMPTS` x `CI_TRIGGER_POLL_INTERVAL` seconds (default
+    10 x 30s = 5 minutes, the conservative end of a threshold the issue left
+    open), and where every poll across that whole window reports a
+    confirmed-empty list — never an unreadable one, which stays `unknown`
+    and is never treated as "confirmed empty" — pushes one empty commit
+    (`chore(ci): nudge a missed CI trigger for <sha>`) onto the pull
+    request's own branch, naming the head commit it nudged. Never `gh run
+    rerun`/`workflow_dispatch`: there is no run id to rerun when the count is
+    genuinely zero, and `workflow_dispatch` is not a trigger every relevant
+    workflow declares.
+
+    69a. <a id="impl-69a"></a>**At most one retrigger per head commit, and advisory throughout.**
+    A nudge that itself produces zero check runs is left for the
+    #1543/#1978 backstops at the next Reviewer handoff to find, rather than
+    looped on here. The nudge never runs against a pull request currently
+    queued in a merge group (`lib/merge-queue.sh`'s `merge_queue_probe`,
+    D17) — a push would evict it with no further signal — nor when either
+    the check-runs read or the queue probe itself could not be confirmed: an
+    unreadable `gh` call reads `unknown`, never "confirmed empty" or "not
+    queued", the same fail-closed convention `review_gate_required_checks`
+    and `merge_queue_probe` already apply to their own unreadable reads.
+    None of this blocks the handoff — `ci_trigger_ensure`'s `unknown`/
+    `queued`/`nudge-failed` outcomes only log a warning, `nudged` logs its
+    own `ci-trigger-nudged` event, and the Reviewer stage runs regardless.
+
+    69b. <a id="impl-69b"></a>**Never computed in the Implementer's own clone.** The nudge
+    commit is authored in a disposable repository fetched fresh from the
+    forge by branch name alone and discarded afterward — the same shape
+    `lib/rebase-only.sh`'s `rebase_only_forge_capture` already uses, and for
+    the identical reason (requirement 45e): that clone is the Implementer's
+    to rewrite, so a commit authored there would run the stage's own
+    `.git/config` — hooks, filters, an fsmonitor — as the Script. The fetch
+    confirms the branch's current tip still matches the head commit the
+    poll window observed before committing anything, refusing rather than
+    overwriting a peer's or a human's own push landing in the gap between
+    the poll and this call. Unit-tested against a stubbed `gh`
+    (`test/ci-trigger.test.sh`), with the real nudge push itself stubbed as
+    a recorder — the same technique test/rebase-only-wiring.test.sh already
+    uses for `rebase_only_forge_capture`/`rebase_only_forge_check` — since a
+    real push needs a real forge. Must pass `shellcheck`.
 

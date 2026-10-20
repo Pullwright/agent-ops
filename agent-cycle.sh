@@ -257,6 +257,8 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/changelog-section-gate.sh"
 # shellcheck source=lib/required-check-preflight.sh
 . "$SCRIPT_DIR/lib/required-check-preflight.sh"
+# shellcheck source=lib/ci-trigger.sh
+. "$SCRIPT_DIR/lib/ci-trigger.sh"
 # shellcheck source=lib/reconciliation-gate.sh
 . "$SCRIPT_DIR/lib/reconciliation-gate.sh"
 # shellcheck source=lib/void-guard.sh

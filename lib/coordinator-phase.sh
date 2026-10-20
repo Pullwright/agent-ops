@@ -1146,6 +1146,37 @@ $(pipeline_comment_marker "$cycle_id" script)" >/dev/null 2>&1 || true
       --arg by "implementer" --argjson x "$impl_mint_report" \
       '{repo: $r, item: $i, actor: $by} + $x')"
   fi
+
+  # Requirement 69 (issue #2560): a push whose CI trigger GitHub never
+  # delivered leaves this pull request's head with zero check runs at all —
+  # not failing, simply absent, indistinguishable from "CI still queued" to
+  # a casual reader, and to `review_gate_required_checks`'s own #1543/#1978
+  # backstops, which only run at the Reviewer's own handoff, potentially
+  # hours after this push. `ci_trigger_ensure` (lib/ci-trigger.sh) polls for
+  # a check run now, immediately after the Implementer's push, and
+  # retriggers with an empty commit when the window closes on a confirmed-
+  # empty list — advisory exactly like every other check in this block:
+  # its own header documents why an unreadable read or a currently-queued
+  # pull request never blocks the handoff below, only logs.
+  ci_trigger_result="$(ci_trigger_ensure "$repo_slug" "${impl_pr_url##*/}" "$selected_branch")" || true
+  ci_trigger_word="${ci_trigger_result%%$'\t'*}"
+  ci_trigger_detail="${ci_trigger_result#*$'\t'}"
+  [[ "$ci_trigger_detail" == "$ci_trigger_result" ]] && ci_trigger_detail=""
+  case "$ci_trigger_word" in
+    nudged)
+      log_event "ci-trigger-nudged" "$(jq -nc --arg u "$impl_pr_url" --arg r "$repo_slug" \
+        --arg i "$selected_item" --arg h "$ci_trigger_detail" \
+        '{pr_url: $u, repo: $r, item: $i, head_sha: $h}')"
+      ;;
+    nudge-failed)
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg h "$ci_trigger_detail" \
+        '{detail: ($u + " reported zero check runs through the whole poll window, and the empty-commit nudge itself failed to push — the #1543/#1978 backstops at the next Reviewer handoff are the fallback"), pr_url: $u}')"
+      ;;
+    unknown)
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" \
+        '{detail: ($u + "'"'"'s check-run state could not be confirmed while polling for a missed CI trigger"), pr_url: $u}')"
+      ;;
+  esac
 fi
 
 # --- 8. Reviewer stage ---

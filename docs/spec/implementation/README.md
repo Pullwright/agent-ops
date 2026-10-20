@@ -14,7 +14,7 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
   - [Acceptance checks — continued (part 9 of 9; items 8q–11d)](acceptance-checks/acceptance-checks-09.md)
   - [Components](components/components-01.md)
   - [Components — continued (part 2 of 3; 12b–17d)](components/components-02.md)
-  - [Components — continued (part 3 of 3; 17e–24e)](components/components-03.md)
+  - [Components — continued (part 3 of 3; 17e–24f)](components/components-03.md)
 - [Configuration](configuration.md)
 - [Cost profile](cost-profile.md)
 - [Design decisions](design-decisions.md)
