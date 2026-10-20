@@ -14,130 +14,30 @@ see `docs/README.md`.
 
 ## As-built specifications
 
-Each component has an as-built requirements specification in `docs/`:
+Each component has an as-built requirements specification in `docs/spec/`:
 
-- `docs/spec/implementation/README.md` — the implementation
-  pipeline (`agent-cycle.sh`, `lib/`, `scripts/`, and the five stage
-  prompts).
-- `docs/spec/review.md` — the repository-review pipeline: it reviews
-  one repository per run (`review-cycle.sh`, `prompts/project-reviewer.md`,
-  the vendored skill).
-- `docs/spec/monitor.md` — the Pipeline Monitor: a scheduled
-  reading of the pipelines' own state (`monitor-cycle.sh`,
-  `lib/monitor-digest.sh`, `prompts/monitor.md`).
-- `docs/spec/dashboard/README.md` — the monitoring dashboard
-  (`scripts/publish-dashboard.sh`, `dashboard/index.html`).
+- `docs/spec/implementation/README.md` — implementation pipeline
+- `docs/spec/review.md` — repository-review pipeline
+- `docs/spec/monitor.md` — Pipeline Monitor
+- `docs/spec/dashboard/README.md` — monitoring dashboard
 
-These are requirement documents, and they are **as-built**: at all times they
-describe the system that actually exists. Any change that alters what a
-component does, requires, or produces must land in the same pull request as
-the spec edit that keeps its document accurate — update the affected numbered
-requirement (and any acceptance check anchored to it), or add one for new
-behaviour. Requirements state only what is, never what used to be or what is
-planned; history and rationale belong in the specs' design-decision and
-gotcha sections. A parenthetical or subordinate aside inside a requirement
-may cite what used to be when that explains what is, provided deleting the
-aside leaves a complete and correct statement of the current system; an
-aside the requirement cannot stand without is history in the assertion, and
-belongs in the design-decision or gotcha section instead. If you find a spec
-and the code disagreeing, that is a bug: fix whichever is wrong rather than
-working around the mismatch.
+The specifications are requirement documents: they describe the system as it actually exists. A change that alters what a component does, requires, or produces must land in the same PR as the spec edit that keeps its document accurate.
 
-The specs outrank the operating prompts: `prompts/*.md` implement the specs'
-requirements, so bring the spec in line first, then the affected prompt(s).
-
-The implementation and dashboard specifications are each split across a
-directory (`docs/spec/implementation/`, `docs/spec/dashboard/`), one file per
-top-level section, each within the documentation size budget (`docs/README.md`
-"Size budget"); the implementation specification's Requirements, Components
-and Acceptance checks sections are further split into `requirements/`,
-`components/` and `acceptance-checks/` subdirectories, one file per
-actor group or budget-sized chunk. Each directory's own `README.md` carries a
-directory-wide table of contents (AGENTS.md's "Generated regions" §2) rather
-than repeating the file's own headings. A branch opened before #2094 landed,
-whose diff touches the old monolithic `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
-or `docs/DASHBOARD-SPEC.md`, conflicts on rebase as a modify/delete: resolve
-it by applying #2094's own split script (in that pull request's description)
-to the conflicting branch's own modified version of the old file, and taking
-the result — this carries the branch's edits into whichever new file now
-holds the section it touched, rather than losing them to the delete side of
-the conflict.
-
-When a file in an already-split directory (`acceptance-checks/`,
-`components/`, or a future directory split the same way) grows past the
-documentation size budget, split its tail into a new file at the next unused
-number in that directory — e.g. if `01`–`06` exist, the new file is `07`,
-never a renumbering of `02`–`06`. Never rename, renumber, or move an existing
-file in the directory as part of a split: every other file's path stays
-byte-identical in the diff. Update each touched file's own heading line (the
-`### … — continued (part N of M; items X–Y)` text `scripts/render-toc.sh`
-reads verbatim into the directory's table of contents and `docs/README.md`'s
-file-by-file listing) only for the file that was split (its item range
-shrinks) and the new file (its item range is the moved tail, with `N` = the
-new file's own position in filename order, i.e. `N = M` for a freshly
-appended file); every other existing file's heading needs only its `M`
-(total count) bumped by one. Item ranges across files become non-contiguous
-in filename order once this happens more than once, and that is accepted,
-not a defect — a file appended later may hold items that logically precede
-another file's range, and a reader relies on each file's own stated item
-range rather than on files appearing in logical reading order. After any
-heading edit, regenerate the directory's table of contents with
-`scripts/render-toc.sh` and update `docs/README.md`'s listing for the
-touched and new files, the same as for any other split.
+For the full details on working with the as-built specifications — understanding the rule, finding governing requirements, adding new ones, and handling specification splits on in-flight branches — see `docs/guides/contributing/README.md` § "The as-built rule in practice".
 
 ## Generated regions
 
 Three types of generated regions exist in this repository:
 
-1. **Configuration tables** — `docs/reference/configuration.md`'s two
-   configuration tables and each
-   as-built spec's own (`docs/spec/implementation/configuration.md`'s,
-   `docs/spec/review.md`'s) are rendered from `config.schema.json`
-   by `scripts/render-config-table.sh` — four `<!-- config-table:start
-   id=... -->` … `<!-- config-table:end -->` regions in total, each paired
-   with a `<!-- config-table:notes id=... -->` … `<!-- config-table:notes-end
-   -->` region below the table for notes too long to fit a cell. Never
-   hand-edit a row inside either region: edit the owning key's `description`,
-   `x-docs.readme`/`x-docs.spec` or `x-docs.value` in the schema instead,
-   then run `scripts/render-config-table.sh` (no arguments) to regenerate
-   every region and `scripts/render-config-table.sh --check` before you push
-   — `.github/workflows/config-table.yml` runs the same check on every pull
-   request, and a hand-edit fails it even when the wording was right, because
-   only the schema copy survives a regeneration. Each region's start marker
-   carries this same contract inline, so it reads even to someone who reaches
-   the row directly and never opened this file.
+1. **Configuration tables** — rendered from `config.schema.json` by `scripts/render-config-table.sh`. Never hand-edit a row inside `<!-- config-table:start … -->` regions; edit the schema instead, then regenerate.
 
-2. **Table of contents** — each guide under `docs/guides/` has a table of
-   contents between `<!-- toc:start -->` … `<!-- toc:end -->` markers,
-   extracted from its own `##` and `###` headings. `docs/spec/implementation/README.md`
-   and `docs/spec/dashboard/README.md` carry the same marker pair, but a
-   directory-wide one instead: a list of every other file under their own
-   directory, linking each sibling's own first heading, rather than headings
-   within the README itself. Either kind is rendered by
-   `scripts/render-toc.sh`, from `lib/markdown-scan.sh`'s `TOC_FILES` (the
-   own-heading kind) and `TOC_DIR_FILES` (the directory-wide kind). Never
-   hand-edit the content between these markers:
-   edit headings instead, then run `scripts/render-toc.sh` (no arguments) to
-   regenerate and `scripts/render-toc.sh --check` before you push —
-   `.github/workflows/toc.yml` runs the same check on every pull request. The
-   same contract applies: a hand-edit fails the check even when the wording
-   was right, because only the rendered copy survives a regeneration.
+2. **Table of contents** — guides have `<!-- toc:start … -->` markers; specs have directory-wide ones. Rendered by `scripts/render-toc.sh`. Never hand-edit between the markers; edit headings instead, then regenerate.
 
-3. **Stamped regions** — the three `<!-- agent-info:start fragment=... -->` …
-   `<!-- agent-info:end fragment=... -->` regions in this file carry the text
-   every Pullwright and Poetic-Poems repository shares (the branch workflow,
-   commit messages, the maintainer statement and the documentation
-   principles), stamped from the organisation's `Pullwright/.agent`
-   repository by its `scripts/sync.sh`. Never hand-edit inside them: change
-   the fragment in `.agent`, then re-stamp. Each start marker records the
-   source commit and a hash of the content, so the sync's `--check` tells a
-   hand edit from a stale copy.
+3. **Stamped regions** — the three `<!-- agent-info:start fragment=... -->` regions in this file carry shared organization text, stamped from `Pullwright/.agent`. Never hand-edit inside them; change the source fragment, then re-stamp.
 
-`lib/markdown-scan.sh` lists every generated region and the markers that
-delimit it. Both renderers read their targets from that list, and
-`scripts/check-docs.sh` leaves exactly those regions out of the documentation
-size budget, so a new region, or a fragment the sync starts stamping here, is
-listed there too, or its bytes count towards the budget as hand-written.
+For the full workflow — how to make changes to configuration, when to regenerate, which checks to run — see `docs/guides/contributing/README.md` § "Generated and stamped regions".
+
+`lib/markdown-scan.sh` lists every generated region. The renderers read from this list, and `scripts/check-docs.sh` excludes these regions from the documentation size budget.
 
 <!-- agent-info:start fragment=conventions source=Pullwright/.agent@b517d3d sha256=30bd787a7b6c -->
 <!-- Stamped by Pullwright/.agent scripts/sync.sh from Pullwright/.agent:fragments/conventions.md - a hand edit inside this region is overwritten at the next sync; edit the source instead. -->

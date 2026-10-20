@@ -30,7 +30,7 @@ to read first.
 | Try a change on a real node before it merges | `docs/guides/contributing/README.md` § "Trying a change on a real node before it merges" |
 | Find the requirement governing when a claim on an item expires | `docs/spec/implementation/configuration.md` § "Extended notes: `claim_ttl_hours`" |
 | Find the requirement governing the daily merge budget | `docs/spec/implementation/configuration.md` § "Extended notes: `merge_budget_per_day`" |
-| Understand how the as-built specifications relate to this repository | `docs/guides/contributing/README.md` § "For maintainers: the as-built specifications" |
+| Understand how the as-built specifications relate to this repository | `docs/guides/contributing/README.md` § "The as-built rule in practice" |
 | Understand why a cycle produced no change | `docs/guides/operating/run-and-pause.md` § "Staying warm without spending" |
 | Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
 | View the monitoring dashboard | `docs/guides/operating/watch.md` § "The dashboard" |
