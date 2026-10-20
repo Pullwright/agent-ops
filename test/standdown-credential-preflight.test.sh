@@ -364,6 +364,81 @@ assert_eq "…and nothing is escalated for it here" \
 assert_eq "…and nothing is stood down for it here" \
   "no" "$(if grep -q '^stand-down' "$evt_file_t"; then echo yes; else echo no; fi)"
 
+# --- a transient 5xx on the container's very first cycle leaves the state
+# file's verdict empty (inconclusive), not "ok" — the gate must treat that as
+# still due a probe on the next cycle of the same container, rather than
+# reading an empty verdict as settled and closing itself for the container's
+# whole remaining lifetime (agent-ops#2554). ---
+
+probe_count_t2="$tmp_dir/transient-probe-count-2"; : > "$probe_count_t2"
+esc_file_t2="$tmp_dir/transient-escalations-2"; : > "$esc_file_t2"
+evt_file_t2b="$tmp_dir/transient-events-2b"
+block_rc_t2b="$(run_block transient-503 boot-1 0 "$state_dir_t" "$probe_count_t2" "$esc_file_t2" "$evt_file_t2b")"
+assert_eq "a second cycle after a first-cycle transient reply exits 0" "0" "$block_rc_t2b"
+assert_eq "…and leaves the state file's verdict empty (inconclusive), not ok" \
+  "" "$(state_verdict "$state_dir_t")"
+assert_eq "…and re-probes rather than treating the empty verdict as settled" \
+  "1" "$(wc -l < "$probe_count_t2" | tr -d ' ')"
+
+# --- a healthy node restarts, and the new boot's very first probe is itself
+# inconclusive: the stale "ok" verdict the old boot earned must not survive
+# onto the new boot id, or the new boot's gate closes on a verdict it never
+# itself confirmed (agent-ops#2554, review round 2 — the restart form of the
+# same gap: a node that was ever healthy hit this on every restart, since the
+# gate's own `-z "$cred_prev_verdict"` disjunct never fires when the carried
+# verdict is a stale "ok"). ---
+
+state_dir_restart="$tmp_dir/state-restart"; mkdir -p "$state_dir_restart"
+probe_count_restart="$tmp_dir/restart-probe-count"; : > "$probe_count_restart"
+esc_file_restart="$tmp_dir/restart-escalations"; : > "$esc_file_restart"
+evt_file_restart_a="$tmp_dir/restart-events-a"
+run_block ok boot-1 0 "$state_dir_restart" "$probe_count_restart" "$esc_file_restart" "$evt_file_restart_a" \
+  >/dev/null
+assert_eq "the pre-restart boot settles at ok" "ok" "$(state_verdict "$state_dir_restart")"
+
+evt_file_restart_b="$tmp_dir/restart-events-b"
+block_rc_restart_b="$(run_block transient-503 boot-2 0 "$state_dir_restart" "$probe_count_restart" \
+  "$esc_file_restart" "$evt_file_restart_b")"
+assert_eq "a transient reply on the new boot's first cycle exits 0" "0" "$block_rc_restart_b"
+assert_eq "…and leaves the state file's verdict empty, not the old boot's stale ok" \
+  "" "$(state_verdict "$state_dir_restart")"
+
+evt_file_restart_c="$tmp_dir/restart-events-c"
+run_block ok boot-2 0 "$state_dir_restart" "$probe_count_restart" \
+  "$esc_file_restart" "$evt_file_restart_c" >/dev/null
+assert_eq "a later cycle of the same new boot re-probes rather than reading the stale ok as settled" \
+  "3" "$(wc -l < "$probe_count_restart" | tr -d ' ')"
+assert_eq "…and now settles the new boot at its own genuinely-confirmed ok" \
+  "ok" "$(state_verdict "$state_dir_restart")"
+
+# --- a refused node restarts, and the new boot's first probe is itself
+# inconclusive before a later cycle gets a genuine clean reply: the open
+# escalation's "refused" verdict must survive the boot change — unlike "ok"
+# above — so the eventual clean probe still finds `cred_prev_verdict ==
+# "refused"` and still retires it, rather than reading the reset-to-empty
+# default as a credential nobody ever had to clear. ---
+
+state_dir_rr="$tmp_dir/state-refused-restart"; mkdir -p "$state_dir_rr"
+probe_count_rr="$tmp_dir/refused-restart-probe-count"; : > "$probe_count_rr"
+esc_file_rr="$tmp_dir/refused-restart-escalations"; : > "$esc_file_rr"
+evt_file_rr_a="$tmp_dir/refused-restart-events-a"
+run_block refused-400 boot-1 0 "$state_dir_rr" "$probe_count_rr" "$esc_file_rr" "$evt_file_rr_a" \
+  >/dev/null
+evt_file_rr_b="$tmp_dir/refused-restart-events-b"
+run_block transient-503 boot-2 0 "$state_dir_rr" "$probe_count_rr" "$esc_file_rr" "$evt_file_rr_b" \
+  >/dev/null
+assert_eq "a refused verdict survives a boot change through an inconclusive first probe" \
+  "refused" "$(state_verdict "$state_dir_rr")"
+
+retire_file_rr="$tmp_dir/refused-restart-retire"; : > "$retire_file_rr"
+evt_file_rr_c="$tmp_dir/refused-restart-events-c"
+run_block ok boot-2 0 "$state_dir_rr" "$probe_count_rr" "$esc_file_rr" "$evt_file_rr_c" "$retire_file_rr" \
+  >/dev/null
+assert_eq "…so a later genuine clean reply on the new boot still retires the escalation" \
+  "1" "$(wc -l < "$retire_file_rr" | tr -d ' ')"
+assert_eq "…and the state file's verdict advances to ok" \
+  "ok" "$(state_verdict "$state_dir_rr")"
+
 # --- a node that was refused, then on its next probe only gets a transient
 # 5xx: the transient reply says nothing about the credential, so retirement
 # must not fire on the strength of it — only a genuine clean reply clears a

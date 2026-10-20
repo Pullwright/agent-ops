@@ -407,9 +407,15 @@ fi
 # Gated, unlike 2.0b: a free `/rate_limit` call costs nothing, but this one
 # spends a fraction of a cent, so it runs only on the first cycle after this
 # container started, or on any cycle whose own last probe here was itself
-# refused — so a healthy node pays this once per container lifetime, and an
-# unhealthy one keeps being caught cheaply rather than crash-looping again
-# until its next restart. "First cycle after this container started" is read
+# refused or inconclusive — a `transient` 5xx/overload, or a crashed or
+# timed-out launch, neither of which answered anything about the
+# credential — so a healthy node pays this once per container lifetime, and
+# an unhealthy or merely-not-yet-answered one keeps being caught cheaply
+# rather than crash-looping again until its next restart (agent-ops#2554: an
+# inconclusive first probe after a container start used to close this gate
+# for the container's whole remaining lifetime, since the state write below
+# already recorded that case as an empty, not `"refused"`, verdict).
+# "First cycle after this container started" is read
 # from `_updater_health_own_started` (lib/updater-health.sh) — this
 # container's own PID 1 start time, the same reading
 # `deploy/docker/watchtower-pre-update.sh`'s own roll ledger uses, and for
@@ -434,6 +440,7 @@ if ! (( DRY_RUN )); then
   if [[ ! -s "$cred_state_file" \
         || -z "$cred_container_started" \
         || "$cred_prev_started" != "$cred_container_started" \
+        || -z "$cred_prev_verdict" \
         || "$cred_prev_verdict" == "refused" ]]; then
     cred_probe_out="$cycle_dir/credential-probe.out"
     cred_probe_rc=0
@@ -526,7 +533,22 @@ if ! (( DRY_RUN )); then
     # (cases (a)/(b)) leaves `cred_prev_verdict` at `"refused"` so the next
     # cycle retries the close instead of forfeiting it for the container's
     # whole remaining lifetime.
-    cred_new_verdict="$cred_prev_verdict"
+    #
+    # The default itself must not survive a boot-id change unless it is
+    # `"refused"` (agent-ops#2554, review round 2): an `"ok"` verdict answers
+    # only for the boot that earned it, so carrying it onto a new boot's own
+    # inconclusive first probe would close that new boot's gate on a
+    # verdict it never itself confirmed — exactly the restart case this
+    # paragraph's own reasoning above does not cover. `"refused"` is kept
+    # across the boot change regardless, because that is the one verdict an
+    # open escalation is still waiting on; losing it to a reset would leave
+    # the escalation's eventual retirement unreachable.
+    if [[ "$cred_prev_started" == "$cred_container_started" \
+          || "$cred_prev_verdict" == "refused" ]]; then
+      cred_new_verdict="$cred_prev_verdict"
+    else
+      cred_new_verdict=""
+    fi
     if (( cred_probe_rc == 0 )) && [[ -z "$cred_class" ]]; then
       if [[ "$cred_prev_verdict" == "refused" ]] && [[ -n "$crash_loop_repo" ]]; then
         if credential_refused_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" "$cred_probe_ts"; then

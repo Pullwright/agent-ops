@@ -848,8 +848,11 @@ Retired automatically by agent-cycle.sh (requirement 2.7)."
 # issue (never filed, or already closed by hand) is not an error: there is
 # nothing to retire, and the function returns quietly.
 #
-# Returns non-zero on either failure window below — the lookup erroring, or
-# the close itself failing — rather than always 0 as before #2511: the caller
+# Returns non-zero on any of the three failure windows below — the `gh issue
+# list` call erroring, that call succeeding but returning a payload `jq`
+# cannot parse (which yields the same empty match a genuinely empty lookup
+# does, so only `jq`'s own exit status tells the two apart, agent-ops#2554),
+# or the close itself failing — rather than always 0 as before #2511: the caller
 # (`lib/standdown.sh`'s own 2.0h block) uses this to decide whether to clear
 # its own `cred_prev_verdict` state to `"ok"` or leave it at `"refused"` so a
 # future cycle retries the close instead of forfeiting it for the container's
@@ -860,7 +863,7 @@ credential_refused_retire_resolved() {
   local repo="$1" node="$2" cycle="$3" success_ts="$4"
   [[ -n "$repo" ]] || return 0
   local item_ref="credential-refused:$node"
-  local list_out list_rc existing issue_number issue_url body
+  local list_out list_rc jq_rc existing issue_number issue_url body
   list_out="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
                 --json number,url,body 2>>"$cycle_dir/credential-refused-retire.err")"
   list_rc=$?
@@ -871,7 +874,13 @@ credential_refused_retire_resolved() {
   fi
   existing="$(jq -r --arg it "$item_ref" \
       'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-       | if . == null then empty else "\(.number)\t\(.url)" end' <<<"$list_out" 2>/dev/null)"
+       | if . == null then empty else "\(.number)\t\(.url)" end' <<<"$list_out" 2>>"$cycle_dir/credential-refused-retire.err")"
+  jq_rc=$?
+  if (( jq_rc != 0 )); then
+    log_event "warning" "$(jq -nc --arg d "credential-refused escalation lookup for $item_ref returned a payload jq could not parse — see credential-refused-retire.err — will retry next cycle" \
+      '{detail: $d}')"
+    return 1
+  fi
   [[ -n "$existing" ]] || return 0
   issue_number="${existing%%$'\t'*}"
   issue_url="${existing#*$'\t'}"

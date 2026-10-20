@@ -184,6 +184,30 @@ assert_eq "…logs a warning (silent before #2511) naming the lookup failure and
               && grep -E '^warning' "$events_file" | grep -q 'will retry next cycle'; then echo yes; else echo no; fi)"
 GH_ISSUE_LIST_RC=0
 
+# --- failure window (c) (agent-ops#2554): `gh issue list` itself succeeds
+# but returns a payload `jq` cannot parse — must not be read as a genuinely
+# empty match (`existing` would also come out empty in that case), so must
+# log a warning and return non-zero rather than falling through to the
+# empty-match `return 0` path, which would otherwise silently forfeit the
+# close. ---
+
+GH_ISSUE_LIST_JSON='not valid json'
+GH_ISSUE_LIST_RC=0; GH_ISSUE_CLOSE_RC=0
+: > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-10" \
+  "2026-10-14T19:49:02Z"
+retire_rc=$?
+assert_eq "an unparseable gh issue list payload returns non-zero" \
+  "1" "$retire_rc"
+assert_eq "…never attempts a close" \
+  "0" "$(wc -l < "$GH_CLOSE_CALLS_FILE" | tr -d ' ')"
+assert_eq "…never logs credential-refused-retired" \
+  "0" "$(grep -c '^credential-refused-retired' "$events_file" 2>/dev/null)"
+assert_eq "…logs a warning naming the unparseable payload and the retry" \
+  "yes" "$(if grep -E '^warning' "$events_file" | grep -q 'could not parse' \
+              && grep -E '^warning' "$events_file" | grep -q 'will retry next cycle'; then echo yes; else echo no; fi)"
+GH_ISSUE_LIST_JSON='[]'
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

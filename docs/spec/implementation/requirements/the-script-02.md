@@ -748,9 +748,12 @@
       Gated, unlike 0b: a free `/rate_limit` call costs nothing, but this
       probe spends a fraction of a cent, so it runs only on the first cycle
       after this container started, or on any cycle whose own last probe
-      here was itself refused — a healthy node therefore pays this once per
-      container lifetime, and an unhealthy one keeps being caught cheaply
-      rather than crash-looping again until its next restart. "First cycle
+      here was itself refused or inconclusive (the state file's own verdict
+      left empty — a `transient` 5xx/overload, or a crashed or timed-out
+      launch, neither of which answered anything about the credential) — a
+      healthy node therefore pays this once per container lifetime, and an
+      unhealthy or not-yet-answered one keeps being caught cheaply rather
+      than crash-looping again until its next restart. "First cycle
       after this container started" is read from `_updater_health_own_
       started` (`lib/updater-health.sh`) — this container's own PID 1 start
       time, the same reading `deploy/docker/watchtower-pre-update.sh`'s own
@@ -782,7 +785,13 @@
       probe falls through to the rest of the cycle and is not probed again
       on a second cycle of the same healthy container, but is probed again
       after a fresh container start; a `transient` verdict stands nothing
-      down; a `refused` verdict whose own token names something other than
+      down, and is probed again on the next cycle rather than being read as
+      a settled, healthy verdict — including the first cycle of a fresh
+      container start, where the old container's own `"ok"` verdict read
+      from the state file is not carried onto the new one, so a new
+      container's inconclusive first probe cannot be mistaken for a
+      verdict it never itself confirmed; a `refused`
+      verdict whose own token names something other than
       the credential (`credit_exhausted`, which
       `lib/substrate-grok-build.sh` synthesises for a billing lapse) stands
       nothing down either, and files nothing; a container-start reading that
@@ -814,18 +823,28 @@
       file's verdict only advances to `"ok"` when the close actually
       happened, mirroring the filing side's own "will retry next cycle"
       ordering. A `gh issue close` failure, or the `gh issue list` lookup
-      inside `credential_refused_retire_resolved` itself erroring (both
-      logged as a `warning` event, the lookup distinguishing an error from a
-      genuinely empty result rather than conflating the two), leaves the
-      state verdict at `"refused"` so the probe gate re-probes and retries
-      the close next cycle rather than forfeiting it for the container's
-      whole remaining lifetime. The same holds when the probe right after a
+      inside `credential_refused_retire_resolved` itself erroring — the `gh`
+      call failing, or succeeding and returning a payload `jq` cannot parse,
+      which yields the same empty match a genuinely empty lookup does, so
+      only `jq`'s own exit status tells the two apart (agent-ops#2554) —
+      leaves the state verdict at `"refused"` so the probe gate re-probes
+      and retries the close next cycle rather than forfeiting it for the
+      container's whole remaining lifetime. Each of the three is logged as
+      its own `warning` event, and the lookup distinguishes an error of
+      either kind from a genuinely empty result rather than conflating the
+      two. The same holds when the probe right after a
       `refused` verdict comes back `transient` (a 5xx) or crashes rather than
       clean: the state is left untouched rather than advanced to `"ok"`, so
       `cred_prev_verdict` still reads `refused` on a later probe and a
       genuinely clean reply then still triggers retirement, instead of
       having already been read as a clean credential with nothing left to
-      retire.
+      retire. Unlike an `"ok"` verdict, `"refused"` is carried across a
+      fresh container start too — the one case this state deliberately
+      survives a boot-id change (agent-ops#2554, review round 2) — because
+      the escalation it names stays open regardless of which boot the
+      container is on, so an inconclusive probe right after a restart must
+      not reset it to empty either, or the eventual clean reply on the new
+      container would find no `"refused"` left to retire.
 
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
