@@ -414,6 +414,14 @@ _refinement_log_array() {
 # comparing against $repo, which every caller already passes canonical — so
 # an `attempt-failed` recorded under a pre-rename slug still speaks for the
 # issue's current one (agent-ops#2466's live-read half, #2140).
+#
+# Every `.repo` reaching `canon_repo` is `| tostring`-guarded first, the same
+# way every `.item` read in this file is, and for a stronger reason: indexing
+# an object with a non-string raises `Cannot index object with number`, which
+# aborts the whole program rather than failing one row's match, and both
+# readers below end `2>/dev/null || true` — so a single union-log event
+# carrying a non-string `repo` would silently reduce the reader to no output
+# at all instead of to one unmatched event.
 # shellcheck disable=SC2016  # jq's own $rec/$log/$kind/…, not the shell's.
 _REFINEMENT_LEGACY_JQ_DEF='
   def legacy_rec($rec):
@@ -426,7 +434,7 @@ _REFINEMENT_LEGACY_JQ_DEF='
     [ $log[]?
       | select((.event // "") == "attempt-failed")
       | select((.kind // "") == $kind)
-      | select(canon_repo(.repo // "") == $repo)
+      | select(canon_repo((.repo // "") | tostring) == $repo)
       | select((.item // "") != "") ]
     | group_by((.item // "") | tostring)
     | map(sort_by(.ts // "") | last)
@@ -557,7 +565,7 @@ refinement_blocked_label_orphaned() {
     def own_epoch($s): (try ($s | fromdateiso8601) catch null);
     input as $live | input as $open | input as $log | input as $stranded |
     ($open
-     | map(select((.kind // "") == $kind and (canon_repo(.repo // "") == $repo)))
+     | map(select((.kind // "") == $kind and (canon_repo((.repo // "") | tostring) == $repo)))
      | map((.item // "") | tostring)) as $open_items |
     latest_attempt_failed($log; $kind; $repo) as $history |
     ( [ $live[]?

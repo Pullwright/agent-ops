@@ -793,6 +793,33 @@ assert_eq "  ... and for refinement_blocked_label_orphaned" \
   "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r")" \
   "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r" "" '[]' '{}')"
 
+# `canon_repo` indexes an object with the slug, so a non-string `repo` would
+# raise `Cannot index object with number` and — since both readers end
+# `2>/dev/null || true` — reduce the whole reader to no output at all, rather
+# than to one event that fails to match. One unrelated malformed event must
+# cost exactly its own row, never every other row with it: while
+# `blocked-label-orphaned` reads nothing, no genuine orphan can page or reach
+# the remedy. Hence the `| tostring` guard on every `.repo` reaching
+# `canon_repo`, the same guard every `.item` read in this file already carries.
+nonstring_repo_log="$(mktemp)"
+cat > "$nonstring_repo_log" <<EOF
+{"ts":"2026-09-01T00:00:00Z","cycle":"c1","event":"attempt-failed","repo":"o/r","item":"6","kind":"needs-refinement","needs_refinement_assignee":"someone"}
+{"ts":"2026-09-02T00:00:00Z","cycle":"c2","event":"attempt-failed","repo":12345,"item":"7","kind":"needs-refinement","blocked_label":"blocked"}
+EOF
+assert_eq "one event carrying a non-string repo does not silence refinement_blocked_label_orphaned's other rows" \
+  "$(printf 'o/r\t6\tblocked:needs-refinement\no/r\t6\tblocked')" \
+  "$(refinement_blocked_label_orphaned '[]' "$live_6" "o/r" "$nonstring_repo_log" '[]' "$rename_aliases")"
+assert_eq "  ... nor refinement_blocked_label_stranded_candidates', which binds its own empty alias map" \
+  "6" \
+  "$(refinement_blocked_label_stranded_candidates '[]' "o/r" "$nonstring_repo_log")"
+assert_eq "  ... and a non-string repo in OPEN_BLOCKED_JSON costs only its own entry" \
+  "$(printf 'o/r\t6\tblocked:needs-refinement\no/r\t6\tblocked')" \
+  "$(refinement_blocked_label_orphaned '[{"repo":999,"item":"5","kind":"needs-refinement"}]' "$live_6" "o/r" "" '[]' "$rename_aliases")"
+assert_eq "  ... and refinement_blocked_label_stale, already guarded, agrees" \
+  "o/r	6	blocked" \
+  "$(refinement_blocked_label_stale '[{"repo":999,"item":"5"}]' <<<'{"ts":"2026-09-01T00:00:00Z","event":"own-label-action","repo":"o/r","item":"6","label":"blocked","action":"add"}')"
+rm -f "$nonstring_repo_log"
+
 # --- Requirement 35a: a refinement block is eligible like any other -------------
 # Deliberately unchanged by the marker. The threshold delay is a feature here:
 # it gives the human, or the Co-Ordinator's own cheap re-check, several cycles
