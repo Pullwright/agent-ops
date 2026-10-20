@@ -742,6 +742,7 @@
    at `"refused"` rather than advancing it to `"ok"`, so a later genuinely
    clean probe still finds `cred_prev_verdict == "refused"` and still
    triggers retirement.
+
    An `"ok"` verdict does not survive a fresh container start through an
    inconclusive probe, but a `"refused"` one does (agent-ops#2554, review
    round 2). `test/standdown-credential-preflight.test.sh` shows a healthy

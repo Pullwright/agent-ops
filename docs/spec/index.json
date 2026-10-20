@@ -1150,7 +1150,7 @@
       "label": "79",
       "anchor": "impl-ac-79",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
-      "line": 758,
+      "line": 759,
       "title": "A missed CI trigger is nudged exactly once, and only when genuinely"
     },
     "IMPL AC 11e": {
