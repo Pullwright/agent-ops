@@ -1113,9 +1113,14 @@ _pager_blocked_label_candidate_repos() {
 # no such resolution (agent-ops#2466), so a pre-rename event kept naming a
 # repo's old slug forever — both in the live `gh` read and write below (the
 # latter of which a repo-transfer redirect serves for a read but not for a
-# write) and in `refinement_blocked_label_stale`'s own history-only hits,
-# which carry whatever `.repo` the triggering `own-label-action` event
-# recorded, unresolved, straight through to the same write.
+# write) and in `refinement_blocked_label_stale`'s own pairing (#2140's
+# `lib/refinement.sh` half), which grouped a label's `add`/`remove` history by
+# whatever `.repo` each own-label-action event recorded, raw, so an `add`
+# logged pre-rename and a `remove` logged post-rename never paired and the
+# hit survived every removal. Both functions now take the same aliases map
+# this function already computes and resolve their own pairing with it
+# (`refinement_blocked_label_stale`'s own doc comment), so the slugs each
+# prints are already canonical — no post-hoc remap needed here any more.
 # `config_repo_slug_aliases` is read from `PAGER_EVAL_REPOS_JSON`
 # (empty/unset resolves to `{}`, same as every repo resolving to itself —
 # today's behaviour, unchanged), the same global `pager_eval_landing_never_
@@ -1146,17 +1151,14 @@ _pager_blocked_label_candidates() {
     jq -e 'type == "object"' <<<"$aliases_json" >/dev/null 2>&1 || aliases_json='{}'
   fi
   open_blocked="$(blocked_items "$union_log_file" "$aliases_json")"
-  stale_hits="$(refinement_blocked_label_stale "$open_blocked" "$union_log_file")"
+  stale_hits="$(refinement_blocked_label_stale "$open_blocked" "$union_log_file" "$aliases_json")"
   if [[ -n "$stale_hits" ]]; then
-    # Deduplicated for the same reason the loop below is, and in the same
-    # case: `refinement_blocked_label_stale` groups by its events' own
-    # literal `repo`, so a label added under both a repo's old and its
-    # current slug with no successful removal under either is two groups,
-    # two hits, and one tuple once both resolve. Order-preserving, so the
-    # grouped order the evidence string reads survives the collapse.
-    jq -Rr --argjson aliases "$aliases_json" '
-      split("\t") as $f | [($aliases[$f[0]] // $f[0]), $f[1], $f[2]] | join("\t")
-    ' <<<"$stale_hits" 2>/dev/null | awk '!_pager_seen[$0]++'
+    # `refinement_blocked_label_stale` groups by the canonical repo now, so
+    # a label added under both a repo's old and its current slug already
+    # lands in one group and prints once — this is a safety-net dedup of
+    # the final lines, not the pairing fix itself, kept for the same reason
+    # the live-read loop below de-duplicates on `canon_repo` too.
+    awk '!_pager_seen[$0]++' <<<"$stale_hits"
   fi
   reason_label="$(refinement_blocked_reason_label "${REFINEMENT_BLOCK_KIND:-needs-refinement}")"
   [[ -n "$reason_label" ]] || return 0
@@ -1170,7 +1172,7 @@ _pager_blocked_label_candidates() {
         --json number,labels 2>/dev/null \
       | jq -c '[.[] | {number: .number, labels: [.labels[].name]}]' 2>/dev/null)"
     [[ -n "$live_json" ]] || live_json='[]'
-    refinement_blocked_label_orphaned "$open_blocked" "$live_json" "$canon_repo" "$union_log_file"
+    refinement_blocked_label_orphaned "$open_blocked" "$live_json" "$canon_repo" "$union_log_file" '[]' "$aliases_json"
   done < <(_pager_blocked_label_candidate_repos "$union_log_file")
 }
 

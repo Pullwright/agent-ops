@@ -546,6 +546,24 @@
       resolves to one repo twice, and each live listing is read, each hit
       counted, and each removal written and logged exactly once per repo and
       label rather than once per slug the history recorded.
+
+      The same map (#2140) also resolves the two `lib/refinement.sh`
+      functions' own internal comparisons, not merely their output slug:
+      `refinement_blocked_label_stale`'s own pairing groups each
+      `own-label-action` event by its *canonical* repo before matching an
+      `add` against a later `remove`, so a label applied under a pre-rename
+      slug and released under the current one actually pairs — the gap a
+      resolved-output-only fix cannot close, since the two events would
+      otherwise stay in separate groups and the retry would keep re-removing
+      an already-absent label forever. `refinement_blocked_label_orphaned`
+      resolves both its open-block-set comparison and its own
+      `attempt-failed` history read (`latest_attempt_failed`) the same way,
+      closing the live-read half's matching over-removal: a block still open
+      under a repo's pre-rename slug now still shields a live label the
+      caller reads under the current one. Both functions default their
+      alias argument to `{}` (every repo resolves to itself), a strict
+      extension with no behaviour change where no `previous_slugs` is
+      configured.
     - **`claim-unreconciled`** (pipeline-act). Fires when an
       `enabler-examined` event whose `outcome` is the Enabler's own escalate
       verdict (`lib/enabler.sh`: `outcome="$verdict"`, never reassigned on

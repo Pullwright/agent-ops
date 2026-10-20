@@ -1139,6 +1139,39 @@ assert_eq "  ... for the stale-retry hit too" "1" \
 assert_eq "  ... and one own-label-action event per removal, never a duplicate pair" "2" \
   "$(grep -c '"event":"own-label-action"' "$PAGER_REMEDY_LOG_FILE")"
 
+# agent-ops#2140's refinement.sh half: an `add` logged under the repo's
+# pre-rename slug and a `remove` logged under its current one — the #1156
+# shape exactly, where resolving only the *output* slug (the fix above)
+# leaves the two events in separate groups forever, so the pairing itself
+# must resolve through the same aliases map before grouping.
+PAGER_EVAL_REPOS_JSON='[{"slug":"Pullwright/agent-ops","previous_slugs":["Poetic-Poems/agent-ops"]}]'
+rename_pair_log="$WORKDIR/orphaned-rename-pair.jsonl"
+write_log "$rename_pair_log" \
+  "$(cycle_ev 2026-09-01T00:00:00Z n1 c1 own-label-action '{"repo":"Poetic-Poems/agent-ops","item":"1156","label":"blocked","action":"add"}')" \
+  "$(cycle_ev 2026-10-01T00:00:00Z n1 c2 own-label-action '{"repo":"Pullwright/agent-ops","item":"1156","label":"blocked","action":"remove"}')"
+STUB_GH_LIST_BY_LABEL=()
+STUB_GH_LIST_OPEN='[]'
+verdict="$(pager_eval_blocked_label_orphaned "[]" "$rename_pair_log")"
+assert_eq "an add logged under the old slug paired with a remove logged under the current one clears — never re-firing because the removal already succeeded" \
+  "false" "$(jq -r '.firing' <<<"$verdict")"
+assert_reduced_verdict_eq blocked-label-orphaned "[]" "$rename_pair_log"
+
+: > "$GH_CALLS_FILE"
+PAGER_REMEDY_UNION_LOG_FILE="$rename_pair_log"
+PAGER_REMEDY_LOG_FILE="$WORKDIR/orph-rename-pair-remedy.jsonl"; : > "$PAGER_REMEDY_LOG_FILE"
+PAGER_REMEDY_NODE="n1"; PAGER_REMEDY_CYCLE="c9"
+outcome="$(pager_remedy_blocked_label_orphaned blocked-label-orphaned "irrelevant, re-derived live")"
+assert_eq "the remedy finds nothing to remove — the pairing cleared it before any write was needed" \
+  "removed 0 orphaned label(s); 0 removal(s) failed" "$outcome"
+
+# A second pass with the (empty) remedy log folded back in must stay
+# non-firing too — #1156's own defect was a phantom hit that never cleared
+# no matter how many remedy passes ran against it.
+rename_pair_pass2_log="$WORKDIR/orphaned-rename-pair-pass2.jsonl"
+cat "$rename_pair_log" "$PAGER_REMEDY_LOG_FILE" > "$rename_pair_pass2_log"
+assert_eq "a second pass, with the first pass's own (empty) remedy log folded back in, stays non-firing" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_blocked_label_orphaned "[]" "$rename_pair_pass2_log")")"
+
 STUB_GH_LIST_BY_LABEL=()
 PAGER_EVAL_REPOS_JSON=""
 

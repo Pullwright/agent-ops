@@ -315,7 +315,7 @@ refinement_blocked_label_targets() {
     | unique | .[]' <<<"$blocked" 2>/dev/null || true
 }
 
-# refinement_blocked_label_stale BLOCKED_JSON [LOG_FILE]
+# refinement_blocked_label_stale BLOCKED_JSON [LOG_FILE] [ALIASES_JSON]
 # Print, one per line as `<repo>\t<item>\t<label>`, every `blocked`/
 # `blocked:<reason>` label whose own-label-action history's most recent
 # action for that repo+item+label is `add` — a removal either never attempted
@@ -335,9 +335,23 @@ refinement_blocked_label_targets() {
 # logged `own-label-action add` with no later `remove` is proof enough on its
 # own that a removal is ours to retry, with no `labelled_at` comparison
 # required.
+#
+# ALIASES_JSON (agent-ops#2466's own stale half, #2140) maps a repo slug this
+# pipeline used to be configured under to the slug it is configured under
+# now (`config_repo_slug_aliases`) — resolved on *both* sides of the pairing
+# before grouping: the own-label-action events' own `.repo` (so an `add`
+# logged under a pre-rename slug and a `remove` logged under the current one
+# land in the same group and actually pair) and BLOCKED_JSON's own `.repo`
+# (so the open-block-set key agrees with it), even though the latter already
+# arrives canonical from every caller this file has today — the function
+# must not depend on a caller having resolved it first. Printed output always
+# carries the canonical slug. Defaults to `{}` (every repo resolves to
+# itself), a strict extension with no behaviour change where no
+# `previous_slugs` is configured.
 refinement_blocked_label_stale() {
-  local blocked="${1:-[]}" src="${2:--}" log_json docs
+  local blocked="${1:-[]}" src="${2:--}" aliases="${3:-{\}}" log_json='' docs
   [[ -n "$blocked" ]] || blocked='[]'
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" ]]; then
     log_json="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
@@ -345,13 +359,15 @@ refinement_blocked_label_stale() {
   fi
   [[ -n "$log_json" ]] || log_json='[]'
   docs="$log_json"$'\n'"$blocked"
-  jq -nr '
+  jq -nr --argjson aliases "$aliases" '
+    def canon_repo($r): ($aliases[$r] // $r);
     input as $log | input as $b |
-    ($b | map((((.repo // "") | tostring)) + "|" + (((.item // "") | tostring)))) as $open |
+    ($b | map(canon_repo((.repo // "") | tostring) + "|" + (((.item // "") | tostring)))) as $open |
     [ $log[]?
       | select((.event // "") == "own-label-action")
       | select((.label // "") == "blocked" or ((.label // "") | startswith("blocked:")))
       | select((.repo // "") != "" and ((.item // "") | tostring) != "") ]
+    | map(.repo = canon_repo((.repo // "") | tostring))
     | group_by([(.repo // ""), ((.item // "") | tostring), (.label // "")])
     | map(sort_by(.ts) | last)
     | map(select((.action // "") == "add"))
@@ -379,12 +395,25 @@ _refinement_log_array() {
   printf '%s' "$out"
 }
 
-# The two jq definitions the readers below share verbatim — the same device
+# The jq definitions the readers below share verbatim — the same device
 # `lib/label-marker.sh`'s `_label_own_class_jq_def` uses, and for the same
-# reason: which `attempt-failed` record speaks for an item, and which record
+# reason: which `attempt-failed` record speaks for an item, which record
 # shape counts as *legacy* (recorded before agent-ops#639: it carries
-# `needs_refinement_assignee` and neither blocked-label field), are decisions
-# two functions must never drift into disagreeing about.
+# `needs_refinement_assignee` and neither blocked-label field), and how a
+# repo slug this pipeline used to be configured under resolves to the slug it
+# is configured under now, are decisions these functions must never drift
+# into disagreeing about.
+#
+# `canon_repo` closes over an outer-bound `$aliases` — the same
+# `--argjson aliases` convention `lib/cycle-state.sh`'s and `lib/work-gone.sh`'s
+# own `canon_repo` defs already use — so every program this text is spliced
+# into must bind `$aliases` (`{}` for identity resolution where a caller has
+# no alias map of its own): jq has no optional positional parameters, and a
+# shared def must not depend on which caller happens to have one.
+# `latest_attempt_failed` resolves a logged event's `.repo` through it before
+# comparing against $repo, which every caller already passes canonical — so
+# an `attempt-failed` recorded under a pre-rename slug still speaks for the
+# issue's current one (agent-ops#2466's live-read half, #2140).
 # shellcheck disable=SC2016  # jq's own $rec/$log/$kind/…, not the shell's.
 _REFINEMENT_LEGACY_JQ_DEF='
   def legacy_rec($rec):
@@ -392,11 +421,12 @@ _REFINEMENT_LEGACY_JQ_DEF='
     and (($rec.blocked_label // "") == "")
     and (($rec.blocked_reason_label // "") == "")
     and (($rec.needs_refinement_assignee // "") != "");
+  def canon_repo($r): ($aliases[$r] // $r);
   def latest_attempt_failed($log; $kind; $repo):
     [ $log[]?
       | select((.event // "") == "attempt-failed")
       | select((.kind // "") == $kind)
-      | select((.repo // "") == $repo)
+      | select(canon_repo(.repo // "") == $repo)
       | select((.item // "") != "") ]
     | group_by((.item // "") | tostring)
     | map(sort_by(.ts // "") | last)
@@ -404,7 +434,7 @@ _REFINEMENT_LEGACY_JQ_DEF='
     | from_entries;
 '
 
-# refinement_blocked_label_orphaned OPEN_BLOCKED_JSON LIVE_JSON REPO [LOG_FILE] [STRANDED_JSON]
+# refinement_blocked_label_orphaned OPEN_BLOCKED_JSON LIVE_JSON REPO [LOG_FILE] [STRANDED_JSON] [ALIASES_JSON]
 # Print, one per line as `<repo>\t<item>\t<label>`, every `blocked:<reason>`/
 # `blocked` label a *live* GitHub read shows still standing on an open issue in
 # REPO with no open block behind it — the class `refinement_blocked_label_stale`
@@ -503,22 +533,31 @@ _REFINEMENT_LEGACY_JQ_DEF='
 # and the LIVE_JSON cohort above are unaffected.
 # `refinement_blocked_label_stranded_candidates` below is how a caller names
 # the handful of issues worth reading a timeline for in the first place.
+#
+# ALIASES_JSON (agent-ops#2466's live-read half, #2140) resolves REPO's own
+# open-block-set comparison and the `attempt-failed` history read
+# (`latest_attempt_failed`) the same way `refinement_blocked_label_stale`
+# resolves its own pairing — REPO itself always arrives canonical from every
+# caller, but OPEN_BLOCKED_JSON's and LOG_FILE's own `.repo` fields may not.
+# Defaults to `{}` (every repo resolves to itself), a strict extension with no
+# behaviour change where no `previous_slugs` is configured.
 refinement_blocked_label_orphaned() {
   local open_blocked="${1:-[]}" live="${2:-[]}" repo="${3:-}" log_src="${4:-}" stranded="${5:-[]}" \
-    reason_label log_json tol
+    aliases="${6:-{\}}" reason_label log_json tol
   [[ -n "$open_blocked" ]] || open_blocked='[]'
   [[ -n "$live" ]] || live='[]'
   [[ -n "$stranded" ]] || stranded='[]'
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   reason_label="$(refinement_blocked_reason_label "$REFINEMENT_BLOCK_KIND")"
   [[ -n "$reason_label" && -n "$repo" ]] || return 0
   log_json="$(_refinement_log_array "$log_src")"
   tol="${LABEL_OWN_SKEW_TOLERANCE_SECONDS:-120}"
   jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" --arg reason "$reason_label" \
-      --argjson tol "$tol" "$_REFINEMENT_LEGACY_JQ_DEF"'
+      --argjson tol "$tol" --argjson aliases "$aliases" "$_REFINEMENT_LEGACY_JQ_DEF"'
     def own_epoch($s): (try ($s | fromdateiso8601) catch null);
     input as $live | input as $open | input as $log | input as $stranded |
     ($open
-     | map(select((.kind // "") == $kind and (.repo // "") == $repo))
+     | map(select((.kind // "") == $kind and (canon_repo(.repo // "") == $repo)))
      | map((.item // "") | tostring)) as $open_items |
     latest_attempt_failed($log; $kind; $repo) as $history |
     ( [ $live[]?
@@ -567,7 +606,7 @@ refinement_blocked_label_stranded_candidates() {
   [[ -n "$open_blocked" ]] || open_blocked='[]'
   [[ -n "$repo" ]] || return 0
   log_json="$(_refinement_log_array "$log_src")"
-  jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" \
+  jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" --argjson aliases '{}' \
       "$_REFINEMENT_LEGACY_JQ_DEF"'
     input as $open | input as $log |
     ($open
