@@ -164,7 +164,7 @@ mkdir -p "$state/host-facts" "$peers/n2/host-facts" "$peers/n3"
 cat > "$state/.stage-health.json" <<'EOF'
 {"computed_at":"2026-09-11T11:00:00Z","threshold":3,"idle_after_hours":48,
  "stages":{"coordinator":{"verdict":"ok","last_success":"2026-09-11T10:00:00Z","consecutive_failures":0,"last_detail":null},
-           "implementer":{"verdict":"failing","last_success":null,"consecutive_failures":4,"last_detail":"clone refused"}}}
+           "implementer":{"verdict":"failing","last_success":null,"consecutive_failures":4,"last_detail":"clone refused","last_failure":"2026-09-10T08:00:00Z"}}}
 EOF
 cat > "$state/.doctor-status.json" <<'EOF'
 {"timestamp":"2026-09-11T11:30:00Z","verdict":"warn","fails":[],"warns":["one warning"]}
@@ -308,9 +308,13 @@ assert_contains "every open page is flagged as owed a triage verdict" \
   "owed a triage verdict" "$rendered"
 assert_contains "the node table names a failing stage" "implementer" "$rendered"
 assert_contains "and carries that stage's own detail, not just its name" \
-  "implementer (clone refused)" "$rendered"
+  "implementer (clone refused" "$rendered"
+assert_contains "issue #2547: a failing stage carrying last_failure names when its streak last failed" \
+  "implementer (clone refused, last failed 2026-09-10T08:00:00Z)" "$rendered"
 assert_contains "a failing stage with no last_detail falls back to an explicit label" \
   "reviewer (no detail)" "$rendered"
+assert_lacks "  ... and with no last_failure in its heartbeat, no 'last failed' suffix is added" \
+  "reviewer (no detail, last failed" "$rendered"
 assert_contains "the gotcha sections are present at rung 0" "## Known signatures" "$rendered"
 assert_contains "a real row of the implementation spec's Gotchas table reaches the digest" \
   "A \`--json\` field that is cheap to type and expensive to fetch" "$rendered"

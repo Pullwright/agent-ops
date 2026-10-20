@@ -422,6 +422,85 @@ assert_eq "  ... reaching THRESHOLD makes it failing, never idle" \
   "failing" "$(jq -r '.reviewer.verdict' \
     <<<"$(stage_health_verdicts 2 48 "$NOW_EPOCH" <<<"$stale_then_failed")")"
 
+# --- a failing verdict ages out once its own streak goes stale (#2547) -----
+#
+# Before `last_failure` existed, the `failing` rung short-circuited before
+# any staleness test, so a stage that hit a threshold-reaching streak and
+# then simply stopped being invoked (ockham-container's own disabled-node
+# stand-down) stayed `failing` forever — a seven-day-old streak read back as
+# though it had just happened. `last_failure` is the streak's own most
+# recent failing stage-end, independent of `last_success`, which can be
+# null or far older than the streak while a stage is genuinely failing
+# right now.
+
+assert_eq "below threshold, last_failure is still set — it tracks the live streak, not the verdict" \
+  "2026-08-21T09:00:00Z" "$(jq -r '.coordinator.last_failure' <<<"$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$one_fail")")"
+
+three_fails_verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$three_fails")"
+assert_eq "at threshold, last_failure is the streak's own most recent stage-end" \
+  "2026-08-21T11:00:00Z" "$(jq -r '.coordinator.last_failure' <<<"$three_fails_verdict")"
+assert_eq "  ... and still inside the idle window, the verdict stays failing" \
+  "failing" "$(jq -r '.coordinator.verdict' <<<"$three_fails_verdict")"
+
+# ockham-container's own real stream (issue #2547's own regression): four
+# consecutive failures, the last at 2026-10-12T16:28:03Z, read at the
+# timestamp the fleet's stage-health verdict actually published —
+# 2026-10-19T04:36:38Z, 160+ hours later and well past the 48h idle window.
+ockham_now_epoch="$(epoch_of 2026-10-19T04:36:38Z)"
+ockham_stream="$(stage_end_at 2026-10-10T10:27:51Z monitor 1 c1
+  attempt_failed_at 2026-10-10T10:27:51Z monitor 'the Monitor exited 1' c1
+  stage_end_at 2026-10-10T20:28:02Z monitor 1 c2
+  attempt_failed_at 2026-10-10T20:28:02Z monitor 'the Monitor exited 1' c2
+  stage_end_at 2026-10-11T00:27:38Z monitor 1 c3
+  attempt_failed_at 2026-10-11T00:27:38Z monitor 'the Monitor exited 1' c3
+  stage_end_at 2026-10-12T16:28:03Z monitor 1 c4
+  attempt_failed_at 2026-10-12T16:28:03Z monitor 'the Monitor exited 1' c4)"
+ockham_verdict="$(stage_health_verdicts 3 48 "$ockham_now_epoch" '["monitor"]' <<<"$ockham_stream")"
+assert_eq "a stale threshold-reaching streak, read long after it went quiet, ages out to idle" \
+  "idle" "$(jq -r '.monitor.verdict' <<<"$ockham_verdict")"
+assert_eq "  ... consecutive_failures is still populated, not reset by ageing out" \
+  "4" "$(jq -r '.monitor.consecutive_failures' <<<"$ockham_verdict")"
+assert_eq "  ... last_detail is still populated too" \
+  "the Monitor exited 1" "$(jq -r '.monitor.last_detail' <<<"$ockham_verdict")"
+assert_eq "  ... and last_failure names exactly when the streak last failed" \
+  "2026-10-12T16:28:03Z" "$(jq -r '.monitor.last_failure' <<<"$ockham_verdict")"
+
+# The identical stream, read while the streak is still live (inside the idle
+# window), stays failing — ageing out is about staleness, not about ever
+# having reached threshold.
+live_ockham_now_epoch="$(epoch_of 2026-10-13T00:00:00Z)"
+live_verdict="$(stage_health_verdicts 3 48 "$live_ockham_now_epoch" '["monitor"]' <<<"$ockham_stream")"
+assert_eq "the same streak, read while still within the idle window, is failing" \
+  "failing" "$(jq -r '.monitor.verdict' <<<"$live_verdict")"
+
+# `last_success: null` with a live, stale streak must not crash and must
+# still age out — `project-reviewer` has carried exactly this shape
+# (never-succeeded, failing) since it was added, and the new rung has to key
+# off `last_failure`, never `last_success`.
+never_succeeded_stale="$(stage_end_at 2026-08-21T09:00:00Z project-reviewer 1
+  attempt_failed_at 2026-08-21T09:00:00Z project-reviewer 'reviewer exited 1'
+  stage_end_at 2026-08-21T10:00:00Z project-reviewer 1
+  attempt_failed_at 2026-08-21T10:00:00Z project-reviewer 'reviewer exited 1'
+  stage_end_at 2026-08-21T11:00:00Z project-reviewer 1
+  attempt_failed_at 2026-08-21T11:00:00Z project-reviewer 'reviewer exited 1')"
+never_succeeded_verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["project-reviewer"]' \
+  <<<"$never_succeeded_stale")"
+assert_eq "last_success: null with a stale, threshold-reaching streak does not crash, and ages out" \
+  "idle" "$(jq -r '."project-reviewer".verdict' <<<"$(stage_health_verdicts 3 48 "$ockham_now_epoch" \
+    '["project-reviewer"]' <<<"$never_succeeded_stale")")"
+assert_eq "  ... read while the streak is still live, it is failing instead, last_success still null" \
+  "failing" "$(jq -r '."project-reviewer".verdict' <<<"$never_succeeded_verdict")"
+assert_eq "  ... with last_success genuinely null throughout" \
+  "null" "$(jq -c '."project-reviewer".last_success' <<<"$never_succeeded_verdict")"
+
+# consecutive_failures == 0 always reports last_failure: null, whatever
+# verdict it carries — both pre-existing outcomes (ok and the stale-success
+# idle case) stay exactly as they were.
+assert_eq "consecutive_failures == 0 (ok outcome) reports last_failure: null" \
+  "null" "$(jq -c '.coordinator.last_failure' <<<"$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$recovered")")"
+assert_eq "consecutive_failures == 0 (stale-success idle outcome) reports last_failure: null" \
+  "null" "$(jq -c '.reviewer.last_failure' <<<"$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$stale_success")")"
+
 # --- per-stage isolation -----------------------------------------------------
 
 mixed="$(cat <<<"$three_fails"
