@@ -35,6 +35,10 @@ to read first.
 | Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
 | View the monitoring dashboard | `docs/guides/operating/watch.md` § "The dashboard" |
 | Look up a configuration key, its default, and its notes | `docs/reference/configuration.md` |
+| Get an overview of the whole system: the pipelines, the actors, nodes, and the state they share | `docs/concepts/architecture.md` |
+| Trace what happens to one piece of work from an open issue to a landed commit | `docs/concepts/life-of-an-item.md` § "State diagram" |
+| Understand how a long-blocked item reaches a human for a decision | `docs/concepts/escalation.md` § "How escalation reaches the owner" |
+| Understand what stops an issue's text from steering an agent that holds write credentials | `docs/concepts/security-model.md` § "What a malicious issue can and cannot do" |
 
 ## All documents
 
@@ -87,6 +91,11 @@ set under `docs/reviews/` one entry for its directory.
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
 | `docs/concepts/glossary.md` | evaluator, agent, contributor, operator, person working in repo | explanation | Glossary of every coined or repurposed term, each defined once with a stable anchor |
+| `docs/concepts/architecture.md` | evaluator, operator, contributor | explanation | The three pipelines, the actors, the Script as sole launcher, nodes, the state repository, the image and how it rolls, cost |
+| `docs/concepts/life-of-an-item.md` | evaluator, contributor, person working in repo | explanation | How one item travels from issue to landed commit: sources, refinement, selection, the claim, implementation, review, and the three ways out |
+| `docs/concepts/landing-gate.md` | evaluator, operator, person working in repo | explanation | The merge autonomy ladder, protected paths, the cool-off, the merge budget, and what always stops a landing |
+| `docs/concepts/escalation.md` | evaluator, operator, contributor | explanation | The Enabler, the escalation autonomy ladder, the owner-only boundary, and the pager |
+| `docs/concepts/security-model.md` | evaluator, operator | explanation | Untrusted content, the egress fence, credentials and the two GitHub App identities, and what a malicious issue can and cannot do |
 
 #### Specifications (as-built)
 
