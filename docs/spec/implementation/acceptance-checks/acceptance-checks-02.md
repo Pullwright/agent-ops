@@ -501,12 +501,14 @@
 2e. **Issues arrive pre-fetched, filtered, whole-thread and fingerprinted.**
    `test/issues-prefetch.test.sh` passes: against a stubbed issues endpoint,
    `scripts/gather-issues.sh` drops an assigned issue, a `Blocked`-labelled
-   issue (whatever the case), and a pull request from `candidates`, while a
+   issue (whatever the case), a `pw::pager`-labelled issue (agent-ops#2564),
+   and a pull request from `candidates`, while a
    clean issue arrives
    with `source: "issues"`, its number as `ref`, its `Priority` band (default
-   `Medium`), its body, and its comments verbatim; the assigned and
-   `Blocked`-labelled drops reappear in `excluded` tagged `assigned` and
-   `blocked-label` while the pull request never does (agent-ops#447); a
+   `Medium`), its body, and its comments verbatim; the assigned,
+   `Blocked`-labelled and `pw::pager`-labelled drops reappear in `excluded`
+   tagged `assigned`, `blocked-label` and `pager` respectively, while the
+   pull request never does (agent-ops#447); a
    `pw::type:tech-debt`-labelled issue is dropped from `candidates` and,
    like the pull request, never reported in `excluded` either — it is the
    `tech-debt` band's candidate, not this one's (agent-ops#875); a
@@ -525,7 +527,8 @@
    `ref` (a string) and as `number`, its `title`, `labels`, `author`,
    `created_at`, `updated_at`, `url`, its `body` and its whole comment thread
    verbatim as `comments`, sorted by issue number ascending — while an
-   assigned issue, a `Blocked`-labelled one (whatever the case) and one naming
+   assigned issue, a `Blocked`-labelled one (whatever the case), a
+   `pw::pager`-labelled one (agent-ops#2564) and one naming
    a still-open `Blocked-by:` reference yield nothing, that last one arriving
    once its reference closes, and a failing API degrades to
    `[]` (exit 0) with the failure on stderr.

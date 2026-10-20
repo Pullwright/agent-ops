@@ -473,16 +473,18 @@ What exists, and the requirements each part answers to:
    prints `{"candidates": […], "excluded": […]|null}`. `candidates` is the
    JSON
    array of the repo's candidate issues — open, unassigned, not labelled
-   `blocked`, naming no unresolved `Blocked-by:` reference (requirement 34j,
-   each reference's state checked live once the candidate's whole thread is
-   in hand), pull requests dropped, and `pw::type:tech-debt`-labelled issues
-   dropped on the same unreported terms (they are the `tech-debt` band's,
-   requirement 3t) — each carrying the bare issue number as
+   `blocked`, not labelled `pw::pager` (agent-ops#2564), naming no unresolved
+   `Blocked-by:` reference (requirement 34j, each reference's state checked
+   live once the candidate's whole thread is in hand), pull requests dropped,
+   and `pw::type:tech-debt`-labelled issues dropped on the same unreported
+   terms (they are the `tech-debt` band's, requirement 3t) — each carrying
+   the bare issue number as
    its ref, the `Priority` band (default `Medium`, read as the source-state
    digest reads it), and the whole thread verbatim (`body` plus `comments`).
-   `excluded` is `{number, reason}` for every issue the three deterministic
+   `excluded` is `{number, reason}` for every issue the four deterministic
    drops above removed (never a pull request), `reason` one of `"assigned"`,
-   `"blocked-label"`, `"blocked-by: <ref>"` (agent-ops#447). Fails safe to
+   `"blocked-label"`, `"pager"`, `"blocked-by: <ref>"` (agent-ops#447,
+   agent-ops#2564). Fails safe to
    `{"candidates":[],"excluded":null}` (exit 0) with failures loud on stderr —
    `excluded` is `null`, not `[]`, because a filter that did not run to
    completion does not know the set to be empty (requirement 3j).
@@ -493,8 +495,9 @@ What exists, and the requirements each part answers to:
    that repo's open issues carrying the `pw::type:tech-debt` label and prints
    the JSON array of the ones that survive the deterministic filter it shares
    with `scripts/gather-issues.sh` (`lib/issue-prefetch.sh`: not a pull
-   request, not assigned, not labelled `blocked` whatever the case, and
-   naming no still-open `Blocked-by:` reference — requirement 34j), each
+   request, not assigned, not labelled `blocked` whatever the case, not
+   labelled `pw::pager` (agent-ops#2564), and naming no still-open
+   `Blocked-by:` reference — requirement 34j), each
    carrying `source: "tech-debt"`, its bare issue number as `ref` (a string)
    and as `number`, `url`, `title`, `labels`, `author`, `created_at`,
    `updated_at`, its `body`, and its whole comment thread verbatim as
@@ -599,8 +602,9 @@ What exists, and the requirements each part answers to:
 3r. `lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j
    and 3t share: `ISSUE_DETERMINISTIC_FILTER_JQ`, the jq definitions
    `issue_deterministic_ok` (not a pull request, not assigned, not labelled
-   `blocked` whatever the case) and `issue_exclude_reason` (which of
-   `"assigned"`/`"blocked-label"` a rejected issue is reportable under, `null`
+   `blocked` whatever the case, and not labelled `pw::pager` — agent-ops#2564)
+   and `issue_exclude_reason` (which of `"assigned"`/`"blocked-label"`/
+   `"pager"` a rejected issue is reportable under, `null`
    otherwise — a pull request is never reported); and `issue_blocked_by_ref`,
    which prints the display form of a thread's first still-open `Blocked-by:`
    reference (requirement 34j) or nothing, treating a reference whose state

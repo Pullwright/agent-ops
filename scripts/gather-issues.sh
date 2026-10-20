@@ -28,11 +28,11 @@
 #
 # `excluded` — one entry per issue the deterministic filter below dropped
 # (requirement 16.4's deterministic half; agent-ops#447), each
-# `{"number": 125, "reason": "assigned" | "blocked-label" | "blocked-by: <ref>"}`
+# `{"number": 125, "reason": "assigned" | "blocked-label" | "pager" | "blocked-by: <ref>"}`
 # — never a PR the issues endpoint interleaves, which is dropped unreported
 # because it was never a candidate issue to begin with. This is what lets a
 # caller report "N issues excluded, and why" instead of a drop nothing else
-# ever recorded: before this, the three deterministic drops removed an issue
+# ever recorded: before this, the deterministic drops removed an issue
 # from candidacy with nothing on stdout, nothing on stderr, and nothing in
 # the shared log to say it had happened. `excluded` is `null`, never `[]`,
 # when the deterministic filter did not run to completion (see "Degrading"
@@ -195,10 +195,11 @@ jq -e 'type == "array"' <<<"$issues_raw" >/dev/null 2>&1 \
 # but not for a `Priority` value with no `single_select_option` at all, which
 # `$priority_names` drops.
 #
-# `excluded` mirrors the assigned/blocked-label drops only, reason-tagged
-# (agent-ops#447): assigned wins the tag when an issue is somehow both
-# assigned and `blocked`-labelled, matching the order `issue_exclude_reason`
-# checks them in.
+# `excluded` mirrors the assigned/blocked-label/pager drops only, reason-tagged
+# (agent-ops#447, agent-ops#2564): assigned wins the tag when an issue is
+# somehow both assigned and `blocked`-labelled or `pw::pager`-labelled, and
+# `blocked-label` wins over `pager` the same way, matching the order
+# `issue_exclude_reason` checks them in.
 #
 # A third, structured drop happens below, once each candidate's whole thread
 # is in hand: a `Blocked-by:` reference (requirement 34j) naming a still-open

@@ -29,26 +29,42 @@
 # program:
 #
 #   - `issue_deterministic_ok` — true for an issue object (`.`) that is not a
-#     pull request, not assigned, and not labelled `blocked` (whatever the
-#     case).
+#     pull request, not assigned, not labelled `blocked` (whatever the
+#     case), and not labelled `pw::pager`.
 #   - `issue_exclude_reason` — for an issue object `issue_deterministic_ok`
-#     rejected on one of the two *reportable* grounds, which of
-#     `"assigned"`/`"blocked-label"` applies (matching the order
-#     `issue_deterministic_ok` itself checks them in); `null` otherwise — a
-#     pull request is dropped by both scripts without ever being reported,
-#     since it was never a candidate issue to begin with.
+#     rejected on one of the three *reportable* grounds, which of
+#     `"assigned"`/`"blocked-label"`/`"pager"` applies (matching the order
+#     `issue_deterministic_ok` itself checks them in — assigned wins the tag
+#     when an issue is somehow both assigned and `blocked`-labelled or
+#     `pw::pager`-labelled, and `blocked-label` wins over `pager` the same
+#     way; which one wins never changes whether the issue is dropped, only
+#     which single reason string is reported); `null` otherwise — a pull
+#     request is dropped by both scripts without ever being reported, since
+#     it was never a candidate issue to begin with.
 #
-# Defined once so gather-issues.sh's own three drops and gather-tech-debt.sh's
+# The `pw::pager` drop (issue #2564) keeps a Pager tracking issue — filed
+# unassigned by the `pipeline-act`/`config-lever` remedy classes
+# (lib/pager.sh) as a record, never a work item — out of ordinary Coordinator
+# candidacy: a branch titled to fix one would let GitHub's own `Fixes #N`
+# auto-close retire the page directly on merge, bypassing `lib/pager.sh`'s
+# own event-sourced `pager_close`/`pager-cleared` lifecycle and leaving the
+# fleet log still saying `fired` even though its GitHub mirror reads closed.
+# The label is matched exactly (`pw::pager`, as `lib/labels.sh`'s own
+# catalogue always writes it) — no case-folding, unlike `blocked`.
+#
+# Defined once so gather-issues.sh's own drops and gather-tech-debt.sh's
 # copy of them cannot drift apart.
 # shellcheck disable=SC2034  # read by scripts/gather-issues.sh and scripts/gather-tech-debt.sh, which source this file
 read -r -d '' ISSUE_DETERMINISTIC_FILTER_JQ <<'JQ' || true
 def issue_deterministic_ok:
   (has("pull_request") | not)
   and (((.assignees // []) | length) == 0)
-  and (([.labels[]?.name | ascii_downcase] | index("blocked")) | not);
+  and (([.labels[]?.name | ascii_downcase] | index("blocked")) | not)
+  and (([.labels[]?.name] | index("pw::pager")) | not);
 def issue_exclude_reason:
   if ((.assignees // []) | length) > 0 then "assigned"
   elif (([.labels[]?.name | ascii_downcase] | index("blocked")) != null) then "blocked-label"
+  elif (([.labels[]?.name] | index("pw::pager")) != null) then "pager"
   else null end;
 JQ
 
