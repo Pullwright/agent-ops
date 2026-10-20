@@ -727,6 +727,99 @@ assert_eq "  ... and an explicit empty STRANDED_JSON agrees" \
   "$(printf 'o/r\t201\tblocked:needs-refinement\no/r\t201\tblocked\no/r\t202\tblocked:needs-refinement')" \
   "$(refinement_blocked_label_orphaned "$open_blocked_only_200" "$live_201_and_202" "o/r" "$log" '[]')"
 
+# --- agent-ops#2140's refinement.sh half (agent-ops#2466's remaining acceptance -
+# --- criterion): ALIASES_JSON resolves a renamed repo's history on both sides --
+# of the pairing, in both functions this half touches.
+rename_aliases='{"Poetic-Poems/agent-ops":"Pullwright/agent-ops"}'
+
+# `refinement_blocked_label_stale`'s own pairing (3rd argument): an `add`
+# logged under the old slug and a `remove` logged under the current one, with
+# the block since cleared, must pair and clear — the #1156 shape exactly, and
+# the case the unfixed grouping (by each event's own literal `.repo`) could
+# never reach, because the two events land in different groups forever.
+cat > "$log" <<EOF
+{"ts":"2026-09-01T09:00:00Z","cycle":"c0","event":"own-label-action","repo":"Poetic-Poems/agent-ops","item":"1156","label":"blocked","action":"add"}
+{"ts":"2026-10-01T09:00:00Z","cycle":"c1","event":"own-label-action","repo":"Pullwright/agent-ops","item":"1156","label":"blocked","action":"remove"}
+EOF
+assert_eq "a renamed repo's add/remove pair across its old and current slug clears, with aliases resolved" \
+  "" \
+  "$(refinement_blocked_label_stale '[]' "$log" "$rename_aliases")"
+assert_eq "  ... and without the aliases argument the unfixed grouping still reports it stuck — the fixture proves the fix, not a tautology" \
+  "Poetic-Poems/agent-ops	1156	blocked" \
+  "$(refinement_blocked_label_stale '[]' "$log")"
+
+# A current-slug-only history (no rename involved) is unaffected by passing
+# the aliases map: the fixture above with a known pairing resolves exactly
+# the same as the plain current-slug case already covered earlier in this
+# file (item 92), since both events already share one literal repo.
+cat > "$log" <<EOF
+{"ts":"2026-09-01T09:00:00Z","cycle":"c0","event":"own-label-action","repo":"o/r","item":"400","label":"blocked","action":"add"}
+{"ts":"2026-10-01T09:00:00Z","cycle":"c1","event":"own-label-action","repo":"o/r","item":"400","label":"blocked","action":"remove"}
+EOF
+assert_eq "a current-slug-only pair clears identically whether or not an (irrelevant) aliases map is passed" \
+  "$(refinement_blocked_label_stale '[]' "$log")" \
+  "$(refinement_blocked_label_stale '[]' "$log" "$rename_aliases")"
+
+# `refinement_blocked_label_orphaned`'s own ALIASES_JSON (6th argument): an
+# open block recorded under the repo's old slug must still shield a live
+# label the caller reads under the repo's current slug — the live-read
+# over-removal the Reviewer's third finding on #2559 named (a block still
+# open under a pre-rename slug reading as orphaned once the caller passes
+# only the current slug), which resolving `refinement_blocked_label_stale`'s
+# own pairing alone does not touch.
+old_slug_open_block="$(jq -c -n '[{repo: "Poetic-Poems/agent-ops", item: "6", kind: "needs-refinement"}]')"
+live_6="$(jq -c -n '[{number: 6, labels: ["blocked", "blocked:needs-refinement"]}]')"
+assert_eq "a block open under the old slug shields the current slug's live label once aliases are resolved" \
+  "" \
+  "$(refinement_blocked_label_orphaned "$old_slug_open_block" "$live_6" "Pullwright/agent-ops" "" '[]' "$rename_aliases")"
+assert_eq "  ... and without the aliases argument the same open block does not shield it — the fixture proves the fix, not a tautology" \
+  "$(printf 'Pullwright/agent-ops\t6\tblocked:needs-refinement\nPullwright/agent-ops\t6\tblocked')" \
+  "$(refinement_blocked_label_orphaned "$old_slug_open_block" "$live_6" "Pullwright/agent-ops")"
+
+# A current-slug-only open block (no rename involved) is unaffected by
+# passing the aliases map.
+current_slug_open_block="$(jq -c -n '[{repo: "o/r", item: "6", kind: "needs-refinement"}]')"
+assert_eq "a current-slug-only open block shields identically whether or not an (irrelevant) aliases map is passed" \
+  "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r")" \
+  "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r" "" '[]' "$rename_aliases")"
+
+# An empty/unset aliases map behaves exactly as today for both functions —
+# every call above that omits the argument already demonstrates this, and
+# `blocked` is explicit about it too.
+assert_eq "an explicit empty aliases map agrees with an omitted one, for refinement_blocked_label_stale" \
+  "$(refinement_blocked_label_stale '[]' "$log")" \
+  "$(refinement_blocked_label_stale '[]' "$log" '{}')"
+assert_eq "  ... and for refinement_blocked_label_orphaned" \
+  "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r")" \
+  "$(refinement_blocked_label_orphaned "$current_slug_open_block" "$live_6" "o/r" "" '[]' '{}')"
+
+# `canon_repo` indexes an object with the slug, so a non-string `repo` would
+# raise `Cannot index object with number` and — since both readers end
+# `2>/dev/null || true` — reduce the whole reader to no output at all, rather
+# than to one event that fails to match. One unrelated malformed event must
+# cost exactly its own row, never every other row with it: while
+# `blocked-label-orphaned` reads nothing, no genuine orphan can page or reach
+# the remedy. Hence the `| tostring` guard on every `.repo` reaching
+# `canon_repo`, the same guard every `.item` read in this file already carries.
+nonstring_repo_log="$(mktemp)"
+cat > "$nonstring_repo_log" <<EOF
+{"ts":"2026-09-01T00:00:00Z","cycle":"c1","event":"attempt-failed","repo":"o/r","item":"6","kind":"needs-refinement","needs_refinement_assignee":"someone"}
+{"ts":"2026-09-02T00:00:00Z","cycle":"c2","event":"attempt-failed","repo":12345,"item":"7","kind":"needs-refinement","blocked_label":"blocked"}
+EOF
+assert_eq "one event carrying a non-string repo does not silence refinement_blocked_label_orphaned's other rows" \
+  "$(printf 'o/r\t6\tblocked:needs-refinement\no/r\t6\tblocked')" \
+  "$(refinement_blocked_label_orphaned '[]' "$live_6" "o/r" "$nonstring_repo_log" '[]' "$rename_aliases")"
+assert_eq "  ... nor refinement_blocked_label_stranded_candidates', which binds its own empty alias map" \
+  "6" \
+  "$(refinement_blocked_label_stranded_candidates '[]' "o/r" "$nonstring_repo_log")"
+assert_eq "  ... and a non-string repo in OPEN_BLOCKED_JSON costs only its own entry" \
+  "$(printf 'o/r\t6\tblocked:needs-refinement\no/r\t6\tblocked')" \
+  "$(refinement_blocked_label_orphaned '[{"repo":999,"item":"5","kind":"needs-refinement"}]' "$live_6" "o/r" "" '[]' "$rename_aliases")"
+assert_eq "  ... and refinement_blocked_label_stale, already guarded, agrees" \
+  "o/r	6	blocked" \
+  "$(refinement_blocked_label_stale '[{"repo":999,"item":"5"}]' <<<'{"ts":"2026-09-01T00:00:00Z","event":"own-label-action","repo":"o/r","item":"6","label":"blocked","action":"add"}')"
+rm -f "$nonstring_repo_log"
+
 # --- Requirement 35a: a refinement block is eligible like any other -------------
 # Deliberately unchanged by the marker. The threshold delay is a feature here:
 # it gives the human, or the Co-Ordinator's own cheap re-check, several cycles
@@ -1584,6 +1677,9 @@ rm -rf "$hf_tmp"
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" >/dev/null
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" "/nonexistent/log.jsonl" >/dev/null
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" "/nonexistent/log.jsonl" 'not json' >/dev/null
+  refinement_blocked_label_orphaned 'not json' 'not json' "o/r" "/nonexistent/log.jsonl" 'not json' 'not json' >/dev/null
+  refinement_blocked_label_stale 'not json' "/nonexistent/log.jsonl" >/dev/null
+  refinement_blocked_label_stale 'not json' "/nonexistent/log.jsonl" 'not json' >/dev/null
   refinement_blocked_label_stranded_candidates 'not json' "o/r" "/nonexistent/log.jsonl" >/dev/null
   refinement_blocked_label_stranded_candidates '[]' "o/r" >/dev/null
   exit 0

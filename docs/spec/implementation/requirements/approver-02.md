@@ -529,7 +529,41 @@
       `refinement_label_remove`'s optional `STDERR_VAR` capture — so a
       genuinely stuck removal (the label missing from the repository
       itself) can be told apart from a stale/racing read instead of only
-      incrementing a failure counter.
+      incrementing a failure counter. A repo named only by a historic
+      union-log event resolves through `config_repo_slug_aliases`'
+      `{old_slug: current_slug}` map (built from `PAGER_EVAL_REPOS_JSON`,
+      the dashboard's own `repos` config) before the live `gh` read, before
+      `refinement_blocked_label_orphaned`, and before the remedy's own
+      `refinement_label_remove` call — the same resolution requirement 34's
+      set/clear match already applies (agent-ops#2359), extended here
+      (agent-ops#2466) to the one invariant that was reading a repo straight
+      off historic events and feeding it to a live write: a repository
+      renamed since the block was recorded would otherwise read and write
+      against its old slug forever, which a GitHub repo-transfer redirect
+      serves for the read but not for the write. The resolved candidates are
+      de-duplicated, on both the live-read and the stale-retry side: a
+      renamed repo whose history names both its old and its current slug
+      resolves to one repo twice, and each live listing is read, each hit
+      counted, and each removal written and logged exactly once per repo and
+      label rather than once per slug the history recorded.
+
+      The same map (#2140) also resolves the two `lib/refinement.sh`
+      functions' own internal comparisons, not merely their output slug:
+      `refinement_blocked_label_stale`'s own pairing groups each
+      `own-label-action` event by its *canonical* repo before matching an
+      `add` against a later `remove`, so a label applied under a pre-rename
+      slug and released under the current one actually pairs — the gap a
+      resolved-output-only fix cannot close, since the two events would
+      otherwise stay in separate groups and the retry would keep re-removing
+      an already-absent label forever. `refinement_blocked_label_orphaned`
+      resolves both its open-block-set comparison and its own
+      `attempt-failed` history read (`latest_attempt_failed`) the same way,
+      closing the live-read half's matching over-removal: a block still open
+      under a repo's pre-rename slug now still shields a live label the
+      caller reads under the current one. Both functions default their
+      alias argument to `{}` (every repo resolves to itself), a strict
+      extension with no behaviour change where no `previous_slugs` is
+      configured.
     - **`claim-unreconciled`** (pipeline-act). Fires when an
       `enabler-examined` event whose `outcome` is the Enabler's own escalate
       verdict (`lib/enabler.sh`: `outcome="$verdict"`, never reassigned on
@@ -615,7 +649,10 @@
     set as `PAGER_EVAL_REPOS_JSON` and three siblings, the identical
     plain-variable exception `PAGER_EVAL_REPO`/`PAGER_EVAL_CYCLE_INTERVAL_
     MINUTES` already established. `PAGER_EVAL_REPOS_JSON` carries each
-    configured repository's own *configured* `merge_autonomy` level (a
+    configured repository's `slug`, its own `previous_slugs` (what
+    `blocked-label-orphaned` above builds its alias map from; `[]` for a
+    repository that has never been renamed) and its own *configured*
+    `merge_autonomy` level (a
     repository's own override, else the fleet-wide default) — never the live
     effective level, the identical D18 WI-6 approximation `config_json`'s own
     back-pressure card already makes, since a per-repository merge-budget-

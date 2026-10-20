@@ -303,8 +303,12 @@ approver_unreviewed_engage_after_hours="$(cfg '.approver_unreviewed_engage_after
 # D18 WI-6 approximation `config_json`'s own back-pressure card makes further
 # down this script: a live effective-level read needs a per-repository
 # merge-budget-freeze check neither invariant pays for on every evaluation.
+# `previous_slugs` rides along too (agent-ops#2466): blocked-label-orphaned
+# resolves it through `config_repo_slug_aliases` against this same global,
+# the same as every other `PAGER_EVAL_REPOS_JSON` reader; landing-never-armed
+# and pr-unreviewed simply never read that key.
 pager_repos_merge_autonomy_json="$(jq -c --arg top "$(cfg '.merge_autonomy')" \
-  '[.[] | {slug, merge_autonomy: (.merge_autonomy // $top)}]' <<<"$repos_json" 2>/dev/null)"
+  '[.[] | {slug, merge_autonomy: (.merge_autonomy // $top), previous_slugs: (.previous_slugs // [])}]' <<<"$repos_json" 2>/dev/null)"
 [[ -n "$pager_repos_merge_autonomy_json" ]] || pager_repos_merge_autonomy_json='[]'
 enabler_assignee="$(cfg '.enabler_assignee')"
 enabler_escalation_label="$(cfg '.enabler_escalation_label')"

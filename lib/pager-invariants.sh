@@ -1105,24 +1105,74 @@ _pager_blocked_label_candidate_repos() {
 # sourced by the caller; a caller that has not (this file's own tests) simply
 # sees this print nothing, exactly the "no candidates" answer an untouched
 # repository would also give.
+#
+# Every other `blocked_items`/`void_items` caller in `lib/candidate-gather.sh`
+# resolves a repo's `previous_slugs` to its current slug
+# (`config_repo_slug_aliases`) before matching or writing; this function is
+# the one place that read `.repo` straight off historic union-log events with
+# no such resolution (agent-ops#2466), so a pre-rename event kept naming a
+# repo's old slug forever — both in the live `gh` read and write below (the
+# latter of which a repo-transfer redirect serves for a read but not for a
+# write) and in `refinement_blocked_label_stale`'s own pairing (#2140's
+# `lib/refinement.sh` half), which grouped a label's `add`/`remove` history by
+# whatever `.repo` each own-label-action event recorded, raw, so an `add`
+# logged pre-rename and a `remove` logged post-rename never paired and the
+# hit survived every removal. Both functions now take the same aliases map
+# this function already computes and resolve their own pairing with it
+# (`refinement_blocked_label_stale`'s own doc comment), so the slugs each
+# prints are already canonical — no post-hoc remap needed here any more.
+# `config_repo_slug_aliases` is read from `PAGER_EVAL_REPOS_JSON`
+# (empty/unset resolves to `{}`, same as every repo resolving to itself —
+# today's behaviour, unchanged), the same global `pager_eval_landing_never_
+# armed` already reads; a caller that has not sourced lib/config-schema.sh
+# (that function unavailable) skips resolution the same way, rather than
+# failing.
 _pager_blocked_label_candidates() {
-  local union_log_file="$1" repo open_blocked reason_label live_json gh
+  local union_log_file="$1" repo canon_repo open_blocked reason_label live_json gh \
+    aliases_json stale_hits
+  # Resolution collapses two slugs onto one, so the `sort -u` the candidate
+  # list already carries no longer holds once it is applied: a renamed repo
+  # whose history names both its old and its current slug — the whole case
+  # this resolution exists for, `Pullwright/agent-ops` itself among them —
+  # yields that one repo twice. Both iterations then read the same live
+  # listing and emit the same hits, which doubles every `gh` call this
+  # function's own header budgets at one per repo, doubles the count the
+  # evidence string reports, and makes the remedy write the same removal
+  # twice and log two `own-label-action remove` events for the one action.
+  local -A seen_canon_repos=()
   declare -F blocked_items >/dev/null 2>&1 || return 0
   declare -F refinement_blocked_label_stale >/dev/null 2>&1 || return 0
   declare -F refinement_blocked_label_orphaned >/dev/null 2>&1 || return 0
   declare -F refinement_blocked_reason_label >/dev/null 2>&1 || return 0
   gh="${PAGER_GH:-gh}"
-  open_blocked="$(blocked_items "$union_log_file")"
-  refinement_blocked_label_stale "$open_blocked" "$union_log_file"
+  aliases_json='{}'
+  if declare -F config_repo_slug_aliases >/dev/null 2>&1; then
+    aliases_json="$(config_repo_slug_aliases "${PAGER_EVAL_REPOS_JSON:-[]}" 2>/dev/null)"
+    jq -e 'type == "object"' <<<"$aliases_json" >/dev/null 2>&1 || aliases_json='{}'
+  fi
+  open_blocked="$(blocked_items "$union_log_file" "$aliases_json")"
+  stale_hits="$(refinement_blocked_label_stale "$open_blocked" "$union_log_file" "$aliases_json")"
+  if [[ -n "$stale_hits" ]]; then
+    # `refinement_blocked_label_stale` groups by the canonical repo now, so
+    # a label added under both a repo's old and its current slug already
+    # lands in one group and prints once — this is a safety-net dedup of
+    # the final lines, not the pairing fix itself, kept for the same reason
+    # the live-read loop below de-duplicates on `canon_repo` too.
+    awk '!_pager_seen[$0]++' <<<"$stale_hits"
+  fi
   reason_label="$(refinement_blocked_reason_label "${REFINEMENT_BLOCK_KIND:-needs-refinement}")"
   [[ -n "$reason_label" ]] || return 0
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
-    live_json="$("$gh" issue list -R "$repo" --label "$reason_label" --state open --limit 200 \
+    canon_repo="$(jq -r --arg r "$repo" '.[$r] // $r' <<<"$aliases_json" 2>/dev/null)"
+    [[ -n "$canon_repo" ]] || canon_repo="$repo"
+    [[ -z "${seen_canon_repos[$canon_repo]:-}" ]] || continue
+    seen_canon_repos[$canon_repo]=1
+    live_json="$("$gh" issue list -R "$canon_repo" --label "$reason_label" --state open --limit 200 \
         --json number,labels 2>/dev/null \
       | jq -c '[.[] | {number: .number, labels: [.labels[].name]}]' 2>/dev/null)"
     [[ -n "$live_json" ]] || live_json='[]'
-    refinement_blocked_label_orphaned "$open_blocked" "$live_json" "$repo" "$union_log_file"
+    refinement_blocked_label_orphaned "$open_blocked" "$live_json" "$canon_repo" "$union_log_file" '[]' "$aliases_json"
   done < <(_pager_blocked_label_candidate_repos "$union_log_file")
 }
 
