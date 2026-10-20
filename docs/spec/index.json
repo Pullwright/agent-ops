@@ -1145,6 +1145,14 @@
       "line": 675,
       "title": "A refused model credential stands the cycle down before the Co-Ordinator"
     },
+    "IMPL AC 79": {
+      "kind": "impl-ac",
+      "label": "79",
+      "anchor": "impl-ac-79",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 758,
+      "title": "A missed CI trigger is nudged exactly once, and only when genuinely"
+    },
     "IMPL AC 11e": {
       "kind": "impl-ac",
       "label": "11e",
@@ -1984,6 +1992,14 @@
       "file": "docs/spec/implementation/components/components-03.md",
       "line": 1123,
       "title": "`scripts/render-scripts-index.sh` and"
+    },
+    "IMPL C 24f": {
+      "kind": "impl-c",
+      "label": "24f",
+      "anchor": "impl-c-24f",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1158,
+      "title": "`lib/ci-trigger.sh` implementing requirement 69: given a repository"
     },
     "IMPL 40": {
       "kind": "impl",
@@ -3808,6 +3824,30 @@
       "file": "docs/spec/implementation/requirements/the-script-10.md",
       "line": 112,
       "title": "New config keys, documented and rendered."
+    },
+    "IMPL 69": {
+      "kind": "impl",
+      "label": "69",
+      "anchor": "impl-69",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 125,
+      "title": "A missed CI trigger is detected and retried at the push itself, not"
+    },
+    "IMPL 69a": {
+      "kind": "impl",
+      "label": "69a",
+      "anchor": "impl-69a",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 152,
+      "title": "At most one retrigger per head commit, and advisory throughout."
+    },
+    "IMPL 69b": {
+      "kind": "impl",
+      "label": "69b",
+      "anchor": "impl-69b",
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 166,
+      "title": "Never computed in the Implementer's own clone."
     },
     "IMPL 8d": {
       "kind": "impl",
