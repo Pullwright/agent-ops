@@ -444,7 +444,12 @@ if ! (( DRY_RUN )); then
         || "$cred_prev_verdict" == "refused" ]]; then
     cred_probe_out="$cycle_dir/credential-probe.out"
     cred_probe_rc=0
-    run_model_stage credential-probe 180 "$implementer_model_trivial" \
+    # 30 s, not 1b's 180 s: a single-word trivial-model reply needs nowhere
+    # near that long, and since #2567 this probe can re-run every cycle of a
+    # boot that keeps coming back inconclusive — unlike 1b's, which runs at
+    # most once per freeze — so its timeout is also the worst-case per-cycle
+    # latency a crashed or hung launch costs (agent-ops#2573).
+    run_model_stage credential-probe 30 "$implementer_model_trivial" \
       "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || cred_probe_rc=$?
     cred_probe_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     # The probe's own spend, joined into the fleet-wide ledger like every

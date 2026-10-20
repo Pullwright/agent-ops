@@ -753,7 +753,15 @@
       launch, neither of which answered anything about the credential) — a
       healthy node therefore pays this once per container lifetime, and an
       unhealthy or not-yet-answered one keeps being caught cheaply rather
-      than crash-looping again until its next restart. "First cycle
+      than crash-looping again until its next restart. "Cheaply" is a money
+      bound, not a latency one: a `transient` 5xx/overload answers in
+      about as long as the API takes to refuse, but a crashed or timed-out
+      launch answers nothing until the probe's own timeout elapses, so a
+      boot whose probe keeps coming back inconclusive pays that timeout
+      again every cycle for as long as it stays unresolved (agent-ops#2573).
+      The probe's timeout is 30 s, not 1b's 180 s — nowhere near what a
+      single-word trivial-model reply needs — precisely to keep that
+      worst-case per-cycle cost small. "First cycle
       after this container started" is read from `_updater_health_own_
       started` (`lib/updater-health.sh`) — this container's own PID 1 start
       time, the same reading `deploy/docker/watchtower-pre-update.sh`'s own
