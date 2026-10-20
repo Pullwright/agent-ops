@@ -737,3 +737,16 @@
    at `"refused"` rather than advancing it to `"ok"`, so a later genuinely
    clean probe still finds `cred_prev_verdict == "refused"` and still
    triggers retirement.
+
+   An `"ok"` verdict does not survive a fresh container start through an
+   inconclusive probe, but a `"refused"` one does (agent-ops#2554, review
+   round 2). `test/standdown-credential-preflight.test.sh` shows a healthy
+   container that restarts and gets a `transient` reply on the new boot's
+   very first cycle leaves the state file's verdict empty, not the old
+   boot's `"ok"` — so a later cycle of the new boot still re-probes rather
+   than reading that stale verdict as settled — and that the new boot then
+   settles at its own genuinely-confirmed `"ok"`. It also shows the
+   opposite case: a `refused` node that restarts and gets a `transient`
+   reply on the new boot's first cycle keeps the state file's verdict at
+   `"refused"` rather than resetting it, so a later genuinely clean reply on
+   the new boot still retires the open escalation.

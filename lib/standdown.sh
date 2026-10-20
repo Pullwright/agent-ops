@@ -533,7 +533,22 @@ if ! (( DRY_RUN )); then
     # (cases (a)/(b)) leaves `cred_prev_verdict` at `"refused"` so the next
     # cycle retries the close instead of forfeiting it for the container's
     # whole remaining lifetime.
-    cred_new_verdict="$cred_prev_verdict"
+    #
+    # The default itself must not survive a boot-id change unless it is
+    # `"refused"` (agent-ops#2554, review round 2): an `"ok"` verdict answers
+    # only for the boot that earned it, so carrying it onto a new boot's own
+    # inconclusive first probe would close that new boot's gate on a
+    # verdict it never itself confirmed — exactly the restart case this
+    # paragraph's own reasoning above does not cover. `"refused"` is kept
+    # across the boot change regardless, because that is the one verdict an
+    # open escalation is still waiting on; losing it to a reset would leave
+    # the escalation's eventual retirement unreachable.
+    if [[ "$cred_prev_started" == "$cred_container_started" \
+          || "$cred_prev_verdict" == "refused" ]]; then
+      cred_new_verdict="$cred_prev_verdict"
+    else
+      cred_new_verdict=""
+    fi
     if (( cred_probe_rc == 0 )) && [[ -z "$cred_class" ]]; then
       if [[ "$cred_prev_verdict" == "refused" ]] && [[ -n "$crash_loop_repo" ]]; then
         if credential_refused_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" "$cred_probe_ts"; then

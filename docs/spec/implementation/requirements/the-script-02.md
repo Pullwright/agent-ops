@@ -785,8 +785,12 @@
       probe falls through to the rest of the cycle and is not probed again
       on a second cycle of the same healthy container, but is probed again
       after a fresh container start; a `transient` verdict stands nothing
-      down, and is probed again on the next cycle of the same container
-      rather than being read as a settled, healthy verdict; a `refused`
+      down, and is probed again on the next cycle rather than being read as
+      a settled, healthy verdict — including the first cycle of a fresh
+      container start, where the old container's own `"ok"` verdict read
+      from the state file is not carried onto the new one, so a new
+      container's inconclusive first probe cannot be mistaken for a
+      verdict it never itself confirmed; a `refused`
       verdict whose own token names something other than
       the credential (`credit_exhausted`, which
       `lib/substrate-grok-build.sh` synthesises for a billing lapse) stands
@@ -830,7 +834,13 @@
       `cred_prev_verdict` still reads `refused` on a later probe and a
       genuinely clean reply then still triggers retirement, instead of
       having already been read as a clean credential with nothing left to
-      retire.
+      retire. Unlike an `"ok"` verdict, `"refused"` is carried across a
+      fresh container start too — the one case this state deliberately
+      survives a boot-id change (agent-ops#2554, review round 2) — because
+      the escalation it names stays open regardless of which boot the
+      container is on, so an inconclusive probe right after a restart must
+      not reset it to empty either, or the eventual clean reply on the new
+      container would find no `"refused"` left to retire.
 
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
