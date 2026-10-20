@@ -847,16 +847,31 @@ Retired automatically by agent-cycle.sh (requirement 2.7)."
 # here ever recorded the issue number the original filing returned. No open
 # issue (never filed, or already closed by hand) is not an error: there is
 # nothing to retire, and the function returns quietly.
+#
+# Returns non-zero on either failure window below — the lookup erroring, or
+# the close itself failing — rather than always 0 as before #2511: the caller
+# (`lib/standdown.sh`'s own 2.0h block) uses this to decide whether to clear
+# its own `cred_prev_verdict` state to `"ok"` or leave it at `"refused"` so a
+# future cycle retries the close instead of forfeiting it for the container's
+# whole remaining lifetime (agent-ops#2511). A genuinely empty lookup (no open
+# escalation, never filed or already closed by hand) is still success — only
+# an *error* finding out is a failure.
 credential_refused_retire_resolved() {
   local repo="$1" node="$2" cycle="$3" success_ts="$4"
   [[ -n "$repo" ]] || return 0
   local item_ref="credential-refused:$node"
-  local existing issue_number issue_url body
-  existing="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
-                --json number,url,body 2>/dev/null \
-              | jq -r --arg it "$item_ref" \
-                  'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  local list_out list_rc existing issue_number issue_url body
+  list_out="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
+                --json number,url,body 2>>"$cycle_dir/credential-refused-retire.err")"
+  list_rc=$?
+  if (( list_rc != 0 )); then
+    log_event "warning" "$(jq -nc --arg d "credential-refused escalation lookup for $item_ref failed — see credential-refused-retire.err — will retry next cycle" \
+      '{detail: $d}')"
+    return 1
+  fi
+  existing="$(jq -r --arg it "$item_ref" \
+      'map(select(((.body // "") | contains("`" + $it + "`")))) | first
+       | if . == null then empty else "\(.number)\t\(.url)" end' <<<"$list_out" 2>/dev/null)"
   [[ -n "$existing" ]] || return 0
   issue_number="${existing%%$'\t'*}"
   issue_url="${existing#*$'\t'}"
@@ -874,8 +889,9 @@ Retired automatically by agent-cycle.sh (requirement 2.0h)."
       "This node's model credential probe succeeded in cycle $cycle, at $success_ts."
   else
     log_event "warning" "$(jq -nc --argjson n "$issue_number" \
-      --arg d "credential-refused escalation issue #$issue_number has resolved but could not be closed — see credential-refused-retire.err" \
+      --arg d "credential-refused escalation issue #$issue_number has resolved but could not be closed — see credential-refused-retire.err — will retry next cycle" \
       '{detail: $d, issue_number: $n}')"
+    return 1
   fi
 }
 

@@ -511,12 +511,35 @@ if ! (( DRY_RUN )); then
     # genuine clean reply from both a credential refusal *and* a probe that
     # never produced a considered answer at all (a crashed or timed-out
     # launch, whose empty output also reads as `cred_class == ""`).
-    if [[ "$cred_prev_verdict" == "refused" ]] && (( cred_probe_rc == 0 )) \
-       && [[ -z "$cred_class" ]] && [[ -n "$crash_loop_repo" ]]; then
-      credential_refused_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" "$cred_probe_ts"
+    #
+    # The state write below only ever advances `cred_prev_verdict` to `"ok"`
+    # on a genuine clean reply — never unconditionally, as it did before
+    # #2511. Mirroring the filing side's own ordering (requirement-2.0h
+    # above, "will retry next cycle"): a transient 5xx or a crashed probe
+    # right after a `refused` verdict leaves the state untouched, so
+    # `cred_prev_verdict` is still `"refused"` on the next probe and a later
+    # genuinely clean reply still satisfies the comparison below rather than
+    # having already been clobbered to a clean-looking value (case (c)). And
+    # when the clean reply *is* the one that should retire a `refused`
+    # verdict, the state only advances to `"ok"` if the retirement itself
+    # actually succeeded — a failed lookup or a failed `gh issue close`
+    # (cases (a)/(b)) leaves `cred_prev_verdict` at `"refused"` so the next
+    # cycle retries the close instead of forfeiting it for the container's
+    # whole remaining lifetime.
+    cred_new_verdict="$cred_prev_verdict"
+    if (( cred_probe_rc == 0 )) && [[ -z "$cred_class" ]]; then
+      if [[ "$cred_prev_verdict" == "refused" ]] && [[ -n "$crash_loop_repo" ]]; then
+        if credential_refused_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" "$cred_probe_ts"; then
+          cred_new_verdict="ok"
+        else
+          cred_new_verdict="refused"
+        fi
+      else
+        cred_new_verdict="ok"
+      fi
     fi
-    jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "ok"}' \
-      > "$cred_state_file" 2>/dev/null || true
+    jq -nc --arg s "$cred_container_started" --arg v "$cred_new_verdict" \
+      '{container_started: $s, verdict: $v}' > "$cred_state_file" 2>/dev/null || true
   fi
 fi
 

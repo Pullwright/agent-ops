@@ -63,18 +63,27 @@ enabler_escalation_label="autonomous-agent-escalation"
 events_file="$tmp_dir/events"
 log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$events_file"; }
 
-# gh: `gh issue list` returns whatever GH_ISSUE_LIST_JSON names; `gh issue
-# close` is recorded into GH_CLOSE_CALLS_FILE, `---end---`-terminated since
-# the body is multi-line (the same convention run_block's own escalation
-# stub in test/standdown-credential-preflight.test.sh uses for the same
-# reason).
+# gh: `gh issue list` returns whatever GH_ISSUE_LIST_JSON names, or fails
+# with no output when GH_ISSUE_LIST_RC is non-zero; `gh issue close` is
+# recorded into GH_CLOSE_CALLS_FILE, `---end---`-terminated since the body is
+# multi-line (the same convention run_block's own escalation stub in
+# test/standdown-credential-preflight.test.sh uses for the same reason), or
+# fails without being recorded when GH_ISSUE_CLOSE_RC is non-zero — simulating
+# the two failure windows #2511 found (lookup errors, close errors) without
+# ever conflating either with a genuinely empty/successful result.
 GH_ISSUE_LIST_JSON='[]'
+GH_ISSUE_LIST_RC=0
+GH_ISSUE_CLOSE_RC=0
 GH_CLOSE_CALLS_FILE="$tmp_dir/close-calls"
 gh() {
   if [[ "$1" == "issue" && "$2" == "list" ]]; then
+    if (( GH_ISSUE_LIST_RC != 0 )); then
+      return "$GH_ISSUE_LIST_RC"
+    fi
     printf '%s' "$GH_ISSUE_LIST_JSON"
     return 0
   elif [[ "$1" == "issue" && "$2" == "close" ]]; then
+    (( GH_ISSUE_CLOSE_RC == 0 )) || return "$GH_ISSUE_CLOSE_RC"
     # --comment is always the last flag this codebase passes it as.
     { printf 'number=%s\n' "$3"
       echo "---comment---"
@@ -124,11 +133,56 @@ assert_eq "…and nothing is logged as retired" \
 # quiet no-op, not an error. ---
 
 GH_ISSUE_LIST_JSON='[]'
+GH_ISSUE_LIST_RC=0; GH_ISSUE_CLOSE_RC=0
 : > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
 credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-7" \
   "2026-10-14T19:49:02Z"
+retire_rc=$?
 assert_eq "no open escalation means nothing is closed" \
   "0" "$(wc -l < "$GH_CLOSE_CALLS_FILE" | tr -d ' ')"
+assert_eq "…and returns success — a genuinely empty lookup is not a failure" \
+  "0" "$retire_rc"
+
+# --- failure window (a) (agent-ops#2511): the matching escalation is found,
+# but `gh issue close` itself fails. Must return non-zero so the caller
+# (lib/standdown.sh's own 2.0h block) leaves its state at "refused" and
+# retries next cycle, rather than forfeiting the close for the container's
+# remaining lifetime — and must not log credential-refused-retired, since the
+# close never actually happened. ---
+
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+GH_ISSUE_LIST_JSON='[{"number":57,"url":"https://github.com/acme/agent-ops/issues/57","body":"- node: `test-node`\n\n---\nItem: `credential-refused:test-node` · raised by the Script"}]'
+GH_ISSUE_LIST_RC=0; GH_ISSUE_CLOSE_RC=1
+: > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-8" \
+  "2026-10-14T19:49:02Z"
+retire_rc=$?
+assert_eq "a failed gh issue close returns non-zero" \
+  "1" "$retire_rc"
+assert_eq "…never logs credential-refused-retired" \
+  "0" "$(grep -c '^credential-refused-retired' "$events_file" 2>/dev/null)"
+assert_eq "…logs a warning naming issue #57 and that it will retry next cycle" \
+  "yes" "$(if grep -E '^warning' "$events_file" | grep -q '#57' \
+              && grep -E '^warning' "$events_file" | grep -q 'will retry next cycle'; then echo yes; else echo no; fi)"
+
+# --- failure window (b) (agent-ops#2511): the `gh issue list` lookup itself
+# errors, distinct from a genuinely empty result above — must log a warning
+# (silent before #2511) and return non-zero, and must never attempt a close
+# against whatever stale/partial data an erroring lookup might have printed. ---
+
+GH_ISSUE_LIST_RC=1; GH_ISSUE_CLOSE_RC=0
+: > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-9" \
+  "2026-10-14T19:49:02Z"
+retire_rc=$?
+assert_eq "a failed gh issue list lookup returns non-zero" \
+  "1" "$retire_rc"
+assert_eq "…never attempts a close" \
+  "0" "$(wc -l < "$GH_CLOSE_CALLS_FILE" | tr -d ' ')"
+assert_eq "…logs a warning (silent before #2511) naming the lookup failure and the retry" \
+  "yes" "$(if grep -E '^warning' "$events_file" | grep -q 'lookup' \
+              && grep -E '^warning' "$events_file" | grep -q 'will retry next cycle'; then echo yes; else echo no; fi)"
+GH_ISSUE_LIST_RC=0
 
 printf '\n'
 if (( failures )); then

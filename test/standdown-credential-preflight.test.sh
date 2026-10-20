@@ -55,6 +55,13 @@ assert_eq() {
   fi
 }
 
+# state_verdict STATE_DIR — the "verdict" field run_block's own state file
+# (`$state_dir/.credential-preflight.json`) was left holding, read the same
+# way the real block reads cred_prev_verdict.
+state_verdict() {
+  jq -r '.verdict // ""' "$1/.credential-preflight.json" 2>/dev/null
+}
+
 extract_block() {
   local start_re="$1" end_re="$2" file="$3"
   BLOCK_START_RE="$start_re" BLOCK_END_RE="$end_re" awk '
@@ -83,7 +90,7 @@ if [[ "$cred_block" != *'stage: "credential-probe"'* || "$cred_block" != *'meter
   exit 1
 fi
 
-# run_block MODE BOOT_ID DRY_RUN STATE_DIR PROBE_COUNT_FILE ESCALATION_FILE EVENT_FILE [RETIRE_FILE]
+# run_block MODE BOOT_ID DRY_RUN STATE_DIR PROBE_COUNT_FILE ESCALATION_FILE EVENT_FILE [RETIRE_FILE] [RETIRE_RC]
 # MODE selects what the stubbed run_model_stage writes to the probe's .out
 # file: "ok" (a clean reply), "refused-400" (the workspace-scope 400 the
 # 2026-10-10 outage actually returned), or "transient-503" (a 5xx, which
@@ -92,10 +99,13 @@ fi
 # simulate two cycles of the same container's life. RETIRE_FILE (optional,
 # defaults to /dev/null) receives one line per call the block makes to the
 # stubbed `credential_refused_retire_resolved` (#2414's retirement path).
+# RETIRE_RC (optional, defaults to 0) is the exit code that stub returns —
+# #2511 added the block's own read of it, to decide whether the state
+# file's verdict may advance to "ok" or must stay "refused".
 run_block() {
   local mode="$1" boot_id="$2" dry_run="$3" state_dir="$4"
   local probe_count_file="$5" escalation_file="$6" event_file="$7"
-  local retire_file="${8:-/dev/null}"
+  local retire_file="${8:-/dev/null}" retire_rc="${9:-0}"
   : > "$event_file"
   (
     set -euo pipefail
@@ -168,8 +178,9 @@ run_block() {
     # shellcheck disable=SC2317  # called from $cred_block via eval
     credential_refused_retire_resolved() {
       printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$RETIRE_FILE"
+      return "$RETIRE_RC"
     }
-    export RETIRE_FILE="$retire_file"
+    export RETIRE_FILE="$retire_file" RETIRE_RC="$retire_rc"
 
     # shellcheck disable=SC2317  # called from $cred_block via eval
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"; }
@@ -263,6 +274,38 @@ assert_eq "…naming this cycle" \
   "20260101T000000Z-test-node-1" "$(cut -f3 <<<"$retire_line")"
 assert_eq "…and a real timestamp for the probe that just succeeded" \
   "yes" "$(if [[ "$(cut -f4 <<<"$retire_line")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then echo yes; else echo no; fi)"
+assert_eq "…and the state file's verdict advances to ok once retirement succeeds (agent-ops#2511)" \
+  "ok" "$(state_verdict "$state_dir")"
+
+# --- recovered, but retirement itself fails (agent-ops#2511, case (a)/(b)):
+# the probe came back clean, but the stubbed retirement reports failure —
+# the state file's verdict must stay "refused" rather than advancing to
+# "ok", so the next cycle retries the close instead of forfeiting it for
+# the container's remaining lifetime. ---
+
+state_dir_refail="$tmp_dir/state-retire-fails"; mkdir -p "$state_dir_refail"
+probe_count_refail="$tmp_dir/retire-fails-probe-count"; : > "$probe_count_refail"
+esc_file_refail="$tmp_dir/retire-fails-escalations"; : > "$esc_file_refail"
+evt_file_refail_a="$tmp_dir/retire-fails-events-a"
+run_block refused-400 boot-1 0 "$state_dir_refail" "$probe_count_refail" "$esc_file_refail" \
+  "$evt_file_refail_a" >/dev/null
+retire_file_refail="$tmp_dir/retire-fails-retire"; : > "$retire_file_refail"
+evt_file_refail_b="$tmp_dir/retire-fails-events-b"
+block_rc_refail="$(run_block ok boot-1 0 "$state_dir_refail" "$probe_count_refail" "$esc_file_refail" \
+  "$evt_file_refail_b" "$retire_file_refail" 1)"
+assert_eq "a recovered probe whose own retirement fails still exits 0" "0" "$block_rc_refail"
+assert_eq "…and still falls through to the rest of the cycle" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file_refail_b"; then echo yes; else echo no; fi)"
+assert_eq "…retirement was attempted exactly once" \
+  "1" "$(wc -l < "$retire_file_refail" | tr -d ' ')"
+assert_eq "…but the state file's verdict stays refused rather than advancing (agent-ops#2511)" \
+  "refused" "$(state_verdict "$state_dir_refail")"
+probe_count_refail_after_first="$(wc -l < "$probe_count_refail" | tr -d ' ')"
+evt_file_refail_c="$tmp_dir/retire-fails-events-c"
+run_block ok boot-1 0 "$state_dir_refail" "$probe_count_refail" "$esc_file_refail" \
+  "$evt_file_refail_c" "$retire_file_refail" 1 >/dev/null
+assert_eq "…so the next cycle probes again rather than treating the credential as clean" \
+  "$(( probe_count_refail_after_first + 1 ))" "$(wc -l < "$probe_count_refail" | tr -d ' ')"
 
 # --- ok: nothing to do, the cycle proceeds into the gather ---
 
@@ -339,6 +382,8 @@ block_rc_rt2="$(run_block transient-503 boot-1 0 "$state_dir_rt" "$probe_count_r
 assert_eq "a transient reply right after a refused credential exits 0" "0" "$block_rc_rt2"
 assert_eq "…and does not call the retirement path" \
   "0" "$(wc -l < "$retire_file_rt" | tr -d ' ')"
+assert_eq "…and leaves the state file's verdict at refused, not advanced to ok (agent-ops#2511 case (c))" \
+  "refused" "$(state_verdict "$state_dir_rt")"
 
 # --- refused, but not by the credential: `credit_exhausted` reaches
 # `stage_api_refusal_class`'s own default arm as `refused` (deliberately —

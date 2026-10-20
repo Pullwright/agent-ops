@@ -809,6 +809,24 @@
       the same reasoning the probe's own gate above rests on: a cycle that
       promises to change nothing must not close an escalation either.
 
+      The retirement trigger (previous verdict `refused`, current probe
+      clean) is never consumed unconditionally (agent-ops#2511): the state
+      file's verdict only advances to `"ok"` when the close actually
+      happened, mirroring the filing side's own "will retry next cycle"
+      ordering. A `gh issue close` failure, or the `gh issue list` lookup
+      inside `credential_refused_retire_resolved` itself erroring (both
+      logged as a `warning` event, the lookup distinguishing an error from a
+      genuinely empty result rather than conflating the two), leaves the
+      state verdict at `"refused"` so the probe gate re-probes and retries
+      the close next cycle rather than forfeiting it for the container's
+      whole remaining lifetime. The same holds when the probe right after a
+      `refused` verdict comes back `transient` (a 5xx) or crashes rather than
+      clean: the state is left untouched rather than advanced to `"ok"`, so
+      `cred_prev_verdict` still reads `refused` on a later probe and a
+      genuinely clean reply then still triggers retirement, instead of
+      having already been read as a clean credential with nothing left to
+      retire.
+
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
       is as fresh as the last state-sync fetch; `fleet/limit.json` on the
