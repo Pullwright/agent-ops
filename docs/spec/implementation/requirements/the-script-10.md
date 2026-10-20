@@ -16,8 +16,7 @@
     prints `--health`.
 
     60a. <a id="impl-60a"></a>**Read-only throughout.** Touches no lock, writes no event,
-    publishes nothing, and — beyond the one cached forge read of 58a —
-    makes no network call and triggers no state-sync push, gather, dashboard
+    publishes nothing, and triggers no state-sync push, gather, dashboard
     publish or `claude` invocation: every verdict computes on demand from
     what cron already wrote. Exactly two forge reads exist across the whole
     CLI, each confined to the one mode that reports it: 58a's own cached

@@ -3734,7 +3734,7 @@
       "label": "60b",
       "anchor": "impl-60b",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 42,
+      "line": 41,
       "title": "The three verdicts genuinely diverge, from one CLI, in one"
     },
     "IMPL 60c": {
@@ -3742,7 +3742,7 @@
       "label": "60c",
       "anchor": "impl-60c",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 51,
+      "line": 50,
       "title": "The container-runtime healthcheck runs the identical CLI."
     },
     "IMPL 60d": {
@@ -3750,7 +3750,7 @@
       "label": "60d",
       "anchor": "impl-60d",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 61,
+      "line": 60,
       "title": "The HTTP surface is a second front over the identical"
     },
     "IMPL 60e": {
@@ -3758,7 +3758,7 @@
       "label": "60e",
       "anchor": "impl-60e",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 92,
+      "line": 91,
       "title": "`--metrics`' field list is the node metrics shape"
     },
     "IMPL 60f": {
@@ -3766,7 +3766,7 @@
       "label": "60f",
       "anchor": "impl-60f",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 113,
+      "line": 112,
       "title": "New config keys, documented and rendered."
     },
     "IMPL 8d": {
