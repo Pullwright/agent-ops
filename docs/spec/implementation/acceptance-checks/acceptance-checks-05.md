@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 5 of 8; items 8t–50)
+### Acceptance checks — continued (part 5 of 9; items 8t–50)
 
 8t. <a id="impl-ac-8t"></a>**The arming step lands only what the classifier clears, re-reads every
     gate fresh, and disarms cleanly (requirement 8d, D18 WI-7).**
