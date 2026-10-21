@@ -13,6 +13,15 @@
 #     new BODY/PROVENANCE as a comment instead of a second filing, and the
 #     matched issue's own number/url are returned. No dedup hit creates a
 #     fresh issue labelled `pw::type:tech-debt`.
+#   - **... or dedups by "same PR"** (agent-ops#2576): when PROVENANCE
+#     embeds a pull-request URL (as every Approver/Reviewer-filed finding's
+#     own PROVENANCE does), a candidate whose body already contains that
+#     same URL counts as a duplicate even when its title reads nothing
+#     alike — the #2573/#2574 scenario, two findings worded differently
+#     against the same PR. A provenance naming no PR at all (the Enabler's
+#     own wording) never matches by this path, and neither does a PR number
+#     that is merely a digit prefix of one the body names (`#25` against a
+#     body naming only `#2567`).
 #   - **A TOKEN, given, is used for every gh call** (issue list, comment,
 #     create) — never the ordinary login.
 #   - **A labelled create that fails is retried once unlabelled** (a
@@ -160,7 +169,7 @@ assert_eq "  ... exactly one issue list (the dedup search)" "1" \
 # records, silently, which is the one failure a passing suite could otherwise
 # hide entirely.
 assert_eq "  ... and it states its own --limit rather than inheriting gh's 30" "1" \
-  "$(grep -c -- "--state open --limit $TECHDEBT_DEDUP_LIST_LIMIT --json number,url,title" "$tmp_dir/calls")"
+  "$(grep -c -- "--state open --limit $TECHDEBT_DEDUP_LIST_LIMIT --json number,url,title,body" "$tmp_dir/calls")"
 assert_eq "  ... exactly one issue create, labelled" "1" \
   "$(grep -c -- '^<none> issue create -R o/r --title A finding worth filing .*--label pw::type:tech-debt$' "$tmp_dir/calls")"
 assert_eq "  ... no issue comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
@@ -242,6 +251,73 @@ assert_eq "file_debt: a short needle does not match by containment, exit 0" "0" 
 assert_eq "  ... a fresh issue is filed instead (not the long unrelated one)" \
   "77	https://github.com/o/r/issues/77" "$out"
 assert_eq "  ... no comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
+
+# --- Same-PR dedup: unrelated titles, same PR named in provenance (#2573/ --
+# #2574's own scenario) ------------------------------------------------------
+reset_stub
+jq -nc '[{number: 47, url: "https://github.com/o/r/issues/47", title: "Unbounded credential re-probe risks a closed-gate regression",
+          body: "Default: reject a re-probe cap/backoff.\n\nwhile the Approver was judging https://github.com/o/r/pull/2567"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "Approver filed conflicting defaults for the same standdown finding" \
+        "New evidence." "while the Approver was judging https://github.com/o/r/pull/2567" "")"
+rc=$?
+assert_eq "file_debt: same-PR dedup hit, exit 0" "0" "$rc"
+assert_eq "  ... existing number/url returned despite the unrelated title" \
+  "47	https://github.com/o/r/issues/47" "$out"
+assert_eq "  ... no issue create attempted" "0" "$(grep -c 'issue create' "$tmp_dir/calls")"
+assert_eq "  ... exactly one issue comment, on #47" "1" \
+  "$(grep -c '^<none> issue comment 47 -R o/r' "$tmp_dir/calls")"
+assert_eq "  ... the comment carries the new evidence" "1" "$(last_issue_body | grep -c '^New evidence\.$')"
+
+# --- Same-PR dedup does not fire for a provenance naming no PR (the --------
+# Enabler's own wording) -----------------------------------------------------
+reset_stub
+jq -nc '[{number: 48, url: "https://github.com/o/r/issues/48", title: "Some unrelated finding",
+          body: "while the Approver was judging https://github.com/o/r/pull/2567"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding from the Enabler" "New evidence." \
+        "during an Enabler engagement on 2576 (cycle c1)" "")"
+rc=$?
+assert_eq "file_debt: no PR in provenance -> same-PR check never fires, exit 0" "0" "$rc"
+assert_eq "  ... a fresh issue is filed instead" "77	https://github.com/o/r/issues/77" "$out"
+assert_eq "  ... no comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
+
+# --- Same-PR dedup never fires on a PR number that is merely a digit -------
+# prefix of one the body names -----------------------------------------------
+# `.../pull/25` is a plain substring of `.../pull/2567`, so an unguarded
+# substring test deduped a filing raised against #25 into an issue naming
+# only #2567 — silently, as a comment on an unrelated issue. Both directions
+# are asserted together: the prefix must miss, and the PR the body actually
+# names must still hit.
+reset_stub
+jq -nc '[{number: 50, url: "https://github.com/o/r/issues/50", title: "Some unrelated finding",
+          body: "while the Approver was judging https://github.com/o/r/pull/2567"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding against a different PR" "New evidence." \
+        "while the Approver was judging https://github.com/o/r/pull/25" "")"
+assert_eq "file_debt: a PR number that is only a digit prefix is not a same-PR hit" \
+  "77	https://github.com/o/r/issues/77" "$out"
+assert_eq "  ... no comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
+
+reset_stub
+jq -nc '[{number: 51, url: "https://github.com/o/r/issues/51", title: "Some unrelated finding",
+          body: "while the Approver was judging https://github.com/o/r/pull/2567/files"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding worded differently" "New evidence." \
+        "while the Approver was judging https://github.com/o/r/pull/2567" "")"
+assert_eq "  ... but the PR the body names still hits, trailing path and all" \
+  "51	https://github.com/o/r/issues/51" "$out"
+
+# --- A title match is still found even when it would precede a same-PR -----
+# check (title match wins first, same result either way) --------------------
+reset_stub
+jq -nc '[{number: 49, url: "https://github.com/o/r/issues/49", title: "A finding worth filing",
+          body: "while reviewing https://github.com/o/r/pull/1"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding worth filing" "New evidence." \
+        "while the Approver was judging https://github.com/o/r/pull/999" "")"
+assert_eq "file_debt: title match still hits even when the PR differs" \
+  "49	https://github.com/o/r/issues/49" "$out"
 
 # --- A dedup hit still carries DEFAULT_FIX/OWNER_DECISION into the comment --
 reset_stub

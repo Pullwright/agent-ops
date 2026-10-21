@@ -91,11 +91,16 @@ with the Reviewer's own.
       first against that repository's own open `pw::type:tech-debt` issues
       by normalised title (`_techdebt_title_dedup_match`,
       `lib/tech-debt-file.sh`, requirement 36c's own bullet describes the
-      same dedup): a match gets the new body and provenance as a comment
-      instead of a second filing. No id reservation, no branch, no pull
-      request. Logs `tech-debt-filed` (`pr_url`, `repo`, `by: "approver"`,
-      `issue_number`, `issue_url`) on success; a `warning` naming
-      `tech-debt-file.err` on failure.
+      same dedup), or, failing that, by the provenance line — which always
+      embeds this review's own `pr_url` — naming the same pull request as an
+      already-open issue's own body (`_techdebt_pr_dedup_match`,
+      agent-ops#2576): either match gets the new body and provenance as a
+      comment instead of a second filing, catching two Approver engagements
+      that review the same pull request and word the same finding
+      differently, which the title check alone would miss. No id
+      reservation, no branch, no pull request. Logs `tech-debt-filed`
+      (`pr_url`, `repo`, `by: "approver"`, `issue_number`, `issue_url`) on
+      success; a `warning` naming `tech-debt-file.err` on failure.
     - `file_issue` reuses the pull request's own URL as the duplicate-guard
       key: an open issue already quoting it *is* the record. No label, no
       assignee — legitimate autonomous work for the `issues` source to pick

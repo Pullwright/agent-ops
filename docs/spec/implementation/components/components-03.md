@@ -727,7 +727,25 @@
       (`_techdebt_title_dedup_match`/`_techdebt_normalize_title`: lower-cased,
       punctuation folded to spaces, whitespace collapsed, then compared for
       equality or — both titles at least eight normalized characters —
-      containment either way). That search states its own page cap —
+      containment either way), or, failing that, by `PROVENANCE` naming the
+      same pull request as an already-open issue's own body
+      (`_techdebt_pr_dedup_match`/`_techdebt_extract_pr_url`, agent-ops#2576):
+      every Approver/Reviewer-filed `PROVENANCE` embeds the literal PR URL
+      the finding was raised against (`lib/approver.sh`'s `"while the
+      Approver was judging $pr_url"`, `lib/merge-observed.sh`'s equivalent),
+      so a candidate issue whose body already contains that same URL counts
+      as a duplicate even when the two findings are titled nothing alike —
+      the fault two independent Approver engagements reviewing the same pull
+      request can otherwise each describe in its own words and each clear
+      the title check. The URL comparison is guarded on its right against a
+      digit, never a bare substring test, so a filing raised against
+      `.../pull/25` is not deduped into an issue naming only
+      `.../pull/2567`; a trailing path or fragment (`/files`,
+      `#issuecomment-…`) still matches, being the same pull request. A
+      `PROVENANCE` naming no PR at all (the Enabler's own
+      wording, which names an item reference instead) never matches by this
+      path, leaving its dedup exactly as before. That search states its own
+      page cap —
       `--limit TECHDEBT_DEDUP_LIST_LIMIT` (default 500), never `gh issue
       list`'s undeclared default of 30 — for the reason every other listing in
       this pipeline states one ("A listing that silently comes back at its
@@ -775,8 +793,17 @@
     number/url with no create attempted; a normalised (case/punctuation-folded)
     title match and a containment match (both titles at least eight normalized
     characters) dedup the same way; a short needle never matches an unrelated
-    long title by containment, only by exact equality; an unusable dedup search
-    (not a JSON array) is skipped rather than failing the filing; a labelled
+    long title by containment, only by exact equality; a `PROVENANCE` naming
+    the same pull request as an open issue's own body dedups the same way even
+    when the two titles are unrelated; a `PROVENANCE` naming no pull request at
+    all never matches by that path and a fresh issue is filed; a pull-request
+    number that is merely a digit prefix of one the candidate body names
+    (`#25` against a body naming only `#2567`) never matches by that path
+    either, while the pull request the body does name still matches with a
+    trailing path appended; a title match is
+    still found ahead of a same-PR check naming a different pull request; an
+    unusable dedup search (not a JSON array) is skipped rather than failing the
+    filing; a labelled
     create that fails is retried unlabelled and still succeeds; an unlabelled
     create that fails returns 1 with no output; a token is used for every call;
     and no call ever touches `git/refs` or `pr create`. `techdebt_file_issue`'s

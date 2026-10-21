@@ -800,8 +800,18 @@
     eight normalized characters) all get the new body and provenance as a
     comment on the matched issue rather than a second filing, returning that
     issue's own number/url; a short needle never matches an unrelated long
-    title by containment, only by exact equality; an unusable dedup search
-    (not a JSON array) is skipped rather than failing the filing; and the
+    title by containment, only by exact equality; failing a title match, a
+    provenance line naming the same pull request as an open issue's own body
+    dedups the same way even when the two titles are unrelated
+    (agent-ops#2576), a provenance naming no pull request at all (the
+    Enabler's own wording) never matches by that path, a pull-request number
+    that is merely a digit prefix of one the candidate body names (`#25`
+    against a body naming only `#2567`) never matches by that path either
+    while the pull request the body does name still matches with a trailing
+    path appended, and a title match is
+    still found ahead of a same-PR check naming a different pull request; an
+    unusable dedup search (not a JSON array) is skipped rather than failing
+    the filing; and the
     search itself carries `--limit TECHDEBT_DEDUP_LIST_LIMIT` rather than
     inheriting `gh`'s own default of 30, so a repository with more open debt
     than that page still dedups against all of it. No dedup hit
