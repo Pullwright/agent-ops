@@ -1283,7 +1283,16 @@ ENABLER_ELIGIBLE_JQ='
 # an ordinary dependency (the concrete instance this was filed from, #2440,
 # closed about two hours after #2480 was deferred) resolves comfortably
 # inside it, short enough that a dependency that is itself stuck still
-# reaches a human inside a week either way.
+# reaches a human.
+#
+# The two branches are deliberately not the same length, and the multiplied
+# one is the longer: at the shipped `enabler_recheck_hours` of 72, three
+# missed windows is 216 hours — nine days — against the fallback's flat 72.
+# A fleet configured to re-examine less often should wait proportionally
+# longer before paying the engagement this suppresses, which is the whole
+# point of reading the cadence rather than fixing a span; the fallback is
+# what a fleet with no cadence to read falls back to, never a stand-in for
+# the multiplied value.
 ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER="${ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER:-3}"
 ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS="${ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS:-72}"
 
