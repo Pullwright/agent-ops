@@ -129,10 +129,12 @@ What exists, and the requirements each part answers to:
    pass through `exclude_blocked_or_void_issues`) and settles
    `refinements_json`; before that subtraction it snapshots
    `live_pr_refs_json` and `live_td_refs_json` — requirement 35e's two live
-   sets — from the untouched
+   sets — and `dependency_threads_json`, requirement 35f's merged
+   `issues`-plus-`tech_debt` thread map, from the untouched
    gather, because the entries the subtraction removes are exactly the ones
-   that filter is asked about (issue #1119; `live_td_refs_json` widened this
-   the same way by issue #1699). It settles `decisions_json` alongside
+   those filters are asked about (issue #1119; `live_td_refs_json` widened this
+   the same way by issue #1699, and `dependency_threads_json` by issue
+   #2593). It settles `decisions_json` alongside
    `refinements_json` and then, only where `refiner_model` is set, makes a
    further subtraction of its own, over the same bands:
    `exclude_decision_pending_items` withholds every item that map still names
@@ -154,8 +156,9 @@ What exists, and the requirements each part answers to:
    `compute_enabler_eligible_set` derives
    `enabler_eligible_json` from the source-state digests of the repositories
    that sampled cleanly — how "is that escalation issue still open?" is
-   answered without a `gh` call per escalation — consumes both snapshots for
-   requirement 35e's filter, and ends by setting
+   answered without a `gh` call per escalation — consumes the first two
+   snapshots for requirement 35e's filter and the third for requirement
+   35f's, and ends by setting
    `enabler_allowed`. `prefetch_refiner_sources` seeds `refiner_repos_json`
    from that snapshot and fetches the Refiner's own
    two extra sources into it, which `ordered_repos_json`

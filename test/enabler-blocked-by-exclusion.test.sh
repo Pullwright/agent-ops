@@ -165,6 +165,27 @@ renamed_result="$(run_open_blocked_by_block "$renamed_ordered" "$renamed_eligibl
 assert_eq "a block recorded under a renamed repo slug still resolves through the alias map" "0" \
   "$(jq '[.eligible[] | select(.item == "10")] | length' <<<"$renamed_result")"
 
+# --- a cross-repo reference naming a repo under its *previous* slug is ----
+# --- resolved through the alias map before the digest lookup, for the -----
+# --- same reason the candidate's own repo is (agent-ops#2064): the digest -
+# --- is only ever keyed by a repo's current configured slug, so without ---
+# --- this the reference falls into the fail-safe arm and reads as --------
+# --- still-open forever, including after it has closed --------------------
+renamed_ref_ordered='[{"slug": "o/r",
+                        "issues": [{"number": 55, "body": "Blocked-by: old/dep#8", "comments": []}]}]'
+renamed_ref_eligible='[{"repo": "o/r", "item": "55", "reason": "threshold"}]'
+renamed_ref_aliases='{"old/dep": "new/dep"}'
+renamed_ref_closed='{"o/r": [], "new/dep": [9]}'
+renamed_ref_closed_result="$(run_open_blocked_by_block \
+  "$renamed_ref_ordered" "$renamed_ref_eligible" "$renamed_ref_closed" "$renamed_ref_aliases")"
+assert_eq "a cross-repo reference under a previous slug, since closed, no longer excludes" "1" \
+  "$(jq '[.eligible[] | select(.item == "55")] | length' <<<"$renamed_ref_closed_result")"
+renamed_ref_open='{"o/r": [], "new/dep": [8]}'
+renamed_ref_open_result="$(run_open_blocked_by_block \
+  "$renamed_ref_ordered" "$renamed_ref_eligible" "$renamed_ref_open" "$renamed_ref_aliases")"
+assert_eq "  ... and still excludes while it is open under the repo's current slug" "0" \
+  "$(jq '[.eligible[] | select(.item == "55")] | length' <<<"$renamed_ref_open_result")"
+
 # --- an unrelated eligible item in the same cycle is untouched -------------
 mixed_eligible='[
   {"repo": "o/r", "item": "42", "reason": "threshold"},

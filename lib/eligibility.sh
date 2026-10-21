@@ -398,7 +398,20 @@ while IFS=$'\t' read -r obd_orig_repo obd_item; do
   while IFS= read -r obd_ref; do
     [[ -n "$obd_ref" ]] || continue
     if [[ "$obd_ref" == */* ]]; then
-      obd_ref_repo="${obd_ref%%#*}"; obd_ref_n="${obd_ref##*#}"
+      # A cross-repo reference names its own repo, and that name is resolved
+      # through the alias map exactly as the candidate's own repo is above:
+      # `open_issues_json` is always keyed by a repo's *current* configured
+      # slug, so a reference written before a rename (`Blocked-by:
+      # old/dep#8`) would otherwise look up a key that can never exist, fall
+      # into the `else true` fail-safe arm below, and read as still-open
+      # every cycle — forever, including after the reference closed, since
+      # nothing about a renamed slug ever changes back. Requirement 35a's own
+      # escalation-issue lookup resolves its repo the same way and for the
+      # same reason (agent-ops#2064).
+      obd_ref_slug="${obd_ref%%#*}"
+      obd_ref_repo="$(jq -rn --arg r "$obd_ref_slug" --argjson a "$repo_slug_aliases_json" '$a[$r] // $r' \
+        2>/dev/null || printf '%s' "$obd_ref_slug")"
+      obd_ref_n="${obd_ref##*#}"
     else
       obd_ref_repo="$obd_repo"; obd_ref_n="$obd_ref"
     fi
