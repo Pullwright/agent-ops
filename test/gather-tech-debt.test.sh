@@ -129,14 +129,17 @@ export PATH="$tmp_dir/bin:$PATH"
 # `pw::type:tech-debt` label at all, proving the label filter (now this
 # script's own `select`, since
 # `issue_prefetch_open_issues` returns every open issue — agent-ops#1085)
-# still excludes it; #25 carries both `pw::type:tech-debt` and `pw::pager`,
-# unassigned and not `Blocked`-labelled, proving the pager drop fires here
-# too (agent-ops#2564); #26 is assigned (the same single-reason drop #21
-# gets) and *also* names a still-open `Blocked-by: #27` in its own body,
-# proving issue #2607's fix: a deterministically-dropped issue's own thread
-# is checked for a co-occurring Blocked-by reference too, reported as a
-# second `excluded` entry rather than the one reason hiding the other. One
-# page (`hasNextPage: false`) is enough for this fixture's seven issues.
+# still excludes it; #25 is a clean tech-debt candidate triaged Low that #26,
+# a plain (non-tech-debt) issue banded High, names as its own `Blocked-by:`
+# dependency, proving priority inheritance (agent-ops#2422); #27 carries both
+# `pw::type:tech-debt` and `pw::pager`, unassigned and not `Blocked`-labelled,
+# proving the pager drop fires here too (agent-ops#2564); #28 is assigned
+# (the same single-reason drop #21 gets) and *also* names a still-open
+# `Blocked-by: #29` in its own body, proving issue #2607's fix: a
+# deterministically-dropped issue's own thread is checked for a co-occurring
+# Blocked-by reference too, reported as a second `excluded` entry rather than
+# the one reason hiding the other. One page (`hasNextPage: false`) is enough
+# for this fixture's ten issues.
 export STUB_ISSUES="$tmp_dir/issues.json"
 export STUB_REFS_DIR="$tmp_dir/refs"
 mkdir -p "$STUB_REFS_DIR"
@@ -188,27 +191,45 @@ cat >"$STUB_ISSUES" <<'EOF'
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-17T08:00:00Z", "updatedAt": "2026-07-17T08:00:00Z",
    "body": "An ordinary issue.", "comments": {"nodes": []}},
-  {"number": 25, "url": "https://github.com/o/r/issues/25", "title": "Pager-tagged debt",
+  {"number": 25, "url": "https://github.com/o/r/issues/25", "title": "The blocker, banded Low",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::type:tech-debt"}]},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "Low",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Nothing blocks this one.", "comments": {"nodes": []}},
+  {"number": 26, "url": "https://github.com/o/r/issues/26", "title": "An ordinary issue, banded High, blocked on the debt item",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": []},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "High",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Needs #25 first.\n\nBlocked-by: #25", "comments": {"nodes": []}},
+  {"number": 27, "url": "https://github.com/o/r/issues/27", "title": "Pager-tagged debt",
    "author": {"login": "warwick"},
    "labels": {"nodes": [{"name": "pw::type:tech-debt"}, {"name": "pw::pager"}]},
    "assignees": {"totalCount": 0},
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
    "body": "Labelled pw::pager, so not a candidate (agent-ops#2564).", "comments": {"nodes": []}},
-  {"number": 26, "url": "https://github.com/o/r/issues/26", "title": "Assigned debt, and also Blocked-by",
+  {"number": 28, "url": "https://github.com/o/r/issues/28", "title": "Assigned debt, and also Blocked-by",
    "author": {"login": "warwick"},
    "labels": {"nodes": [{"name": "pw::type:tech-debt"}]},
    "assignees": {"totalCount": 1},
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
-   "body": "Assigned, so dropped for that reason alone under issue_exclude_reason's own precedence.\n\nBlocked-by: #27",
+   "body": "Assigned, so dropped for that reason alone under issue_exclude_reason's own precedence.\n\nBlocked-by: #29",
    "comments": {"nodes": []}}
 ]}}}}
 EOF
 cat >"$STUB_REFS_DIR/24.json" <<'EOF'
 {"state": "open"}
 EOF
-cat >"$STUB_REFS_DIR/27.json" <<'EOF'
+cat >"$STUB_REFS_DIR/29.json" <<'EOF'
 {"state": "open"}
 EOF
 
@@ -218,8 +239,8 @@ excl="$(jq -c '.excluded' <<<"$raw")"
 
 # --- The filter: what arrives, and what never does ---
 assert_eq "exits 0" "0" "$rc"
-assert_eq "exactly the two clean labelled issues arrive" \
-  "2" "$(jq 'length' <<<"$out")"
+assert_eq "exactly the three clean labelled issues arrive" \
+  "3" "$(jq 'length' <<<"$out")"
 assert_eq "the assigned issue is dropped" \
   "false" "$(jq 'any(.[]; .number == 21)' <<<"$out")"
 assert_eq "the Blocked-labelled issue is dropped, case notwithstanding" \
@@ -229,13 +250,13 @@ assert_eq "the issue with an unresolved Blocked-by reference is dropped" \
 assert_eq "an issue carrying no pw::type:tech-debt label at all is never a candidate" \
   "false" "$(jq 'any(.[]; .number == 18)' <<<"$out")"
 assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
-  "false" "$(jq 'any(.[]; .number == 25)' <<<"$out")"
+  "false" "$(jq 'any(.[]; .number == 27)' <<<"$out")"
 assert_eq "the assigned-and-also-Blocked-by issue is dropped too" \
-  "false" "$(jq 'any(.[]; .number == 26)' <<<"$out")"
+  "false" "$(jq 'any(.[]; .number == 28)' <<<"$out")"
 assert_eq "nothing on stderr on the success path" "" "$(cat "$tmp_dir/err")"
 
 # --- The exclusion report (agent-ops#2603) ---
-assert_eq "exactly the four single-reason drops, plus #26's own two, are reported excluded" \
+assert_eq "exactly the four single-reason drops, plus #28's own two, are reported excluded" \
   "6" "$(jq 'length' <<<"$excl")"
 assert_eq "the assigned issue (no co-occurring Blocked-by) is reported once, reason assigned only (issue #2607: unchanged single-reason behavior)" \
   '[{"number":21,"reason":"assigned"}]' "$(jq -c '[.[] | select(.number == 21)]' <<<"$excl")"
@@ -244,18 +265,36 @@ assert_eq "the Blocked-labelled issue is reported, reason blocked-label" \
 assert_eq "the unresolved Blocked-by issue is reported, reason naming the reference" \
   "blocked-by: #24" "$(jq -r '.[] | select(.number == 23) | .reason' <<<"$excl")"
 assert_eq "the pw::pager-labelled issue is reported, reason pager" \
-  "pager" "$(jq -r '.[] | select(.number == 25) | .reason' <<<"$excl")"
+  "pager" "$(jq -r '.[] | select(.number == 27) | .reason' <<<"$excl")"
 assert_eq "issue #2607: the assigned issue that ALSO names an open Blocked-by reports both reasons" \
-  '[{"number":26,"reason":"assigned"},{"number":26,"reason":"blocked-by: #27"}]' \
-  "$(jq -c '[.[] | select(.number == 26)] | sort_by(.reason)' <<<"$excl")"
+  '[{"number":28,"reason":"assigned"},{"number":28,"reason":"blocked-by: #29"}]' \
+  "$(jq -c '[.[] | select(.number == 28)] | sort_by(.reason)' <<<"$excl")"
 assert_eq "the un-labelled issue #18 is never reported — it was never a candidate" \
   "false" "$(jq 'any(.[]; .number == 18)' <<<"$excl")"
 assert_eq "excluded is sorted by issue number ascending too" \
-  "21 22 23 25 26 26" "$(jq -r '[.[].number] | join(" ")' <<<"$excl")"
+  "21 22 23 27 28 28" "$(jq -r '[.[].number] | join(" ")' <<<"$excl")"
 
-# --- Sorted by issue number ascending ---
-assert_eq "sorted by issue number ascending, oldest first" \
-  "19 20" "$(jq -r '[.[].number] | join(" ")' <<<"$out")"
+# --- Sorted by Priority, then by the freshest thread ---
+# #25 (tech-debt, triaged Low) is raised to High by inheritance — #26, a
+# plain `issues`-band item banded High, names #25 as its own Blocked-by
+# dependency, so it ranks first. Both #19 and #20 are unbanded (Medium,
+# tied) below it: #20's own updatedAt (2026-07-20) outranks #19's
+# (2026-07-18), so #20 comes next.
+assert_eq "sorted by Priority then by the freshest thread, inheritance included" \
+  "25 20 19" "$(jq -r '[.[].number] | join(" ")' <<<"$out")"
+
+# --- Priority inheritance across bands (agent-ops#2422, requirement 4): a
+#     tech-debt item named as the Blocked-by dependency of a *plain* issue
+#     (never itself a tech-debt candidate) still inherits that issue's own
+#     band — both gatherers run inheritance over the whole open-issue set,
+#     not merely their own labelled slice. ---
+entry25="$(jq -c '.[] | select(.number == 25)' <<<"$out")"
+assert_eq "the blocker (#25) is ranked High, not its own triaged Low" \
+  "High" "$(jq -r '.priority' <<<"$entry25")"
+assert_eq "...naming the blocking (non-tech-debt) issue that raised it" \
+  '["#26"]' "$(jq -c '.priority_raised_by' <<<"$entry25")"
+assert_eq "...priority_set still reflects #25's own triage, untouched by inheritance" \
+  "true" "$(jq -r '.priority_set' <<<"$entry25")"
 
 # --- The entry shape: everything the Co-Ordinator selects on ---
 entry20="$(jq -c '.[] | select(.number == 20)' <<<"$out")"
@@ -285,6 +324,77 @@ assert_eq "a resolved Blocked-by reference stops excluding the issue" \
   "true" "$(jq 'any(.[]; .number == 23)' <<<"$out_resolved")"
 assert_eq "  ... and it no longer appears in excluded either" \
   "false" "$(jq 'any(.[]; .number == 23)' <<<"$excl_resolved")"
+
+# --- This band's own native-dependency pre-filter (agent-ops#2422) ---
+#
+# The same check scripts/gather-issues.sh gets in test/issues-prefetch.test.sh,
+# asserted here too because the two gatherers hold their own copy of the
+# two-liner that applies it: the native half of the holding check costs one
+# REST read per candidate without it, and this is the larger of the two bands
+# (422 of this repository's own 529 candidates). The stub below logs every
+# `dependencies/blocked_by` path it is asked for, so the assertion is about
+# which reads were made rather than about a verdict that looks the same
+# either way. #40's summary reports no dependency and must not be read;
+# #41's reports one, and the read then names an open blocker.
+mkdir -p "$tmp_dir/bin-prefilter"
+prefilter_log="$tmp_dir/native-calls.log"
+: > "$prefilter_log"
+cat >"$tmp_dir/bin-prefilter/gh" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "\${1:-}" == "api" && "\${2:-}" == "graphql" ]]; then
+  shift 2
+  filter='.'
+  while [[ \$# -gt 0 ]]; do
+    case "\$1" in --jq) filter="\$2"; shift 2;; *) shift;; esac
+  done
+  jq -c "\$filter" "\$STUB_ISSUES"
+  exit 0
+fi
+if [[ "\${1:-}" == "api" && "\${2:-}" =~ ^repos/o/r/issues/([0-9]+)/dependencies/blocked_by\$ ]]; then
+  n="\${BASH_REMATCH[1]}"
+  echo "\$n" >> "$prefilter_log"
+  if [[ "\$n" == "41" ]]; then
+    echo '[{"number": 42, "state": "open", "repository": {"full_name": "o/r"}}]'
+  else
+    echo '[]'
+  fi
+  exit 0
+fi
+echo "stub gh: unexpected command: \$*" >&2
+exit 1
+STUB
+chmod +x "$tmp_dir/bin-prefilter/gh"
+export STUB_ISSUES="$tmp_dir/issues-prefilter.json"
+cat >"$STUB_ISSUES" <<'EOF'
+{"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
+  {"number": 40, "url": "https://github.com/o/r/issues/40", "title": "no native dependency",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::type:tech-debt"}]}, "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "issueDependenciesSummary": {"blockedBy": 0, "totalBlockedBy": 0},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Nothing blocks this one.", "comments": {"nodes": []}},
+  {"number": 41, "url": "https://github.com/o/r/issues/41", "title": "one native dependency",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::type:tech-debt"}]}, "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "issueDependenciesSummary": {"blockedBy": 1, "totalBlockedBy": 1},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Declared natively, with no text line anywhere.", "comments": {"nodes": []}}
+]}}}}
+EOF
+prefilter_out="$(PATH="$tmp_dir/bin-prefilter:${PATH#"$tmp_dir/bin:"}" "$GATHER" o/r 2>"$tmp_dir/prefilter.err")"
+prefilter_candidates="$(jq -c '.candidates' <<<"$prefilter_out")"
+assert_eq "the native read is made only for the tech-debt issue that has a dependency" \
+  "41" "$(sort -u "$prefilter_log" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "the issue whose summary reports no dependency is kept" \
+  "true" "$(jq 'any(.[]; .number == 40)' <<<"$prefilter_candidates")"
+assert_eq "the issue whose native dependency is open is held out" \
+  "false" "$(jq 'any(.[]; .number == 41)' <<<"$prefilter_candidates")"
+
+# The fixture and stub the sections below read, restored.
+export STUB_ISSUES="$tmp_dir/issues.json"
 
 # --- Degrading: a failing API yields {"candidates":[],"excluded":null}, ---
 # --- exit 0, and is loud on stderr ---

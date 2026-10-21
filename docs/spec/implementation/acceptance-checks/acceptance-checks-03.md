@@ -698,6 +698,28 @@
    both halves clear within the one cycle the dependency resolved in, and
    that neither ever spent an Enabler engagement or a Co-Ordinator judgement
    doing it.
+
+   **The native half** (requirement 34j's own "GitHub's own native Issue
+   Dependencies feature", agent-ops#2422) is asserted in the same file
+   against a stubbed `gh`: `dependency_native_blocked_by` reads the
+   `dependencies/blocked_by` endpoint and shapes what it names,
+   `dependency_native_open_ref` reports an open blocker and nothing once that
+   blocker closes, ignores an already-closed one, displays a
+   cross-repository blocker `owner/repo#n`, and prints `[]`/nothing for a
+   malformed slug or number; and `issue_blocked_by_ref` falls through to the
+   native check only when the thread's own `Blocked-by:` references are
+   absent or all resolved, a text reference deciding the block where both
+   exist. **That the live native read is made only where there is one to
+   make** is asserted on the stub's own call log, not on a verdict (an issue
+   with no dependency is kept whether the read came back empty or was never
+   made): `test/issues-prefetch.test.sh` and `test/gather-tech-debt.test.sh`
+   each drive their own gatherer over a fixture whose listing walk reports
+   one issue with no native dependency, one with an open native dependency,
+   and — in the `issues` case — one whose summary the walk could not supply
+   at all, and assert that exactly the latter two were read live, that the
+   banded-zero issue survives unread, and that the dependent one is held out
+   naming its native reference. Asserted in both files because each gatherer
+   holds its own copy of the two lines that apply the pre-filter.
 8i-i. <a id="impl-ac-8i-i"></a>**A `needs_refinement` report re-asserting a resolved dependency is
    refused, never recorded (requirement 16's dependency third; requirement
    34e; agent-ops#566).** `test/dependency-gate.test.sh` passes:

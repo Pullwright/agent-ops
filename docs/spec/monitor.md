@@ -497,7 +497,12 @@ M13a. <a id="mon-m13a"></a>**Promoting a repeat finding into a pager invariant, 
       `pager_remedy_verdict_unanimous` already files its own reader-defect
       issues there) — carrying the detection rule and evidence every report
       that restated the key supplied, so the fleet implements it as ordinary
-      autonomous work under requirement 16's `tech-debt` band;
+      autonomous work under requirement 16's `tech-debt` band — banded
+      **`Medium`** through the same ratchet M14a's own filing uses
+      (`issue_priority_apply`, implementation-pipeline requirement 1,
+      agent-ops#2422), since proposing a new pager invariant is tooling work
+      rather than a live defect: the finding it restates has already been
+      filed, or not, under its own class's own band;
    2. it logs `monitor-promoted {key, issue}` to `monitor-log.jsonl`, and
       every later run's digest marks the key `promoted` with its issue (a
       dedicated digest section, distinct from `open_findings`) for as long as
@@ -552,7 +557,14 @@ M14a. <a id="mon-m14a"></a>**Mechanical** — a defect with a knowable fix. File
    ordinary work. The repository must be one of `repos[].slug` or the
    escalation repository; a finding naming anything else is refused. A monitor
    that could open an issue in an arbitrary repository has the whole forge as
-   its blast radius.
+   its blast radius. The filing sets a `Priority` band of **`High`** on the
+   fresh issue, through `issue_priority_apply`'s own one-way ratchet
+   (`lib/issue-priority.sh`, implementation-pipeline requirement 1,
+   agent-ops#2422) — a mechanical finding is a reasoning or logic defect in
+   the pipeline's own code, caught live, so it ranks above wording, comment
+   drift or tidying. A band that fails to apply is not this filing's own
+   failure: the issue is filed either way, on M14d's "nowhere to file is not
+   a failure" terms.
 
 M14b. <a id="mon-m14b"></a>**Tactical** — a configuration lever, where the right value is a
    judgement rather than a defect. **Always** stated in the report, with the
@@ -737,7 +749,12 @@ M19. <a id="mon-m19"></a>**No `node-state` transition.** The Monitor writes none
    including `monitor-promoted`) and M19 (no `node-state` event). Sources
    `lib/pager.sh` and `lib/pager-invariants.sh` for the registry membership
    check M13b needs, and nothing else from either — no evaluation, no filing,
-   no fleet-wide claim. `shellcheck`-clean; sets its own `PATH`.
+   no fleet-wide claim. Sources `lib/issue-priority.sh` too, but lazily, on
+   exactly the branch that bands a fresh filing (M14a/M13a): that file creates
+   its field-id cache with a `mktemp -d` at source time, a cost no run that
+   files nothing should pay, and the laziness is load-bearing rather than an
+   optimisation — the same ordering hazard `lib/pager.sh` and
+   `lib/merge-budget.sh` defer for. `shellcheck`-clean; sets its own `PATH`.
 2. <a id="mon-c-2"></a>`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the
    promoted-findings section (M13a) `monitor_digest_promoted` shapes. Pure
    readers, unit-tested over fixture logs (`test/monitor-digest.test.sh`);
@@ -807,6 +824,19 @@ supplies its own values.
    recorded `deferred`, not `promoted`; with `monitor_max_filings_per_run: 0`
    a key past the promotion threshold is deferred the same way rather than
    filed regardless of budget.
+5d. <a id="mon-ac-5d"></a>**Both banded filings actually write their band (M14a/M13a).**
+   `test/monitor-priority-filing.test.sh` passes: driving the real
+   `monitor-cycle.sh` against a stubbed `gh` that answers
+   `issue_priority_apply`'s own GraphQL calls, a mechanical finding's filing
+   emits one `setIssueFieldValue` mutation naming the `High` option, and a
+   promoted pager-invariant proposal emits one naming `Medium`. Assert on the
+   mutation the run actually made, never on the filing merely succeeding:
+   `monitor_create_issue` swallows its band application's own failure
+   (`>/dev/null 2>&1 || true`, M14a's "not this filing's own failure"), so a
+   band that never reaches GitHub — the state this check exists to catch,
+   `issue_priority_apply` undefined for want of the lazy
+   `lib/issue-priority.sh` source — files the issue and reports success
+   exactly as a working one does.
 6. <a id="mon-ac-6"></a>**The tactical gate is closed by default (M14b).** Same file: a tactical
    finding with `monitor_tactical_keys` empty produces a proposal in the
    report and **no** `pw::decision` issue; with the key listed, it produces a
