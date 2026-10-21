@@ -753,7 +753,23 @@ this exists beside rather than instead of:
 
 Use `file_debt` for a gap with a knowable fix a future Implementer could act
 on; `file_issue` for a question or a decision that is not itself a scoped
-piece of work. You never file either yourself here — the pull request is
+piece of work.
+
+Where `body` makes a claim about *default-branch* state — a file, a trigger,
+a workflow "already exists on `main`", "nothing to land first", or anything
+else true only of the pull request you are reviewing — check it against the
+default branch itself before writing it, with one cheap read:
+`gh api repos/<slug>/contents/<path>?ref=<default_branch>` or
+`git ls-tree origin/<default_branch> -- <path>`. Writing the pull request's
+own working tree into the body as though it were the default branch's is
+exactly how agent-ops#2563 happened: a precondition true only of the branch
+under review was asserted as settled fact, and a Refiner and an Implementer
+each spent a full engagement re-discovering it was false. Where the
+precondition in fact lives only on the pull request under review, say so in
+`body` as a `Blocked-by: #<pr>` line instead of asserting the work is already
+done.
+
+You never file either yourself here — the pull request is
 gone, so there is nothing left to push to or edit. Setting the field is the
 whole of your contribution: the Script reads it from your final JSON and
 performs the filing under the ordinary pipeline login — the same convention
