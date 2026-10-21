@@ -249,6 +249,14 @@ M5. <a id="mon-m5"></a>**One run per slot, fleet-wide.** Before the digest is bu
 M6. <a id="mon-m6"></a>**The model never reads a primary record.** The Script assembles a digest
    and the stage reads that. The digest's sections are:
 
+   - **this node's own peers-marker status** (agent-ops#2266), stated in the
+     digest's opening line when stale — `lib/fleet.sh`'s `fleet_peers_stale`
+     verdict against the same marker `scripts/publish-dashboard.sh` reads for
+     the fleet-strip badge. Every other section below the window line is
+     drawn from this node's own fetch of the fleet union or its peers'
+     heartbeats, so a stale marker means every one of them may be reporting
+     this node's own broken replication rather than genuine peer state;
+     `prompts/monitor.md` instructs the model accordingly (M6b).
    - **the last 24 h of the union log grouped by event class**, with a count,
      the contributing nodes, and up to three samples each. Samples are taken
      from the newest events in the class, since a fault still in force matters
@@ -310,6 +318,17 @@ M6b. <a id="mon-m6b"></a>**Degrade, never fail.** Every reader returns its empty
    not synced, a forge listing that failed. A monitor run with less to say is
    a monitor run; a monitor run that died because a peer directory was absent
    is a gap in exactly the observability this pipeline exists to provide.
+   A stale peers marker (M6's opening-line bullet) degrades differently from
+   an absent one: the digest still carries every section in full — a Monitor
+   run has no other route to any of these facts at all — but
+   `prompts/monitor.md` tells the model to treat a peer-derived reading below
+   that line as unconfirmed rather than to act on it as settled, since the
+   staleness means this node's own fetch, not necessarily the peer, may be
+   what is actually dark (agent-ops#2266, the mechanism behind agent-ops#2507:
+   a node-stale page fired and was legitimately cleared by two different
+   nodes' own fetch-poisoned views of each other, while the peers it named
+   had been cycling the entire time). A finding naming the staleness itself
+   is still expected.
 
 M7. <a id="mon-m7"></a>**Bounded by `monitor_max_input_bytes`, on a stated ladder.** The digest
    is rendered as Markdown and measured **in bytes** (not characters — this

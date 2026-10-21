@@ -483,6 +483,17 @@ resolve_model_id_into monitor_model monitor_model "$monitor_model"
 # union that could not be built is logged as a `warning`; for the shared log,
 # the usage-limit read below then treats it exactly as a read that failed.
 peers_dir="$(fleet_peers_dir "$workspace_root")"
+# This node's own peers-marker status (agent-ops#2266), the same shape and
+# the same predicate (`fleet_peers_stale`) `scripts/publish-dashboard.sh`
+# reads for the fleet-strip badge — handed to `monitor_digest_build` so a
+# run whose own fetch is broken says so in the digest's opening line rather
+# than reading a frozen peer view as genuine peer silence.
+monitor_peers_marker_json="$(jq -c '.' "$(fleet_peers_marker "$peers_dir")" 2>/dev/null || echo null)"
+monitor_peers_stale_flag="false"
+fleet_peers_stale "$peers_dir" "$(cfg '.schedule.state_sync_fetch_minutes')" && monitor_peers_stale_flag="true"
+monitor_peers_json="$(jq -nc --argjson m "$monitor_peers_marker_json" --argjson stale "$monitor_peers_stale_flag" \
+  '{stale: $stale, ok: $m.ok, ts: $m.ts, last_ok_ts: $m.last_ok_ts}' 2>/dev/null)"
+[[ -n "$monitor_peers_json" ]] || monitor_peers_json='{"stale":false,"ok":null,"ts":null,"last_ok_ts":null}'
 mkdir -p "$run_dir"
 union_log="$run_dir/.fleet-log.jsonl"
 monitor_union_log="$run_dir/.fleet-monitor-log.jsonl"
@@ -867,7 +878,8 @@ digest_json="$(monitor_digest_build \
   "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
        "$SCRIPT_DIR/docs/spec/review.md" "$SCRIPT_DIR/docs/spec/monitor.md" \
        "$SCRIPT_DIR/docs/spec/dashboard/README.md")" \
-  "$(monitor_digest_promoted "$promoted_open_json")")"
+  "$(monitor_digest_promoted "$promoted_open_json")" \
+  "$monitor_peers_json")"
 
 digest_file="$run_dir/digest.md"
 IFS=$'\t' read -r digest_rung digest_bytes \

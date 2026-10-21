@@ -287,7 +287,7 @@ digest="$(monitor_digest_build \
        "$SCRIPT_DIR/docs/spec/monitor.md")" \
   "$promoted")"
 
-for section in window events pager nodes work forge gotchas promoted; do
+for section in window peers events pager nodes work forge gotchas promoted; do
   assert_eq "the digest carries its $section section" "1" \
     "$(jq --arg s "$section" 'has($s) | if . then 1 else 0 end' <<<"$digest")"
 done
@@ -321,6 +321,43 @@ assert_contains "a real row of the implementation spec's Gotchas table reaches t
 assert_contains "a promoted key is named, so the model does not restate it" \
   "coordinator-budget-negative" "$rendered"
 assert_contains "with its tracking issue" "https://github.com/o/r/issues/42" "$rendered"
+assert_eq "no PEERS_JSON argument: the opening line says nothing about staleness (agent-ops#2266)" \
+  "0" "$(grep -c "peer view" <<<"$rendered")"
+
+# --- A stale peers view opens the digest saying so (agent-ops#2266) --------
+# The digest otherwise carries every section in full even when the peers
+# view is stale — a Monitor run has no other route to any of these facts —
+# but its opening line says so, so the model treats what follows as
+# unconfirmed rather than as settled fleet state.
+peers_stale_json='{"stale":true,"ok":false,"ts":"2026-10-17T20:41:59Z","last_ok_ts":"2026-10-17T16:00:00Z"}'
+digest_peers_stale="$(monitor_digest_build \
+  "$(jq -nc --arg f "$SINCE" --arg t "$NOW_ISO" '{from: $f, to: $t, hours: 24, node: "n1"}')" \
+  "$events" "$pager" "$nodes" "$work" "$forge" \
+  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
+       "$SCRIPT_DIR/docs/spec/monitor.md")" \
+  "$promoted" "$peers_stale_json")"
+assert_eq "the digest carries the peers section verbatim" "$peers_stale_json" \
+  "$(jq -c '.peers' <<<"$digest_peers_stale")"
+out_peers_stale="$tmp_dir/digest-peers-stale.md"
+monitor_digest_render "$digest_peers_stale" 0 "$out_peers_stale" > /dev/null
+rendered_peers_stale="$(cat "$out_peers_stale")"
+assert_contains "a stale peers marker is named in the opening line" \
+  "peer view" "$rendered_peers_stale"
+assert_contains "  ... with the marker's own last_ok_ts" \
+  "2026-10-17T16:00:00Z" "$rendered_peers_stale"
+assert_contains "  ... and the ts the failure has held since" \
+  "2026-10-17T20:41:59Z" "$rendered_peers_stale"
+assert_contains "  ... every other section still renders in full" \
+  '| `selection` | 4 |' "$rendered_peers_stale"
+
+peers_fresh_json='{"stale":false,"ok":true,"ts":"2026-10-18T05:00:00Z","last_ok_ts":"2026-10-18T05:00:00Z"}'
+digest_peers_fresh="$(monitor_digest_build \
+  "$(jq -nc --arg f "$SINCE" --arg t "$NOW_ISO" '{from: $f, to: $t, hours: 24, node: "n1"}')" \
+  "$events" "$pager" "$nodes" "$work" "$forge" '[]' '[]' "$peers_fresh_json")"
+out_peers_fresh="$tmp_dir/digest-peers-fresh.md"
+monitor_digest_render "$digest_peers_fresh" 0 "$out_peers_fresh" > /dev/null
+assert_eq "a fresh (stale:false) peers marker: no staleness note" \
+  "0" "$(grep -c "peer view" "$out_peers_fresh")"
 
 # Deterministic: the same inputs render byte-identically, which is what the
 # dedup of M13 rests on.

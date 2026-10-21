@@ -1039,8 +1039,8 @@
    branches never touch — is owned exclusively by `lib/claim.sh`.
 
    **The union readers' answer to a stale peers directory** (#990, escalation
-   #1065). Of the union's five consumers, four carry on regardless and one
-   degrades:
+   #1065, extended by #2266). Of the union's seven consumers, five carry on
+   regardless and two degrade:
 
    - the blocked and void extractions (requirements 34/34c) — **carry on**:
      positive-evidence readers, for which a frozen peer copy is strictly more
@@ -1057,9 +1057,33 @@
      and widening the cooldown on stale peers is a certain fleet-wide
      throughput loss traded against a self-correcting one;
    - the fleet dashboard — **degrade: badge** (the peers-staleness paragraph
-     above; docs/spec/dashboard/state.md's `fleet.peers`).
+     above; docs/spec/dashboard/state.md's `fleet.peers`);
+   - the pager (`lib/pager.sh`'s `pager_evaluate`) — **degrade: skip**
+     (agent-ops#2266). While the evaluating node's own `fleet_peers_stale`
+     holds, `pager_evaluate` makes no state transition for any key — every
+     invariant it registers reads `fleet_nodes_json` or the fleet union
+     either directly or through this node's own fetch, so a stale peers
+     marker cannot be told apart from a genuinely dark peer. It logs exactly
+     one `pager-evaluation-skipped {reason: "peer-view-stale", last_ok_ts}`
+     per evaluation instead, and resumes ordinary evaluation the moment its
+     own peers marker reads fresh again — the mechanism behind
+     agent-ops#2507, where a node-stale page fired and was legitimately
+     cleared by two different nodes' own fetch-poisoned views of each
+     other, while the peers it named had been cycling the entire time;
+   - the Monitor digest (`lib/monitor-digest.sh`) — **degrade: opening line**
+     (agent-ops#2266). `monitor_digest_build`'s own `PEERS_JSON` carries the
+     assembling node's peers-marker status into the digest, and
+     `_monitor_digest_render_at` states it in the digest's first line when
+     stale — `prompts/monitor.md` instructs the model to treat every
+     peer-derived reading below that line as unconfirmed, though a finding
+     naming the staleness itself is still expected. Unlike the pager, this
+     is prose guidance to the reading model, not a withheld section: the
+     digest still carries every reading, since a Monitor run has no other
+     route to them at all.
 
    No code and no new per-reader logging attaches to the first three: the
    decision is prose, recorded here, not a code path — requirement 38b's own
    once-per-cycle warning is already the record that the fifth reader,
-   `fleet_logs_healthy`, degraded the union for that cycle.
+   `fleet_logs_healthy`, degraded the union for that cycle. The pager and the
+   Monitor digest, the sixth and seventh, each carry their own code path,
+   described above.

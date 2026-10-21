@@ -323,7 +323,8 @@ monitor_digest_gotchas() {
 }
 
 # monitor_digest_build WINDOW_JSON EVENTS_JSON PAGER_JSON NODES_JSON \
-#                      WORK_JSON FORGE_JSON GOTCHAS_JSON [PROMOTED_JSON]
+#                      WORK_JSON FORGE_JSON GOTCHAS_JSON [PROMOTED_JSON] \
+#                      [PEERS_JSON]
 # The whole digest as one object. A plain assembly, kept as its own function
 # so the key names exist in exactly one place: `monitor_digest_render` below
 # and `prompts/monitor.md` both name these sections, and a rename that
@@ -331,13 +332,27 @@ monitor_digest_gotchas() {
 # not there. PROMOTED_JSON defaults to `[]` — a caller that has not yet
 # adopted M13a's promotion still gets a digest, just with nothing to say in
 # that section.
+#
+# PEERS_JSON is agent-ops#2266's own: this node's own peers-marker status
+# (`lib/fleet.sh`'s `{ok, ts, last_ok_ts}` plus the `stale` verdict, the same
+# shape `scripts/publish-dashboard.sh` builds for the fleet-strip badge),
+# defaulting to `null` — a caller that has not yet adopted this (every call
+# site before #2266) gets a digest whose render never mentions peer
+# staleness, exactly as before. Every reading below the window line —
+# `events`, `pager`, `nodes`, `work` — is itself drawn from this node's own
+# fetch of the fleet union or its peers' heartbeats, so a stale peers marker
+# makes every one of them suspect at once; that is why this is a property of
+# the whole digest's opening line (`_monitor_digest_render_at`) rather than
+# its own section.
 monitor_digest_build() {
   local window="${1:-{\}}" events="${2:-[]}" pager="${3:-{\}}" nodes="${4:-[]}" \
-        work="${5:-{\}}" forge="${6:-{\}}" gotchas="${7:-[]}" promoted="${8:-[]}" out
+        work="${5:-{\}}" forge="${6:-{\}}" gotchas="${7:-[]}" promoted="${8:-[]}" \
+        peers="${9:-null}" out
   out="$(jq -nc --argjson window "$window" --argjson events "$events" \
     --argjson pager "$pager" --argjson nodes "$nodes" --argjson work "$work" \
     --argjson forge "$forge" --argjson gotchas "$gotchas" --argjson promoted "$promoted" \
-    '{window: $window, events: $events, pager: $pager, nodes: $nodes,
+    --argjson peers "$peers" \
+    '{window: $window, peers: $peers, events: $events, pager: $pager, nodes: $nodes,
       work: $work, forge: $forge, gotchas: $gotchas, promoted: $promoted}' 2>/dev/null)" || out=''
   [[ -n "$out" ]] || out='{}'
   printf '%s\n' "$out"
@@ -439,7 +454,18 @@ _monitor_digest_render_at() {
 
     ( "# Pipeline digest\n\nWindow: `\(.window.from // "?")` → `\(.window.to // "?")` "
       + "(\(.window.hours // 24) h), assembled on node `\(.window.node // "?")` "
-      + "by `monitor-cycle.sh`.\n" ),
+      + "by `monitor-cycle.sh`.\n"
+      + (if (.peers // null) != null and (.peers.stale // false) then
+           "\n> **The peer view assembling this digest is stale** — last "
+           + "successful fetch `\(.peers.last_ok_ts // "unknown")`, failing "
+           + "since `\(.peers.ts // "unknown")`. Every reading below is drawn "
+           + "from a fetch this node made of the fleet union or peer "
+           + "heartbeats, so an apparently silent or stale peer may reflect broken "
+           + "replication here rather than genuine peer state — do not file "
+           + "a finding whose evidence is peer state without corroborating "
+           + "it some other way. A finding naming the staleness itself is "
+           + "fine.\n"
+         else "" end) ),
 
     block("Events by class";
       ( "| Event | Count | Nodes |\n|---|---|---|\n"

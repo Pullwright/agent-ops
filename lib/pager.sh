@@ -66,6 +66,13 @@
 #   pager-fired {key, first_seen, evidence, …}  hysteresis elapsed; filed
 #   pager-cleared {key, cleared_at, evidence}    the fact cleared; closed
 #
+# A fifth, non-transition event — `pager-evaluation-skipped {reason,
+# last_ok_ts}` — marks a whole evaluation pass this node made no transition
+# on at all, because its own view of the fleet was untrustworthy at the time
+# (agent-ops#2266): see `pager_evaluate`'s own header. It carries no `key`
+# and is never read by `pager_state_for`/`pager_last_event` — a skip is a
+# fact about this node's evaluation, not about any invariant's own state.
+#
 # `pager_state_for`/`pager_last_event` derive the current state purely from
 # the latest of these four event names for a key — no state file, no cache:
 # any node can evaluate any invariant in any window and agree with every
@@ -780,11 +787,27 @@ _pager_evaluate_one() {
 #                [REPOS_JSON] [PR_LABEL] \
 #                [APPROVER_UNREVIEWED_ENGAGE_AFTER_HOURS] \
 #                [LANDING_ARMED_WITHIN_DAYS] [NOTIFY_EVENTS_JSON] \
-#                [NOTIFY_MIN_INTERVAL]
-# The fourteen trailing, optional parameters are agent-ops#1282's,
-# agent-ops#1281's, agent-ops#1280's and agent-ops#1279's own — see
-# _pager_evaluate_one's own header for why they exist and why omitting them
-# (every call site before #1282) is safe.
+#                [NOTIFY_MIN_INTERVAL] [PEERS_STALE] [PEERS_LAST_OK_TS]
+# The fourteen trailing, optional parameters through NOTIFY_MIN_INTERVAL are
+# agent-ops#1282's, agent-ops#1281's, agent-ops#1280's and agent-ops#1279's
+# own — see _pager_evaluate_one's own header for why they exist and why
+# omitting them (every call site before #1282) is safe.
+#
+# PEERS_STALE/PEERS_LAST_OK_TS are agent-ops#2266's own: this node's own
+# `fleet_peers_stale` verdict and its peers marker's own `last_ok_ts`
+# (`lib/fleet.sh`), computed once by the caller before this call — this file
+# has no config reader and no business re-deriving a predicate its caller
+# already has in hand. `PEERS_STALE == "true"` makes NO transition at all
+# this pass, for any key: every invariant here reads `FLEET_NODES_JSON`
+# either directly (`node-stale`, `updater-stuck`) or through the union this
+# node fetched from its peers, and a node whose own peers directory is stale
+# cannot tell "my peer went dark" from "my own fetch did" (agent-ops#2507's
+# own node-stale page, fired and legitimately cleared by two different
+# nodes' honest but fetch-poisoned views of each other, is the incident that
+# named this). Omitted (every call site before #2266) reads as `false` —
+# `pager_evaluate` behaves exactly as it always has when the caller has no
+# peers marker to report, matching `_pager_evaluate_one`'s own omission
+# convention for every trailing parameter above it.
 # Evaluates every registered invariant once, in registration order. One bad
 # EVAL_FN or one lost claim never stops the rest — each invariant's own
 # failure is contained to itself, the same isolation crash_loop_verdict's own
@@ -806,7 +829,15 @@ _pager_evaluate_one() {
 # an extract that fails, leaves the variable empty and the state reads fall
 # back to the whole union.
 pager_evaluate() {
-  local key union_log_file="${9:-}" pager_events_file
+  local key union_log_file="${9:-}" pager_events_file \
+        log_file="${8:-}" node="${11:-}" cycle="${12:-}" \
+        peers_stale="${27:-}" peers_last_ok_ts="${28:-}"
+  if [[ "$peers_stale" == "true" ]]; then
+    pager_log_event "$log_file" "$node" "$cycle" "pager-evaluation-skipped" \
+      "$(jq -nc --arg r "peer-view-stale" --arg lo "$peers_last_ok_ts" \
+          '{reason: $r, last_ok_ts: (if $lo == "" then null else $lo end)}' 2>/dev/null)"
+    return 0
+  fi
   pager_events_file="$(mktemp "${TMPDIR:-/tmp}/pager-events.XXXXXX" 2>/dev/null)" \
     || pager_events_file=""
   if [[ -n "$pager_events_file" ]]; then
