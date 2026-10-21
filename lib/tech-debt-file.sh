@@ -235,21 +235,31 @@ _techdebt_extract_pr_url() {
 # _techdebt_pr_dedup_match PR_URL LIST_JSON
 # PR_URL is a pull-request URL as _techdebt_extract_pr_url prints it;
 # LIST_JSON is a JSON array of `{number, url, title, body}`. Prints the
-# `number` of the first entry whose own body contains PR_URL as a
-# substring — every filed body carries its PROVENANCE line verbatim
+# `number` of the first entry whose own body names that same pull
+# request — every filed body carries its PROVENANCE line verbatim
 # (techdebt_file_debt's own combined_file below), so a prior filing against
 # the same pull request always carries that same URL somewhere in its body,
 # regardless of how differently the two findings are titled (agent-ops#2576:
 # #2573/#2574 described the same fault against the same PR in unrelated
 # words). Prints nothing on no match.
+#
+# The comparison is boundary-guarded on its right, never a bare substring
+# test: `.../pull/25` is a plain substring of `.../pull/2567`, so a bare
+# test would dedup a filing raised against #25 into an issue naming only
+# #2567 — silently, as a comment on an unrelated issue, with
+# `tech-debt-filed` logging that issue's number as though it were the
+# match. A left guard is not needed, because PR_URL begins at the scheme
+# and so can only ever occur at a URL's own start. Trailing path or
+# fragment (`/files`, `#issuecomment-…`) still matches: that is the same
+# pull request.
 _techdebt_pr_dedup_match() {
   local pr_url="$1" list_json="$2" number body
   while IFS=$'\t' read -r number body; do
     [[ -n "$number" ]] || continue
-    if [[ "$body" == *"$pr_url"* ]]; then
-      printf '%s' "$number"
-      return 0
-    fi
+    case "$body" in
+      *"$pr_url") printf '%s' "$number"; return 0 ;;
+      *"$pr_url"[!0-9]*) printf '%s' "$number"; return 0 ;;
+    esac
   done < <(jq -r '.[] | [.number, (.body // "")] | @tsv' <<<"$list_json" 2>/dev/null)
 }
 

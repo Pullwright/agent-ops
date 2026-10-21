@@ -804,7 +804,11 @@
     provenance line naming the same pull request as an open issue's own body
     dedups the same way even when the two titles are unrelated
     (agent-ops#2576), a provenance naming no pull request at all (the
-    Enabler's own wording) never matches by that path, and a title match is
+    Enabler's own wording) never matches by that path, a pull-request number
+    that is merely a digit prefix of one the candidate body names (`#25`
+    against a body naming only `#2567`) never matches by that path either
+    while the pull request the body does name still matches with a trailing
+    path appended, and a title match is
     still found ahead of a same-PR check naming a different pull request; an
     unusable dedup search (not a JSON array) is skipped rather than failing
     the filing; and the

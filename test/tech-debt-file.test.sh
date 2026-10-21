@@ -19,7 +19,9 @@
 #     same URL counts as a duplicate even when its title reads nothing
 #     alike — the #2573/#2574 scenario, two findings worded differently
 #     against the same PR. A provenance naming no PR at all (the Enabler's
-#     own wording) never matches by this path.
+#     own wording) never matches by this path, and neither does a PR number
+#     that is merely a digit prefix of one the body names (`#25` against a
+#     body naming only `#2567`).
 #   - **A TOKEN, given, is used for every gh call** (issue list, comment,
 #     create) — never the ordinary login.
 #   - **A labelled create that fails is retried once unlabelled** (a
@@ -279,6 +281,32 @@ rc=$?
 assert_eq "file_debt: no PR in provenance -> same-PR check never fires, exit 0" "0" "$rc"
 assert_eq "  ... a fresh issue is filed instead" "77	https://github.com/o/r/issues/77" "$out"
 assert_eq "  ... no comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
+
+# --- Same-PR dedup never fires on a PR number that is merely a digit -------
+# prefix of one the body names -----------------------------------------------
+# `.../pull/25` is a plain substring of `.../pull/2567`, so an unguarded
+# substring test deduped a filing raised against #25 into an issue naming
+# only #2567 — silently, as a comment on an unrelated issue. Both directions
+# are asserted together: the prefix must miss, and the PR the body actually
+# names must still hit.
+reset_stub
+jq -nc '[{number: 50, url: "https://github.com/o/r/issues/50", title: "Some unrelated finding",
+          body: "while the Approver was judging https://github.com/o/r/pull/2567"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding against a different PR" "New evidence." \
+        "while the Approver was judging https://github.com/o/r/pull/25" "")"
+assert_eq "file_debt: a PR number that is only a digit prefix is not a same-PR hit" \
+  "77	https://github.com/o/r/issues/77" "$out"
+assert_eq "  ... no comment attempted" "0" "$(grep -c 'issue comment' "$tmp_dir/calls")"
+
+reset_stub
+jq -nc '[{number: 51, url: "https://github.com/o/r/issues/51", title: "Some unrelated finding",
+          body: "while the Approver was judging https://github.com/o/r/pull/2567/files"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding worded differently" "New evidence." \
+        "while the Approver was judging https://github.com/o/r/pull/2567" "")"
+assert_eq "  ... but the PR the body names still hits, trailing path and all" \
+  "51	https://github.com/o/r/issues/51" "$out"
 
 # --- A title match is still found even when it would precede a same-PR -----
 # check (title match wins first, same result either way) --------------------

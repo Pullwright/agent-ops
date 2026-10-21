@@ -737,7 +737,12 @@
       as a duplicate even when the two findings are titled nothing alike —
       the fault two independent Approver engagements reviewing the same pull
       request can otherwise each describe in its own words and each clear
-      the title check. A `PROVENANCE` naming no PR at all (the Enabler's own
+      the title check. The URL comparison is guarded on its right against a
+      digit, never a bare substring test, so a filing raised against
+      `.../pull/25` is not deduped into an issue naming only
+      `.../pull/2567`; a trailing path or fragment (`/files`,
+      `#issuecomment-…`) still matches, being the same pull request. A
+      `PROVENANCE` naming no PR at all (the Enabler's own
       wording, which names an item reference instead) never matches by this
       path, leaving its dedup exactly as before. That search states its own
       page cap —
@@ -791,7 +796,11 @@
     long title by containment, only by exact equality; a `PROVENANCE` naming
     the same pull request as an open issue's own body dedups the same way even
     when the two titles are unrelated; a `PROVENANCE` naming no pull request at
-    all never matches by that path and a fresh issue is filed; a title match is
+    all never matches by that path and a fresh issue is filed; a pull-request
+    number that is merely a digit prefix of one the candidate body names
+    (`#25` against a body naming only `#2567`) never matches by that path
+    either, while the pull request the body does name still matches with a
+    trailing path appended; a title match is
     still found ahead of a same-PR check naming a different pull request; an
     unusable dedup search (not a JSON array) is skipped rather than failing the
     filing; a labelled
