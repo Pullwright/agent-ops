@@ -92,7 +92,7 @@ review_pr_label="$(jq -r '.repository_review.defaults.pr_label' "$illustrative_c
 METADATA_JSON='
 {
   "pw::agent": {
-    "applied_by": "The claim loop (requirement 17a), onto every pull request the implementation pipeline raises.",
+    "applied_by": "The Implementer, onto the pull request it raises, from the `pr_label` field the claim loop stamped onto its work order; the Script'"'"'s own `pr_label_ensure` (lib/labels.sh) backstops it where that did not take.",
     "removing": "Every gatherer, and the `max_open_agent_prs` back-pressure limit, stop counting that pull request as the pipeline'"'"'s own."
   },
   "project-review": {
@@ -144,7 +144,7 @@ METADATA_JSON='
     "removing": "lib/pager.sh'"'"'s own dedup search and monitor-cycle.sh'"'"'s `--label pw::pager` listing stop finding the issue, and the pager'"'"'s own auto-close has no label left to clear."
   },
   "open-question": {
-    "applied_by": "The Reviewer, projected onto a pull request.",
+    "applied_by": "The Script'"'"'s landing gate (`landing_open_question_label_project`, lib/landing.sh), when a Reviewer round raises an open question (requirement 8f) — never the Reviewer itself; released the same way once the question is adjudicated.",
     "removing": "The landing gate stops treating the pull request as blocked by an open question."
   },
   "complexity:low": {
