@@ -56,12 +56,24 @@ and its optional replicated mirror (configured separately). This telemetry inclu
   model, cost by actor, cost by day, stage durations, failure counts
 - **Cycle transcripts** — per-stage text output and error logs for debugging
 
-None of this data is published outside the installation. The pipeline runs entirely
-locally, with no external service calls except to GitHub via the `gh` CLI. The only
-exception is optional Tailscale integration: if `tailscale serve` is enabled, the
-dashboard (and its underlying data files) are made available over the owner's
-private tailnet to their own signed-in devices; nothing reaches a public or
-third-party URL.
+None of this data is published outside the installation, with three exceptions, each
+optional and off by default:
+
+- **`state_repo`** — when set, `scripts/state-sync.sh` pushes this node's own
+  `state_dir` to a branch of a private GitHub repository the installation itself
+  creates and controls, and fetches every peer node's branch back the same way, so a
+  multi-node fleet can read a union of its own state. Empty (the default) makes every
+  mode of that script a no-op.
+- **`notify_webhook_url`** — when set, `lib/notify.sh` POSTs one compact JSON body
+  per escalation issue filed or auto-closed, per pager fired or cleared, and per
+  fleet-wide stand-down beginning or ending, to this URL. Empty (the default)
+  disables the channel: nothing is attempted.
+- **Tailscale integration** — if `tailscale serve` is enabled, the dashboard (and its
+  underlying data files) are made available over the owner's private tailnet to
+  their own signed-in devices; nothing reaches a public or third-party URL.
+
+Beyond those three, and the model-provider traffic the previous section describes,
+the pipeline's only other external calls are to GitHub via the `gh` CLI.
 
 ## Data retention
 
@@ -77,9 +89,12 @@ in [docs/reference/configuration.md](reference/configuration.md):
   the replication mirror reaches this count, the oldest cycle's data is deleted from
   it, matching the age of data in the primary directory.
 
-- **`log_retained_bytes`** — the maximum size (in bytes) of the pipeline's own
-  consolidated event log (`log.jsonl`). When the log exceeds this size, the oldest
-  entries are removed to stay within the limit.
+- **`log_retained_bytes`** — the maximum size (in bytes) of `scripts/rotate-logs.sh`'s
+  own rotated logs (`dashboard.log`, `state-sync.log`, `doctor.log`,
+  `revert-rate.log`, `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and
+  `review-cron.log`). When one of them exceeds this size, its oldest entries are
+  removed to stay within the limit. `log.jsonl`, `review-log.jsonl` and
+  `revert-rate.jsonl` are never rotated, regardless of size.
 
 Refer to [docs/reference/configuration.md](reference/configuration.md) for the default
 values and detailed explanations of each setting.
