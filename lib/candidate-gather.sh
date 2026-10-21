@@ -577,14 +577,17 @@ while IFS=$'\t' read -r _ slug default_branch; do
     # this very `tech_debt` array — deliberately unlogged, unlike
     # `issues_excluded` just above: this record exists to be read by that one
     # filter, not to be surfaced on the shared log, and adding the identical
-    # on-change dashboard event is tracked separately (issue #2606) rather
-    # than bundled into the fix this filter needed to work at all.
+    # on-change dashboard event — along with the documented Co-Ordinator key
+    # `issues_excluded` has in prompts/coordinator.md, which this array
+    # reaches that engagement's runtime input without — is tracked separately
+    # (issue #2606) rather than bundled into the fix this filter needed to
+    # work at all.
     tech_debt_excluded_raw="$(gather_tech_debt_excluded "$slug")"
     [[ "$tech_debt_excluded_raw" != "null" ]] && tech_debt_excluded="$tech_debt_excluded_raw"
   fi
   expensive_gather_fresh=1
   expensive_gather_as_of="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # The nine raw bands below are each unbounded past this call — agent-ops's
+  # The ten raw values below are each unbounded past this call — agent-ops's
   # own tech_debt_raw alone has reached 421,622 bytes, far past MAX_ARG_STRLEN
   # (131072) — so, exactly like the per-repo entry build further down, they
   # arrive on stdin, one document per line, bound positionally with `input as

@@ -922,15 +922,19 @@
    `pw::type:tech-debt` label (an issue never carrying it was never a
    `tech_debt` candidate to begin with, the same "never a candidate"
    reasoning requirement 3j's own `issues_excluded` already applies to the
-   pull requests its listing interleaves). Unlike `issues_excluded`,
-   `tech_debt_excluded` is read by exactly one consumer —
-   `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler filter
-   (requirement 35f) — and is neither echoed onto the Co-Ordinator's own
-   runtime input (`prompts/coordinator.md` carries no `tech_debt_excluded`
-   key) nor logged on change the way requirement 33's `issues-excluded` event
-   is; giving it that same dashboard/Co-Ordinator visibility is tracked
-   separately (agent-ops#2606) rather than folded into the fix this record
-   exists for. `source: "tech-debt"`, the
+   pull requests its listing interleaves). `tech_debt_excluded` has exactly
+   one reader — `lib/eligibility.sh`'s own open-`Blocked-by:`-reference
+   Enabler filter (requirement 35f). Unlike `issues_excluded` it is not
+   logged on change the way requirement 33's `issues-excluded` event is, and
+   `prompts/coordinator.md` does not document the key, so the Co-Ordinator is
+   never told what it means — it does nonetheless reach that engagement's
+   runtime input, because the repository entry travels into
+   `coord_repo_input` whole (`lib/coordinator-phase.sh`) and requirement 4i's
+   fit ladder rewrites only the `issues`/`tech_debt` bands it caps, carrying
+   every other key through untouched. Giving the array the dashboard event
+   and the documented Co-Ordinator key `issues_excluded` already has is
+   tracked separately (agent-ops#2606) rather than folded into the fix this
+   record exists for. `source: "tech-debt"`, the
    bare issue number as `ref` (and as `number`), `title`, `url`, `labels`,
    `author`, `created_at`, `updated_at`, and the whole issue thread — body and
    every comment, verbatim — as `body`/`comments`. Sorted by issue number

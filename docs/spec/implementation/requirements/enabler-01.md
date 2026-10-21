@@ -321,20 +321,21 @@
     already carried an Implementer's `Blocked-by: #2565`, with `#2565` still
     open).
 
-    This filter's first version re-derived that verdict itself: it read each
-    eligible candidate's own thread out of a pre-subtraction snapshot of
-    `ordered_repos_json`'s `issues`/`tech_debt` bands and re-parsed it for a
-    `Blocked-by:` reference with `dependency_refs` (`lib/dependency-
-    gate.sh`), testing each one against `open_issues_json`. That could never
-    fire on its own target class: scripts/gather-issues.sh and scripts/
+    The filter does not re-derive that verdict from the candidate's own
+    thread, and cannot: scripts/gather-issues.sh and scripts/
     gather-tech-debt.sh already drop a candidate naming a still-open
     `Blocked-by:` reference at gather time (requirement 34j,
     `issue_blocked_by_ref`, `lib/issue-prefetch.sh`) — live, checked right
     there — so a candidate in exactly the shape this filter exists to catch
-    was never present in either band for the snapshot to carry forward.
+    is, by construction, never present in `ordered_repos_json`'s
+    `issues`/`tech_debt` bands for any snapshot of them to carry forward, and
+    a `dependency_refs` re-parse of those bands could never fire on its own
+    target class. What both gathers *do* leave behind is the drop and its
+    reason, in their own `excluded` sidecar arrays, and that is what this
+    filter reads.
 
     Before `enabler_allowed` is set, each eligible entry's own repo and item
-    number is instead tested against `still_blocked_by_json` — built,
+    number is therefore tested against `still_blocked_by_json` — built,
     directly from `ordered_repos_json`, by collecting every entry of every
     repo's own `issues_excluded` and `tech_debt_excluded` arrays (component
     3j, component 3t) whose `reason` starts `"blocked-by: "`, resolving the
@@ -358,13 +359,15 @@
     `dependency_clearances` itself observes; it simply has no entry in
     `still_blocked_by_json` to match. This is a cost saving, never the
     correctness gate: an Enabler engagement that does reach such an item
-    still reports it, exactly as it always has. Because the live check that
-    produced `issues_excluded`/`tech_debt_excluded` already resolved each
-    reference against its own actual repo directly (a plain `gh api` read,
-    not a local digest lookup), this reuse also closes the first version's
-    own cross-repo fail-safe trap, where a reference naming a repo absent
-    from `open_issues_json` read as still-open forever, even once closed,
-    purely because that digest never carried the repo at all.
+    still reports it, exactly as it always has. A cross-repo `Blocked-by:`
+    reference is decided no differently from a same-repo one, and needs no
+    special handling here: the live check that produced
+    `issues_excluded`/`tech_debt_excluded` resolved each reference against
+    its own actual repo directly (a plain `gh api` read, not a lookup in this
+    cycle's `open_issues_json` digest), so a reference naming a repository
+    this cycle never sampled — one that is not configured at all, or did not
+    sample cleanly — is read at its true state rather than fail-safing to
+    still-open on every cycle for as long as the digest lacks it.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with
