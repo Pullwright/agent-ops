@@ -239,7 +239,12 @@ All target repos follow these rules:
    item with `gh issue create --repo <repo> --label pw::type:tech-debt
    --title "<title>" --body "<body>"`, its body describing what, why it
    matters, where, and a suggested fix — the same content a register item's
-   body would have carried. Keep the list of every issue you file this run —
+   body would have carried, plus a `Priority: <band>` line (one of `Urgent`,
+   `High`, `Medium` or `Low`, one sentence naming why) so the band is set at
+   filing time rather than left for later triage — a finding that blocks
+   other work or affects correctness, safety or spend ranks above a style or
+   documentation gap; `Medium` where you are unsure, the same default an
+   untriaged issue already carries. Keep the list of every issue you file this run —
    step 4's pull request body must name all of them under a `Defers:`
    section, since that list, not a git diff, is now the only record
    connecting this review to the debt it surfaced.

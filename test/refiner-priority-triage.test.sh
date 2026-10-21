@@ -109,16 +109,24 @@ repos='[
      {"source": "issues", "ref": "6", "title": "unbanded, already refined, but claimed",
       "priority": "Medium", "priority_set": false}
    ],
+   "tech_debt": [
+     {"source": "tech-debt", "ref": "10", "title": "unbanded tech-debt, already refined",
+      "priority": "Medium", "priority_set": false},
+     {"source": "tech-debt", "ref": "11", "title": "banded tech-debt, already refined",
+      "priority": "High", "priority_set": true}
+   ],
    "merge_conflicts": [
      {"source": "merge-conflicts", "ref": "pr-1-conflict-abc", "title": "not issues, exempt anyway"}
    ]}
 ]'
-policy='{"issues": "preferred"}'
+policy='{"issues": "preferred", "tech-debt": "preferred"}'
 refinements='{"o/r": {"1": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/1"},
                        "2": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/2"},
                        "4": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/4"},
                        "5": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/5"},
-                       "6": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/6"}}}'
+                       "6": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/6"},
+                       "10": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/10"},
+                       "11": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/11"}}}'
 blocked='[{"repo": "o/r", "item": "5"}]'
 claimed='[{"repo": "o/r", "item": "6"}]'
 
@@ -142,6 +150,16 @@ assert_eq "an otherwise-triage-eligible issue stays excluded while claimed" "no"
   "$(jq -r 'any(.[]; .item == "6") | if . then "yes" else "no" end' <<<"$candidates")"
 assert_eq "a non-issues source is unaffected by the triage rule" "no" \
   "$(jq -r 'any(.[]; .source == "merge-conflicts") | if . then "yes" else "no" end' <<<"$candidates")"
+
+# agent-ops#2422: the triage rule lifted from issues alone to cover tech-debt
+# too — an unbanded, already-refined tech-debt item is a candidate, marked
+# triage_only, the same way an issues one is; a banded one is not.
+assert_eq "an unbanded, already-refined tech-debt item is a candidate" "yes" \
+  "$(jq -r 'any(.[]; .item == "10") | if . then "yes" else "no" end' <<<"$candidates")"
+assert_eq "  ... marked triage_only" "true" \
+  "$(jq -r '.[] | select(.item == "10") | .triage_only' <<<"$candidates")"
+assert_eq "a banded, already-refined tech-debt item is not a candidate" "no" \
+  "$(jq -r 'any(.[]; .item == "11") | if . then "yes" else "no" end' <<<"$candidates")"
 
 # Policy exclusions still bind: an installation that turns `issues` fully
 # exempt gets no triage candidates either, exactly as the item's own scope
@@ -1029,6 +1047,25 @@ assert_eq "priority-and-spec: issue-prioritised names the band" "High" "$(jq -r 
 assert_eq "priority-and-spec: ...and by: refiner" "refiner" "$(jq -r '.by' <<<"$ip_evt")"
 assert_eq "priority-and-spec: ...and no prior band" "null" "$(jq -c '.previous' <<<"$ip_evt")"
 assert_eq "priority-and-spec: exactly one mutation reached gh" "1" \
+  "$([[ -f "$gh_c/mutation-calls" ]] && wc -l < "$gh_c/mutation-calls" || echo 0)"
+
+# ----------------------------------------------------------------------------
+# (i-td) agent-ops#2422: the same wiring for a tech-debt source — lifted from
+# issues alone, so a tech-debt verdict's own priority must reach the ratchet
+# too, not only an issues one.
+# ----------------------------------------------------------------------------
+techdebt_candidates_c='[{"repo":"o/r","source":"tech-debt","item":"60","entry":{"number":60}}]'
+jq -nc '{node_id: "I_c60", issue_field_values: []}' > "$gh_c/current-response.json"
+verdicts='[{"repo":"o/r","item":"60","verdict":"refined","reason":"specified in one comment",
+            "comments_posted":["https://github.com/o/r/issues/60#issuecomment-1"],
+            "priority":"Urgent"}]'
+calls="$(run_case_c "tech-debt verdict carrying priority" "$techdebt_candidates_c" "$verdicts")"
+
+assert_eq "tech-debt priority: item-refined still recorded" "1" \
+  "$(grep -cE '^event item-refined ' <<<"$calls")"
+ip_evt="$(events_named "$calls" issue-prioritised | head -n1)"
+assert_eq "tech-debt priority: issue-prioritised names the band" "Urgent" "$(jq -r '.priority' <<<"$ip_evt")"
+assert_eq "tech-debt priority: exactly one mutation reached gh" "1" \
   "$([[ -f "$gh_c/mutation-calls" ]] && wc -l < "$gh_c/mutation-calls" || echo 0)"
 
 # ----------------------------------------------------------------------------

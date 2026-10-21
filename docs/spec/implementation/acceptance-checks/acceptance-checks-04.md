@@ -194,12 +194,15 @@
     this node's own fresh events and silently undo the fix.
 39g. <a id="impl-ac-39g"></a>**Priority triage bands correctly and never lowers a band
     (requirement 39g).** `test/refiner-priority-triage.test.sh` passes:
-    `refiner_candidate_items` admits an already-refined `issues` entry only
+    `refiner_candidate_items` admits an already-refined `issues` or
+    `tech-debt` entry only
     when `priority_set` is literally `false`, marks it `triage_only: true`,
     excludes a banded or claimed/blocked/void/exempt one exactly as
     requirement 39a (The Refiner) already requires, and never admits an entry carrying no
     `priority_set` key at all — the pre-existing shape every source but
-    `issues` still carries. `lib/issue-priority.sh`'s ratchet, driven
+    `issues`/`tech-debt` still carries, and a `tech-debt` entry carrying a
+    `priority_set: false` band reaches `maybe_run_refiner`'s own priority
+    application the same way an `issues` one does. `lib/issue-priority.sh`'s ratchet, driven
     against a stubbed `gh`: `issue_priority_field_ids` resolves the field
     and option ids from a live GraphQL read and fails (never an empty
     result read as "nothing to band") when the field is absent;
@@ -346,6 +349,46 @@
     `refiner_filter_unbandable_triage` counting its own invocations — with
     `refiner_model` empty the pre-flight is never called at all, and with it
     set the pre-flight still runs exactly once, unchanged.
+
+    **Every filing path bands what it files, and the ranking reads the band
+    (requirement 1, agent-ops#2422).** Each of the Script's own filers has
+    its own test, driven against a stubbed `gh`, so none can regress alone:
+    `test/tech-debt-file.test.sh` asserts `techdebt_file_issue` and
+    `techdebt_file_debt` each reach the ratchet on a fresh create, never on
+    the dedup path (which returns the existing issue with its own band
+    untouched), and silently skip an empty or unrecognised band;
+    `test/pager.test.sh` asserts the `High` option id actually written;
+    `test/merge-budget.test.sh` the freeze escalation's `Urgent`;
+    `test/sweep-decision-vetoes.test.sh` the revisit issue's `High`; and
+    `test/monitor-priority-filing.test.sh` the Monitor's own two
+    (MON AC 5d). The three stages that state
+    a band in a verdict rather than writing it are covered at the wiring:
+    `test/approver-tech-debt-file-wiring.test.sh`,
+    `test/enabler-tech-debt-file-wiring.test.sh` and
+    `test/merge-observed.test.sh` each assert the verdict's own `priority`
+    arrives as the filer's trailing argument, and arrives empty where the
+    verdict names none.
+
+    Priority inheritance (requirement 15e's own "may already be raised")
+    is asserted directly in `test/dependency-gate.test.sh` —
+    `issue_priority_inherit` raises a `Low` item that a `High` item names as
+    its `Blocked-by:` dependency and names the raiser in
+    `priority_raised_by`; never lowers a blocker that already outranks what
+    it blocks, and leaves no `priority_raised_by` where no raise happened;
+    takes the highest of two blocked items' bands, naming only the item
+    carrying it; ignores a cross-repository reference; and is the identity on
+    an empty array, falling back to its input unchanged on malformed JSON —
+    and end to end through both shipped gatherers, in
+    `test/issues-prefetch.test.sh` and `test/gather-tech-debt.test.sh`, where
+    the raised entry reaches the Co-Ordinator's own array banded and marked,
+    the blocked item is held out by requirement 34j as usual, `priority_set`
+    still reports the raise target's own triage rather than the raise, and
+    the tech-debt case's raiser is a non-tech-debt issue, proving inheritance
+    crosses the two bands. The trim order that makes it matter is asserted in
+    `test/coordinator-input.test.sh`: capping a 62-entry tech-debt band keeps
+    the inherited-`Urgent` entry and the `High` entry it blocks, drops only
+    lower ones, keeps the raised entry's `priority_raised_by` through the
+    cap, and at a cap of one keeps the single highest-ranked entry.
 11c. <a id="impl-ac-11c"></a>**A broken Enabler cannot break a cycle (requirement 37).** With a stubbed
     stage that times out, exits non-zero, or (after requirement 9e's salvage
     resume also fails to parse) returns prose instead of JSON: the
