@@ -30,7 +30,7 @@
       "label": "1c",
       "anchor": "impl-ac-1c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 127,
+      "line": 130,
       "title": "The stack comes up from nothing and is idempotent."
     },
     "IMPL AC 1d": {
@@ -38,7 +38,7 @@
       "label": "1d",
       "anchor": "impl-ac-1d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 357,
+      "line": 360,
       "title": "State replicates per node, and comes back as peers."
     },
     "IMPL AC 1e": {
@@ -46,7 +46,7 @@
       "label": "1e",
       "anchor": "impl-ac-1e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 431,
+      "line": 434,
       "title": "The fleet flags reach every node."
     },
     "IMPL AC 1f": {
@@ -54,7 +54,7 @@
       "label": "1f",
       "anchor": "impl-ac-1f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 553,
+      "line": 556,
       "title": "A provider-qualified model id resolves; an unsupported one fails fast"
     },
     "IMPL AC 1g": {
@@ -62,7 +62,7 @@
       "label": "1g",
       "anchor": "impl-ac-1g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 571,
+      "line": 574,
       "title": "Every shell script in the repository is shellcheck-clean, and a caller"
     },
     "IMPL AC 2m": {

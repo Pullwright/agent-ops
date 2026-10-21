@@ -50,8 +50,11 @@ oblige anyone to edit a test.
    and one narrower class builds without running the suite.**
    `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
    calls a change documentation-only when every path in it is under `docs/`
-   — except `docs/STANDING-DECISIONS.md` and every `docs/*-SPEC.md`, which the
-   image *does* deliver to a running stage and so count as code — or is
+   — except `docs/STANDING-DECISIONS.md` and the four specification files
+   `monitor-cycle.sh` names (`docs/spec/implementation/gotchas.md`,
+   `docs/spec/review.md`, `docs/spec/monitor.md` and
+   `docs/spec/dashboard/README.md`), which the image *does* deliver to a
+   running stage and so count as code — or is
    `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`, `LICENCE` or
    `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
    included, since those are Markdown documents *and* the operating
@@ -72,8 +75,8 @@ oblige anyone to edit a test.
    sections are the opposite case: `agent-cycle.sh` resolves
    `standing_decisions_file` against `$SCRIPT_DIR`, which is `/app` in the
    image, and `lib/escalation-autonomy.sh` feeds the file to the
-   decide-tactical pass as its precedents; `monitor-cycle.sh` passes each
-   specification's `$SCRIPT_DIR/docs/*-SPEC.md` path to `monitor_digest_gotchas`
+   decide-tactical pass as its precedents; `monitor-cycle.sh` passes each of
+   those four `$SCRIPT_DIR/docs/spec/` paths to `monitor_digest_gotchas`
    as the Monitor's known signatures — both reach a node only through the
    image, so a change confined to either still needs one. Every other
    stage's working directory is under `workspace_root` or `state_dir`
