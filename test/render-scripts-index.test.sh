@@ -52,7 +52,8 @@ chmod +x "$tmp/scripts/render-scripts-index.sh"
 
 # --- Fixture scripts: a plain one, one with a leading shellcheck-disable
 #     paragraph to skip, one whose first paragraph has no dash (a usage
-#     line), and a Python one with a docstring. ---
+#     line), one wrapped so that it splits a token at the token's own hyphen
+#     and underscore, and a Python one with a docstring. ---
 cat > "$tmp/lib/alpha.sh" <<'SH'
 #!/usr/bin/env bash
 #
@@ -74,6 +75,16 @@ cat > "$tmp/scripts/gamma.sh" <<'SH'
 # gamma.sh <owner/repo> [--flag]
 #
 # The real description, in a second paragraph the script does not index.
+SH
+
+cat > "$tmp/scripts/epsilon.sh" <<'SH'
+#!/usr/bin/env bash
+#
+# scripts/epsilon.sh — the epsilon fixture, wrapped so that run_through_
+# finishing_phase and classifier-
+# escape each break a token at its own separator, while a punctuation dash -
+# and a trailing slash in lib/
+# scripts/ do not.
 SH
 
 cat > "$tmp/scripts/delta.py" <<'PY'
@@ -112,6 +123,12 @@ fi
 assert_contains "beta's shellcheck preamble is skipped in favour of its real paragraph" "$content" "| \`lib/beta.sh\` | the beta fixture, behind a shellcheck preamble. |"
 assert_contains "gamma's usage-line paragraph is used verbatim (no dash to strip)" "$content" "| \`scripts/gamma.sh\` | <owner/repo> [--flag] |"
 assert_contains "delta's Python docstring paragraph is indexed" "$content" "| \`scripts/delta.py\` | the delta fixture, a Python docstring. |"
+# A wrapped header comment that breaks a token at its own hyphen or
+# underscore rejoins without a space, so the index prints the token rather
+# than a word cut in half; a hyphen or slash used as punctuation, with a
+# space before it or a non-alphanumeric, keeps its space.
+assert_contains "epsilon's underscore-split and hyphen-split tokens rejoin without a space" "$content" \
+  "the epsilon fixture, wrapped so that run_through_finishing_phase and classifier-escape each break a token at its own separator, while a punctuation dash - and a trailing slash in lib/ scripts/ do not."
 
 # --- A freshly regenerated tree checks clean. ---
 run_script --check >/dev/null 2>&1

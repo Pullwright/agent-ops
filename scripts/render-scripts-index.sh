@@ -17,7 +17,12 @@
 # header comment: every `#` comment line (or, for a `.py` file, the opening
 # `"""` docstring's first paragraph) from the one immediately after the
 # shebang, up to the first blank comment line, wrapped lines joined with a
-# single space. A leading `# shellcheck disable=...` paragraph — explaining
+# single space — except where the wrap fell inside a token, at the token's
+# own ASCII hyphen or underscore, which rejoins with nothing so the cell
+# prints the token rather than a word cut in half. A hyphen used as
+# punctuation (a space before it) and an em dash are unaffected, since
+# neither sits directly against an alphanumeric.
+# A leading `# shellcheck disable=...` paragraph — explaining
 # why a lint rule is suppressed, not what the script does — is skipped in
 # favour of the paragraph after it, the one genuine exception to "the first
 # paragraph, verbatim": every other leading comment paragraph is used as
@@ -65,6 +70,17 @@ extract_first_paragraph() {
     function is_shellcheck_para() {
       return (para ~ /^shellcheck disable=/)
     }
+    # A wrapped header comment can break a token at an ASCII hyphen or
+    # underscore inside it (run_coordinator_through_ + finishing_phase,
+    # classifier- + escapes). Joining those with a space prints a word cut
+    # in half, so join with nothing instead — but only where the separator
+    # sits directly against an alphanumeric, which a hyphen used as
+    # punctuation (preceded by a space) and an em dash never do.
+    function append(line) {
+      if (para == "") { para = line; return }
+      if (para ~ /[A-Za-z0-9][-_]$/) { para = para line; return }
+      para = para " " line
+    }
     function emit() {
       if (para == "") { return }
       if (!skipped_shellcheck && is_shellcheck_para()) {
@@ -94,8 +110,7 @@ extract_first_paragraph() {
       if ($0 ~ /^#/) {
         line = $0
         sub(/^#[ \t]?/, "", line)
-        if (para != "") para = para " " line
-        else para = line
+        append(line)
         next
       }
       emit()
@@ -104,8 +119,7 @@ extract_first_paragraph() {
     state == "pydoc" {
       if ($0 ~ /"""/) { emit(); exit }
       if ($0 == "") { emit(); if (done) exit; next }
-      if (para != "") para = para " " $0
-      else para = $0
+      append($0)
       next
     }
     END { if (!done) emit() }

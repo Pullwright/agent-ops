@@ -1,6 +1,6 @@
 ## Components
 
-### Components — continued (part 3 of 3; 17e–24c)
+### Components — continued (part 3 of 3; 17e–24e)
 
 17e. <a id="impl-c-17e"></a>`scripts/roll-changelog.sh` implementing requirement 25e: with no
     marker present, renames the file's whole `[Unreleased]` section
@@ -1094,4 +1094,64 @@
    scratch repository carrying one fixture label of each of the nine kinds,
    plus a wrong-kind and a dangling citation to break `check` against.
    Acceptance check 52c. Must pass `shellcheck`.
+24d. <a id="impl-c-24d"></a>`scripts/render-labels-table.sh` and
+   `.github/workflows/labels-table.yml` implementing requirement 52d's
+   generated-labels-table property, for the file `lib/markdown-scan.sh`'s
+   `LABELS_TABLE_FILES` lists (`docs/reference/labels.md`), matching the
+   markers by that library's `labels_table_start_re` and
+   `labels_table_end_re`, the list and grammar component 24b reads to leave
+   this region out of the size budget. Calls `lib/labels.sh`'s
+   `labels_catalogue` (component 15) once per role — `target`, `review`,
+   `escalation` — against an illustrative configuration carrying only the
+   two `pr_label` keys required with no product default, each read from its
+   own `x-docs.value` in `config.schema.json` (component 14), and unions
+   the three roles' rows by label name so a label two roles share renders
+   once. Joins each row to its own hand-authored `applied_by`/`removing`
+   metadata, keyed on the catalogue's resolved name; a catalogue name with
+   no metadata entry exits non-zero naming the label rather than rendering
+   blank cells, the same hard-fail-over-silent-mis-render precedent
+   components 16 and 24 follow for a malformed region. With no arguments
+   rewrites the region in place; `--check` renders to a temporary file
+   instead, leaves the working tree untouched and exits non-zero naming the
+   stale file; a target file without exactly one marker pair is refused
+   naming the file in both invocations.
+   `.github/workflows/labels-table.yml` runs `--check` on every pull
+   request, on `merge_group` and on push to `main`, ungated by `paths:`,
+   modelled on `config-table.yml`. `test/render-labels-table.test.sh`
+   exercises the real script against this repository's own real catalogue
+   and metadata. Acceptance check 52d. Must pass `shellcheck`.
+24e. <a id="impl-c-24e"></a>`scripts/render-scripts-index.sh` and
+   `.github/workflows/scripts-index.yml` implementing requirement 52d's
+   generated-scripts-index property, for the file `lib/markdown-scan.sh`'s
+   `SCRIPTS_INDEX_FILES` lists (`docs/reference/scripts.md`), matching the
+   markers by that library's `scripts_index_start_re` and
+   `scripts_index_end_re`, the list and grammar component 24b reads to leave
+   this region out of the size budget. Renders one table per group — `lib/`,
+   sourced and never executed, and `scripts/`, run directly — each row one
+   `*.sh`/`*.py` file directly under that directory, sorted by path, its
+   Purpose column that file's own header-comment first paragraph: every `#`
+   line from the one after the shebang to the first blank comment line (or,
+   for a `.py` file, the opening `"""` docstring's first paragraph), wrapped
+   lines joined with a single space — except a wrap that fell inside a token
+   at its own ASCII hyphen or underscore, directly against an alphanumeric,
+   which rejoins with nothing, so a header wrapped mid-identifier
+   (`run_coordinator_through_` / `finishing_phase`) prints the identifier
+   rather than a word cut in half, while a hyphen used as punctuation and an
+   em dash keep their space — a leading `# shellcheck disable=`
+   paragraph skipped in favour of the one after it, and the lead-in naming
+   the file's own path or basename stripped so the cell starts at the
+   description. A file with no such paragraph exits non-zero naming it,
+   rather than rendering an empty cell. Grouping is by directory and not by
+   any finer purpose on purpose: the directory split is the one distinction
+   this repository enforces structurally, and a hand-maintained category per
+   file would drift the moment a script is added or renamed without updating
+   it. With no arguments rewrites the region in place; `--check` renders to
+   a temporary file instead, leaves the working tree untouched and exits
+   non-zero naming the stale file; a target file without exactly one marker
+   pair is refused naming the file in both invocations.
+   `.github/workflows/scripts-index.yml` runs `--check` on every pull
+   request, on `merge_group` and on push to `main`, ungated by `paths:`,
+   modelled on `config-table.yml`. `test/render-scripts-index.test.sh`
+   exercises the real script against this repository's own real header
+   comments. Acceptance check 52d. Must pass `shellcheck`.
 

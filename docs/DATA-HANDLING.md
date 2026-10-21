@@ -72,12 +72,33 @@ optional and off by default:
   underlying data files) are made available over the owner's private tailnet to
   their own signed-in devices; nothing reaches a public or third-party URL.
 
-Beyond those three, and the model-provider traffic the previous section describes,
-the pipeline's only other external calls are to GitHub via the `gh` CLI.
+Beyond those three, the pipeline's own outbound calls are the domains
+`deploy/docker/egress-allowlist.txt` names, which is the authoritative list — every
+entry there carries its reason, and on a containerized node the egress fence refuses
+everything the file does not name:
+
+- **GitHub** (`github.com`, `api.github.com`, `codeload.github.com`,
+  `.githubusercontent.com`) — every `gh` call, clone and push a cycle makes.
+- **The model providers** (`api.anthropic.com`, `platform.claude.com`, `claude.ai`,
+  `claude.com`, `api.x.ai`, `auth.x.ai`) — each stage's own prompt, as the
+  "What a stage sends to its model provider" section above describes.
+- **Vercel** (`api.vercel.com`, `.vercel.app`, `vercel.com`) — only for a target
+  repository configured with a `vercel` preview provider: `scripts/preview-deploy.sh`
+  reads the pull request's own preview deployment and fetches the routes a stage
+  names. It sends the branch's deployment identifier and a bypass header, not
+  repository content.
+- **`ghcr.io`** — `lib/image-drift.sh` reads the fleet's own image digest from the
+  registry, every few minutes. A read; nothing is sent but the manifest request.
+- **The target repositories' own toolchains** (`registry.npmjs.org`,
+  `fonts.googleapis.com`, `fonts.gstatic.com`) — reached by a stage running a
+  target repository's build, not by the pipeline itself.
+
+A node's operator may widen the set for that one node with `EGRESS_EXTRA_ALLOW` in its
+own `.env`; fleet-wide additions land in the file itself and ship with the image.
 
 ## Data retention
 
-Data retention is governed by three configuration keys in `config.json`, documented
+Data retention is governed by four configuration keys in `config.json`, documented
 in [docs/reference/configuration.md](reference/configuration.md):
 
 - **`cycles_retained`** — the number of recent complete cycles to retain in full
@@ -89,12 +110,21 @@ in [docs/reference/configuration.md](reference/configuration.md):
   the replication mirror reaches this count, the oldest cycle's data is deleted from
   it, matching the age of data in the primary directory.
 
-- **`log_retained_bytes`** — the maximum size (in bytes) of `scripts/rotate-logs.sh`'s
-  own rotated logs (`dashboard.log`, `state-sync.log`, `doctor.log`,
-  `revert-rate.log`, `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and
-  `review-cron.log`). When one of them exceeds this size, its oldest entries are
-  removed to stay within the limit. `log.jsonl`, `review-log.jsonl` and
-  `revert-rate.jsonl` are never rotated, regardless of size.
+- **`log_retained_bytes`** — the size at which `scripts/rotate-logs.sh` rotates each
+  of the diagnostic and cron logs it owns: `dashboard.log`, `state-sync.log`,
+  `doctor.log`, `revert-rate.log`, `tech-debt-archive.log`, `wake-poll.log`,
+  `cron.log`, `review-cron.log`, `monitor-cron.log` and `gh-shim/ledger.ndjson`.
+  Rotation is a rename, not a trim: the live file becomes `<name>.1`, each existing
+  generation shifts down one, the oldest is deleted, and a fresh empty file takes the
+  original name. The pipeline's own event logs — `log.jsonl`, `review-log.jsonl`,
+  `monitor-log.jsonl` and `revert-rate.jsonl` — are never rotated, regardless of
+  size, because the fleet's union readers scan each one whole and dropping its head
+  would change what the pipeline believes has already been tried.
+
+- **`log_generations`** — how many rotated generations of each of those logs are kept
+  beside the live file (`<name>.1` … `<name>.<log_generations>`). The disk a rotated
+  log can occupy is therefore `log_retained_bytes × (log_generations + 1)`, not
+  `log_retained_bytes`.
 
 Refer to [docs/reference/configuration.md](reference/configuration.md) for the default
 values and detailed explanations of each setting.
@@ -118,9 +148,11 @@ Before deploying this pipeline to an installation that is not Poetic-Poems:
 
 1. Review this document and [docs/reference/configuration.md](reference/configuration.md)
    to understand what data will be retained and for how long.
-2. Adjust `cycles_retained`, `state_local_cycles_retained`, and `log_retained_bytes`
-   in `config.json` to match your retention and privacy requirements.
+2. Adjust `cycles_retained`, `state_local_cycles_retained`, `log_retained_bytes` and
+   `log_generations` in `config.json` to match your retention and privacy
+   requirements.
 3. Ensure the machine running the pipeline has adequate disk space for the maximum
-   configured retention period (see `log_retained_bytes` in particular).
+   configured retention period (see `log_retained_bytes` × `log_generations` in
+   particular).
 4. If using a replication mirror, ensure the mirror location is on a trusted device
    with the same security properties as the primary state directory.

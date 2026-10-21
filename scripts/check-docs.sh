@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# scripts/check-docs.sh — five offline checks on the documentation that
-# toc.yml and config-table.yml don't make (issue #2088): only the two
-# generated regions are gated today, so nothing notices a broken relative
-# link, an anchor that no longer exists, a document missing from
+# scripts/check-docs.sh — five offline checks on the documentation that the
+# generated-region workflows (toc.yml, config-table.yml, labels-table.yml,
+# scripts-index.yml) don't make (issue #2088): those gate a region's own
+# freshness against its source and nothing else, so nothing else notices a
+# broken relative link, a dangling anchor, a document missing from
 # docs/README.md's map, a file past the size budget docs/README.md's "Size
 # budget" section fixed, or code/prompts/docs quoting a section that moved.
 #
