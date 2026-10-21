@@ -307,6 +307,47 @@
     the eligible set unfiltered — this
     is a cost saving, never the correctness gate; the Enabler still voids a stale
     item it does reach, exactly as it always has.
+35f. <a id="impl-35f"></a>**A candidate whose own thread still names an open `Blocked-by:`
+    reference is dropped before it reaches eligibility (issue #2593).**
+    Requirement 34j's `dependency_clearances` (`lib/candidate-gather.sh`)
+    already clears a block the instant every reference its thread names
+    closes — but until then, the block sits eligible on the ordinary
+    `threshold`/`recheck` terms of requirement 35a exactly like any other, and
+    an Enabler engagement reaching it first can only re-derive the same
+    `still-blocked` verdict the thread already states, at full engagement
+    price, every time its clock comes round (item `2581` reached the Enabler
+    with reason `threshold` while its thread already carried an Implementer's
+    `Blocked-by: #2565`, with `#2565` still open).
+
+    Before `enabler_allowed` is set, each eligible entry's own GitHub thread
+    (body plus every comment) is read from `dependency_threads_json` — a
+    snapshot `compute_band_eligibility` takes of `ordered_repos_json`'s
+    `issues` and `tech_debt` bands merged, keyed by repo then item number,
+    before its own subtraction could remove a blocked entry from either band,
+    for the identical reason requirement 35e's own `live_pr_refs_json`
+    snapshot is taken early — and parsed for a `Blocked-by:` reference with
+    `dependency_refs` (`lib/dependency-gate.sh`), the same parser
+    `dependency_clearances` and `issue_blocked_by_ref` (`lib/issue-
+    prefetch.sh`) already share: reused, not reimplemented (requirement
+    34a). Each reference named is tested against `open_issues_json`,
+    requirement 35a's own open-issue digest, resolved through
+    `config_repo_slug_aliases`' map first for a cross-repo reference exactly
+    as every other clause here is (agent-ops#2064); no fresh `gh` call is
+    made by this filter. Every eligible entry naming at least one reference
+    still open this way is dropped, and the drop is logged
+    (`enabler-open-blocked-by-skipped`, an object payload `{skipped:
+    [{repo, item}…]}`, for the identical reason requirement 35e's own
+    `enabler-stale-refs-skipped` is one) rather than silent.
+
+    A candidate whose thread this cycle's own `issues`/`tech_debt` bands do
+    not carry at all — a repo this cycle did not walk fresh, or a thread
+    naming no `Blocked-by:` line — decides nothing and is left eligible, the
+    same "unknown is never gone" rule `dependency_clearances` itself
+    observes; and a reference whose own repo is absent from
+    `open_issues_json` counts as still-open, the same fail-safe direction
+    `issue_blocked_by_ref` already takes for the identical convention. This
+    is a cost saving, never the correctness gate: an Enabler engagement that
+    does reach such an item still reports it, exactly as it always has.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with

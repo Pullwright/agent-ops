@@ -24,7 +24,9 @@
 # cycle's own globals directly — `refinements_json`, `decisions_json`,
 # `enabler_eligible_json`, `enabler_allowed`, `refiner_prefetch_source_json`,
 # `refiner_repos_json`, `refiner_candidates_json`, `refiner_allowed`,
-# `open_issues_json`, `live_pr_refs_json`, `stale_enabler_refs_json`/`_n` —
+# `open_issues_json`, `live_pr_refs_json`, `live_td_refs_json`,
+# `dependency_threads_json`, `stale_enabler_refs_json`/`_n`,
+# `open_blocked_by_json`/`_n` —
 # so each call is
 # indistinguishable, to the
 # rest of the cycle, from the inline block it replaces. Their bodies keep the
@@ -69,6 +71,30 @@ live_pr_refs_json="$(jq -c \
 live_td_refs_json="$(jq -c \
   '[.[] | .slug as $s | (.tech_debt // [])[] | ($s + "#" + .ref)]' \
   <<<"$ordered_repos_json" 2>/dev/null || true)"
+
+# A third snapshot, for the same reason as the two above (issue #2593):
+# `compute_enabler_eligible_set`'s own open-`Blocked-by:`-reference exclusion
+# needs each blocked candidate's own GitHub thread (body plus every comment)
+# to find a `Blocked-by:` reference the candidate names itself — but a
+# blocked candidate is exactly what the subtraction loop below is about to
+# remove from `ordered_repos_json`'s `issues`/`tech_debt` bands, and the
+# Enabler is only ever eligible for items that are already blocked. Taking
+# this snapshot first, from the untouched gather, is what lets a still-
+# blocked candidate's own thread reach that filter at all. `issues` and
+# `tech_debt` share the same per-entry shape (an issue number under either
+# `number` or `ref`, a `body`, a `comments` array) — merged here, keyed by
+# repo then item number as a string, the same shape `dependency_clearances`'
+# own `issues_by_repo_json` (lib/candidate-gather.sh) already uses for an
+# `issues`-only thread lookup, rather than two callers each keying their own
+# map for what is, to the `Blocked-by:` convention, one kind of thread.
+dependency_threads_json="$(jq -c '
+  map({key: .slug,
+       value: ((((.issues // []) + (.tech_debt // []))
+               | map({key: ((.number // .ref) | tostring),
+                      value: {body: (.body // ""), comments: (.comments // [])}})
+               | from_entries))})
+  | from_entries' <<<"$ordered_repos_json" 2>/dev/null || true)"
+[[ -n "$dependency_threads_json" ]] || dependency_threads_json='{}'
 
 # --- 3c/3u. Pre-fetched-band eligibility, decided (requirement 3t, issue ---
 # --- #310; extended to every other pre-fetched band by requirement 3u, ---
@@ -329,6 +355,79 @@ if [[ "$stale_enabler_refs_n" != "0" ]]; then
     ($stale | map((.repo // "") + "#" + (.item // ""))) as $staleset
     | [ .[] | (.repo // "") as $repo | (.item // "") as $item
             | select(($staleset | index($repo + "#" + $item)) == null) ]
+    ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+fi
+
+# --- Open-`Blocked-by:`-reference exclusion (requirement 34j's own ---
+# --- convention, applied to Enabler eligibility; issue #2593) ---
+# A blocked candidate whose own GitHub thread (body or any comment) names a
+# `Blocked-by: #N` reference that is still open is dropped from this
+# cycle's eligible set: requirement 34j's `dependency_clearances`
+# (lib/candidate-gather.sh) already clears the block itself, mechanically,
+# the instant every reference the thread names closes, so an Enabler
+# engagement reaching such a candidate first can only re-derive the same
+# `still-blocked` verdict the thread already states — a full engagement of
+# the most expensive model in the system spent re-deriving a conclusion the
+# dependency gate already tracks (observed on item `2581`, blocked on the
+# still-open `#2565`, issue #2593). `dependency_refs` (lib/dependency-gate.sh)
+# is the same parser `dependency_clearances` and `issue_blocked_by_ref`
+# already share — reused here, never reimplemented (requirement 34a) — and
+# `open_issues_json`, computed above, is this cycle's own open-issue digest:
+# no fresh `gh` call is made by this filter. A candidate whose own thread
+# `dependency_threads_json` (the snapshot `compute_band_eligibility` took
+# above, before its own subtraction could remove it) does not carry at all —
+# a repo this cycle did not walk fresh, or a thread with no `Blocked-by:`
+# line — decides nothing and is left eligible, the same "unknown is never
+# gone" rule `dependency_clearances` itself observes. A reference whose own
+# repo this cycle could not read cleanly (absent from `open_issues_json`)
+# counts as still-open, the same fail-safe direction `issue_blocked_by_ref`
+# already takes for the identical convention.
+open_blocked_by_json='[]'
+while IFS=$'\t' read -r obd_orig_repo obd_item; do
+  [[ -n "$obd_orig_repo" && -n "$obd_item" ]] || continue
+  obd_repo="$(jq -rn --arg r "$obd_orig_repo" --argjson a "$repo_slug_aliases_json" '$a[$r] // $r' \
+    2>/dev/null || printf '%s' "$obd_orig_repo")"
+  obd_text="$(jq -r --arg r "$obd_repo" --arg i "$obd_item" '
+      ((.[$r] // {})[$i]) as $e
+      | if $e == null then "" else ($e.body // "") + "\n" + (($e.comments // []) | map(.body // "") | join("\n")) end
+    ' <<<"$dependency_threads_json" 2>/dev/null || true)"
+  [[ -n "$obd_text" ]] || continue
+  obd_refs="$(dependency_refs "$obd_text")"
+  [[ "$(jq 'length' <<<"$obd_refs" 2>/dev/null || echo 0)" != "0" ]] || continue
+  obd_still_open=0
+  while IFS= read -r obd_ref; do
+    [[ -n "$obd_ref" ]] || continue
+    if [[ "$obd_ref" == */* ]]; then
+      obd_ref_repo="${obd_ref%%#*}"; obd_ref_n="${obd_ref##*#}"
+    else
+      obd_ref_repo="$obd_repo"; obd_ref_n="$obd_ref"
+    fi
+    if jq -e --arg r "$obd_ref_repo" --arg n "$obd_ref_n" '
+         if has($r) then (((.[$r] // []) | map(tostring) | index($n)) != null) else true end
+       ' <<<"$open_issues_json" >/dev/null 2>&1; then
+      obd_still_open=1
+      break
+    fi
+  done < <(jq -r '.[]' <<<"$obd_refs" 2>/dev/null || true)
+  if (( obd_still_open )); then
+    # The candidate's *original* repo string, not the canonicalised one used
+    # for the two lookups above: the final subtraction below matches against
+    # `enabler_eligible_json`'s own `.repo` field verbatim, which is recorded
+    # under whichever slug the block itself was logged under.
+    open_blocked_by_json="$(jq -c --arg r "$obd_orig_repo" --arg i "$obd_item" '. + [{repo: $r, item: $i}]' \
+      <<<"$open_blocked_by_json" 2>/dev/null || printf '%s' "$open_blocked_by_json")"
+  fi
+done < <(jq -r '.[] | [(.repo // ""), (.item // "")] | @tsv' <<<"$enabler_eligible_json" 2>/dev/null || true)
+open_blocked_by_n="$(jq 'length' <<<"$open_blocked_by_json" 2>/dev/null || printf 0)"
+[[ "$open_blocked_by_n" =~ ^[0-9]+$ ]] || open_blocked_by_n=0
+if (( open_blocked_by_n > 0 )); then
+  # An *object* payload, for the same reason the stale-ref skip above is one
+  # (issue #361): log_event's envelope merge can only add objects.
+  log_event "enabler-open-blocked-by-skipped" "$(jq -c '{skipped: [.[] | {repo, item}]}' <<<"$open_blocked_by_json")"
+  enabler_eligible_json="$(jq -c --argjson skip "$open_blocked_by_json" '
+    ($skip | map((.repo // "") + "#" + (.item // ""))) as $skipset
+    | [ .[] | (.repo // "") as $repo | (.item // "") as $item
+            | select(($skipset | index($repo + "#" + $item)) == null) ]
     ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
 fi
 
