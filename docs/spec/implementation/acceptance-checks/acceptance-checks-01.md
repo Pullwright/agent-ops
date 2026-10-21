@@ -120,7 +120,7 @@ oblige anyone to edit a test.
    stays gated on the documentation-only answer alone, so a change in this
    narrower class still builds the image on both architectures, still
    verifies the toolchain, the crontab and the role guard, and still
-   publishes to GHCR on `main` — it only declines to spend the suite's ~20
+   publishes to GHCR on `main` — it only declines to spend the suite's ~40
    minutes per architecture proving nothing such a change could break. The
    test covers all three outcomes and guards this one's premise: it fails if
    any `test/*.test.sh` but itself so much as names

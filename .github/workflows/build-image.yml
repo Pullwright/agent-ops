@@ -259,11 +259,11 @@ jobs:
             cache-scope: arm64
     runs-on: ${{ matrix.runner }}
 
-    # The `test/` suite is the bulk of this job and takes ~20 minutes per
+    # The `test/` suite is the bulk of this job and takes ~40 minutes per
     # architecture inside the image (this workflow's own run history is the
-    # measurement — docs/guides/contributing/README.md's "Running the
-    # tests" figure is a developer host's, and slower); the image build and
-    # the toolchain/crontab/stamp checks around it add the rest. 90 minutes
+    # measurement, and the only one — a developer host's wall clock is
+    # slower still and not what this bound is set against); the image build
+    # and the toolchain/crontab/stamp checks around it add the rest. 90 minutes
     # is deliberately generous margin over that, because the point of the
     # bound is not to grade a slow
     # run but to stop falling back to Actions' implicit 6-hour job timeout —

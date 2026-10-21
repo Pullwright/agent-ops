@@ -64,7 +64,7 @@
 # running stage is still code (`is_inert` says so), but `docs/
 # STANDING-DECISIONS.md` is read by no test — see is_suite_exempt below for
 # which, and why — so a change confined to that file and the inert set still
-# needs a build and a publish, just not the ~30 minutes the suite spends
+# needs a build and a publish, just not the ~40 minutes the suite spends
 # proving nothing a changed STANDING-DECISIONS.md could break. The four
 # specification files stay off this list on purpose: test/monitor-digest.test.sh
 # reads their real `## Gotchas` sections, so a change to one of those can
