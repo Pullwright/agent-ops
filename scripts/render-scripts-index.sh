@@ -166,8 +166,15 @@ render_file() {
     return 1
   fi
 
+  # Explicit rc check, not reliance on `set -e`: this function is called as
+  # `if ! render_file ...`, and set -e does not apply to a command whose
+  # exit status a conditional is testing — so a failure inside
+  # generate_index's subshell (an unindexable script, surfaced by
+  # render_group_table's own `exit 1`) would otherwise pass unnoticed here.
   local index_content
-  index_content="$(generate_index)"
+  if ! index_content="$(generate_index)"; then
+    return 1
+  fi
 
   awk -v content="$index_content" -v start="$(scripts_index_start_re)" -v end="$(scripts_index_end_re)" '
     $0 ~ start {
@@ -205,9 +212,9 @@ for file in "${SCRIPTS_INDEX_FILES[@]}"; do
   fi
 done
 
+if (( failed )); then
+  exit 1
+fi
 if (( check_mode )); then
-  if (( failed )); then
-    exit 1
-  fi
   echo "render-scripts-index: all regions match lib/ and scripts/"
 fi

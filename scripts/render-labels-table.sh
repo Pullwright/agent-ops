@@ -206,8 +206,15 @@ render_file() {
     return 1
   fi
 
+  # Explicit rc check, not reliance on `set -e`: this function is called as
+  # `if ! render_file ...`, and set -e does not apply to a command whose
+  # exit status a conditional is testing — so a failure inside
+  # generate_table's subshell (a label with no METADATA_JSON entry,
+  # surfaced by its own `exit 1`) would otherwise pass unnoticed here.
   local table_content
-  table_content="$(generate_table)"
+  if ! table_content="$(generate_table)"; then
+    return 1
+  fi
 
   awk -v content="$table_content" -v start="$(labels_table_start_re)" -v end="$(labels_table_end_re)" '
     $0 ~ start {
@@ -245,9 +252,9 @@ for file in "${LABELS_TABLE_FILES[@]}"; do
   fi
 done
 
+if (( failed )); then
+  exit 1
+fi
 if (( check_mode )); then
-  if (( failed )); then
-    exit 1
-  fi
   echo "render-labels-table: all regions match lib/labels.sh"
 fi

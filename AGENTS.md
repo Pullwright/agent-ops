@@ -27,13 +27,17 @@ For the full details on working with the as-built specifications — understandi
 
 ## Generated regions
 
-Three types of generated regions exist in this repository:
+Five types of generated regions exist in this repository:
 
 1. **Configuration tables** — rendered from `config.schema.json` by `scripts/render-config-table.sh`. Never hand-edit a row inside `<!-- config-table:start … -->` regions; edit the schema instead, then regenerate.
 
 2. **Table of contents** — guides have `<!-- toc:start … -->` markers; specs have directory-wide ones. Rendered by `scripts/render-toc.sh`. Never hand-edit between the markers; edit headings instead, then regenerate.
 
 3. **Stamped regions** — the three `<!-- agent-info:start fragment=... -->` regions in this file carry shared organization text, stamped from `Pullwright/.agent`. Never hand-edit inside them; change the source fragment, then re-stamp.
+
+4. **The labels table** — `docs/reference/labels.md`'s `<!-- labels-table:start … -->` region, rendered from `lib/labels.sh`'s catalogue by `scripts/render-labels-table.sh`. Never hand-edit a row; edit the catalogue (or that script's own metadata) instead, then regenerate.
+
+5. **The scripts index** — `docs/reference/scripts.md`'s `<!-- scripts-index:start … -->` region, rendered from every script's own header comment under `lib/` and `scripts/` by `scripts/render-scripts-index.sh`. Never hand-edit a row; edit the script's own header comment instead, then regenerate.
 
 For the full workflow — how to make changes to configuration, when to regenerate, which checks to run — see `docs/guides/contributing/README.md` § "Generated and stamped regions".
 
