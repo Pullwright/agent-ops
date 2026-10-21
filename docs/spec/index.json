@@ -142,7 +142,7 @@
       "label": "2j",
       "anchor": "impl-ac-2j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 520,
+      "line": 522,
       "title": "Tech-debt arrives pre-fetched, pre-excluded, and its verdict is"
     },
     "IMPL AC 2k": {
@@ -150,7 +150,7 @@
       "label": "2k",
       "anchor": "impl-ac-2k",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 557,
+      "line": 560,
       "title": "Blocked/void exclusion reaches every pre-fetched band, `issues`"
     },
     "IMPL AC 2f": {
@@ -158,7 +158,7 @@
       "label": "2f",
       "anchor": "impl-ac-2f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 799,
+      "line": 802,
       "title": "A preview nobody can reach is never reported as a healthy one"
     },
     "IMPL AC 2g": {
@@ -166,7 +166,7 @@
       "label": "2g",
       "anchor": "impl-ac-2g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 847,
+      "line": 850,
       "title": "Every pipeline comment is visibly attributed (requirement 9d)."
     },
     "IMPL AC 3": {
@@ -174,7 +174,7 @@
       "label": "3",
       "anchor": "impl-ac-3",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 866,
+      "line": 869,
       "title": "A second invocation while one holds the lock exits without acting."
     },
     "IMPL AC 3a": {
@@ -182,7 +182,7 @@
       "label": "3a",
       "anchor": "impl-ac-3a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 867,
+      "line": 870,
       "title": "The lock-held case above costs a `stat` and a `kill -0`, never the"
     },
     "IMPL AC 4": {
@@ -190,7 +190,7 @@
       "label": "4",
       "anchor": "impl-ac-4",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 880,
+      "line": 883,
       "title": "A simulated stale lock (fake lock file, old timestamp, dead PID) is taken"
     },
     "IMPL AC 4a": {
@@ -198,7 +198,7 @@
       "label": "4a",
       "anchor": "impl-ac-4a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 886,
+      "line": 889,
       "title": "A signal leaves a record, a released claim, and no orphaned model"
     },
     "IMPL AC 5": {
@@ -206,7 +206,7 @@
       "label": "5",
       "anchor": "impl-ac-5",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 897,
+      "line": 900,
       "title": "An injected `limit-hit` event with a future `resume_at` and"
     },
     "IMPL AC 5a": {
@@ -214,7 +214,7 @@
       "label": "5a",
       "anchor": "impl-ac-5a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 907,
+      "line": 910,
       "title": "A crash loop, of either class and in each configured repository"
     },
     "IMPL AC 5b": {
@@ -222,7 +222,7 @@
       "label": "5b",
       "anchor": "impl-ac-5b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1023,
+      "line": 1026,
       "title": "A personal access token's own expiry is read, recorded, and escalated"
     },
     "IMPL AC 6a": {
@@ -230,7 +230,7 @@
       "label": "6a",
       "anchor": "impl-ac-6a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1048,
+      "line": 1051,
       "title": "The switch stops both pipelines and lets go by itself."
     },
     "IMPL AC 6c": {
@@ -238,7 +238,7 @@
       "label": "6c",
       "anchor": "impl-ac-6c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1058,
+      "line": 1061,
       "title": "A review round is answered exactly once."
     },
     "IMPL AC 6d": {
@@ -246,7 +246,7 @@
       "label": "6d",
       "anchor": "impl-ac-6d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1073,
+      "line": 1076,
       "title": "Back-pressure cannot deadlock the pipeline (requirement 2.2a)."
     },
     "IMPL AC 6e": {
@@ -254,7 +254,7 @@
       "label": "6e",
       "anchor": "impl-ac-6e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1085,
+      "line": 1088,
       "title": "An abandoned draft is finished, not restarted (requirements 3e, 15c)."
     },
     "IMPL AC 6f": {
@@ -262,7 +262,7 @@
       "label": "6f",
       "anchor": "impl-ac-6f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1097,
+      "line": 1100,
       "title": "A conflicted PR is rebased, not restarted (requirements 3g, 15d)."
     },
     "IMPL AC 6i": {
@@ -270,7 +270,7 @@
       "label": "6i",
       "anchor": "impl-ac-6i",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1110,
+      "line": 1113,
       "title": "A merge-group-checks-failure dequeue is fixed, not restarted"
     },
     "IMPL AC 6g": {
@@ -278,7 +278,7 @@
       "label": "6g",
       "anchor": "impl-ac-6g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1135,
+      "line": 1138,
       "title": "The review runs at the tier the work graded itself (requirements 26a,"
     },
     "IMPL AC 6b": {
@@ -286,7 +286,7 @@
       "label": "6b",
       "anchor": "impl-ac-6b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1146,
+      "line": 1149,
       "title": "The no-op short-circuit skips only what it can prove, and stops skipping"
     },
     "IMPL AC 7": {
@@ -294,7 +294,7 @@
       "label": "7",
       "anchor": "impl-ac-7",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1171,
+      "line": 1174,
       "title": "A blocked verdict round-trips."
     },
     "IMPL AC 7a": {
@@ -302,7 +302,7 @@
       "label": "7a",
       "anchor": "impl-ac-7a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1178,
+      "line": 1181,
       "title": "The mandatory re-check round-trips too (requirement 18a)."
     },
     "IMPL AC 7b": {
@@ -310,7 +310,7 @@
       "label": "7b",
       "anchor": "impl-ac-7b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1198,
+      "line": 1201,
       "title": "An orphaned claim branch is put back in front of the pipeline"
     },
     "IMPL AC 7c": {
@@ -318,7 +318,7 @@
       "label": "7c",
       "anchor": "impl-ac-7c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1237,
+      "line": 1240,
       "title": "Claim visibility is deterministic, both shapes and both directions"
     },
     "IMPL AC 7d": {
@@ -326,7 +326,7 @@
       "label": "7d",
       "anchor": "impl-ac-7d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1250,
+      "line": 1253,
       "title": "The PR-keyed claim outlives the PR's own raising (requirement 17a,"
     },
     "IMPL AC 7e": {
@@ -334,7 +334,7 @@
       "label": "7e",
       "anchor": "impl-ac-7e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1269,
+      "line": 1272,
       "title": "The back-pressure block hands its parts to each other correctly"
     },
     "IMPL AC 7f": {
@@ -342,7 +342,7 @@
       "label": "7f",
       "anchor": "impl-ac-7f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1288,
+      "line": 1291,
       "title": "The decision site folds in what requirement 2.2's count could not see"
     },
     "IMPL AC 7g": {
@@ -1382,7 +1382,7 @@
       "label": "3t",
       "anchor": "impl-c-3t",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 491,
+      "line": 493,
       "title": "`scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo"
     },
     "IMPL C 3y": {
@@ -1390,7 +1390,7 @@
       "label": "3y",
       "anchor": "impl-c-3y",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 511,
+      "line": 514,
       "title": "`scripts/gather-project-review.sh` implementing requirement 3y's"
     },
     "IMPL C 3q": {
@@ -1398,7 +1398,7 @@
       "label": "3q",
       "anchor": "impl-c-3q",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 589,
+      "line": 592,
       "title": "`lib/dependency-gate.sh` implementing requirement 34j: `dependency_refs`,"
     },
     "IMPL C 3r": {
@@ -1406,7 +1406,7 @@
       "label": "3r",
       "anchor": "impl-c-3r",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 599,
+      "line": 602,
       "title": "`lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j"
     },
     "IMPL C 3k": {
@@ -1414,7 +1414,7 @@
       "label": "3k",
       "anchor": "impl-c-3k",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 616,
+      "line": 620,
       "title": "`scripts/gather-register-status.sh` implementing requirement 34i's register"
     },
     "IMPL C 3o": {
@@ -1422,7 +1422,7 @@
       "label": "3o",
       "anchor": "impl-c-3o",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 627,
+      "line": 631,
       "title": "`scripts/gather-review-status.sh` implementing requirement 34i's"
     },
     "IMPL C 3p": {
@@ -1430,7 +1430,7 @@
       "label": "3p",
       "anchor": "impl-c-3p",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 642,
+      "line": 646,
       "title": "`scripts/gather-plan-status.sh` implementing requirement 34i's"
     },
     "IMPL C 3v": {
@@ -1438,7 +1438,7 @@
       "label": "3v",
       "anchor": "impl-c-3v",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 652,
+      "line": 656,
       "title": "`scripts/gather-workflow-basenames.sh` implementing the one read"
     },
     "IMPL C 3b": {
@@ -1446,7 +1446,7 @@
       "label": "3b",
       "anchor": "impl-c-3b",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 664,
+      "line": 668,
       "title": "`scripts/gather-source-state.sh` implementing requirement 3b's sampling:"
     },
     "IMPL C 3d": {
@@ -1454,7 +1454,7 @@
       "label": "3d",
       "anchor": "impl-c-3d",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 675,
+      "line": 679,
       "title": "`scripts/state-sync.sh` implementing requirement 2.5: `push` and `fetch`."
     },
     "IMPL C 3i": {
@@ -1462,7 +1462,7 @@
       "label": "3i",
       "anchor": "impl-c-3i",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 683,
+      "line": 687,
       "title": "`scripts/rotate-logs.sh` implementing requirement 2.6: rotates"
     },
     "IMPL C 3e": {
@@ -1470,7 +1470,7 @@
       "label": "3e",
       "anchor": "impl-c-3e",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 692,
+      "line": 696,
       "title": "`lib/claim.sh` implementing requirement 17a: `claim` (kinds `branch` and"
     },
     "IMPL C 3h": {
@@ -1478,7 +1478,7 @@
       "label": "3h",
       "anchor": "impl-c-3h",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 710,
+      "line": 714,
       "title": "`lib/refinement.sh` implementing the refinement class: requirement 16a's"
     },
     "IMPL C 26": {
@@ -1486,7 +1486,7 @@
       "label": "26",
       "anchor": "impl-c-26",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 733,
+      "line": 737,
       "title": "`lib/label-marker.sh` implementing requirement 39f's own-label-action"
     },
     "IMPL C 3m": {
@@ -1494,7 +1494,7 @@
       "label": "3m",
       "anchor": "impl-c-3m",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 748,
+      "line": 752,
       "title": "`lib/work-gone.sh` implementing requirement 34i's decision:"
     },
     "IMPL C 3w": {
@@ -1502,7 +1502,7 @@
       "label": "3w",
       "anchor": "impl-c-3w",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 757,
+      "line": 761,
       "title": "`lib/void-liveness.sh` implementing requirement 34n's third, fourth,"
     },
     "IMPL C 27": {
@@ -1510,7 +1510,7 @@
       "label": "27",
       "anchor": "impl-c-27",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 787,
+      "line": 791,
       "title": "`lib/preflight.sh` implementing requirement 34m's decision:"
     },
     "IMPL C 3n": {
@@ -1518,7 +1518,7 @@
       "label": "3n",
       "anchor": "impl-c-3n",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 816,
+      "line": 820,
       "title": "`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:"
     },
     "IMPL C 28": {
@@ -1526,7 +1526,7 @@
       "label": "28",
       "anchor": "impl-c-28",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 830,
+      "line": 834,
       "title": "`scripts/sweep-human-visibility.sh` implementing requirement 38c's sweep:"
     },
     "IMPL C 3a": {
@@ -1534,7 +1534,7 @@
       "label": "3a",
       "anchor": "impl-c-3a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 846,
+      "line": 850,
       "title": "The shared library (`lib/cycle-state.sh`, `lib/limit-detect.sh`,"
     },
     "IMPL C 3l": {
@@ -1542,7 +1542,7 @@
       "label": "3l",
       "anchor": "impl-c-3l",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 993,
+      "line": 997,
       "title": "`lib/repo-order.sh` implementing requirement 3's two pure functions:"
     },
     "IMPL C 4": {
@@ -1550,7 +1550,7 @@
       "label": "4",
       "anchor": "impl-c-4",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1006,
+      "line": 1010,
       "title": "`prompts/coordinator.md`, `prompts/implementer.md`, `prompts/reviewer.md`,"
     },
     "IMPL C 4e": {
@@ -1558,7 +1558,7 @@
       "label": "4e",
       "anchor": "impl-c-4e",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1014,
+      "line": 1018,
       "title": "`prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge"
     },
     "IMPL C 4f": {
@@ -1566,7 +1566,7 @@
       "label": "4f",
       "anchor": "impl-c-4f",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1021,
+      "line": 1025,
       "title": "`prompts/enabler-adjudicate.md` implementing requirement 36b's"
     },
     "IMPL C 4a": {
@@ -1574,7 +1574,7 @@
       "label": "4a",
       "anchor": "impl-c-4a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1031,
+      "line": 1035,
       "title": "`lib/prompt-overrides.sh` implementing requirement 4a: `stage_prompt_text`"
     },
     "IMPL C 4b": {
@@ -1582,7 +1582,7 @@
       "label": "4b",
       "anchor": "impl-c-4b",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1050,
+      "line": 1054,
       "title": "`lib/coordinator-brief.sh` implementing requirement 4b:"
     },
     "IMPL C 4i": {
@@ -1590,7 +1590,7 @@
       "label": "4i",
       "anchor": "impl-c-4i",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1059,
+      "line": 1063,
       "title": "`lib/coordinator-input.sh` implementing requirement 4i:"
     },
     "IMPL C 5": {
@@ -1598,7 +1598,7 @@
       "label": "5",
       "anchor": "impl-c-5",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1098,
+      "line": 1102,
       "title": "`README.md`: a landing page naming what the system does and pointing at"
     },
     "IMPL C 6": {
@@ -1606,7 +1606,7 @@
       "label": "6",
       "anchor": "impl-c-6",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1108,
+      "line": 1112,
       "title": "The crontab line: never installed by hand on a containerized node — it is"
     },
     "IMPL C 7": {
@@ -1614,7 +1614,7 @@
       "label": "7",
       "anchor": "impl-c-7",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1113,
+      "line": 1117,
       "title": "`deploy/docker/` — the node image and the node stack (see \"The node image\""
     },
     "IMPL C 8": {
@@ -1622,7 +1622,7 @@
       "label": "8",
       "anchor": "impl-c-8",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1124,
+      "line": 1128,
       "title": "`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy"
     },
     "IMPL C 9": {
@@ -1630,7 +1630,7 @@
       "label": "9",
       "anchor": "impl-c-9",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1126,
+      "line": 1130,
       "title": "`.github/workflows/build-image.yml` — the build-and-publish path for"
     },
     "IMPL C 10": {
@@ -1638,7 +1638,7 @@
       "label": "10",
       "anchor": "impl-c-10",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1145,
+      "line": 1149,
       "title": "`scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the"
     },
     "IMPL C 10a": {
@@ -1646,7 +1646,7 @@
       "label": "10a",
       "anchor": "impl-c-10a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1161,
+      "line": 1165,
       "title": "`scripts/check-graphql-drift.sh` and"
     },
     "IMPL C 11": {
@@ -1654,7 +1654,7 @@
       "label": "11",
       "anchor": "impl-c-11",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1244,
+      "line": 1248,
       "title": "`scripts/watch-node.sh` — a read-only wrapper around"
     },
     "IMPL C 12": {
@@ -1662,7 +1662,7 @@
       "label": "12",
       "anchor": "impl-c-12",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1253,
+      "line": 1257,
       "title": "`scripts/check-node-compose.sh` — the host-side half of the compose-drift"
     },
     "IMPL C 12a": {
@@ -1670,7 +1670,7 @@
       "label": "12a",
       "anchor": "impl-c-12a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1288,
+      "line": 1292,
       "title": "`scripts/check-node-image.sh` — asks whether this node is running the"
     },
     "IMPL C 12b": {
@@ -2070,7 +2070,7 @@
       "label": "53",
       "anchor": "impl-53",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 765,
+      "line": 802,
       "title": "Landing-refusal pre-fetch (issue #979)."
     },
     "IMPL 55": {
@@ -2078,7 +2078,7 @@
       "label": "55",
       "anchor": "impl-55",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 890,
+      "line": 927,
       "title": "Resource usage and budgets, self-measured (D14, issue #606)."
     },
     "IMPL 14": {
@@ -2190,7 +2190,7 @@
       "label": "16a",
       "anchor": "impl-16a",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 446,
+      "line": 449,
       "title": "Under-specified and decision-gated skips are reported, not silent."
     },
     "IMPL 17": {
@@ -2198,7 +2198,7 @@
       "label": "17",
       "anchor": "impl-17",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 496,
+      "line": 499,
       "title": "From the remaining candidates, ranks the qualifying items best-first and"
     },
     "IMPL 64": {
@@ -2206,7 +2206,7 @@
       "label": "64",
       "anchor": "impl-64",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 506,
+      "line": 509,
       "title": "A refined item is selected on what the refinement says."
     },
     "IMPL 17f": {
@@ -2214,7 +2214,7 @@
       "label": "17f",
       "anchor": "impl-17f",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 522,
+      "line": 525,
       "title": "The Script verifies traceability before claiming, rather than trusting"
     },
     "IMPL 65": {
@@ -2222,7 +2222,7 @@
       "label": "65",
       "anchor": "impl-65",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 694,
+      "line": 697,
       "title": "No check verifies a trimmed candidate's `acceptance` against the"
     },
     "IMPL 17h": {
@@ -2230,7 +2230,7 @@
       "label": "17h",
       "anchor": "impl-17h",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 736,
+      "line": 739,
       "title": "The Script composes `context`/`acceptance`/`title` for a Co-Ordinator"
     },
     "IMPL 17a": {
@@ -2238,7 +2238,7 @@
       "label": "17a",
       "anchor": "impl-17a",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 825,
+      "line": 828,
       "title": "The claim."
     },
     "IMPL 17b": {
@@ -2246,7 +2246,7 @@
       "label": "17b",
       "anchor": "impl-17b",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1043,
+      "line": 1046,
       "title": "The orphan-branch sweep."
     },
     "IMPL 17c": {
@@ -2254,7 +2254,7 @@
       "label": "17c",
       "anchor": "impl-17c",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1146,
+      "line": 1149,
       "title": "The post-merge closing-keyword sweep."
     },
     "IMPL 17g": {
@@ -2262,7 +2262,7 @@
       "label": "17g",
       "anchor": "impl-17g",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1210,
+      "line": 1213,
       "title": "The reservation-release retry sweep."
     },
     "IMPL 18": {
@@ -2270,7 +2270,7 @@
       "label": "18",
       "anchor": "impl-18",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1271,
+      "line": 1274,
       "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
     },
     "IMPL 18a": {
@@ -2822,7 +2822,7 @@
       "label": "34o",
       "anchor": "impl-34o",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 797,
+      "line": 811,
       "title": "A refined specification is exactly what a `needs-refinement` block was"
     },
     "IMPL 39": {
@@ -3166,7 +3166,7 @@
       "label": "3",
       "anchor": "impl-3",
       "file": "docs/spec/implementation/requirements/the-script-05.md",
-      "line": 1250,
+      "line": 1259,
       "title": "Repo ordering."
     },
     "IMPL 3a": {
@@ -3174,7 +3174,7 @@
       "label": "3a",
       "anchor": "impl-3a",
       "file": "docs/spec/implementation/requirements/the-script-05.md",
-      "line": 1276,
+      "line": 1285,
       "title": "Findings pre-fetch (cost control)."
     },
     "IMPL 3c": {
@@ -3230,7 +3230,7 @@
       "label": "3k",
       "anchor": "impl-3k",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 679,
+      "line": 683,
       "title": "Implementation-plan path and report-directory passthrough."
     },
     "IMPL 3h": {
@@ -3238,7 +3238,7 @@
       "label": "3h",
       "anchor": "impl-3h",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 739,
+      "line": 743,
       "title": "Refinement carry-forward."
     },
     "IMPL 3o": {
@@ -3246,7 +3246,7 @@
       "label": "3o",
       "anchor": "impl-3o",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 799,
+      "line": 803,
       "title": "Claim visibility (issue #175)."
     },
     "IMPL 3p": {
@@ -3254,7 +3254,7 @@
       "label": "3p",
       "anchor": "impl-3p",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 843,
+      "line": 847,
       "title": "PR-level candidate exclusion (issue #238)."
     },
     "IMPL 3q": {
@@ -3262,7 +3262,7 @@
       "label": "3q",
       "anchor": "impl-3q",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 866,
+      "line": 870,
       "title": "Item-level candidate exclusion."
     },
     "IMPL 3t": {
@@ -3270,7 +3270,7 @@
       "label": "3t",
       "anchor": "impl-3t",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 893,
+      "line": 897,
       "title": "Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue"
     },
     "IMPL 3u": {
@@ -3278,7 +3278,7 @@
       "label": "3u",
       "anchor": "impl-3u",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1032,
+      "line": 1037,
       "title": "Blocked/void exclusion, extended to every other pre-fetched band, and"
     },
     "IMPL 3v": {
@@ -3286,7 +3286,7 @@
       "label": "3v",
       "anchor": "impl-3v",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1134,
+      "line": 1139,
       "title": "Corroboration, scoped to the repositories that said no, and mechanical"
     },
     "IMPL 3w": {
@@ -3846,7 +3846,7 @@
       "label": "M6a",
       "anchor": "mon-m6a",
       "file": "docs/spec/monitor.md",
-      "line": 298,
+      "line": 306,
       "title": "Deterministic."
     },
     "MON M6b": {
@@ -3854,7 +3854,7 @@
       "label": "M6b",
       "anchor": "mon-m6b",
       "file": "docs/spec/monitor.md",
-      "line": 308,
+      "line": 316,
       "title": "Degrade, never fail."
     },
     "MON M7": {
@@ -3862,7 +3862,7 @@
       "label": "M7",
       "anchor": "mon-m7",
       "file": "docs/spec/monitor.md",
-      "line": 314,
+      "line": 333,
       "title": "Bounded by `monitor_max_input_bytes`, on a stated ladder."
     },
     "MON M8": {
@@ -3870,7 +3870,7 @@
       "label": "M8",
       "anchor": "mon-m8",
       "file": "docs/spec/monitor.md",
-      "line": 342,
+      "line": 361,
       "title": "Every exit leaves a record."
     },
     "MON M8a": {
@@ -3878,7 +3878,7 @@
       "label": "M8a",
       "anchor": "mon-m8a",
       "file": "docs/spec/monitor.md",
-      "line": 354,
+      "line": 373,
       "title": "A signal stops the stage first."
     },
     "MON M9": {
@@ -3886,7 +3886,7 @@
       "label": "M9",
       "anchor": "mon-m9",
       "file": "docs/spec/monitor.md",
-      "line": 369,
+      "line": 388,
       "title": "One stage, one model."
     },
     "MON M9a": {
@@ -3894,7 +3894,7 @@
       "label": "M9a",
       "anchor": "mon-m9a",
       "file": "docs/spec/monitor.md",
-      "line": 382,
+      "line": 401,
       "title": "Its caps are derived."
     },
     "MON M10": {
@@ -3902,7 +3902,7 @@
       "label": "M10",
       "anchor": "mon-m10",
       "file": "docs/spec/monitor.md",
-      "line": 394,
+      "line": 413,
       "title": "What the stage is asked for."
     },
     "MON M10a": {
@@ -3910,7 +3910,7 @@
       "label": "M10a",
       "anchor": "mon-m10a",
       "file": "docs/spec/monitor.md",
-      "line": 402,
+      "line": 421,
       "title": "The untrusted-content framing."
     },
     "MON M10b": {
@@ -3918,7 +3918,7 @@
       "label": "M10b",
       "anchor": "mon-m10b",
       "file": "docs/spec/monitor.md",
-      "line": 411,
+      "line": 430,
       "title": "`prompt_overrides.monitor`."
     },
     "MON M11": {
@@ -3926,7 +3926,7 @@
       "label": "M11",
       "anchor": "mon-m11",
       "file": "docs/spec/monitor.md",
-      "line": 418,
+      "line": 437,
       "title": "Every filing carries a provenance line and a finding key."
     },
     "MON M12": {
@@ -3934,7 +3934,7 @@
       "label": "M12",
       "anchor": "mon-m12",
       "file": "docs/spec/monitor.md",
-      "line": 441,
+      "line": 460,
       "title": "A filing budget."
     },
     "MON M13": {
@@ -3942,7 +3942,7 @@
       "label": "M13",
       "anchor": "mon-m13",
       "file": "docs/spec/monitor.md",
-      "line": 452,
+      "line": 471,
       "title": "Search-first dedup."
     },
     "MON M13a": {
@@ -3950,7 +3950,7 @@
       "label": "M13a",
       "anchor": "mon-m13a",
       "file": "docs/spec/monitor.md",
-      "line": 463,
+      "line": 482,
       "title": "Promoting a repeat finding into a pager invariant, autonomously"
     },
     "MON M13b": {
@@ -3958,7 +3958,7 @@
       "label": "M13b",
       "anchor": "mon-m13b",
       "file": "docs/spec/monitor.md",
-      "line": 513,
+      "line": 532,
       "title": "Retirement."
     },
     "MON M14": {
@@ -3966,7 +3966,7 @@
       "label": "M14",
       "anchor": "mon-m14",
       "file": "docs/spec/monitor.md",
-      "line": 527,
+      "line": 546,
       "title": "Filing by class"
     },
     "MON M14a": {
@@ -3974,7 +3974,7 @@
       "label": "M14a",
       "anchor": "mon-m14a",
       "file": "docs/spec/monitor.md",
-      "line": 529,
+      "line": 548,
       "title": "Mechanical"
     },
     "MON M14b": {
@@ -3982,7 +3982,7 @@
       "label": "M14b",
       "anchor": "mon-m14b",
       "file": "docs/spec/monitor.md",
-      "line": 538,
+      "line": 557,
       "title": "Tactical"
     },
     "MON M14c": {
@@ -3990,7 +3990,7 @@
       "label": "M14c",
       "anchor": "mon-m14c",
       "file": "docs/spec/monitor.md",
-      "line": 550,
+      "line": 569,
       "title": "Strategic, or owner-only under requirement 36a"
     },
     "MON M14c1": {
@@ -3998,7 +3998,7 @@
       "label": "M14c1",
       "anchor": "mon-m14c1",
       "file": "docs/spec/monitor.md",
-      "line": 558,
+      "line": 577,
       "title": "A filing reaches GitHub and nothing else."
     },
     "MON M14d": {
@@ -4006,7 +4006,7 @@
       "label": "M14d",
       "anchor": "mon-m14d",
       "file": "docs/spec/monitor.md",
-      "line": 568,
+      "line": 587,
       "title": "Nowhere to file is not a failure."
     },
     "MON M15": {
@@ -4014,7 +4014,7 @@
       "label": "M15",
       "anchor": "mon-m15",
       "file": "docs/spec/monitor.md",
-      "line": 578,
+      "line": 597,
       "title": "The Monitor is the consumer of pager pages."
     },
     "MON M15a": {
@@ -4022,7 +4022,7 @@
       "label": "M15a",
       "anchor": "mon-m15a",
       "file": "docs/spec/monitor.md",
-      "line": 595,
+      "line": 614,
       "title": "The Monitor never closes a page."
     },
     "MON M16": {
@@ -4030,7 +4030,7 @@
       "label": "M16",
       "anchor": "mon-m16",
       "file": "docs/spec/monitor.md",
-      "line": 611,
+      "line": 630,
       "title": "A dated report in the state store."
     },
     "MON M17": {
@@ -4038,7 +4038,7 @@
       "label": "M17",
       "anchor": "mon-m17",
       "file": "docs/spec/monitor.md",
-      "line": 635,
+      "line": 654,
       "title": "A stage-health verdict, from day one."
     },
     "MON M18": {
@@ -4046,7 +4046,7 @@
       "label": "M18",
       "anchor": "mon-m18",
       "file": "docs/spec/monitor.md",
-      "line": 664,
+      "line": 683,
       "title": "Streams."
     },
     "MON M18a": {
@@ -4054,7 +4054,7 @@
       "label": "M18a",
       "anchor": "mon-m18a",
       "file": "docs/spec/monitor.md",
-      "line": 690,
+      "line": 709,
       "title": "`monitor-log.jsonl` is never rotated."
     },
     "MON M19": {
@@ -4062,7 +4062,7 @@
       "label": "M19",
       "anchor": "mon-m19",
       "file": "docs/spec/monitor.md",
-      "line": 698,
+      "line": 717,
       "title": "No `node-state` transition."
     },
     "MON C 1": {
@@ -4070,7 +4070,7 @@
       "label": "1",
       "anchor": "mon-c-1",
       "file": "docs/spec/monitor.md",
-      "line": 709,
+      "line": 728,
       "title": "`monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both"
     },
     "MON C 2": {
@@ -4078,7 +4078,7 @@
       "label": "2",
       "anchor": "mon-c-2",
       "file": "docs/spec/monitor.md",
-      "line": 720,
+      "line": 739,
       "title": "`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the"
     },
     "MON C 3": {
@@ -4086,7 +4086,7 @@
       "label": "3",
       "anchor": "mon-c-3",
       "file": "docs/spec/monitor.md",
-      "line": 724,
+      "line": 743,
       "title": "`prompts/monitor.md` implementing M10, M10a and M15."
     },
     "MON C 4": {
@@ -4094,7 +4094,7 @@
       "label": "4",
       "anchor": "mon-c-4",
       "file": "docs/spec/monitor.md",
-      "line": 725,
+      "line": 744,
       "title": "`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,"
     },
     "MON C 5": {
@@ -4102,7 +4102,7 @@
       "label": "5",
       "anchor": "mon-c-5",
       "file": "docs/spec/monitor.md",
-      "line": 727,
+      "line": 746,
       "title": "`lib/stage-budget.sh`'s `monitor` prior, implementing M9a."
     },
     "MON C 6": {
@@ -4110,7 +4110,7 @@
       "label": "6",
       "anchor": "mon-c-6",
       "file": "docs/spec/monitor.md",
-      "line": 728,
+      "line": 747,
       "title": "`lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s"
     },
     "MON C 7": {
@@ -4118,7 +4118,7 @@
       "label": "7",
       "anchor": "mon-c-7",
       "file": "docs/spec/monitor.md",
-      "line": 730,
+      "line": 749,
       "title": "`deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s"
     },
     "MON C 8": {
@@ -4126,7 +4126,7 @@
       "label": "8",
       "anchor": "mon-c-8",
       "file": "docs/spec/monitor.md",
-      "line": 732,
+      "line": 751,
       "title": "`config.schema.json`'s `monitor_*`, `schedule.monitor_*` and"
     },
     "MON AC 1": {
@@ -4134,7 +4134,7 @@
       "label": "1",
       "anchor": "mon-ac-1",
       "file": "docs/spec/monitor.md",
-      "line": 745,
+      "line": 764,
       "title": "`shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are"
     },
     "MON AC 2": {
@@ -4142,7 +4142,7 @@
       "label": "2",
       "anchor": "mon-ac-2",
       "file": "docs/spec/monitor.md",
-      "line": 747,
+      "line": 766,
       "title": "The digest is what it says it is (M6, M6a)."
     },
     "MON AC 3": {
@@ -4150,7 +4150,7 @@
       "label": "3",
       "anchor": "mon-ac-3",
       "file": "docs/spec/monitor.md",
-      "line": 759,
+      "line": 778,
       "title": "The bound holds exactly (M7)."
     },
     "MON AC 4": {
@@ -4158,7 +4158,7 @@
       "label": "4",
       "anchor": "mon-ac-4",
       "file": "docs/spec/monitor.md",
-      "line": 763,
+      "line": 782,
       "title": "Four findings file three and defer the fourth by key (M12)."
     },
     "MON AC 5": {
@@ -4166,7 +4166,7 @@
       "label": "5",
       "anchor": "mon-ac-5",
       "file": "docs/spec/monitor.md",
-      "line": 769,
+      "line": 788,
       "title": "Dedup (M13)."
     },
     "MON AC 5a": {
@@ -4174,7 +4174,7 @@
       "label": "5a",
       "anchor": "mon-ac-5a",
       "file": "docs/spec/monitor.md",
-      "line": 772,
+      "line": 791,
       "title": "Promotion (M13a)."
     },
     "MON AC 5b": {
@@ -4182,7 +4182,7 @@
       "label": "5b",
       "anchor": "mon-ac-5b",
       "file": "docs/spec/monitor.md",
-      "line": 778,
+      "line": 797,
       "title": "Retirement (M13b)."
     },
     "MON AC 5c": {
@@ -4190,7 +4190,7 @@
       "label": "5c",
       "anchor": "mon-ac-5c",
       "file": "docs/spec/monitor.md",
-      "line": 783,
+      "line": 802,
       "title": "Promotion spends the M12 budget (M12/M13a)."
     },
     "MON AC 6": {
@@ -4198,7 +4198,7 @@
       "label": "6",
       "anchor": "mon-ac-6",
       "file": "docs/spec/monitor.md",
-      "line": 789,
+      "line": 808,
       "title": "The tactical gate is closed by default (M14b)."
     },
     "MON AC 6a": {
@@ -4206,7 +4206,7 @@
       "label": "6a",
       "anchor": "mon-ac-6a",
       "file": "docs/spec/monitor.md",
-      "line": 793,
+      "line": 812,
       "title": "The pages read targets the repository the pager writes to (M6/M15)."
     },
     "MON AC 7": {
@@ -4214,7 +4214,7 @@
       "label": "7",
       "anchor": "mon-ac-7",
       "file": "docs/spec/monitor.md",
-      "line": 801,
+      "line": 820,
       "title": "The stage-health verdict exists (M17)."
     },
     "MON AC 8": {
@@ -4222,7 +4222,7 @@
       "label": "8",
       "anchor": "mon-ac-8",
       "file": "docs/spec/monitor.md",
-      "line": 805,
+      "line": 824,
       "title": "The untrusted framing is byte-identical (M10a)."
     },
     "MON AC 9": {
@@ -4230,7 +4230,7 @@
       "label": "9",
       "anchor": "mon-ac-9",
       "file": "docs/spec/monitor.md",
-      "line": 808,
+      "line": 827,
       "title": "The cadence gate (M4)."
     },
     "MON AC 10": {
@@ -4238,7 +4238,7 @@
       "label": "10",
       "anchor": "mon-ac-10",
       "file": "docs/spec/monitor.md",
-      "line": 812,
+      "line": 831,
       "title": "The role guard and the switch stand this pipeline down too (M2a/M2b)."
     },
     "MON AC 11": {
@@ -4246,7 +4246,7 @@
       "label": "11",
       "anchor": "mon-ac-11",
       "file": "docs/spec/monitor.md",
-      "line": 816,
+      "line": 835,
       "title": "The config tables regenerate clean."
     },
     "REV R1": {
@@ -4350,7 +4350,7 @@
       "label": "R6",
       "anchor": "rev-r6",
       "file": "docs/spec/review.md",
-      "line": 893,
+      "line": 896,
       "title": "Usage-limit detection."
     },
     "REV R7": {
@@ -4358,7 +4358,7 @@
       "label": "R7",
       "anchor": "rev-r7",
       "file": "docs/spec/review.md",
-      "line": 906,
+      "line": 909,
       "title": "Cleanup (always, via a trap)."
     },
     "REV R7a": {
@@ -4366,7 +4366,7 @@
       "label": "R7a",
       "anchor": "rev-r7a",
       "file": "docs/spec/review.md",
-      "line": 912,
+      "line": 915,
       "title": "A signal is a failure with a record."
     },
     "REV R7b": {
@@ -4374,7 +4374,7 @@
       "label": "R7b",
       "anchor": "rev-r7b",
       "file": "docs/spec/review.md",
-      "line": 927,
+      "line": 930,
       "title": "One stage launcher, shared, provider-neutral."
     },
     "REV R8": {
@@ -4382,7 +4382,7 @@
       "label": "R8",
       "anchor": "rev-r8",
       "file": "docs/spec/review.md",
-      "line": 972,
+      "line": 975,
       "title": "Flags."
     },
     "REV R9": {
@@ -4390,7 +4390,7 @@
       "label": "R9",
       "anchor": "rev-r9",
       "file": "docs/spec/review.md",
-      "line": 982,
+      "line": 985,
       "title": "One-shot constraint"
     },
     "REV R10": {
@@ -4398,7 +4398,7 @@
       "label": "R10",
       "anchor": "rev-r10",
       "file": "docs/spec/review.md",
-      "line": 990,
+      "line": 993,
       "title": "Obey the repo."
     },
     "REV R11": {
@@ -4406,7 +4406,7 @@
       "label": "R11",
       "anchor": "rev-r11",
       "file": "docs/spec/review.md",
-      "line": 996,
+      "line": 999,
       "title": "Run the skill end-to-end."
     },
     "REV R11a": {
@@ -4414,7 +4414,7 @@
       "label": "R11a",
       "anchor": "rev-r11a",
       "file": "docs/spec/review.md",
-      "line": 1017,
+      "line": 1020,
       "title": "State a recommendation's default fix."
     },
     "REV R12": {
@@ -4422,7 +4422,7 @@
       "label": "R12",
       "anchor": "rev-r12",
       "file": "docs/spec/review.md",
-      "line": 1034,
+      "line": 1037,
       "title": "File review-sourced debt as labelled issues."
     },
     "REV R12a": {
@@ -4430,7 +4430,7 @@
       "label": "R12a",
       "anchor": "rev-r12a",
       "file": "docs/spec/review.md",
-      "line": 1061,
+      "line": 1064,
       "title": "Cross-reference every mirrored recommendation."
     },
     "REV R13": {
@@ -4438,7 +4438,7 @@
       "label": "R13",
       "anchor": "rev-r13",
       "file": "docs/spec/review.md",
-      "line": 1085,
+      "line": 1088,
       "title": "Raise one pull request."
     },
     "REV R14": {
@@ -4446,7 +4446,7 @@
       "label": "R14",
       "anchor": "rev-r14",
       "file": "docs/spec/review.md",
-      "line": 1102,
+      "line": 1105,
       "title": "Prove it is landable."
     },
     "REV R15": {
@@ -4454,7 +4454,7 @@
       "label": "R15",
       "anchor": "rev-r15",
       "file": "docs/spec/review.md",
-      "line": 1113,
+      "line": 1116,
       "title": "Final message."
     },
     "REV R18": {
@@ -4462,7 +4462,7 @@
       "label": "R18",
       "anchor": "rev-r18",
       "file": "docs/spec/review.md",
-      "line": 1117,
+      "line": 1120,
       "title": "Untrusted external content."
     },
     "REV R16": {
@@ -4470,7 +4470,7 @@
       "label": "R16",
       "anchor": "rev-r16",
       "file": "docs/spec/review.md",
-      "line": 1130,
+      "line": 1133,
       "title": "Streams."
     },
     "REV R17": {
@@ -4478,7 +4478,7 @@
       "label": "R17",
       "anchor": "rev-r17",
       "file": "docs/spec/review.md",
-      "line": 1188,
+      "line": 1193,
       "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
     },
     "REV R19": {
@@ -4486,7 +4486,7 @@
       "label": "R19",
       "anchor": "rev-r19",
       "file": "docs/spec/review.md",
-      "line": 1196,
+      "line": 1201,
       "title": "Per-stage health, mirrored (agent-ops#996)."
     },
     "REV C 1": {
@@ -4494,7 +4494,7 @@
       "label": "1",
       "anchor": "rev-c-1",
       "file": "docs/spec/review.md",
-      "line": 1258,
+      "line": 1263,
       "title": "`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,"
     },
     "REV C 2": {
@@ -4502,7 +4502,7 @@
       "label": "2",
       "anchor": "rev-c-2",
       "file": "docs/spec/review.md",
-      "line": 1268,
+      "line": 1273,
       "title": "`prompts/project-reviewer.md` implementing R9–R15. It must embed the"
     },
     "REV C 3": {
@@ -4510,7 +4510,7 @@
       "label": "3",
       "anchor": "rev-c-3",
       "file": "docs/spec/review.md",
-      "line": 1271,
+      "line": 1276,
       "title": "`.claude/skills/project-review/` — the vendored skill (pinned; re-sync"
     },
     "REV C 4": {
@@ -4518,7 +4518,7 @@
       "label": "4",
       "anchor": "rev-c-4",
       "file": "docs/spec/review.md",
-      "line": 1273,
+      "line": 1278,
       "title": "`config.json` — the `repository_review` block."
     },
     "REV C 5": {
@@ -4526,7 +4526,7 @@
       "label": "5",
       "anchor": "rev-c-5",
       "file": "docs/spec/review.md",
-      "line": 1274,
+      "line": 1279,
       "title": "`docs/guides/operating/README.md` names the review pipeline under \"How"
     },
     "REV C 6": {
@@ -4534,7 +4534,7 @@
       "label": "6",
       "anchor": "rev-c-6",
       "file": "docs/spec/review.md",
-      "line": 1278,
+      "line": 1283,
       "title": "The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in th..."
     },
     "REV AC 1": {
@@ -4542,7 +4542,7 @@
       "label": "1",
       "anchor": "rev-ac-1",
       "file": "docs/spec/review.md",
-      "line": 1293,
+      "line": 1298,
       "title": "`shellcheck review-cycle.sh` is clean."
     },
     "REV AC 2": {
@@ -4550,7 +4550,7 @@
       "label": "2",
       "anchor": "rev-ac-2",
       "file": "docs/spec/review.md",
-      "line": 1294,
+      "line": 1299,
       "title": "`--dry-run` completes against the real repos: the stand-down and skip-guard"
     },
     "REV AC 3": {
@@ -4558,7 +4558,7 @@
       "label": "3",
       "anchor": "rev-ac-3",
       "file": "docs/spec/review.md",
-      "line": 1297,
+      "line": 1302,
       "title": "A second invocation while the review lock is held exits without acting; and"
     },
     "REV AC 4": {
@@ -4566,7 +4566,7 @@
       "label": "4",
       "anchor": "rev-ac-4",
       "file": "docs/spec/review.md",
-      "line": 1300,
+      "line": 1305,
       "title": "Skip-guard: with today's report directory present on a repo's default"
     },
     "REV AC 4b": {
@@ -4574,7 +4574,7 @@
       "label": "4b",
       "anchor": "rev-ac-4b",
       "file": "docs/spec/review.md",
-      "line": 1305,
+      "line": 1310,
       "title": "The role guard stands this pipeline down too (R2b)."
     },
     "REV AC 4c": {
@@ -4582,7 +4582,7 @@
       "label": "4c",
       "anchor": "rev-ac-4c",
       "file": "docs/spec/review.md",
-      "line": 1309,
+      "line": 1314,
       "title": "A peer's usage-limit hit stands this pipeline down too (R2c/R6)."
     },
     "REV AC 4a": {
@@ -4590,7 +4590,7 @@
       "label": "4a",
       "anchor": "rev-ac-4a",
       "file": "docs/spec/review.md",
-      "line": 1314,
+      "line": 1319,
       "title": "The switch stands this pipeline down too (R2a)."
     },
     "REV AC 4d": {
@@ -4598,7 +4598,7 @@
       "label": "4d",
       "anchor": "rev-ac-4d",
       "file": "docs/spec/review.md",
-      "line": 1325,
+      "line": 1330,
       "title": "The review-branch claim gates the review (R5.0)."
     },
     "REV AC 4e": {
@@ -4606,7 +4606,7 @@
       "label": "4e",
       "anchor": "rev-ac-4e",
       "file": "docs/spec/review.md",
-      "line": 1334,
+      "line": 1339,
       "title": "Per-repository resolution, and duplicate slugs refused (R1b)."
     },
     "REV AC 4f": {
@@ -4614,7 +4614,7 @@
       "label": "4f",
       "anchor": "rev-ac-4f",
       "file": "docs/spec/review.md",
-      "line": 1352,
+      "line": 1357,
       "title": "The dated stand-down is two-tier (R3.3)."
     },
     "REV AC 4g": {
@@ -4622,7 +4622,7 @@
       "label": "4g",
       "anchor": "rev-ac-4g",
       "file": "docs/spec/review.md",
-      "line": 1367,
+      "line": 1372,
       "title": "The report directory is configurable, and unset is unchanged (R4a)."
     },
     "REV AC 4h": {
@@ -4630,7 +4630,7 @@
       "label": "4h",
       "anchor": "rev-ac-4h",
       "file": "docs/spec/review.md",
-      "line": 1405,
+      "line": 1410,
       "title": "Instructions and context reach the review, and a broken configured path"
     },
     "REV AC 5": {
@@ -4638,7 +4638,7 @@
       "label": "5",
       "anchor": "rev-ac-5",
       "file": "docs/spec/review.md",
-      "line": 1446,
+      "line": 1451,
       "title": "Injected-skill isolation:"
     },
     "REV AC 6": {
@@ -4646,7 +4646,7 @@
       "label": "6",
       "anchor": "rev-ac-6",
       "file": "docs/spec/review.md",
-      "line": 1455,
+      "line": 1460,
       "title": "Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review"
     },
     "REV AC 7": {
@@ -4654,7 +4654,7 @@
       "label": "7",
       "anchor": "rev-ac-7",
       "file": "docs/spec/review.md",
-      "line": 1458,
+      "line": 1463,
       "title": "One supervised full run (`--once`): for each non-skipped repo it produces a"
     },
     "REV AC 8": {
@@ -4662,7 +4662,7 @@
       "label": "8",
       "anchor": "rev-ac-8",
       "file": "docs/spec/review.md",
-      "line": 1463,
+      "line": 1468,
       "title": "Cross-references land (R12a):"
     },
     "REV AC 9": {
@@ -4670,7 +4670,7 @@
       "label": "9",
       "anchor": "rev-ac-9",
       "file": "docs/spec/review.md",
-      "line": 1470,
+      "line": 1475,
       "title": "The untrusted-content framing holds for the Reviewer-Agent too"
     },
     "REV AC 10": {
@@ -4678,7 +4678,7 @@
       "label": "10",
       "anchor": "rev-ac-10",
       "file": "docs/spec/review.md",
-      "line": 1476,
+      "line": 1481,
       "title": "A stage-health verdict for `project-reviewer` (R19, agent-ops#996)."
     }
   }
