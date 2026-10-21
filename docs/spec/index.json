@@ -30,7 +30,7 @@
       "label": "1c",
       "anchor": "impl-ac-1c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 104,
+      "line": 127,
       "title": "The stack comes up from nothing and is idempotent."
     },
     "IMPL AC 1d": {
@@ -38,7 +38,7 @@
       "label": "1d",
       "anchor": "impl-ac-1d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 334,
+      "line": 357,
       "title": "State replicates per node, and comes back as peers."
     },
     "IMPL AC 1e": {
@@ -46,7 +46,7 @@
       "label": "1e",
       "anchor": "impl-ac-1e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 408,
+      "line": 431,
       "title": "The fleet flags reach every node."
     },
     "IMPL AC 1f": {
@@ -54,7 +54,7 @@
       "label": "1f",
       "anchor": "impl-ac-1f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 530,
+      "line": 553,
       "title": "A provider-qualified model id resolves; an unsupported one fails fast"
     },
     "IMPL AC 1g": {
@@ -62,7 +62,7 @@
       "label": "1g",
       "anchor": "impl-ac-1g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 548,
+      "line": 571,
       "title": "Every shell script in the repository is shellcheck-clean, and a caller"
     },
     "IMPL AC 2m": {
@@ -1638,7 +1638,7 @@
       "label": "10",
       "anchor": "impl-c-10",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1167,
+      "line": 1172,
       "title": "`scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the"
     },
     "IMPL C 10a": {
@@ -1646,7 +1646,7 @@
       "label": "10a",
       "anchor": "impl-c-10a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1183,
+      "line": 1188,
       "title": "`scripts/check-graphql-drift.sh` and"
     },
     "IMPL C 11": {
@@ -1654,7 +1654,7 @@
       "label": "11",
       "anchor": "impl-c-11",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1266,
+      "line": 1271,
       "title": "`scripts/watch-node.sh` — a read-only wrapper around"
     },
     "IMPL C 12": {
@@ -1662,7 +1662,7 @@
       "label": "12",
       "anchor": "impl-c-12",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1275,
+      "line": 1280,
       "title": "`scripts/check-node-compose.sh` — the host-side half of the compose-drift"
     },
     "IMPL C 12a": {
@@ -1670,7 +1670,7 @@
       "label": "12a",
       "anchor": "impl-c-12a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1310,
+      "line": 1315,
       "title": "`scripts/check-node-image.sh` — asks whether this node is running the"
     },
     "IMPL C 12b": {

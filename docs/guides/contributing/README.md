@@ -335,12 +335,13 @@ docker build -f deploy/docker/Dockerfile -t agent-ops:dev .
 AGENT_OPS_TEST_IMAGE=agent-ops:dev ./scripts/run-tests.sh
 ```
 
-CI runs the same suite inside the freshly built image on every push that could change it, along with toolchain, crontab and role-guard checks (see `.github/workflows/build-image.yml`). A change confined to documentation builds no image and runs no suite; anything else does, including `prompts/*.md`, since those are what the pipeline feeds to `claude`.
+CI runs the same suite inside the freshly built image on every push that could change it, along with toolchain, crontab and role-guard checks (see `.github/workflows/build-image.yml`). A change confined to documentation builds no image and runs no suite; a change confined to paths the image delivers but no test reads — `docs/STANDING-DECISIONS.md` alone today, optionally beside inert documentation — builds, verifies and publishes an image but runs no suite; anything else does both, including `prompts/*.md`, since those are what the pipeline feeds to `claude`.
 
-To check whether your branch will trigger an image build:
+To check whether your branch will trigger an image build, and whether it will run the suite:
 
 ```bash
 git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh
+git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh --skip-suite-only
 ```
 
 ### Measuring the documentation

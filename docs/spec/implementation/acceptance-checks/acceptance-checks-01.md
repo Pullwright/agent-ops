@@ -29,7 +29,8 @@ oblige anyone to edit a test.
    --version` prints `0.10.0`, the same version
    `.github/workflows/shellcheck.yml` pins; `supercronic -test
    /app/deploy/docker/crontab` reports the crontab valid; the `test/` suite
-   passes inside the container; and `/app/agent-cycle.sh` with no role set
+   passes inside the container, save for the one narrower class of change
+   check 1b-i carves out of it; and `/app/agent-cycle.sh` with no role set
    exits 0 through the requirement 2.4 guard. The build itself asserts one
    thing about `gh` beyond its version, because `gh` is the one part of the
    toolchain installed unpinned: a `grep -aF` over the installed binary for
@@ -45,8 +46,9 @@ oblige anyone to edit a test.
    tested path — so a change that breaks either architecture's image cannot be
    merged, and it is the only place the `test/` suite runs in CI. On `main` the
    workflow publishes both architectures as one manifest list per tag.
-1b-i. <a id="impl-ac-1b-i"></a>**A documentation-only change builds nothing, and everything else
-   builds.** `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
+1b-i. <a id="impl-ac-1b-i"></a>**A documentation-only change builds nothing, everything else builds,
+   and one narrower class builds without running the suite.**
+   `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
    calls a change documentation-only when every path in it is under `docs/`
    — except `docs/STANDING-DECISIONS.md` and every `docs/*-SPEC.md`, which the
    image *does* deliver to a running stage and so count as code — or is
@@ -101,6 +103,27 @@ oblige anyone to edit a test.
    `needs`, its `build` jobs now being successful on a documentation-only
    change rather than skipped. A documentation-only merge to `main` publishes
    no image, and no tag carries that commit's SHA.
+   The script's `--skip-suite-only` mode asks the narrower question the
+   allowlist above cannot: of the paths the image *is* the delivery path for,
+   which does no test read? `docs/STANDING-DECISIONS.md` alone, and the mode
+   answers yes only when every path in the change is either that file or in
+   the inert set. The four specification files are deliberately not on that
+   list, because `test/monitor-digest.test.sh` reads their real `## Gotchas`
+   sections and a change to one of them can fail a test. The `changes` job
+   emits the answer as a second output, `skip_suite`, computed in the same
+   step and false whenever `docs_only` is true; exactly one step reads it —
+   "Run the test suite inside the image", skipped when either output is
+   `true`. Every other step of the `build` jobs, and the whole of `publish`,
+   stays gated on the documentation-only answer alone, so a change in this
+   narrower class still builds the image on both architectures, still
+   verifies the toolchain, the crontab and the role guard, and still
+   publishes to GHCR on `main` — it only declines to spend the suite's ~20
+   minutes per architecture proving nothing such a change could break. The
+   test covers all three outcomes and guards this one's premise: it fails if
+   any `test/*.test.sh` but itself so much as names
+   `docs/STANDING-DECISIONS.md` outside a comment, so the exemption lapses
+   loudly the day a test starts depending on the file's content rather than
+   going on quietly skipping a suite that by then exercises it.
 1c. <a id="impl-ac-1c"></a>**The stack comes up from nothing and is idempotent.** With a `.env` copied
    from `.env.example` and `COMPOSE_PROFILES=local`, `docker compose up -d` in
    `deploy/docker/` starts `scheduler` and `dashboard-local` on fresh volumes;

@@ -1152,7 +1152,12 @@ What exists, and the requirements each part answers to:
    the workflow's own `GITHUB_TOKEN`, so nothing about publishing depends on a
    human's credentials. Its `changes` job decides whether there is an image
    worth building at all, through `scripts/is-docs-only.sh` — the allowlist of
-   paths the image is not the delivery path for (requirement 1b-i). The rule lives in
+   paths the image is not the delivery path for (requirement 1b-i). The same
+   script under `--skip-suite-only` answers a second, narrower question — is
+   every changed path one the image delivers but no test reads? — which the
+   job emits as `skip_suite` and which gates the test-suite step alone, so a
+   change confined to `docs/STANDING-DECISIONS.md` is still built, verified
+   and published without the suite being spent on it. The rule lives in
    the script rather than in the workflow for the reason component 10 gives
    about its own file set, and because a rule that decides what reaches a node
    is worth unit-testing. The build job is bounded twice over: `timeout-minutes:
