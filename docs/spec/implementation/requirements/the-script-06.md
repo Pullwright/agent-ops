@@ -899,8 +899,14 @@
    as revised, #869/#875).** For each configured repo whose `sources` include
    `tech-debt` (requirement 48: freshly for the one repository this cycle
    picks, replayed from this node's expensive-gather cache for the rest),
-   run `scripts/gather-tech-debt.sh <slug>` and attach the array
-   to that repo's entry as `tech_debt`. Each entry is one candidate: an open
+   run `scripts/gather-tech-debt.sh <slug>`, which prints `{"candidates": […],
+   "excluded": […]|null}` — the same shape requirement 3j's own
+   `scripts/gather-issues.sh` prints (agent-ops#2603) — and attach
+   `.candidates` to that repo's entry as `tech_debt` and `.excluded` as
+   `tech_debt_excluded` (or `[]` when `.excluded` is `null`: the gather did
+   not run to completion, the identical "unknown is not known-empty" reading
+   requirement 3j's own `issues_excluded` already gets). Each `tech_debt`
+   entry is one candidate: an open
    GitHub issue carrying the product-managed label `pw::type:tech-debt` — the
    D24 trust anchor, since only a collaborator with triage can apply it, so an
    issue's membership of this band is trustable even though its body stays
@@ -909,12 +915,28 @@
    labelled `blocked`, not labelled `pw::pager` (agent-ops#2564), and naming
    no still-open `Blocked-by:` reference (requirement 34j), shared between
    the two gatherers via
-   `lib/issue-prefetch.sh` rather than re-derived. `source: "tech-debt"`, the
+   `lib/issue-prefetch.sh` rather than re-derived. Each `tech_debt_excluded`
+   entry is `{number, reason}` — one per labelled issue the four drops above
+   removed, `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
+   `"blocked-by: <ref>"` — scoped to issues that actually carried the
+   `pw::type:tech-debt` label (an issue never carrying it was never a
+   `tech_debt` candidate to begin with, the same "never a candidate"
+   reasoning requirement 3j's own `issues_excluded` already applies to the
+   pull requests its listing interleaves). Unlike `issues_excluded`,
+   `tech_debt_excluded` is read by exactly one consumer —
+   `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler filter
+   (requirement 35f) — and is neither echoed onto the Co-Ordinator's own
+   runtime input (`prompts/coordinator.md` carries no `tech_debt_excluded`
+   key) nor logged on change the way requirement 33's `issues-excluded` event
+   is; giving it that same dashboard/Co-Ordinator visibility is tracked
+   separately (agent-ops#2606) rather than folded into the fix this record
+   exists for. `source: "tech-debt"`, the
    bare issue number as `ref` (and as `number`), `title`, `url`, `labels`,
    `author`, `created_at`, `updated_at`, and the whole issue thread — body and
    every comment, verbatim — as `body`/`comments`. Sorted by issue number
-   ascending. Degrades to `[]` (exit 0) on any failure, like requirements 3a
-   and 3j: this array is *given to* the Co-Ordinator, so an empty array
+   ascending. Degrades to `{"candidates":[],"excluded":null}` (exit 0) on any
+   failure, like requirements 3a
+   and 3j: this array is *given to* the Co-Ordinator, so an empty `candidates`
    faithfully records what it saw, and the repo's `head_sha` (already in the
    no-op fingerprint, requirement 3b) still busts the fingerprint when a real
    commit changes the candidate set out from under a transient failure.

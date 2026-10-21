@@ -530,8 +530,9 @@ with the Reviewer's own.
     is then always the one picked, exactly as before this requirement
     existed.
 
-    The nine values `expensive_gather_cache_save` writes into a repository's
-    cache document — the eight raw bands plus `issues_excluded` — are each
+    The ten values `expensive_gather_cache_save` writes into a repository's
+    cache document — the eight raw bands plus `issues_excluded` and
+    `tech_debt_excluded` (agent-ops#2603) — are each
     unbounded past the call that builds it (agent-ops's own raw `tech_debt`
     band alone has reached 421,622 bytes), so, per requirement 4g, they reach
     `jq` on stdin, one document per line, bound positionally with `input as

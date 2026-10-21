@@ -16,17 +16,25 @@
 #     labelled `blocked`, an issue labelled `pw::pager` (agent-ops#2564), and
 #     an issue naming a still-open `Blocked-by:` reference (requirement 34j)
 #     are all dropped.
+#   - **The exclusion report** (agent-ops#2603, mirroring scripts/
+#     gather-issues.sh's own since agent-ops#447): every issue the
+#     deterministic filter drops reappears in the sibling `excluded` array
+#     with its number and why, `reason` one of `"assigned"`,
+#     `"blocked-label"`, `"pager"`, `"blocked-by: <ref>"` — this is the record
+#     `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler filter
+#     (requirement 35f) reads, so a drop that left no trace here would make
+#     that filter unable to fire on its own target class again.
 #   - **Each candidate carries the whole issue thread verbatim** — `body` and
 #     every comment — plus `source`, `ref` (the bare issue number, as a
 #     string), `number`, `url`, `title`, `labels`, `author`, `created_at` and
 #     `updated_at`.
 #   - **Sorted by issue number ascending** — "the oldest item is kept first"
 #     (lib/coordinator-input.sh's own `keep_order_tech_debt`).
-#   - **Degrades to `[]` (exit 0) on any failure**, silently for none of the
-#     old register-specific cases (there is no register left to read) but
-#     always loudly on stderr for a genuine API failure — matching
-#     scripts/gather-issues.sh's own degrade contract, which this gatherer
-#     now shares in spirit.
+#   - **Degrades to `{"candidates":[],"excluded":null}` (exit 0) on any
+#     failure**, silently for none of the old register-specific cases (there
+#     is no register left to read) but always loudly on stderr for a genuine
+#     API failure — the identical contract scripts/gather-issues.sh's own
+#     degrade() follows.
 #
 # The gatherer is run for real against a stubbed `gh`, so the assertions are
 # about the shipped script rather than a copy of its logic. Since
@@ -182,7 +190,9 @@ cat >"$STUB_REFS_DIR/24.json" <<'EOF'
 {"state": "open"}
 EOF
 
-out="$("$GATHER" o/r 2>"$tmp_dir/err")"; rc=$?
+raw="$("$GATHER" o/r 2>"$tmp_dir/err")"; rc=$?
+out="$(jq -c '.candidates' <<<"$raw")"
+excl="$(jq -c '.excluded' <<<"$raw")"
 
 # --- The filter: what arrives, and what never does ---
 assert_eq "exits 0" "0" "$rc"
@@ -199,6 +209,22 @@ assert_eq "an issue carrying no pw::type:tech-debt label at all is never a candi
 assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
   "false" "$(jq 'any(.[]; .number == 25)' <<<"$out")"
 assert_eq "nothing on stderr on the success path" "" "$(cat "$tmp_dir/err")"
+
+# --- The exclusion report (agent-ops#2603) ---
+assert_eq "exactly the four dropped-but-labelled issues are reported excluded" \
+  "4" "$(jq 'length' <<<"$excl")"
+assert_eq "the assigned issue is reported, reason assigned" \
+  "assigned" "$(jq -r '.[] | select(.number == 21) | .reason' <<<"$excl")"
+assert_eq "the Blocked-labelled issue is reported, reason blocked-label" \
+  "blocked-label" "$(jq -r '.[] | select(.number == 22) | .reason' <<<"$excl")"
+assert_eq "the unresolved Blocked-by issue is reported, reason naming the reference" \
+  "blocked-by: #24" "$(jq -r '.[] | select(.number == 23) | .reason' <<<"$excl")"
+assert_eq "the pw::pager-labelled issue is reported, reason pager" \
+  "pager" "$(jq -r '.[] | select(.number == 25) | .reason' <<<"$excl")"
+assert_eq "the un-labelled issue #18 is never reported — it was never a candidate" \
+  "false" "$(jq 'any(.[]; .number == 18)' <<<"$excl")"
+assert_eq "excluded is sorted by issue number ascending too" \
+  "21 22 23 25" "$(jq -r '[.[].number] | join(" ")' <<<"$excl")"
 
 # --- Sorted by issue number ascending ---
 assert_eq "sorted by issue number ascending, oldest first" \
@@ -225,11 +251,16 @@ assert_eq "a commentless issue carries an empty comments array, not null" \
 cat >"$STUB_REFS_DIR/24.json" <<'EOF'
 {"state": "closed"}
 EOF
-out_resolved="$("$GATHER" o/r 2>"$tmp_dir/err2")"
+raw_resolved="$("$GATHER" o/r 2>"$tmp_dir/err2")"
+out_resolved="$(jq -c '.candidates' <<<"$raw_resolved")"
+excl_resolved="$(jq -c '.excluded' <<<"$raw_resolved")"
 assert_eq "a resolved Blocked-by reference stops excluding the issue" \
   "true" "$(jq 'any(.[]; .number == 23)' <<<"$out_resolved")"
+assert_eq "  ... and it no longer appears in excluded either" \
+  "false" "$(jq 'any(.[]; .number == 23)' <<<"$excl_resolved")"
 
-# --- Degrading: a failing API yields [], exit 0, and is loud on stderr ---
+# --- Degrading: a failing API yields {"candidates":[],"excluded":null}, ---
+# --- exit 0, and is loud on stderr ---
 cat >"$tmp_dir/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 echo "stub gh: HTTP 500" >&2
@@ -239,7 +270,8 @@ chmod +x "$tmp_dir/bin/gh"
 
 degraded="$("$GATHER" o/r 2>"$tmp_dir/degrade.err")"
 degraded_rc=$?
-assert_eq "a failing API degrades to []" "[]" "$degraded"
+assert_eq "a failing API degrades to {candidates:[],excluded:null}" \
+  '{"candidates":[],"excluded":null}' "$degraded"
 assert_eq "  ... and still exits 0" "0" "$degraded_rc"
 if [[ -s "$tmp_dir/degrade.err" ]]; then
   printf 'ok   - %s\n' "and the failure is loud on stderr"
@@ -249,7 +281,8 @@ else
 fi
 
 # --- The gatherer fails safe against the real API too ---
-assert_eq "an unknown repo yields [] and exit 0, never a broken cycle" "[]" \
+assert_eq "an unknown repo degrades the same way and exit 0, never a broken cycle" \
+  '{"candidates":[],"excluded":null}' \
   "$(PATH="${PATH#"$tmp_dir/bin:"}" "$GATHER" "Poetic-Poems/does-not-exist" 2>/dev/null)"
 assert_eq "  ... and exits 0" "0" "$?"
 

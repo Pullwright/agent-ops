@@ -48,6 +48,7 @@ What exists, and the requirements each part answers to:
    `gather_abandoned_drafts`, `gather_merge_conflicts`, `gather_dequeued`,
    `gather_human_visibility_hygiene`,
    `gather_issues`, `gather_issues_excluded`, `gather_tech_debt`,
+   `gather_tech_debt_excluded`,
    `gather_project_review_candidates`, `gather_implementation_plan_candidates`,
    `gather_unvoid_requests`, `gather_hand_flagged_refinements`,
    `gather_source_state`, `gather_register_status`, `gather_review_status`,
@@ -129,12 +130,10 @@ What exists, and the requirements each part answers to:
    pass through `exclude_blocked_or_void_issues`) and settles
    `refinements_json`; before that subtraction it snapshots
    `live_pr_refs_json` and `live_td_refs_json` — requirement 35e's two live
-   sets — and `dependency_threads_json`, requirement 35f's merged
-   `issues`-plus-`tech_debt` thread map, from the untouched
-   gather, because the entries the subtraction removes are exactly the ones
-   those filters are asked about (issue #1119; `live_td_refs_json` widened this
-   the same way by issue #1699, and `dependency_threads_json` by issue
-   #2593). It settles `decisions_json` alongside
+   sets, from the untouched gather, because the entries the subtraction
+   removes are exactly the ones those filters are asked about (issue #1119;
+   `live_td_refs_json` widened this the same way by issue #1699). It settles
+   `decisions_json` alongside
    `refinements_json` and then, only where `refiner_model` is set, makes a
    further subtraction of its own, over the same bands:
    `exclude_decision_pending_items` withholds every item that map still names
@@ -156,9 +155,12 @@ What exists, and the requirements each part answers to:
    `compute_enabler_eligible_set` derives
    `enabler_eligible_json` from the source-state digests of the repositories
    that sampled cleanly — how "is that escalation issue still open?" is
-   answered without a `gh` call per escalation — consumes the first two
-   snapshots for requirement 35e's filter and the third for requirement
-   35f's, and ends by setting
+   answered without a `gh` call per escalation — consumes the two snapshots
+   above for requirement 35e's filter, builds `still_blocked_by_json`
+   directly from `ordered_repos_json`'s own `issues_excluded`/
+   `tech_debt_excluded` arrays (neither of which the blocked/void
+   subtraction above ever touches, so no snapshot of its own is needed) for
+   requirement 35f's filter, and ends by setting
    `enabler_allowed`. `prefetch_refiner_sources` seeds `refiner_repos_json`
    from that snapshot and fetches the Refiner's own
    two extra sources into it, which `ordered_repos_json`
@@ -496,17 +498,30 @@ What exists, and the requirements each part answers to:
 3t. <a id="impl-c-3t"></a>`scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo
    slug — and nothing else, since an issue is not read off a branch — lists
    that repo's open issues carrying the `pw::type:tech-debt` label and prints
-   the JSON array of the ones that survive the deterministic filter it shares
-   with `scripts/gather-issues.sh` (`lib/issue-prefetch.sh`: not a pull
+   `{"candidates": […], "excluded": […]|null}` — the same shape
+   `scripts/gather-issues.sh` prints (agent-ops#2603), since both share the
+   identical deterministic filter via `lib/issue-prefetch.sh`. `candidates` is
+   the JSON array of the labelled issues that survive that filter (not a pull
    request, not assigned, not labelled `blocked` whatever the case, not
    labelled `pw::pager` (agent-ops#2564), and naming no still-open
    `Blocked-by:` reference — requirement 34j), each
    carrying `source: "tech-debt"`, its bare issue number as `ref` (a string)
    and as `number`, `url`, `title`, `labels`, `author`, `created_at`,
    `updated_at`, its `body`, and its whole comment thread verbatim as
-   `comments` — sorted by issue number ascending. A repo with no such issues
-   prints `[]`; an API failure prints `[]` with `gh`'s diagnosis on stderr.
-   Fails safe to `[]` (exit 0). Claimed/blocked/
+   `comments` — sorted by issue number ascending. `excluded` is `{number,
+   reason}` for every labelled issue the four deterministic drops above
+   removed, `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
+   `"blocked-by: <ref>"` — an issue never carrying the label to begin with is
+   reported in neither array, the same "never a candidate" reasoning that
+   already excludes a pull request from `scripts/gather-issues.sh`'s own
+   `excluded`. `lib/eligibility.sh`'s open-`Blocked-by:`-reference Enabler
+   filter (requirement 35f) reads this array directly, rather than
+   re-deriving the live check from a thread this drop already removed from
+   `candidates`. A repo with no such issues prints `{"candidates":[],
+   "excluded":[]}`. Fails safe to `{"candidates":[],"excluded":null}` (exit
+   0) with an API failure's diagnosis loud on stderr — `excluded` is `null`,
+   not `[]`, because a filter that did not run to completion does not know
+   the set to be empty. Claimed/blocked/
    void exclusion is deliberately not this script's job — the cycle applies
    `exclude_claimed_items` and the new `exclude_blocked_or_void_items`
    (both in `lib/candidate-select.sh`, alongside `exclude_claimed_prs`) once the

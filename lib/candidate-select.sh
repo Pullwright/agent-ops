@@ -2256,6 +2256,16 @@ gather_issues_excluded() {
   fi
 }
 
+# tech_debt_excluded_sidecar_path SLUG — the sibling exclusion-report path
+# `gather_tech_debt` writes and `gather_tech_debt_excluded` reads back for
+# SLUG, the identical pairing `issues_excluded_sidecar_path` above already
+# gives `gather_issues`/`gather_issues_excluded` (agent-ops#2603).
+tech_debt_excluded_sidecar_path() {
+  local slug="$1" safe
+  safe="${slug//\//_}"
+  printf '%s' "$cycle_dir/tech-debt-excluded-$safe.json"
+}
+
 # Pre-fetch the repo's open `pw::type:tech-debt`-labelled issues (requirement
 # 3t, issue #310; D15 as revised, #869/#875) — the same move issues, findings,
 # review-feedback, merge-conflicts and abandoned-drafts already got: a
@@ -2267,16 +2277,52 @@ gather_issues_excluded() {
 # below) — this function only ever returns the raw candidate set. No
 # `default_branch` argument: unlike the register-backed gatherer this
 # replaced, an issue is not read off a branch.
+#
+# scripts/gather-tech-debt.sh now prints `{candidates, excluded}`, the same
+# shape scripts/gather-issues.sh's own `gather_issues` already unwraps below
+# (agent-ops#2603): `candidates` is written to `tech-debt-$safe.json` exactly
+# as the whole array always was, so this function still *returns* a bare
+# array and every existing caller of `gather_tech_debt` is unchanged.
+# `excluded` is written alongside it to `tech_debt_excluded_sidecar_path`'s
+# path, read back by `gather_tech_debt_excluded` below — see that function's
+# own header, and scripts/gather-tech-debt.sh's, for why the report exists.
 gather_tech_debt() {
-  local slug="$1" out safe
+  local slug="$1" out safe raw candidates excl
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-tech-debt.sh" "$slug" \
+  raw="$("$SCRIPT_DIR/scripts/gather-tech-debt.sh" "$slug" \
         2>"$cycle_dir/tech-debt-$safe.err" || true)"
-  if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
-    printf '%s\n' "$out" > "$cycle_dir/tech-debt-$safe.json"
-    printf '%s' "$out"
+  # `excl` defaults to `null`, not `[]` — the identical reasoning
+  # `gather_issues`'s own `excl` default above follows: a gather that failed
+  # to produce the object shape at all knows nothing about what was excluded.
+  candidates='[]'; excl='null'
+  if [[ -n "$raw" ]] && jq -e 'type == "object"' <<<"$raw" >/dev/null 2>&1; then
+    if jq -e '.candidates | type == "array"' <<<"$raw" >/dev/null 2>&1; then
+      candidates="$(jq -c '.candidates' <<<"$raw")"
+    fi
+    if jq -e '.excluded | type == "array"' <<<"$raw" >/dev/null 2>&1; then
+      excl="$(jq -c '.excluded' <<<"$raw")"
+    fi
+  fi
+  out="$candidates"
+  printf '%s\n' "$out" > "$cycle_dir/tech-debt-$safe.json"
+  printf '%s\n' "$excl" > "$(tech_debt_excluded_sidecar_path "$slug")"
+  printf '%s' "$out"
+}
+
+# gather_tech_debt_excluded SLUG — read back the sibling exclusion report
+# `gather_tech_debt` (above) just wrote for this repo, or `null` if it never
+# ran or the sidecar does not hold a well-formed array — the identical
+# contract `gather_issues_excluded` already gives `gather_issues` (agent-
+# ops#2603), kept a separate read for the same reason: a shell function has
+# only the one stdout channel and `gather_tech_debt` already spends it on the
+# candidates array every existing caller depends on.
+gather_tech_debt_excluded() {
+  local slug="$1" file
+  file="$(tech_debt_excluded_sidecar_path "$slug")"
+  if [[ -s "$file" ]] && jq -e 'type == "array"' <"$file" >/dev/null 2>&1; then
+    jq -c '.' <"$file"
   else
-    printf '[]'
+    printf 'null'
   fi
 }
 
