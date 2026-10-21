@@ -1352,12 +1352,16 @@ $(jq . <<<"$reviewer_input")
   # (issue #589, D7) names every resolved instructions/context source and a
   # digest of its text, so this run's inputs are reconstructable without
   # copying the text itself into the log — the same discipline as `backstop_min`
-  # /`inactivity_min` just above.
+  # /`inactivity_min` just above. `provider` (issue #2136) is read from the
+  # same `MODEL_PROVIDER` map `lib/metering.sh`'s `metering_fields` reads for
+  # `review-stage-end` below — `resolve_model_id_into` above already recorded
+  # it for this `model`, so this is a lookup, never a fresh resolution.
   log_event "review-stage-start" "$(jq -nc --arg r "$slug" --arg m "$model" \
+    --arg p "${MODEL_PROVIDER[$model]:-anthropic}" \
     --argjson b "$review_budget" \
     --argjson bs "$review_backstop_min" --argjson is "$review_inactivity_min" \
     --argjson rcs "$review_context_sources" --arg lane "$(metering_intended_lane)" \
-    '{repo: $r, model: $m, lane: $lane}
+    '{repo: $r, model: $m, provider: $p, lane: $lane}
      + (if ($b | type) == "object" then $b else {} end)
      + {backstop_min: $bs, inactivity_min: $is, review_context_sources: $rcs}')"
   # Requirement 45e: the stage runs as the stage user, which can write the

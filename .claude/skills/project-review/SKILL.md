@@ -19,7 +19,7 @@ These matter more than any individual checklist item:
 
 ## Environment-Specific Operating Conditions
 
-- **Claude Code / Cowork.** Full shell and repository access; automated checks and subagents are available; write outputs directly into the repository.
+- **A full-access CLI/agentic environment (Claude Code, Cowork, or an automated pipeline run).** Full shell and repository access; automated checks and subagents are available; write outputs directly into the repository.
 - **Claude.ai chat.** The project arrives as an upload; copy it out of `/mnt/user-data/uploads/` before working. Network access is restricted to package registries, so some audits work and others will not — record whatever could not be run. All outputs go to `/mnt/user-data/outputs/`. The container does not persist between sessions, so cross-session resumption depends on the user re-uploading a partial review folder — see the caveat in `references/resumability.md`.
 - **Anywhere.** Prefer static analysis over executing project code; running the project's own test suite is normal and acceptable, but ask before anything that installs heavyweight toolchains, needs credentials, or could mutate external state. New tech debt (Step 4) is filed only as a labelled GitHub issue in the project under review — never a register file. Whenever the project's issue tracker cannot be reached that way — no GitHub remote, a forge that is not GitHub, no working `gh` credential, or (as in the Claude.ai chat, one instance of this rather than its only trigger) a restricted network — Step 4 lists the item in the review's own output instead of filing it; see Step 4 for that fallback and the separate case of a reachable tracker with no `pw::type:tech-debt` label.
 
@@ -31,7 +31,7 @@ These matter more than any individual checklist item:
 
 Establish the basics before reading any code:
 
-1. **Locate the project.** In Claude Code or Cowork this is normally the working directory or a path the user gives. In the Claude.ai chat it is usually an uploaded archive or folder under `/mnt/user-data/uploads/` — copy it to the working directory before analysis.
+1. **Locate the project.** In a full-access CLI/agentic environment (Claude Code, Cowork, or an automated pipeline run) this is normally the working directory or a path the caller gives. In the Claude.ai chat it is usually an uploaded archive or folder under `/mnt/user-data/uploads/` — copy it to the working directory before analysis.
 2. **Confirm scope if ambiguous.** If the repository contains multiple projects (a monorepo), or the user's request suggests a narrower focus, ask once, briefly. Otherwise proceed — the skill is manually invoked, so the user has already asked for a full review.
 3. **Check for an existing tech-debt register.** Look for `TECH-DEBT.md`, `TECH_DEBT.md`, `TECHDEBT.md`, `DEBT.md`, or similar (case-insensitive, also under `docs/`), and for a `tech-debt/` directory. A `tech-debt/` directory, or a root `TECH-DEBT.md` that declares `scope:` in its YAML frontmatter, means the project tracks tech debt in the **per-item format** (one file per item under `tech-debt/`, the root file holding only policy); an existing `TECH-DEBT.md` without either signal is the **legacy** single-file format. A register found here is history, not a filing destination: in Step 4, **new** debt this review surfaces is always filed as a GitHub issue instead (never a competing register file, and never one invented where none exists), while an existing register item the review finds already resolved is still **updated in place, in its own format** — do not migrate it to the other format.
 4. **Decide the output location.** The caller — the user in their request, or a prompt that invokes this skill on someone's behalf — may name where the review goes. Choose the folder in this order:
@@ -64,7 +64,7 @@ Read `references/review-checklist.md` and work through every dimension listed th
 
 **Automated checks.** Where the environment allows, corroborate reading with tools — dependency vulnerability audits (`npm audit`, `pip-audit`, `cargo audit`, etc.), linters, type checkers, and the project's own test suite. Prefer tools the project already configures. Ask before installing heavyweight dependencies or running long or destructive commands. Where tools cannot run (no network, no runtime), fall back to reading-based review and record the limitation in scope-and-method. Never present an unverified guess as a tool-confirmed result.
 
-**Subagents.** In environments with subagents (Claude Code, Cowork), it is effective to parallelise Step 2 by dimension or by subsystem: give each subagent the project map from Step 1, its assigned dimensions, and the relevant section of the checklist, and require findings back in the evidence-bearing format below. Consolidation (Step 3) stays with the lead agent.
+**Subagents.** Where your environment supports subagents, it is effective to parallelise Step 2 by dimension or by subsystem: give each subagent the project map from Step 1, its assigned dimensions, and the relevant section of the checklist, and require findings back in the evidence-bearing format below. Consolidation (Step 3) stays with the lead agent.
 
 **Checkpoint:** the moment each dimension is finished, write its findings to `worknotes/findings-<CODE>.md` and mark the dimension complete in the state file — one dimension per write, never batched, so an interruption loses at most the dimension in progress.
 
@@ -160,7 +160,7 @@ Read `references/prompt-writing.md` before writing `04-improvement-prompts.md`. 
 
 First, complete the resumability book-keeping: delete `worknotes/` and `review-state.json` from the review folder — the finished documents are the record, and the *absence* of a state file is the designed signal that the review completed. Then:
 
-- In Claude Code or Cowork: tell the user where the folder is and give a two-or-three-sentence spoken summary of the verdict; do not paste the documents into the conversation.
+- In a full-access CLI/agentic environment (Claude Code, Cowork, or an automated pipeline run): tell the user where the folder is and give a two-or-three-sentence spoken summary of the verdict; do not paste the documents into the conversation.
 - In the Claude.ai chat: present the output folder's files with the file-presentation tool, index first, plus the updated `TECH-DEBT.md` (and, for a per-item register, any new or updated `tech-debt/*.md` files).
 - Offer, but do not launch into, next steps: executing one of the improvement prompts, deepening a dimension, or re-reviewing after changes.
 
