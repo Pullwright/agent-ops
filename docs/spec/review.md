@@ -1159,9 +1159,9 @@ R16. <a id="rev-r16"></a>**Streams.** Review *operational* events go to the revi
    *actually* used, distinct from `review-stage-start`'s own), `cost_usd`,
    `duration_ms`, `num_turns`, `is_error`, `tokens` — via the same
    `lib/metering.sh` helper `agent-cycle.sh` uses, so a review's stage costs
-   exactly the same shape as a cycle's (`docs/reference/metering-schema.md`). Two
+   the same shape as a cycle's (`docs/reference/metering-schema.md`). Two
    events are written to the shared
-   `log.jsonl` instead, both because their reader is in the *other* pipeline:
+   `log.jsonl` instead, because their reader is in the *other* pipeline:
    `limit-hit` (R6), because usage-limit stand-down is shared across both
    pipelines — it carries `node` too, so a fleet view can say which machine hit
    the limit — and `clone-footprint` (`{repo, bytes}`, one per successful
