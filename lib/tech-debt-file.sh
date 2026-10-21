@@ -35,11 +35,14 @@
 #   scripts/gather-tech-debt.sh reads to serve the band, and the one
 #   `lib/labels.sh` ensures exists in every target repository. Deduped first
 #   against REPO's own open `pw::type:tech-debt` issues by normalised title
-#   (_techdebt_title_dedup_match, below): a match gets BODY/PROVENANCE as a
-#   comment instead of a second filing, the "don't file a duplicate" outcome
-#   applied automatically here. That search states its own
-#   page cap (TECHDEBT_DEDUP_LIST_LIMIT, below) rather than inheriting `gh`'s
-#   default of 30. Prints "<number>\t<url>" on
+#   (_techdebt_title_dedup_match, below) or by PROVENANCE naming the same
+#   pull request as an existing issue's own body (_techdebt_pr_dedup_match,
+#   agent-ops#2576 — catches two findings worded differently against the
+#   same PR, which the title check alone misses): either hit gets
+#   BODY/PROVENANCE as a comment instead of a second filing, the "don't file
+#   a duplicate" outcome applied automatically here. That search states its
+#   own page cap (TECHDEBT_DEDUP_LIST_LIMIT, below) rather than inheriting
+#   `gh`'s default of 30. Prints "<number>\t<url>" on
 #   success — the new issue's, or the matched one's — and prints nothing and
 #   returns 1 otherwise.
 #
@@ -211,6 +214,45 @@ _techdebt_normalize_title() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]' ' ' | tr -s ' ' | sed 's/^ *//; s/ *$//'
 }
 
+# _techdebt_extract_pr_url PROVENANCE
+# Every techdebt_file_debt caller's own PROVENANCE sentence embeds the
+# literal pull-request URL the finding was raised against (lib/approver.sh:
+# "while the Approver was judging $pr_url"; lib/merge-observed.sh: "while
+# the Reviewer was examining $pr_url, whose subject merged mid-pass") except
+# the Enabler's (lib/enabler.sh: "during an Enabler engagement on $e_item
+# (cycle $cycle_id)"), which names an item reference, not a PR. Printing the
+# URL substring rather than matching the whole sentence keeps this robust to
+# either caller's own wording; printing nothing when none is present (the
+# Enabler's case) leaves the PR-match check below a no-op for it, same as
+# before this existed.
+_techdebt_extract_pr_url() {
+  local provenance="$1"
+  if [[ "$provenance" =~ (https://github\.com/[^/[:space:]]+/[^/[:space:]]+/pull/[0-9]+) ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+# _techdebt_pr_dedup_match PR_URL LIST_JSON
+# PR_URL is a pull-request URL as _techdebt_extract_pr_url prints it;
+# LIST_JSON is a JSON array of `{number, url, title, body}`. Prints the
+# `number` of the first entry whose own body contains PR_URL as a
+# substring — every filed body carries its PROVENANCE line verbatim
+# (techdebt_file_debt's own combined_file below), so a prior filing against
+# the same pull request always carries that same URL somewhere in its body,
+# regardless of how differently the two findings are titled (agent-ops#2576:
+# #2573/#2574 described the same fault against the same PR in unrelated
+# words). Prints nothing on no match.
+_techdebt_pr_dedup_match() {
+  local pr_url="$1" list_json="$2" number body
+  while IFS=$'\t' read -r number body; do
+    [[ -n "$number" ]] || continue
+    if [[ "$body" == *"$pr_url"* ]]; then
+      printf '%s' "$number"
+      return 0
+    fi
+  done < <(jq -r '.[] | [.number, (.body // "")] | @tsv' <<<"$list_json" 2>/dev/null)
+}
+
 # _techdebt_title_dedup_match NEEDLE LIST_JSON
 # NEEDLE is an already-normalized title; LIST_JSON is a JSON array of
 # `{number, url, title}`. Prints the `number` of the first entry whose own
@@ -242,15 +284,17 @@ _techdebt_title_dedup_match() {
 techdebt_file_debt() {
   local repo="$1" title="$2" body="$3" provenance="$4" token="${5:-}" \
         default_fix="${6:-}" owner_decision="${7:-false}"
-  local errlog needle list list_n match_number match_url combined_file result
+  local errlog needle pr_url_needle list list_n match_number match_reason match_url
+  local combined_file result
   local ISSUE_FILE_GH=(_techdebt_gh "$token") ISSUE_FILE_ERRLOG
   errlog="$(_techdebt_err_log)"
   ISSUE_FILE_ERRLOG="$errlog"
 
   needle="$(_techdebt_normalize_title "$title")"
-  if [[ -n "$needle" ]]; then
+  pr_url_needle="$(_techdebt_extract_pr_url "$provenance")"
+  if [[ -n "$needle" || -n "$pr_url_needle" ]]; then
     list="$(_techdebt_gh "$token" issue list -R "$repo" --label pw::type:tech-debt \
-              --state open --limit "$TECHDEBT_DEDUP_LIST_LIMIT" --json number,url,title \
+              --state open --limit "$TECHDEBT_DEDUP_LIST_LIMIT" --json number,url,title,body \
               2>>"$errlog" || true)"
     if jq -e 'type == "array"' <<<"$list" >/dev/null 2>&1; then
       list_n="$(jq 'length' <<<"$list" 2>/dev/null || printf '0')"
@@ -261,7 +305,19 @@ techdebt_file_debt() {
         printf 'techdebt_file_debt: %s dedup search came back at the %s cap -- an older open issue past it is not deduped against\n' \
           "$repo" "$TECHDEBT_DEDUP_LIST_LIMIT" >>"$errlog"
       fi
-      match_number="$(_techdebt_title_dedup_match "$needle" "$list")"
+      match_number="" match_reason=""
+      if [[ -n "$needle" ]]; then
+        match_number="$(_techdebt_title_dedup_match "$needle" "$list")"
+        [[ -n "$match_number" ]] && match_reason="title matches"
+      fi
+      # A title match and a PR match are each sufficient on their own
+      # (agent-ops#2576) -- only fall back to the PR check once the title
+      # check has already missed, since either hit is treated identically
+      # from here on.
+      if [[ -z "$match_number" && -n "$pr_url_needle" ]]; then
+        match_number="$(_techdebt_pr_dedup_match "$pr_url_needle" "$list")"
+        [[ -n "$match_number" ]] && match_reason="same PR"
+      fi
       if [[ -n "$match_number" ]]; then
         match_url="$(jq -r --argjson n "$match_number" \
           'map(select(.number == $n)) | first | .url // empty' <<<"$list" 2>/dev/null || true)"
@@ -271,8 +327,8 @@ techdebt_file_debt() {
         _techdebt_gh "$token" issue comment "$match_number" -R "$repo" \
           --body-file "$combined_file" >/dev/null 2>>"$errlog" || true
         rm -f "$combined_file"
-        printf 'techdebt_file_debt: %s title matches open issue #%s -- commented instead of filing\n' \
-          "$repo" "$match_number" >>"$errlog"
+        printf 'techdebt_file_debt: %s %s open issue #%s -- commented instead of filing\n' \
+          "$repo" "$match_reason" "$match_number" >>"$errlog"
         printf '%s\t%s' "$match_number" "$match_url"
         return 0
       fi

@@ -777,8 +777,14 @@
       `pw::type:tech-debt` issues by normalised title
       (`_techdebt_title_dedup_match`, `lib/tech-debt-file.sh`): a match gets
       the new body and provenance as a comment instead of a second filing.
-      No id reservation, no branch, no pull request — one API call either
-      creates the issue or comments on the matched one. Logs
+      `techdebt_file_debt`'s further same-pull-request dedup
+      (`_techdebt_pr_dedup_match`, agent-ops#2576; requirement 36c's own
+      bullet and component 23d describe it) never fires for an Enabler
+      filing: its own provenance (`"during an Enabler engagement on $item
+      (cycle $cycle_id)"`) names an item reference, not a pull request, so
+      only the title check above ever applies here. No id reservation, no
+      branch, no pull request — one API call either creates the issue or
+      comments on the matched one. Logs
       `tech-debt-filed` (`repo`, `item`, `by: "enabler"`, `issue_number`,
       `issue_url`) on success; a `warning` naming `tech-debt-file.err` on
       failure.
