@@ -177,8 +177,22 @@
       `pw::type:tech-debt` issue against this pipeline's own repository (the
       reader lives here, never in a target repo), never asking.
     - **`page-outlived-item`** (pipeline-act). Fires when any open issue
-      carrying `enabler_escalation_label` or `pw::pager` in `pager_repo`
-      links a PR or issue that has already gone terminal — merged, closed.
+      carrying `enabler_escalation_label` or `pw::pager` in `pager_repo` is
+      outlived for either of two independent reasons, checked in this order.
+      First, the page's own `ref: pager:<key>` footer line (`pager_file`'s
+      own format, `lib/pager.sh`) names an invariant key absent from the
+      current registry (`pager_registered_keys`) — a key renamed or retired
+      out from under an open page, which the framework's own key-equality
+      clear logic can never match with a `pager-cleared` event again
+      (agent-ops#2575: `fit-ladder-pinned` was renamed to
+      `coordinator-fit-ladder-pinned`, leaving #2372 permanently
+      un-clearable). This check runs first and, when it matches, retires the
+      page on that basis alone, without also running the item-concluded
+      check below — the two are independent reasons a page can be outlived.
+      Only a page carrying a `ref: pager:` line can match it at all; an
+      Enabler escalation page's own footer names an item, not an invariant
+      key, and never matches. Otherwise, links a PR or issue that has
+      already gone terminal — merged, closed.
       The page's own item is resolved from its body's own
       `Item: `<ref>` · repo `<slug>`` footer line (every Enabler escalation
       carries one) when present — settling both the item and whether it is
@@ -202,7 +216,12 @@
       signature never has to know these exist. Its pipeline-act remedy closes
       every outlived page it finds, generalising #1215's
       `approver_escalation_retire` from the single adjudication page to
-      every page this framework or the Enabler files.
+      every page this framework or the Enabler files — a page closed for the
+      orphaned-key reason (agent-ops#2575) gets a comment naming the dead key
+      rather than an item state, re-deriving the orphaned/concluded listing
+      fresh from a new `gh issue list` rather than parsing EVIDENCE's own
+      prose, exactly as every other page in the remedy still does against its
+      own item's live GitHub state.
 
     Issue #1282 (part 3c of #1126's own findings) adds five more —
     **fleet liveness from a peer's vantage**, the class where every signal a
