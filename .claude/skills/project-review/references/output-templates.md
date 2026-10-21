@@ -7,7 +7,7 @@ All outputs are Markdown. Follow these templates in structure; adapt headings on
 ```markdown
 # Project review — <project name>
 
-**Date:** <YYYY-MM-DD> · **Reviewer:** Claude (project-review skill) · **Revision reviewed:** <commit hash / version / "uploaded archive">
+**Date:** <YYYY-MM-DD> · **Reviewer:** the project-review skill · **Revision reviewed:** <commit hash / version / "uploaded archive">
 
 <One paragraph: the overall verdict in plain language — what this project is, its general health, and the single most important thing to act on.>
 

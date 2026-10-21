@@ -4350,7 +4350,7 @@
       "label": "R6",
       "anchor": "rev-r6",
       "file": "docs/spec/review.md",
-      "line": 893,
+      "line": 896,
       "title": "Usage-limit detection."
     },
     "REV R7": {
@@ -4358,7 +4358,7 @@
       "label": "R7",
       "anchor": "rev-r7",
       "file": "docs/spec/review.md",
-      "line": 906,
+      "line": 909,
       "title": "Cleanup (always, via a trap)."
     },
     "REV R7a": {
@@ -4366,7 +4366,7 @@
       "label": "R7a",
       "anchor": "rev-r7a",
       "file": "docs/spec/review.md",
-      "line": 912,
+      "line": 915,
       "title": "A signal is a failure with a record."
     },
     "REV R7b": {
@@ -4374,7 +4374,7 @@
       "label": "R7b",
       "anchor": "rev-r7b",
       "file": "docs/spec/review.md",
-      "line": 927,
+      "line": 930,
       "title": "One stage launcher, shared, provider-neutral."
     },
     "REV R8": {
@@ -4382,7 +4382,7 @@
       "label": "R8",
       "anchor": "rev-r8",
       "file": "docs/spec/review.md",
-      "line": 972,
+      "line": 975,
       "title": "Flags."
     },
     "REV R9": {
@@ -4390,7 +4390,7 @@
       "label": "R9",
       "anchor": "rev-r9",
       "file": "docs/spec/review.md",
-      "line": 982,
+      "line": 985,
       "title": "One-shot constraint"
     },
     "REV R10": {
@@ -4398,7 +4398,7 @@
       "label": "R10",
       "anchor": "rev-r10",
       "file": "docs/spec/review.md",
-      "line": 990,
+      "line": 993,
       "title": "Obey the repo."
     },
     "REV R11": {
@@ -4406,7 +4406,7 @@
       "label": "R11",
       "anchor": "rev-r11",
       "file": "docs/spec/review.md",
-      "line": 996,
+      "line": 999,
       "title": "Run the skill end-to-end."
     },
     "REV R11a": {
@@ -4414,7 +4414,7 @@
       "label": "R11a",
       "anchor": "rev-r11a",
       "file": "docs/spec/review.md",
-      "line": 1017,
+      "line": 1020,
       "title": "State a recommendation's default fix."
     },
     "REV R12": {
@@ -4422,7 +4422,7 @@
       "label": "R12",
       "anchor": "rev-r12",
       "file": "docs/spec/review.md",
-      "line": 1034,
+      "line": 1037,
       "title": "File review-sourced debt as labelled issues."
     },
     "REV R12a": {
@@ -4430,7 +4430,7 @@
       "label": "R12a",
       "anchor": "rev-r12a",
       "file": "docs/spec/review.md",
-      "line": 1061,
+      "line": 1064,
       "title": "Cross-reference every mirrored recommendation."
     },
     "REV R13": {
@@ -4438,7 +4438,7 @@
       "label": "R13",
       "anchor": "rev-r13",
       "file": "docs/spec/review.md",
-      "line": 1085,
+      "line": 1088,
       "title": "Raise one pull request."
     },
     "REV R14": {
@@ -4446,7 +4446,7 @@
       "label": "R14",
       "anchor": "rev-r14",
       "file": "docs/spec/review.md",
-      "line": 1102,
+      "line": 1105,
       "title": "Prove it is landable."
     },
     "REV R15": {
@@ -4454,7 +4454,7 @@
       "label": "R15",
       "anchor": "rev-r15",
       "file": "docs/spec/review.md",
-      "line": 1113,
+      "line": 1116,
       "title": "Final message."
     },
     "REV R18": {
@@ -4462,7 +4462,7 @@
       "label": "R18",
       "anchor": "rev-r18",
       "file": "docs/spec/review.md",
-      "line": 1117,
+      "line": 1120,
       "title": "Untrusted external content."
     },
     "REV R16": {
@@ -4470,7 +4470,7 @@
       "label": "R16",
       "anchor": "rev-r16",
       "file": "docs/spec/review.md",
-      "line": 1130,
+      "line": 1133,
       "title": "Streams."
     },
     "REV R17": {
@@ -4478,7 +4478,7 @@
       "label": "R17",
       "anchor": "rev-r17",
       "file": "docs/spec/review.md",
-      "line": 1188,
+      "line": 1193,
       "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
     },
     "REV R19": {
@@ -4486,7 +4486,7 @@
       "label": "R19",
       "anchor": "rev-r19",
       "file": "docs/spec/review.md",
-      "line": 1196,
+      "line": 1201,
       "title": "Per-stage health, mirrored (agent-ops#996)."
     },
     "REV C 1": {
@@ -4494,7 +4494,7 @@
       "label": "1",
       "anchor": "rev-c-1",
       "file": "docs/spec/review.md",
-      "line": 1258,
+      "line": 1263,
       "title": "`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,"
     },
     "REV C 2": {
@@ -4502,7 +4502,7 @@
       "label": "2",
       "anchor": "rev-c-2",
       "file": "docs/spec/review.md",
-      "line": 1268,
+      "line": 1273,
       "title": "`prompts/project-reviewer.md` implementing R9–R15. It must embed the"
     },
     "REV C 3": {
@@ -4510,7 +4510,7 @@
       "label": "3",
       "anchor": "rev-c-3",
       "file": "docs/spec/review.md",
-      "line": 1271,
+      "line": 1276,
       "title": "`.claude/skills/project-review/` — the vendored skill (pinned; re-sync"
     },
     "REV C 4": {
@@ -4518,7 +4518,7 @@
       "label": "4",
       "anchor": "rev-c-4",
       "file": "docs/spec/review.md",
-      "line": 1273,
+      "line": 1278,
       "title": "`config.json` — the `repository_review` block."
     },
     "REV C 5": {
@@ -4526,7 +4526,7 @@
       "label": "5",
       "anchor": "rev-c-5",
       "file": "docs/spec/review.md",
-      "line": 1274,
+      "line": 1279,
       "title": "`docs/guides/operating/README.md` names the review pipeline under \"How"
     },
     "REV C 6": {
@@ -4534,7 +4534,7 @@
       "label": "6",
       "anchor": "rev-c-6",
       "file": "docs/spec/review.md",
-      "line": 1278,
+      "line": 1283,
       "title": "The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in th..."
     },
     "REV AC 1": {
@@ -4542,7 +4542,7 @@
       "label": "1",
       "anchor": "rev-ac-1",
       "file": "docs/spec/review.md",
-      "line": 1293,
+      "line": 1298,
       "title": "`shellcheck review-cycle.sh` is clean."
     },
     "REV AC 2": {
@@ -4550,7 +4550,7 @@
       "label": "2",
       "anchor": "rev-ac-2",
       "file": "docs/spec/review.md",
-      "line": 1294,
+      "line": 1299,
       "title": "`--dry-run` completes against the real repos: the stand-down and skip-guard"
     },
     "REV AC 3": {
@@ -4558,7 +4558,7 @@
       "label": "3",
       "anchor": "rev-ac-3",
       "file": "docs/spec/review.md",
-      "line": 1297,
+      "line": 1302,
       "title": "A second invocation while the review lock is held exits without acting; and"
     },
     "REV AC 4": {
@@ -4566,7 +4566,7 @@
       "label": "4",
       "anchor": "rev-ac-4",
       "file": "docs/spec/review.md",
-      "line": 1300,
+      "line": 1305,
       "title": "Skip-guard: with today's report directory present on a repo's default"
     },
     "REV AC 4b": {
@@ -4574,7 +4574,7 @@
       "label": "4b",
       "anchor": "rev-ac-4b",
       "file": "docs/spec/review.md",
-      "line": 1305,
+      "line": 1310,
       "title": "The role guard stands this pipeline down too (R2b)."
     },
     "REV AC 4c": {
@@ -4582,7 +4582,7 @@
       "label": "4c",
       "anchor": "rev-ac-4c",
       "file": "docs/spec/review.md",
-      "line": 1309,
+      "line": 1314,
       "title": "A peer's usage-limit hit stands this pipeline down too (R2c/R6)."
     },
     "REV AC 4a": {
@@ -4590,7 +4590,7 @@
       "label": "4a",
       "anchor": "rev-ac-4a",
       "file": "docs/spec/review.md",
-      "line": 1314,
+      "line": 1319,
       "title": "The switch stands this pipeline down too (R2a)."
     },
     "REV AC 4d": {
@@ -4598,7 +4598,7 @@
       "label": "4d",
       "anchor": "rev-ac-4d",
       "file": "docs/spec/review.md",
-      "line": 1325,
+      "line": 1330,
       "title": "The review-branch claim gates the review (R5.0)."
     },
     "REV AC 4e": {
@@ -4606,7 +4606,7 @@
       "label": "4e",
       "anchor": "rev-ac-4e",
       "file": "docs/spec/review.md",
-      "line": 1334,
+      "line": 1339,
       "title": "Per-repository resolution, and duplicate slugs refused (R1b)."
     },
     "REV AC 4f": {
@@ -4614,7 +4614,7 @@
       "label": "4f",
       "anchor": "rev-ac-4f",
       "file": "docs/spec/review.md",
-      "line": 1352,
+      "line": 1357,
       "title": "The dated stand-down is two-tier (R3.3)."
     },
     "REV AC 4g": {
@@ -4622,7 +4622,7 @@
       "label": "4g",
       "anchor": "rev-ac-4g",
       "file": "docs/spec/review.md",
-      "line": 1367,
+      "line": 1372,
       "title": "The report directory is configurable, and unset is unchanged (R4a)."
     },
     "REV AC 4h": {
@@ -4630,7 +4630,7 @@
       "label": "4h",
       "anchor": "rev-ac-4h",
       "file": "docs/spec/review.md",
-      "line": 1405,
+      "line": 1410,
       "title": "Instructions and context reach the review, and a broken configured path"
     },
     "REV AC 5": {
@@ -4638,7 +4638,7 @@
       "label": "5",
       "anchor": "rev-ac-5",
       "file": "docs/spec/review.md",
-      "line": 1446,
+      "line": 1451,
       "title": "Injected-skill isolation:"
     },
     "REV AC 6": {
@@ -4646,7 +4646,7 @@
       "label": "6",
       "anchor": "rev-ac-6",
       "file": "docs/spec/review.md",
-      "line": 1455,
+      "line": 1460,
       "title": "Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review"
     },
     "REV AC 7": {
@@ -4654,7 +4654,7 @@
       "label": "7",
       "anchor": "rev-ac-7",
       "file": "docs/spec/review.md",
-      "line": 1458,
+      "line": 1463,
       "title": "One supervised full run (`--once`): for each non-skipped repo it produces a"
     },
     "REV AC 8": {
@@ -4662,7 +4662,7 @@
       "label": "8",
       "anchor": "rev-ac-8",
       "file": "docs/spec/review.md",
-      "line": 1463,
+      "line": 1468,
       "title": "Cross-references land (R12a):"
     },
     "REV AC 9": {
@@ -4670,7 +4670,7 @@
       "label": "9",
       "anchor": "rev-ac-9",
       "file": "docs/spec/review.md",
-      "line": 1470,
+      "line": 1475,
       "title": "The untrusted-content framing holds for the Reviewer-Agent too"
     },
     "REV AC 10": {
@@ -4678,7 +4678,7 @@
       "label": "10",
       "anchor": "rev-ac-10",
       "file": "docs/spec/review.md",
-      "line": 1476,
+      "line": 1481,
       "title": "A stage-health verdict for `project-reviewer` (R19, agent-ops#996)."
     }
   }

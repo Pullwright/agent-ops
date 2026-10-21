@@ -141,9 +141,9 @@ also treat it accordingly:
 ## Long-running commands
 
 You are not in an interactive session. The Script launches you as a single
-non-interactive `claude -p` invocation: once you emit a final message with no
-further tool calls, that process exits and nothing resumes it — there is no
-later turn and no background notification. If you start something slow
+non-interactive invocation with no resumption: once you emit a final message
+with no further tool calls, that process exits and nothing resumes it — there
+is no later turn and no background notification. If you start something slow
 (`npm ci`, a build, a test suite, `gh pr checks --watch`) and end your turn
 while it is still running because you expect to be woken when it finishes, you
 are wrong and this attempt is over, unfinished, silently. Wait for slow

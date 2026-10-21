@@ -818,7 +818,10 @@ R5. <a id="rev-r5"></a>**Per non-skipped repo** (processed **sequentially**, so 
       injected tooling can never be staged or committed by the review agent.
       (`.git/info/exclude` is per-clone and never part of the tree, so this
       leaves no trace in the PR. The clone already has its own `.claude/`; the
-      injection sits alongside its existing skills.)
+      injection sits alongside its existing skills.) This staging is
+      substrate-neutral: every provider's folder-trust mechanism discovers
+      `./.claude/skills/` once trusted (confirmed for Grok Build, issue
+      #2136).
    2a. *Resolve instructions and context (issue #589, D7).*
       `lib/review-context.sh`'s `review_context_build_json` resolves this
       repository's own `review_instructions`/`review_context`
@@ -1147,15 +1150,17 @@ R16. <a id="rev-r16"></a>**Streams.** Review *operational* events go to the revi
    `review_context_sources` (R5 step 2a, issue #589): one `{type, source,
    origin, digest, bytes, truncated}` entry per resolved
    `review_instructions`/`review_context`/`repo_context_file` source, never
-   the text itself, and — same reasoning as `stage-start`'s own `lane`,
-   requirement 33 — `lane` (issue #2239, D30): the credential lane the
-   Script *intended*, `lib/metering.sh`'s `metering_intended_lane`.
+   the text itself; `lane` (issue #2239, D30, same reasoning as
+   `stage-start`'s own, requirement 33): `lib/metering.sh`'s
+   `metering_intended_lane`; and `provider` (#2136): `model`'s provider, off
+   the `MODEL_PROVIDER` map R1a populates.
    `review-stage-end` additionally carries the metering
-   record of requirement 33a — `model`, `lane` (the lane the run *actually*
-   used, distinct from `review-stage-start`'s own), `cost_usd`, `duration_ms`,
-   `num_turns`, `is_error`, `tokens` — via the same `lib/metering.sh` helper
-   `agent-cycle.sh` uses, so a review's stage costs exactly the same shape as
-   a cycle's (`docs/METERING-SCHEMA.md`). Two events are written to the shared
+   record of requirement 33a — `model`, `provider`, `lane` (the lane the run
+   *actually* used, distinct from `review-stage-start`'s own), `cost_usd`,
+   `duration_ms`, `num_turns`, `is_error`, `tokens` — via the same
+   `lib/metering.sh` helper `agent-cycle.sh` uses, so a review's stage costs
+   exactly the same shape as a cycle's (`docs/METERING-SCHEMA.md`). Two
+   events are written to the shared
    `log.jsonl` instead, both because their reader is in the *other* pipeline:
    `limit-hit` (R6), because usage-limit stand-down is shared across both
    pipelines — it carries `node` too, so a fleet view can say which machine hit
