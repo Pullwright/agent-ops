@@ -1,6 +1,6 @@
 # Host-facts schema — as-built specification
 
-Sibling to `docs/FLOW-SCHEMA.md` and `docs/METERING-SCHEMA.md`, under the
+Sibling to `docs/reference/flow-schema.md` and `docs/reference/metering-schema.md`, under the
 same stability policy. Where those two are the contract for what a stage
 *spent* and what happened to a work item, this one is the contract for the
 one record `scripts/collect-host-facts.sh` produces: the facts no container
@@ -193,7 +193,7 @@ be read — the record it does have is still worth publishing.
 
 ## Stability policy
 
-Identical to `docs/FLOW-SCHEMA.md`'s and `docs/METERING-SCHEMA.md`'s own,
+Identical to `docs/reference/flow-schema.md`'s and `docs/reference/metering-schema.md`'s own,
 restated here for the same reason: this is a contract other code (`doctor.sh`,
 the dashboard, a future pager invariant) will depend on.
 

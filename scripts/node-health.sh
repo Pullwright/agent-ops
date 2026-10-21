@@ -90,7 +90,7 @@ Read-only. Prints one compact JSON object on stdout and exits:
               (converged). exit 0 ok, 1 fail, 2 unknown.
   --metrics   node identity, version, all three verdicts and their
               components, cycle/container counters, and the credit mix's
-              effective lanes, documented under docs/METERING-SCHEMA.md's
+              effective lanes, documented under docs/reference/metering-schema.md's
               stability policy.
               exit 0 always (not a verdict).
 

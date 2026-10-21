@@ -1010,7 +1010,7 @@
     in a stage presents the broker's token and identity, asks for the
     call's own owner, mints nothing and falls back to nothing.
 
-47. <a id="impl-ac-47"></a>**The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at
+47. <a id="impl-ac-47"></a>**The rework record matches `docs/reference/flow-schema.md` and is emitted at
     every one of the nine classes' own detector sites (requirement 47).**
     `test/rework-record.test.sh` drives `lib/rework.sh`'s `rework_fields`
     directly — a well-formed evidence object, an unparseable one (degrades to
@@ -1073,7 +1073,7 @@
     replayed band unfiltered by this reapplication. `scripts/lint-shell.sh`
     is clean on every file this requirement touches.
 
-49. <a id="impl-ac-49"></a>**The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key
+49. <a id="impl-ac-49"></a>**The item lifecycle record matches `docs/reference/flow-schema.md`, the join key
     reaches every site requirement 49 names, and the fold balances
     (requirement 49).** `test/item-lifecycle.test.sh` drives
     `lib/item-lifecycle.sh`'s `item_lifecycle_fold` directly against one
@@ -1138,7 +1138,7 @@
     rather than losing the memo silently).
     `scripts/lint-shell.sh` is clean on every file this requirement touches.
 
-50. <a id="impl-ac-50"></a>**The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`
+50. <a id="impl-ac-50"></a>**The node time-state record matches `docs/reference/flow-schema.md`, a `node-state`
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against

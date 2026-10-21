@@ -513,7 +513,7 @@ CRASH_LOOP_BODY
     log_event "crash-loop-escalated" "$(jq -c \
       --argjson n "${cl_created%%$'\t'*}" --arg u "${cl_created#*$'\t'}" \
       '. + {issue_number: $n, issue_url: $u}' <<<"$verdict_json")"
-    # stage-rerun's other detector (docs/FLOW-SCHEMA.md, D23): the deterministic-
+    # stage-rerun's other detector (docs/reference/flow-schema.md, D23): the deterministic-
     # failure and pre-selection-death classes `crash_loop_verdict`/
     # `crash_loop_preselection_verdict` catch never carried a `kill_reason` —
     # a killed-by-backstop stage and a deterministic crash loop are different
@@ -1634,7 +1634,7 @@ $(jq . <<<"$input")
               log_event "review-gate-checks-read" "$(jq -nc --argjson ok "$e_gate_checks_ok" \
                 --arg r "$e_repo" --arg i "$e_item" \
                 '{ok: $ok} + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
-              # check-failure (docs/FLOW-SCHEMA.md, D23, agent-ops#1032): the
+              # check-failure (docs/reference/flow-schema.md, D23, agent-ops#1032): the
               # same per-attempt fact as the Reviewer's own handoff site
               # (agent-cycle.sh) records, since this is the same shared
               # `handoff_complete_review` gate — the fresh-repetition ruling
@@ -1656,7 +1656,7 @@ $(jq . <<<"$input")
                   e_finding="$e_cs_reason"
                 elif [[ "$e_rc_word" == "dirty" ]]; then
                   e_finding="$e_rc_reason"
-                  # human-change-request (docs/FLOW-SCHEMA.md, D23,
+                  # human-change-request (docs/reference/flow-schema.md, D23,
                   # agent-ops#1032): attributed to the Reviewer, same as the
                   # Reviewer's own handoff site — the recovery path only
                   # reaches this branch for a pull request with a Reviewer

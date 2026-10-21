@@ -69,7 +69,7 @@
 # when that repo is swept in turn.
 # Cross-node duplication is not de-duplicated here — several nodes each
 # noticing the same merge is the ordinary fleet-wide shape every other record
-# in `docs/FLOW-SCHEMA.md` already tolerates, reduced first-wins-by-`ts` by
+# in `docs/reference/flow-schema.md` already tolerates, reduced first-wins-by-`ts` by
 # whatever reads the union log.
 #
 # Output: one JSON object per action on stdout —

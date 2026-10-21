@@ -380,7 +380,7 @@ run_standdown() {
     log_event() { printf 'EVENT %s %s chain=%s\n' "$1" "$2" "$chain_eligible"; }
     # shellcheck source=lib/chain.sh
     . "$SCRIPT_DIR/lib/chain.sh"
-    # docs/FLOW-SCHEMA.md, requirement 50, issue #597: this same block calls
+    # docs/reference/flow-schema.md, requirement 50, issue #597: this same block calls
     # lib/node-time-state.sh's node_time_state_for_cause/
     # set_node_state_terminal. Sourced for real (pure and cheap) rather than
     # stubbed, so this file keeps verifying the shipped wiring; neither

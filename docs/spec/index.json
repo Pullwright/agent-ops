@@ -599,7 +599,7 @@
       "anchor": "impl-ac-33a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
       "line": 362,
-      "title": "The per-stage metering record matches `docs/METERING-SCHEMA.md`"
+      "title": "The per-stage metering record matches `docs/reference/metering-schema.md`"
     },
     "IMPL AC 77": {
       "kind": "impl-ac",
@@ -839,7 +839,7 @@
       "anchor": "impl-ac-47",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1013,
-      "title": "The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at"
+      "title": "The rework record matches `docs/reference/flow-schema.md` and is emitted at"
     },
     "IMPL AC 48": {
       "kind": "impl-ac",
@@ -855,7 +855,7 @@
       "anchor": "impl-ac-49",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1076,
-      "title": "The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key"
+      "title": "The item lifecycle record matches `docs/reference/flow-schema.md`, the join key"
     },
     "IMPL AC 50": {
       "kind": "impl-ac",
@@ -863,7 +863,7 @@
       "anchor": "impl-ac-50",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1141,
-      "title": "The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`"
+      "title": "The node time-state record matches `docs/reference/flow-schema.md`, a `node-state`"
     },
     "IMPL AC 51": {
       "kind": "impl-ac",

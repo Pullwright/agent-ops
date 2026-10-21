@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/host-facts.sh — the driver-independent half of the host-facts record
-# (docs/HOST-FACTS-SCHEMA.md): the envelope, `host`, `updater` and
+# (docs/reference/host-facts-schema.md): the envelope, `host`, `updater` and
 # `viewer_probe`. `lib/host-facts-compose.sh` and
 # `lib/host-facts-kubernetes.sh` each add their own vantage-specific section
 # on top of what this file builds; `scripts/collect-host-facts.sh` is the
@@ -167,7 +167,7 @@ host_facts_host_json() {
 # `<NODE_NAME>.jsonl` published `ledger_tail: []` on every compose node
 # while a populated ledger sat beside it in the same directory —
 # indistinguishable from a genuinely empty ledger, and exactly the
-# wrong-but-plausible fact `docs/HOST-FACTS-SCHEMA.md`'s "null, never a
+# wrong-but-plausible fact `docs/reference/host-facts-schema.md`'s "null, never a
 # fabricated number" contract exists to prevent. Reading the whole directory is
 # also what `lib/updater-health.sh`'s own cross-generation scan already
 # does for the same reason: a roll's replacement writes under a new

@@ -128,11 +128,11 @@ calls_log=""
 record() { printf '%s\n' "$*" >> "$calls_log"; }
 
 log_event() { record "event $1 $2"; }
-# docs/FLOW-SCHEMA.md, requirement 47, issue #596: the extracted coordinator
+# docs/reference/flow-schema.md, requirement 47, issue #596: the extracted coordinator
 # stage-end site calls lib/rework.sh's rework_stage_rerun_maybe — out of this
 # file's own scope (test/rework-record.test.sh covers it directly).
 rework_stage_rerun_maybe() { :; }
-# docs/FLOW-SCHEMA.md, requirement 50, issue #597: the same stage-end site,
+# docs/reference/flow-schema.md, requirement 50, issue #597: the same stage-end site,
 # and every none-selected site this file's own corroborate/fallback ladder
 # exercises, call lib/node-time-state.sh's log_node_state_transition/
 # set_node_state_terminal/node_time_state_idle_split. Sourced for real (pure

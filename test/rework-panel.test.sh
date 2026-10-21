@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/rework-panel.test.sh — self-contained regression test for
-# lib/rework-panel.sh (docs/FLOW-SCHEMA.md's rework and item-lifecycle
+# lib/rework-panel.sh (docs/reference/flow-schema.md's rework and item-lifecycle
 # records, D23 of docs/ROADMAP.md, issue #611).
 #
 # What matters here, one section per acceptance criterion:
@@ -228,7 +228,7 @@ assert_eq "a check-failure caught by both sites' own detectors for the same {rep
   "1" "$(jq -c '.how_much.rework_count' <<<"$cross_site_report")"
 
 # Which copy survives dedup is first-wins-by-ts, the reduction
-# docs/FLOW-SCHEMA.md's own "Do not double-count" states — visible in
+# docs/reference/flow-schema.md's own "Do not double-count" states — visible in
 # rework_count and whose below, which read the deduped stream and so count
 # this repetition once, keeping the first-observed copy (c-first). But the
 # two nodes' copies name two different cycles that each really spent tokens
@@ -274,7 +274,7 @@ assert_eq "  ... over the one surviving copy, never both nodes' echoes of the sa
 
 # =====================================================================
 # Item-less dedup: a fleet-wide class (repo and item both omitted, per
-# docs/FLOW-SCHEMA.md) has no {repo, item, class} identity to speak of —
+# docs/reference/flow-schema.md) has no {repo, item, class} identity to speak of —
 # without ts/evidence in the key too, every occurrence of the class across
 # the log's whole history shares the one ["", "", class] key, so only the
 # first-ever such kill in fleet history would ever be counted.
@@ -295,7 +295,7 @@ assert_eq "  ... but two nodes' copies of the *same* occurrence (same ts, same e
 
 # =====================================================================
 # A post-merge-revert record whose evidence is a bare JSON scalar (legal per
-# docs/FLOW-SCHEMA.md's evidence type, "any | null") must not abort the whole
+# docs/reference/flow-schema.md's evidence type, "any | null") must not abort the whole
 # fold from indexing `.evidence.by` inside dedup_key — that would send
 # rework_panel_build to its internal-error fallback, which renders
 # identically to a genuine zero-rework fleet rather than the "an outage is
@@ -433,7 +433,7 @@ assert_eq "  ... and a conforming, empty escape ladder throughout" \
 # either of the two above. jq aborts the whole program from inside a `def` on
 # any field a record shapes differently than the fold expects — here a
 # `stage-end` whose `tokens` is a scalar rather than the object
-# docs/METERING-SCHEMA.md's record describes, standing in for the general case
+# docs/reference/metering-schema.md's record describes, standing in for the general case
 # of a malformed peer record nobody anticipated. Reporting the all-zero shape
 # there would state "this fleet repeated no work" about a log that plainly
 # carries a rework record, so the fallback is the outage shape instead.

@@ -489,8 +489,9 @@
    `lib/lane.sh`, the identical rule `stage_lane_draw` itself draws by) —
    and, per lane per field, whether `config` or `fleet/mix.json` (with that
    flag's own `ts`/`by`) supplied it. `scripts/node-health.sh --metrics`
-   carries the identical object as its own `mix` field (`docs/METERING-
-   SCHEMA.md`), built from the one shared function (`mix_fleet_status_json`,
+   carries the identical object as its own `mix` field
+   (`docs/reference/metering-schema.md`), built from the one shared function
+   (`mix_fleet_status_json`,
    `lib/mix.sh`) `--status` itself renders from, so the two can never
    disagree about what is open right now (requirement 34a).
 

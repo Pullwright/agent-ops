@@ -89,7 +89,7 @@ if [[ "$record_needs_refinement_block_fn" != *"dependency_refusal_reason"* ]]; t
   printf 'FAIL - record_needs_refinement_block no longer calls dependency_refusal_reason (issue #566 fix removed?)\n'
   exit 1
 fi
-# docs/FLOW-SCHEMA.md, requirement 47, issue #596: the recorder also calls
+# docs/reference/flow-schema.md, requirement 47, issue #596: the recorder also calls
 # lib/rework.sh's rework_refinement_bounce_back_fields, out of this file's
 # own scope (test/rework-record.test.sh covers it directly). Stubbed to
 # print nothing, the same "does not fire" shape the real function returns

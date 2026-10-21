@@ -359,7 +359,7 @@
     Assert the ordering too — the engagement's events precede
     `cycle-end` — and that a limit phrase in that transcript produces an ordinary
     `limit-hit` rather than being swallowed with the rest of the failure.
-33a. <a id="impl-ac-33a"></a>**The per-stage metering record matches `docs/METERING-SCHEMA.md`
+33a. <a id="impl-ac-33a"></a>**The per-stage metering record matches `docs/reference/metering-schema.md`
     (requirement 33a).** `test/metering.test.sh` passes: `lib/metering.sh`'s
     `metering_fields` derives `model`, `provider` (read from
     `lib/model-id.sh`'s `MODEL_PROVIDER`, falling back to `anthropic` for a

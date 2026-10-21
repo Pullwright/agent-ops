@@ -7,7 +7,7 @@
 # postmortem). This is the CLI over lib/host-facts.sh (the driver-independent
 # envelope, `host`, `updater`, `viewer_probe`) and
 # lib/host-facts-compose.sh / lib/host-facts-kubernetes.sh (the two
-# vantage-specific sections) — docs/HOST-FACTS-SCHEMA.md is the record's own
+# vantage-specific sections) — docs/reference/host-facts-schema.md is the record's own
 # field-by-field contract.
 #
 # Run this from the collector's own container, on its own cadence (the
@@ -55,7 +55,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage: collect-host-facts.sh [--print] [--driver compose|kubernetes]
 
-Collect this node's host-facts record (docs/HOST-FACTS-SCHEMA.md) and write
+Collect this node's host-facts record (docs/reference/host-facts-schema.md) and write
 it to state_dir/host-facts/<node>.json, atomically. The ordinary state-sync
 push carries it out to the rest of the fleet.
 

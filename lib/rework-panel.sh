@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/rework-panel.sh — the rework panel (docs/FLOW-SCHEMA.md's "rework
+# lib/rework-panel.sh — the rework panel (docs/reference/flow-schema.md's "rework
 # record" and "item lifecycle record", D23 of docs/ROADMAP.md, issue #611).
 #
 # Answers exactly three questions from data that already exists — nothing
@@ -10,7 +10,7 @@
 #               first-pass yield.
 #   whose?      repetitions grouped by `attributed_stage`, with an explicit
 #               "not attributed" bucket for the seven classes
-#               docs/FLOW-SCHEMA.md's own attribution rule leaves `null` —
+#               docs/reference/flow-schema.md's own attribution rule leaves `null` —
 #               never inferred here either.
 #   how far?    the escape ladder — one row per detection stage in the
 #               pipeline's own cost order (agent review, the human gate,
@@ -20,7 +20,7 @@
 #
 # Plus one further breakdown, scoped to a single class rather than the whole
 # stream (issue #1805): `merge_conflict_paths` reads `merge-conflict`'s own
-# `evidence.conflicted_paths` (docs/FLOW-SCHEMA.md's own notes on that
+# `evidence.conflicted_paths` (docs/reference/flow-schema.md's own notes on that
 # class) for which files conflict most often, and what share of that class
 # conflicts on `CHANGELOG.md` alone. Not a fourth question this module
 # answers about rework in general — the other three read every class alike —
@@ -74,7 +74,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 # item_lifecycle_fold's own report over the same log, read from a file
 # (requirement 4g — big things travel in files, never argv).
 #
-# --- Deduping the rework stream (docs/FLOW-SCHEMA.md, "Do not double-count")
+# --- Deduping the rework stream (docs/reference/flow-schema.md, "Do not double-count")
 # The union log carries every node's own copy of a repetition two or more
 # nodes each observed, so this reduces first-wins-by-`ts` — the reduction that
 # section states in its own words, and the copy whose `cycle` actually first
@@ -91,7 +91,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 # distinguishing genuinely separate occurrences while still collapsing exact
 # same-instant copies of one occurrence the same way the item-bearing classes
 # do. `evidence.by` on a non-object `evidence` (a bare string or number,
-# `docs/FLOW-SCHEMA.md`'s "any | null") would abort the whole fold from inside
+# `docs/reference/flow-schema.md`'s "any | null") would abort the whole fold from inside
 # this `def` if indexed directly, so the `post-merge-revert` branch routes it
 # through `objects` first — an empty result there (not an object) falls
 # through `//` to `""` exactly like a genuinely absent field would. The
@@ -136,7 +136,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 #
 # --- The cost join
 # `cost_by_cycle` sums each `stage-end` event's own `cost_usd`/`duration_ms`/
-# `tokens.*` (null-as-zero, docs/METERING-SCHEMA.md's own aggregation rule),
+# `tokens.*` (null-as-zero, docs/reference/metering-schema.md's own aggregation rule),
 # grouped by that event's `cycle` — the same field a `rework` event carries
 # from the identical `log_event` envelope (lib/rework.sh's own header), except
 # `post-merge-revert`, whose `cycle` is always `null` because that class is
@@ -157,7 +157,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 # `null` with its own note rather than `$0.00`.
 #
 # The whole of a rework-bearing cycle's spend counts as rework in `how_much`:
-# `stage-end` meters a stage, and nothing in docs/FLOW-SCHEMA.md's record says
+# `stage-end` meters a stage, and nothing in docs/reference/flow-schema.md's record says
 # which part of a cycle a repetition consumed, so no apportionment within a
 # cycle is derivable here. That makes `rework_share` an upper bound rather than
 # a measured split — stated in those words on the panel's own face, and in
@@ -305,7 +305,7 @@ REWORK_PANEL_JQ='
   # --- Merge-conflict class: which files conflicted (issue #1805) ---------
   # `conflicted_paths` rides in `evidence` only when the dry-run merge on the
   # candidate could compute one (see the merge-conflict notes in
-  # docs/FLOW-SCHEMA.md) — an item whose dry run failed carries no such key
+  # docs/reference/flow-schema.md) — an item whose dry run failed carries no such key
   # at all (filtered out of evidence by the null filter in
   # rework_selection_fields, not stored as a JSON `null`), and is counted in
   # `total` but not `known`, the same "an outage is not a quiet zero"

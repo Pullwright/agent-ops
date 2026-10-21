@@ -181,7 +181,7 @@ monitor_digest_promoted() {
 # mirror, and reading the mirror would make this reader depend on a git
 # checkout rather than on state_dir.
 #
-# `host` is the host-facts record (docs/HOST-FACTS-SCHEMA.md) where one
+# `host` is the host-facts record (docs/reference/host-facts-schema.md) where one
 # exists — the only route by which a CronJob-shaped Monitor may know anything
 # about a host at all (M3). Absent, the field is `null`: no collector has run
 # on that node, which is itself worth the Monitor seeing.

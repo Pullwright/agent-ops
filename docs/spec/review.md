@@ -1139,7 +1139,7 @@ R16. <a id="rev-r16"></a>**Streams.** Review *operational* events go to the revi
    `review-end`, `labels-ensured` (R5.0b — the same event name and shape the
    implementation pipeline writes, since it is the same mechanism reporting
    the same thing about the same repositories), `node-state` (requirement 50
-   of `docs/spec/implementation/README.md`, `docs/FLOW-SCHEMA.md`'s "The
+   of `docs/spec/implementation/README.md`, `docs/reference/flow-schema.md`'s "The
    node time-state record" — the same event and shape `agent-cycle.sh`
    writes to `log.jsonl`, since `scripts/node-time-state.sh` unions both
    streams before folding), and `warning`. Common fields:
@@ -1159,7 +1159,7 @@ R16. <a id="rev-r16"></a>**Streams.** Review *operational* events go to the revi
    *actually* used, distinct from `review-stage-start`'s own), `cost_usd`,
    `duration_ms`, `num_turns`, `is_error`, `tokens` — via the same
    `lib/metering.sh` helper `agent-cycle.sh` uses, so a review's stage costs
-   exactly the same shape as a cycle's (`docs/METERING-SCHEMA.md`). Two
+   exactly the same shape as a cycle's (`docs/reference/metering-schema.md`). Two
    events are written to the shared
    `log.jsonl` instead, both because their reader is in the *other* pipeline:
    `limit-hit` (R6), because usage-limit stand-down is shared across both
@@ -1267,7 +1267,7 @@ What exists, and the requirements each part answers to:
    `scripts/doctor.sh` so the cycle's own refusal and doctor's `fail` read
    one implementation, the metering record on `review-stage-end`
    through `lib/metering.sh`, shared with `agent-cycle.sh` — see
-   `docs/METERING-SCHEMA.md` — and R19's own stage-health verdict through
+   `docs/reference/metering-schema.md` — and R19's own stage-health verdict through
    `lib/stage-health.sh`, shared with `agent-cycle.sh`/`monitor-cycle.sh`).
    `shellcheck`-clean; sets its own `PATH`.
 2. <a id="rev-c-2"></a>`prompts/project-reviewer.md` implementing R9–R15. It must embed the

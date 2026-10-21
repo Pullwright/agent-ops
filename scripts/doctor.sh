@@ -1296,7 +1296,7 @@ fi
 # sees — still fits the host it shares with its siblings (the two-Compose-
 # projects-per-host layout deploy/docker/compose.yaml's own D14 comment
 # already names). Read from the same published record the Egress section
-# below already reads (docs/HOST-FACTS-SCHEMA.md's `budget`), never
+# below already reads (docs/reference/host-facts-schema.md's `budget`), never
 # measured directly: this script holds neither the collector's Docker
 # socket nor its cgroup mount (agent-ops#603). `lib/host-budget.sh` is the
 # one place the sum is judged, so this warning and requirement 2.0g's own
@@ -3048,7 +3048,7 @@ fi
 # says nothing about the host's, and the three probes above already show
 # why doctor.sh cannot even reach the far side directly. This reads what
 # the collector already measured and already compared
-# (docs/HOST-FACTS-SCHEMA.md's `host.network.mtu_match`), rather than
+# (docs/reference/host-facts-schema.md's `host.network.mtu_match`), rather than
 # guessing at a fact only a real host vantage can read.
 if ((offline)); then
   skip "host egress MTU (--offline)"

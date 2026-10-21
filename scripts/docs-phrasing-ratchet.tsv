@@ -8,7 +8,7 @@
 .claude/skills/td/SKILL.md	1
 AGENTS.md	6
 deploy/docker/README.md	2
-docs/FLOW-SCHEMA.md	3
+docs/reference/flow-schema.md	3
 docs/guides/contributing/README.md	3
 docs/guides/operating/README.md	5
 docs/reference/configuration.md	4

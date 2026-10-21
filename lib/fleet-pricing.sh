@@ -23,7 +23,7 @@
 #                                        issue's "Done when" line.
 #
 # --- The fate mapping, defined and documented here since `cost_rows[]`
-#     itself carries no such vocabulary (docs/METERING-SCHEMA.md's own
+#     itself carries no such vocabulary (docs/reference/metering-schema.md's own
 #     outcome ladder is an event-priority marker, not a fate) -------------
 #
 # Applied in this order, first match wins, so every row lands in exactly one
@@ -46,7 +46,7 @@
 #                       classification decides this, never re-derived here.
 #   3. defect_driven   `.outcome == "failed"` (the ladder's own
 #                       `attempt-failed` event, reported as `"failed"` on
-#                       `cost_rows[]` — docs/METERING-SCHEMA.md's own outcome
+#                       `cost_rows[]` — docs/reference/metering-schema.md's own outcome
 #                       ladder names the *event*; the row carries the
 #                       shorter value the same jq that builds it actually
 #                       emits) and not already claimed by rework above: the

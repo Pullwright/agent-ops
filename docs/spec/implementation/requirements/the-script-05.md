@@ -603,9 +603,9 @@
 2.6d. <a id="impl-2-6d"></a>**Analytics retention** (D21, agent-ops#598). `log.jsonl` and
    `review-log.jsonl` already carry every analytics record this pipeline
    produces — the per-stage metering record (requirement 33a,
-   `docs/METERING-SCHEMA.md`), the rework record (requirement 47,
-   `docs/FLOW-SCHEMA.md`) and the item-scoped events the item-lifecycle fold
-   reads (requirement 49, `docs/FLOW-SCHEMA.md`) — and requirement 2.6
+   `docs/reference/metering-schema.md`), the rework record (requirement 47,
+   `docs/reference/flow-schema.md`) and the item-scoped events the item-lifecycle fold
+   reads (requirement 49, `docs/reference/flow-schema.md`) — and requirement 2.6
    already excludes both files from `scripts/rotate-logs.sh`'s size-based
    rotation, for its own stated reason: the union readers scan them whole.
    `analytics_retained_days` states that exclusion as a consequence of a
@@ -633,7 +633,7 @@
    going forward, any record derived by folding the fleet-wide union rather
    than emitted once by the process that observed it — must never be
    counted twice merely because more than one node holds a copy.
-   `docs/FLOW-SCHEMA.md`'s "Do not double-count" already states and tests
+   `docs/reference/flow-schema.md`'s "Do not double-count" already states and tests
    this for the rework record, reducing first-wins-by-`ts` on `{repo, item,
    class}` (`{…, evidence.by}` for `post-merge-revert`). This requirement
    generalises that property to bind every analytics record this policy

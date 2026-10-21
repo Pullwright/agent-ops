@@ -104,7 +104,7 @@ run_block() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
     export EVENT_FILE="$event_file"
-    # docs/FLOW-SCHEMA.md, requirement 50, issue #597: the memory stand-down
+    # docs/reference/flow-schema.md, requirement 50, issue #597: the memory stand-down
     # also calls lib/node-time-state.sh's set_node_state_terminal. Stubbed to
     # a no-op — this file's own subject is the stand-down's cause and
     # reason, not the node-state record test/node-time-state.test.sh covers

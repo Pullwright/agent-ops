@@ -438,7 +438,7 @@ review_stage_health_json="$(jq -c '.' "$review_stage_health_file" 2>/dev/null ||
 compose_reconcile_file="$state_dir/.compose-reconcile.json"
 compose_reconcile_json="$(jq -c '.' "$compose_reconcile_file" 2>/dev/null || echo null)"
 # This node's own host-facts record (scripts/collect-host-facts.sh,
-# agent-ops#1283, docs/HOST-FACTS-SCHEMA.md) — read rather than
+# agent-ops#1283, docs/reference/host-facts-schema.md) — read rather than
 # recomputed, the same doctor_status_json/stage_health_json precedent
 # above: the collector runs on its own schedule (the compose service's own
 # loop, or the Kubernetes CronJob's own tick), not this script's 5-second
@@ -2250,7 +2250,7 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
 #                    undercount exactly those three actors' own attempts.
 #                    `clean` is a stage-end with no `kill_reason` (requirement
 #                    4e); a fleet-wide crash-loop escalation (the other half
-#                    of `stage-rerun`, docs/FLOW-SCHEMA.md) cannot be pinned to
+#                    of `stage-rerun`, docs/reference/flow-schema.md) cannot be pinned to
 #                    one attempt among several and is not subtracted here.
 #   terminal fate    joined through `lib/item-lifecycle.sh`'s own fold
 #                    (requirement 49) — never re-derived — restricted to the
@@ -2262,7 +2262,7 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
 #                    measures below are built from their own per-item events
 #                    instead: `selection` for the Co-Ordinator, `item-refined`
 #                    for the Refiner).
-#   rework           `rework` events (docs/FLOW-SCHEMA.md), deduped first-by-
+#   rework           `rework` events (docs/reference/flow-schema.md), deduped first-by-
 #                    ts over `{repo, item, class}` (`{repo, item, class,
 #                    evidence.by}` for `post-merge-revert`) per that
 #                    document's own "Do not double-count" rule before anything
@@ -2276,7 +2276,7 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
 # Cost and wall-clock per landed item read the landed stage-end's own
 # `cost_usd`/`duration_ms` (requirement 33a) directly, not
 # `counts.cost_rows[]`: that field is deliberately never `attributed` for the
-# Enabler or the Refiner (docs/METERING-SCHEMA.md — it shares its triggering
+# Enabler or the Refiner (docs/reference/metering-schema.md — it shares its triggering
 # cycle's id with whichever stage of that cycle owns the item), which would
 # leave those two actors' rows permanently null, whereas the metering record
 # already carries the exact invocation's own total (subagents included) keyed
@@ -2320,7 +2320,7 @@ rev_tier_complex="$(resolve_model_id reviewer_model_complex "$rev_tier_complex_r
 # (`$cut`, matching every other roll-up on this page), but a landed/voided/
 # abandoned item's *fate* must read the same whether the evidence that settled
 # it sits inside or outside that window — the fold's own "fate is current
-# state; `--since` bounds only the population" rule (docs/FLOW-SCHEMA.md).
+# state; `--since` bounds only the population" rule (docs/reference/flow-schema.md).
 #
 # The fold's `records[]` is itself log-scale (every item-scoped event, as each
 # record's `instants`), and the scorecards below read only each record's fate.
@@ -2397,7 +2397,7 @@ jq -sc --arg cut "$day_cut" --argjson min_sample "$SCORECARD_MIN_SAMPLE" \
          | map({key: .pr_url, value: {repo: (.repo | tostring), item: (.item | tostring)}})
          | from_entries) as $pr_to_item
 
-  # rework, re-keyed then deduped per docs/FLOW-SCHEMA.md, "Do not
+  # rework, re-keyed then deduped per docs/reference/flow-schema.md, "Do not
   # double-count" — first-wins-by-ts over {repo, item, class} ({+evidence.by}
   # for post-merge-revert).
   | ($ev | map(select(.event == "rework"))
@@ -2507,7 +2507,7 @@ jq -sc --arg cut "$day_cut" --argjson min_sample "$SCORECARD_MIN_SAMPLE" \
   # The Refiner own measure: items it refined (`item-refined` events with
   # `by == "refiner"` — the Enabler logs the same event for its own unblock-
   # as-refined act, with no `by`, and is excluded here) that landed, and how
-  # many were bounced back (docs/FLOW-SCHEMA.md, `refinement-bounce-back`).
+  # many were bounced back (docs/reference/flow-schema.md, `refinement-bounce-back`).
   | ($ev | map(select(.event == "stage-end" and .stage == "refiner" and ((.cycle // "") != "")))
          | reduce .[] as $s ({}; .[$s.cycle] = ($s.model // null))) as $cyc_model_refiner
   | ([ $ev[] | select(.event == "item-refined" and (.by // "") == "refiner"
@@ -2624,7 +2624,7 @@ counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
 # --- Stage gap series (issue #594, D21) ---------------------------------------
 # The stall profile the pipelines already measure and never display: how long
 # each stage went silent between one growth of its own event stream and the
-# next (docs/METERING-SCHEMA.md's `gaps`). Read straight off the `gaps` object
+# next (docs/reference/metering-schema.md's `gaps`). Read straight off the `gaps` object
 # on every `stage-end`/`review-stage-end` event, never re-derived from an
 # envelope — `gaps` cannot be; it is what `lib/stage-run.sh` observed of the
 # run while it happened, not a fact the envelope itself records.
@@ -2647,7 +2647,7 @@ counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
 review_events_union="$work_tmp/review-events-union.jsonl"
 { cat "$events_jsonl"; printf '\n'; cat "$review_log_union"; } \
   > "$review_events_union" 2>/dev/null || : > "$review_events_union"
-# Percentiles of percentiles are not percentiles (docs/METERING-SCHEMA.md,
+# Percentiles of percentiles are not percentiles (docs/reference/metering-schema.md,
 # "gaps"): each `stage-end`'s own p50/p95/p99 is nearest-rank over *that run's*
 # sample alone, and the raw samples are not retained, so this cannot re-derive
 # a pooled percentile across runs. What it reports instead, per stage: `runs`
@@ -2658,7 +2658,7 @@ review_events_union="$work_tmp/review-events-union.jsonl"
 # run reported), and `worst_run_max` (the longest silence any run saw — a max
 # of maxima is a max, so this one figure *is* exact). A `stage-end` whose
 # `gaps` is `null` means "not measured," never "never quiet"
-# (docs/METERING-SCHEMA.md), and is excluded from `runs` rather than counted
+# (docs/reference/metering-schema.md), and is excluded from `runs` rather than counted
 # as a silent run.
 stage_gaps_file="$work_tmp/stage-gaps.json"
 # `review_log_union` is a peer read straight off `fleet_logs`, unlike
@@ -3014,7 +3014,7 @@ for hb in "$peers_dir"/*/heartbeat.json; do
   hb_ts="$(fleet_ts_field "$hb")"
   pub_json="$(fleet_publication_status "$hb_ts" "$node_stale_after_seconds" "$now_epoch")"
   # Unlike compose/image/updater/etc. above, host-facts is not a field
-  # inside this peer's heartbeat.json — docs/HOST-FACTS-SCHEMA.md's own
+  # inside this peer's heartbeat.json — docs/reference/host-facts-schema.md's own
   # layout puts it at "<peers_dir>/<peer>/host-facts/<peer>.json", a
   # sibling file under the same peer directory this heartbeat came from
   # (fleet_peers_dir's own per-node layout), replicated by the identical
@@ -4175,10 +4175,10 @@ counts_with_escapes="$(jq -c --argjson e "$escape_audits_json" '. + {escape_audi
 
 # --- Rework panel (D23, docs/ROADMAP.md; issue #611) -------------------------
 # The three questions D23 asks of the rework record and the item lifecycle
-# record (docs/FLOW-SCHEMA.md), folded by lib/rework-panel.sh's
+# record (docs/reference/flow-schema.md), folded by lib/rework-panel.sh's
 # `rework_panel_build`: how much (tokens'/elapsed time's rework share against
 # first-pass yield), whose (grouped by attributed_stage, an explicit
-# "not attributed" bucket for the seven classes docs/FLOW-SCHEMA.md's own
+# "not attributed" bucket for the seven classes docs/reference/flow-schema.md's own
 # attribution rule leaves null) and how far (the escape ladder — one row per
 # detection stage in the pipeline's own rising cost order: agent review, the
 # human gate, post-merge). Read fleet-wide from the same event union

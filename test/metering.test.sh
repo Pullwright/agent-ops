@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/metering.test.sh — self-contained regression test for
-# lib/metering.sh (docs/METERING-SCHEMA.md, requirement 33a of
+# lib/metering.sh (docs/reference/metering-schema.md, requirement 33a of
 # docs/spec/implementation/README.md).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a

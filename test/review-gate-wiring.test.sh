@@ -186,7 +186,7 @@ run_gate_block() {
       "$gate_arg4" "$review_json"
     printf 'review_gate_unknown_streak_verdict() { cat >/dev/null; printf %%s %q; }\n' "$streak_json"
     printf 'review_gate_degraded_since() { cat >/dev/null; return %s; }\n' "$since_rc"
-    # docs/FLOW-SCHEMA.md, requirement 47, issue #596: the block calls two
+    # docs/reference/flow-schema.md, requirement 47, issue #596: the block calls two
     # rework-record functions (lib/rework.sh) this file's own scope is not
     # about — test/rework-record.test.sh covers their own logic directly.
     # Stubbed to print nothing, the same "does not fire" shape the real

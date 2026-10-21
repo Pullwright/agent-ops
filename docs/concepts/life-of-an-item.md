@@ -178,7 +178,7 @@ stateDiagram-v2
     superseded --> [*]
 ```
 
-Authoritative: `docs/FLOW-SCHEMA.md` § "Terminal fates";
+Authoritative: `docs/reference/flow-schema.md` § "Terminal fates";
 `docs/spec/implementation/requirements/logging-and-state-01.md`,
 requirement 33 (the event enum; `draft-obsolete-flagged` itself is
 requirement 36a's own `flag_obsolete`, logged by a `still-blocked` Enabler

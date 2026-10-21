@@ -528,7 +528,7 @@ extract_citation_spans() {
   # `, "next field"` in a JSON test fixture (`"duration_ms": 5, "num_turns":
   # 5`), and prose naming a literal string a script uses, e.g.
   # `review-cycle.sh`'s "an implementation cycle is running" reason code
-  # (docs/FLOW-SCHEMA.md) — a real citation, by contrast, only ever points
+  # (docs/reference/flow-schema.md) — a real citation, by contrast, only ever points
   # at a Markdown document, because only one has headings to name.
   awk '
     {

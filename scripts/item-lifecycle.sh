@@ -2,7 +2,7 @@
 #
 # scripts/item-lifecycle.sh — print the item-lifecycle record (requirement
 # 49, issue #595): one durable record per work item, folded from the union
-# event log, ending in an explicit terminal fate. `docs/FLOW-SCHEMA.md`'s
+# event log, ending in an explicit terminal fate. `docs/reference/flow-schema.md`'s
 # "Item lifecycle record" section is the field-by-field contract this prints;
 # `lib/item-lifecycle.sh`'s `item_lifecycle_fold` is the pure derivation this
 # script only wires to the fleet's own log.
@@ -42,12 +42,12 @@ Read-only. Prints the item-lifecycle report as JSON on stdout:
   - `totals`: the flow invariant — `entered` (distinct {repo, item} pairs
     with any event), `leaving` (a terminal fate), `in_progress` (blocked or
     open), `unaccounted`, and `balanced` (whether the four sum to `entered`,
-    which they always do by construction — see docs/FLOW-SCHEMA.md).
+    which they always do by construction — see docs/reference/flow-schema.md).
   - `fates`: the count of each of the six terminal/in-progress fates.
   - `unaccounted`: `{repo, item, reason}` for every item the fold could not
     resolve automatically (never dropped).
   - `records`: one record per item — `{repo, item, source, first_seen,
-    instants[], fate}` — docs/FLOW-SCHEMA.md documents every field.
+    instants[], fate}` — docs/reference/flow-schema.md documents every field.
 
   --since       only count events at or after this ISO-8601 timestamp
                 (default: the whole log).

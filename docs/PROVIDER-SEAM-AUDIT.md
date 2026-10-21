@@ -171,7 +171,7 @@ documents assert the Claude/Anthropic assumption in prose:
   `deploy/docker/README.md` and `.env.example` do (§2's rows); generated
   from `config.schema.json` by `scripts/render-config-table.sh` where it is
   a config-table region, hand-written elsewhere.
-- **`docs/METERING-SCHEMA.md`** — states explicitly, of the envelope §1's
+- **`docs/reference/metering-schema.md`** — states explicitly, of the envelope §1's
   contract depends on: "This document does not restate that envelope's own
   schema — that is Anthropic's contract, not this repo's, and only a subset
   of it is used here." This is the one piece of documentation that already

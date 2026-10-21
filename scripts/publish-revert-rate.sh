@@ -113,12 +113,12 @@
 # cache per repository (see "GitHub API quota" above) — local memoisation,
 # not published output.
 #
-# Every run also appends one `rework` event (docs/FLOW-SCHEMA.md, D23, issue
+# Every run also appends one `rework` event (docs/reference/flow-schema.md, D23, issue
 # #596) to `<state_dir>/log.jsonl` itself — never revert-rate.jsonl — per
 # newly detected post-merge revert or follow-up fix the rolling-window mining
 # pass finds, memoised in `<state_dir>/rework-post-merge-revert-seen.json` so
 # the same outcome is not re-emitted on tomorrow's run of the same 14-day
-# window. This is the one rework class docs/FLOW-SCHEMA.md documents as mined
+# window. This is the one rework class docs/reference/flow-schema.md documents as mined
 # after the fact rather than emitted in-cycle.
 #
 # Exit status: 0 iff every configured repository's rolling figure was
@@ -208,7 +208,7 @@ mkdir -p "$state_dir"
 out_file="$state_dir/revert-rate.jsonl"
 cum_state_file="$state_dir/revert-rate-cumulative-state.json"
 [[ -s "$cum_state_file" ]] || printf '{}' > "$cum_state_file"
-# post-merge-revert rework records (docs/FLOW-SCHEMA.md, D23, issue #596):
+# post-merge-revert rework records (docs/reference/flow-schema.md, D23, issue #596):
 # the one class that is mined after the fact rather than emitted in-cycle, so
 # this is where it is emitted — the daily pass that already computes
 # `window_stats.post_merge.detail[]` (mine-merge-history.sh's own per-PR
@@ -216,7 +216,7 @@ cum_state_file="$state_dir/revert-rate-cumulative-state.json"
 # `repo#number` outcomes it has already appended to the union log: the
 # 14-day rolling window re-mines the same settled outcomes on every run, and
 # without a memo every one of those would re-emit as a fresh "repetition" it
-# is not (see "Do not double-count", docs/FLOW-SCHEMA.md). Appended to the
+# is not (see "Do not double-count", docs/reference/flow-schema.md). Appended to the
 # same `<state_dir>/log.jsonl` `log_event` writes (lib/fleet.sh's `fleet_logs`
 # unions it fleet-wide identically), never to `revert-rate.jsonl`, which is
 # an aggregate rate, not the union log this record belongs in.

@@ -311,7 +311,7 @@ verdict is to undo.
   owner-only act, and it is what the collector exists to retire. Read
   `state_dir/host-facts/<node>.json` — this node's own record, or a peer's at
   `<peers_dir>/<peer>/host-facts/<peer>.json` — before you reach for
-  `escalate` on either condition. `docs/HOST-FACTS-SCHEMA.md` is the record's
+  `escalate` on either condition. `docs/reference/host-facts-schema.md` is the record's
   own field list; the spec's carve-out states exactly which asks it refuses
   and which still escalate. A field the record carries as `null`, a section
   absent because that node runs the other driver, and a fact the record does

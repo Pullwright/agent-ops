@@ -41,7 +41,7 @@ CLI also sends the head of that same prompt, truncated, to a second xAI
 model (`grok-4.6`) to generate a session title, on every run, with no switch
 that turns it off. The same xAI account receives it either way, so no new
 party sees any data because of this — but its cost is not in the envelope
-the pipeline reads (`docs/METERING-SCHEMA.md`), so a Grok Build stage's
+the pipeline reads (`docs/reference/metering-schema.md`), so a Grok Build stage's
 recorded cost understates what the run actually spent by a few thousand
 input tokens on that second model.
 

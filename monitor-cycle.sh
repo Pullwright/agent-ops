@@ -24,7 +24,7 @@
 #
 #   CronJob-shaped. No Docker, no ssh, no host path. Everything this script
 #     knows about a host it learns from `host-facts/<node>.json`
-#     (docs/HOST-FACTS-SCHEMA.md), which is why a later move of this pipeline
+#     (docs/reference/host-facts-schema.md), which is why a later move of this pipeline
 #     into a control plane moves one prompt and one digest builder.
 #   The model never reads a primary record. The Script assembles the digest
 #     (lib/monitor-digest.sh) and bounds it; the stage reads that and nothing

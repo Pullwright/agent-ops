@@ -17,7 +17,7 @@
 # requirement 2.0g, scripts/doctor.sh's advisory) can never disagree with
 # another about what "over budget" means. Every function here takes its
 # numbers as arguments rather than reading anything itself — the numbers
-# come from the host-facts record (docs/HOST-FACTS-SCHEMA.md), already
+# come from the host-facts record (docs/reference/host-facts-schema.md), already
 # published by scripts/collect-host-facts.sh from a vantage (the Docker
 # socket) this container does not hold (agent-ops#603) — so this file has
 # no I/O of its own and is trivial to drive from a fixture, the same way
@@ -91,7 +91,7 @@ host_budget_declared_cpu_unknown_count() {
 }
 
 # host_budget_summary_json MEM_TOTAL_BYTES CPU_COUNT CONTAINERS_JSON — the
-# whole `budget` section (docs/HOST-FACTS-SCHEMA.md): the declared sums
+# whole `budget` section (docs/reference/host-facts-schema.md): the declared sums
 # above, the unknown-container counts beside them, the host's own totals
 # (`null` through when the caller could not measure them), and each
 # dimension's headroom (`null` when its own total is `null` — a headroom

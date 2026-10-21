@@ -684,7 +684,7 @@ if (( resume_epoch > now_epoch )); then
         notify_post_cycle "fleet-standdown-end" "standdown:usage-limit" \
           "Usage-limit cooldown lifted" "" "" \
           "probe answered: the limit behind this estimated stand-down (resume was $resume_at) is gone"
-        # node-state (docs/FLOW-SCHEMA.md, D21): the fleet-wide block just
+        # node-state (docs/reference/flow-schema.md, D21): the fleet-wide block just
         # lifted and this cycle continues past this point — an immediate
         # transition, not a terminal one (this call does not exit).
         log_node_state_transition overhead

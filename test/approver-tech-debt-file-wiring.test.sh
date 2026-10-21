@@ -84,12 +84,12 @@ set -euo pipefail
 
 . "$SCRIPT_DIR/lib/approver.sh"
 . "$SCRIPT_DIR/lib/cycle-state.sh"
-# docs/FLOW-SCHEMA.md, requirement 47, issue #596: run_approver_stage's own
+# docs/reference/flow-schema.md, requirement 47, issue #596: run_approver_stage's own
 # stage-end site calls lib/rework.sh's rework_stage_rerun_maybe. Sourced for
 # real (it is pure and cheap) rather than stubbed, so this file keeps
 # verifying the shipped wiring rather than a stand-in for it.
 . "$SCRIPT_DIR/lib/rework.sh"
-# docs/FLOW-SCHEMA.md, requirement 50, issue #597: the same stage-end site
+# docs/reference/flow-schema.md, requirement 50, issue #597: the same stage-end site
 # also calls lib/node-time-state.sh's log_node_state_transition. Sourced for
 # real for the same reason as lib/rework.sh immediately above — and its own
 # `node-state` event lands in this file's `log_event` stub harmlessly, since

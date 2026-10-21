@@ -187,7 +187,7 @@ watchtower. The scheduler starts regardless: it is
 in no profile, because a node that runs no cycles and no heartbeat is not a
 node. So does the `collector` (issue #1283) — the container that holds the
 read-only Docker socket and cgroup mounts that let `scripts/collect-host-facts.sh`
-read a host fact none of the others can (see `docs/HOST-FACTS-SCHEMA.md`).
+read a host fact none of the others can (see `docs/reference/host-facts-schema.md`).
 
 ### 4. Give this node model credentials
 
@@ -320,11 +320,11 @@ One thing to know about cost: every Grok session also sends the head of its
 own prompt to a second xAI model (`grok-4.6`) to generate a session title,
 with no switch that turns it off — the same account either way, so no new
 party sees anything, but that call's own cost never appears in the
-pipeline's own recorded figures (`docs/METERING-SCHEMA.md`,
+pipeline's own recorded figures (`docs/reference/metering-schema.md`,
 `docs/DATA-HANDLING.md`). On the subscription path a second, larger gap
 applies until issue #2246 lands: xAI reports an unknown cost as the literal
 `0`, which the pipeline records as a genuine zero rather than "unknown"
-(`docs/METERING-SCHEMA.md`) until the adapter is taught to tell the two
+(`docs/reference/metering-schema.md`) until the adapter is taught to tell the two
 credential paths apart.
 
 One thing to know about egress: a subscription-authenticated stage's own

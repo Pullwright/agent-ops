@@ -51,7 +51,7 @@ for path in \
   docs/spec/implementation/README.md \
   docs/spec/review.md \
   docs/spec/dashboard/README.md \
-  docs/METERING-SCHEMA.md \
+  docs/reference/metering-schema.md \
   docs/ROADMAP.md \
 ; do
   url="https://github.com/Pullwright/agent-ops/blob/main/$path"
@@ -1571,7 +1571,7 @@ assert_not_contains "  ... never as a quiet no-candidate tick" \
 
 # --- token-economics.json: the token and prompt-cache panels (issue #594, D21) ---
 # Token totals by stage and by model, and the prompt-cache ratio each implies,
-# read off cost_rows[]'s own tokens_* fields (docs/METERING-SCHEMA.md) —
+# read off cost_rows[]'s own tokens_* fields (docs/reference/metering-schema.md) —
 # riding the same window/time-frame selector as the cost charts, never a
 # second scan.
 te="$(render token-economics.json)" || { printf 'FAIL - token-economics.json did not render:\n%s\n' "$te"; exit 1; }

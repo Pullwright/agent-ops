@@ -630,7 +630,7 @@
   state.
 - **A fifth badge reads the host-facts record a node's own collector
   writes (`scripts/collect-host-facts.sh`, agent-ops#1283,
-  `docs/HOST-FACTS-SCHEMA.md`), a fact source none of the four badges
+  `docs/reference/host-facts-schema.md`), a fact source none of the four badges
   above can reach: each of them reads what runs *inside* the scheduler
   container, and the D24 fence puts this container on the far side of its
   own host's real network path, so nothing above can tell a host's own

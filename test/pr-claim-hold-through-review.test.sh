@@ -270,7 +270,7 @@ else
     issue_priority_cache_cleanup() { :; }
     # shellcheck disable=SC2317
     log_event() { :; }
-    # docs/FLOW-SCHEMA.md, requirement 50, issue #597: cleanup's own last act
+    # docs/reference/flow-schema.md, requirement 50, issue #597: cleanup's own last act
     # is finalize_node_state_for_cycle. Sourced for real (it is pure, cheap,
     # and its only side effect is the log_event stub above) rather than
     # stubbed — which also keeps this case checking what it exists to check,

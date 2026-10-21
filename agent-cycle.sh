@@ -1072,7 +1072,7 @@ stage_budget_apply() {
     '{stage: $s, model: $m, lane: $lane} + (if ($e | type) == "object" then $e else {} end) + $b
      + (if $r == "" or $r == "*" then {} else {repo: $r} end)
      + (if $i == "" then {} else {item: $i} end)')"
-  # node-state (docs/FLOW-SCHEMA.md, D21): every stage-start is a transition,
+  # node-state (docs/reference/flow-schema.md, D21): every stage-start is a transition,
   # producing only for the Implementer/Reviewer (node_state_for_stage).
   log_node_state_transition "$(node_state_for_stage "$actor")"
 }
@@ -1565,7 +1565,7 @@ cleanup() {
   if [[ "${GITHUB_BUDGET_CYCLE_OPEN:-0}" == "1" ]]; then
     github_budget_record cycle-end || true
   fi
-  # node-state (docs/FLOW-SCHEMA.md, D21): the state this node settles into
+  # node-state (docs/reference/flow-schema.md, D21): the state this node settles into
   # once this process exits, logged last of all — after maybe_run_enabler/
   # maybe_run_refiner above, whose own stage-start/stage-end pairs are real
   # overhead that must land on the timeline before this cycle's own idle/
@@ -1934,7 +1934,7 @@ acquire_lock() {
         stale_after_sec="$lock_stale_after_sec"
         if kill -0 "$pid" 2>/dev/null && (( age_sec < stale_after_sec )); then
           log_event "cycle-skipped" "$(jq -nc --arg d "lock held by pid $pid, age ${age_sec}s" '{detail: $d}')"
-          # node-state (docs/FLOW-SCHEMA.md, D21): a skipped tick is not a
+          # node-state (docs/reference/flow-schema.md, D21): a skipped tick is not a
           # state. The cycle holding this lock is the one occupying these
           # node-seconds, and its own transitions already say so — see
           # suppress_node_state_transitions' header.
@@ -2115,7 +2115,7 @@ if [[ "$(jq -r '.reaped // 0' <<<"$workspace_reap_json" 2>/dev/null || printf 0)
 fi
 
 acquire_lock
-# node-state (docs/FLOW-SCHEMA.md, D21): a live node emits the transition out
+# node-state (docs/reference/flow-schema.md, D21): a live node emits the transition out
 # of `down` here — `down` is derived from absence and never emits its own.
 # Here rather than beside `cycle-start` above, because everything between the
 # two can still end in a tick that owns no node-second at all: `cycle-skipped`
