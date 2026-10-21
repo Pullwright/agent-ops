@@ -60,6 +60,14 @@ name: Build the node image
 # the intended trade — the previous image is exactly the code that commit
 # describes — but `AGENT_OPS_IMAGE=…:<sha>` must name a commit that built one.
 #
+# A change can also land on a narrower outcome than "documentation only":
+# `skip_suite`, true when every changed path is either in that same inert set
+# or on scripts/is-docs-only.sh's own "read at run time but read by no test"
+# list (today, `docs/STANDING-DECISIONS.md` alone). That still builds the
+# image and still publishes it on `main` — the path is code the image
+# delivers to a running stage — but skips "Run the test suite inside the
+# image", the one step no such path could ever make fail.
+#
 # Each architecture is built and tested in its own job, on a runner of that
 # same architecture (this is the check TD26072607 exists for: an arm64 image
 # had only ever been proved to build, never to run). Native runners rather
@@ -103,11 +111,20 @@ jobs:
   # "documentation only" answers `false` and builds: no base commit to compare
   # against (`workflow_dispatch`, or the push that created a branch), a diff
   # git cannot produce, an empty diff, or a single path outside the allowlist.
+  #
+  # A change can also land on a narrower answer than "documentation only" —
+  # `skip_suite`, true when every path is either in that same inert set or on
+  # scripts/is-docs-only.sh's own separate "read by no test" list (today,
+  # `docs/STANDING-DECISIONS.md` alone). That still builds and publishes an
+  # image, since the path is code the image delivers to a running stage —
+  # only the in-image `test/` suite, which exercises no path on that list, is
+  # skipped.
   changes:
     name: Work out what changed
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      skip_suite: ${{ steps.classify.outputs.skip_suite }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -136,19 +153,24 @@ jobs:
           # the ruleset keeps linear — the merge base is the previous tip, so
           # it degenerates to the plain range.
           docs_only=false
+          skip_suite=false
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
             echo "no base commit to compare against — building"
           elif ! files="$(git diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA")"; then
             echo "cannot diff $BASE_SHA...$HEAD_SHA — building"
           elif [[ -z "$files" ]]; then
             echo "nothing changed between $BASE_SHA and $HEAD_SHA — building"
-          elif ! code="$(printf '%s\n' "$files" | ./scripts/is-docs-only.sh)"; then
-            printf 'building — this change touches code:\n%s\n' "$code"
-          else
+          elif printf '%s\n' "$files" | ./scripts/is-docs-only.sh >/dev/null; then
             docs_only=true
             printf 'documentation only — no image will be built or published:\n%s\n' "$files"
+          elif suite_code="$(printf '%s\n' "$files" | ./scripts/is-docs-only.sh --skip-suite-only)"; then
+            skip_suite=true
+            printf 'building — but skipping the suite, since every changed path is read by no test:\n%s\n' "$files"
+          else
+            printf 'building — this change touches code:\n%s\n' "$suite_code"
           fi
           printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
+          printf 'skip_suite=%s\n' "$skip_suite" >> "$GITHUB_OUTPUT"
 
   # What the image cannot work out about itself, computed once so that every
   # job builds with byte-identical build args — the same `built_at` in
@@ -255,8 +277,15 @@ jobs:
     # `changes` job that failed rather than answered leaves this empty, which
     # is not 'true', and the whole build runs — the same fail-safe the job
     # condition above keeps for a `changes` job that did not finish at all.
+    #
+    # SKIP_SUITE is narrower and read by exactly one step below ("Run the test
+    # suite inside the image") — every other step still needs to run even when
+    # it is 'true', since the change is still code the image has to build,
+    # verify and (on `main`) publish; only the suite itself exercises no path
+    # on scripts/is-docs-only.sh's "read by no test" list.
     env:
       DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+      SKIP_SUITE: ${{ needs.changes.outputs.skip_suite }}
 
     steps:
       - name: Checkout code
@@ -426,7 +455,7 @@ jobs:
             || { echo "the stamped pull request is not the one being built" >&2; exit 1; }
 
       - name: Run the test suite inside the image
-        if: env.DOCS_ONLY != 'true'
+        if: env.DOCS_ONLY != 'true' && env.SKIP_SUITE != 'true'
         run: |
           # NODE_NAME is set for the whole container, not per test: this is
           # the same image a fleet node runs, so anything invoked inside it

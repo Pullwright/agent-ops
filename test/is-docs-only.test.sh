@@ -53,6 +53,25 @@ assert_not_docs_only() {
   fi
 }
 
+assert_suite_skippable() {
+  local desc="$1"; shift
+  local out
+  if out="$("$CLASSIFY" --skip-suite-only "$@" 2>/dev/null)"; then
+    pass "$desc"
+  else
+    fail "$desc" "expected the suite to be skippable; it objected to: ${out:-<nothing>}"
+  fi
+}
+
+assert_not_suite_skippable() {
+  local desc="$1"; shift
+  if "$CLASSIFY" --skip-suite-only "$@" >/dev/null 2>&1; then
+    fail "$desc" "expected the suite to still be required; --skip-suite-only called it skippable"
+  else
+    pass "$desc"
+  fi
+}
+
 # --- Prose: the whole inert set, each on its own, then together. ---
 assert_docs_only "the roadmap is documentation" docs/ROADMAP.md
 assert_docs_only "anything nested under docs/ is documentation" docs/notes/adr/0001-thing.md
@@ -209,6 +228,60 @@ fi
 for doc in "${derived_docs[@]}"; do
   assert_not_docs_only "the derived run-time document $doc is classified as code" "$doc"
 done
+
+# --- --skip-suite-only: the third outcome. Build and publish still happen
+#     either way; only "Run the test suite inside the image" is what the
+#     workflow skips when this call succeeds. ---
+assert_suite_skippable "the inert set alone is suite-skippable" \
+  docs/ROADMAP.md README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md
+assert_suite_skippable "the standing decisions file alone is suite-skippable" \
+  docs/STANDING-DECISIONS.md
+assert_suite_skippable "the standing decisions file beside inert documentation is suite-skippable" \
+  docs/STANDING-DECISIONS.md docs/ROADMAP.md README.md
+assert_not_suite_skippable "a specification file still requires the suite" \
+  docs/spec/monitor.md
+assert_not_suite_skippable "a script still requires the suite" \
+  lib/model-id.sh
+assert_not_suite_skippable "the standing decisions file beside a script still requires the suite" \
+  docs/STANDING-DECISIONS.md lib/model-id.sh
+
+out="$("$CLASSIFY" --skip-suite-only docs/STANDING-DECISIONS.md lib/model-id.sh 2>/dev/null)"
+if [[ "$out" == "lib/model-id.sh" ]]; then
+  pass "--skip-suite-only names exactly the paths that still force the suite"
+else
+  fail "--skip-suite-only names exactly the paths that still force the suite" "actual: ${out//$'\n'/, }"
+fi
+
+# --- The guard on the premise: docs/STANDING-DECISIONS.md is exempt from the
+#     suite because nothing under test/ reads its content — agent-cycle.sh and
+#     lib/escalation-autonomy.sh are what read it at run time, and
+#     test/escalation-autonomy.test.sh feeds enabler_decide_precedents a
+#     fixture of its own rather than this file's real content. If some future
+#     test starts depending on the file's content, that premise is gone, and
+#     the exemption must lapse loudly rather than go on quietly skipping a
+#     suite that now exercises it. So every *.test.sh other than this one —
+#     which mentions the path only to check its classification, never to read
+#     it — must not mention it at all. ---
+if [[ -n "$standing_decisions" ]]; then
+  guard_hits=()
+  for t in "$SCRIPT_DIR"/test/*.test.sh; do
+    [[ "$(basename "$t")" == "is-docs-only.test.sh" ]] && continue
+    while IFS=: read -r lineno line; do
+      trimmed="${line#"${line%%[![:space:]]*}"}"
+      [[ "$trimmed" == \#* ]] && continue
+      guard_hits+=( "$(basename "$t"):$lineno: $line" )
+    done < <(grep -n -F "$standing_decisions" "$t" 2>/dev/null)
+  done
+  if (( ${#guard_hits[@]} == 0 )); then
+    pass "no test but this one reads $standing_decisions beyond checking its classification"
+  else
+    fail "no test but this one reads $standing_decisions beyond checking its classification" \
+      "${guard_hits[@]}"
+  fi
+else
+  fail "no test but this one reads the standing decisions file beyond checking its classification" \
+    "config.json names no standing_decisions_file — the guard above has nothing to check"
+fi
 
 echo
 if (( failures == 0 )); then
