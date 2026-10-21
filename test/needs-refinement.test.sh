@@ -515,6 +515,40 @@ assert_eq "the retry removes exactly the stale labels, nothing else" \
   "$(printf 'remove o/other 90 blocked\nremove o/r 90 blocked\nremove o/r 90 blocked:needs-refinement')" \
   "$(label_calls)"
 
+# agent-ops#2548's finding 1: lib/candidate-gather.sh's own call site threads
+# the alias map into both `blocked_items` (BLOCKED_JSON) and
+# `refinement_blocked_label_stale` (its 3rd argument) — the stale-retry's own
+# open-block exclusion (`$open`, canonicalizing `$b.repo`) is pointless if
+# the *item* it is excluding from was never canonicalized to begin with. A
+# still-open block and its own-label-action `add` logged under the *same*
+# slug (whichever one) must never be offered for removal, whether that slug
+# is the repo's current one or a `previous_slugs` entry, and the two must
+# agree even when the two events are logged under *different* slugs either
+# side of the rename — the mirror case a caller that only threads the alias
+# into one of the two functions gets wrong.
+rename_stale_log="$tmp_dir/rename-stale.jsonl"
+rename_stale_aliases='{"o/old":"o/r"}'
+cat > "$rename_stale_log" <<'EOF'
+{"ts":"2026-10-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/old","item":"400","kind":"needs-refinement","detail":"gated","unblock_condition":"x"}
+{"ts":"2026-10-01T09:00:01Z","cycle":"c0","event":"own-label-action","repo":"o/old","item":"400","label":"blocked","action":"add"}
+{"ts":"2026-10-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/old","item":"401","kind":"needs-refinement","detail":"gated","unblock_condition":"y"}
+{"ts":"2026-10-01T09:00:01Z","cycle":"c0","event":"own-label-action","repo":"o/r","item":"401","label":"blocked","action":"add"}
+EOF
+rename_stale_blocked="$(blocked_items "$rename_stale_log" "$rename_stale_aliases")"
+assert_eq "both items still read as open once the alias map is threaded into blocked_items" \
+  "400 401" "$(jq -r '[.[].item] | sort | join(" ")' <<<"$rename_stale_blocked")"
+assert_eq "still-open item 400, block and label-action both under the old slug, is not offered for removal" \
+  "0" \
+  "$(refinement_blocked_label_stale "$rename_stale_blocked" "$rename_stale_log" "$rename_stale_aliases" \
+       | grep -c $'\t400\t')"
+assert_eq "the mirror case — block under the old slug, label-action under the new one — is not offered either" \
+  "0" \
+  "$(refinement_blocked_label_stale "$rename_stale_blocked" "$rename_stale_log" "$rename_stale_aliases" \
+       | grep -c $'\t401\t')"
+assert_eq "...with no aliases map threaded into either function, the mirror case (401) reads as stale instead — the bug this closes" \
+  "$(printf 'o/r\t401\tblocked')" \
+  "$(refinement_blocked_label_stale "$(blocked_items "$rename_stale_log")" "$rename_stale_log")"
+
 # --- Requirement 38b's live reconciliation (agent-ops#816, TD-PPagop-26082602) --
 # `refinement_blocked_label_stale` above can only offer a removal its own
 # history proves is ours — a logged `own-label-action add` with no later

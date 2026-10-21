@@ -234,7 +234,7 @@ BLOCKED_ITEMS_JQ='
                         and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($b.repo // ""))))
            | map(.ts // "")
            | sort | last) as $rc_ts
-        | ($b + {repo: canon_repo($b.repo // "")}) as $b
+        | (if ($b.repo // "") == "" then $b else $b + {repo: canon_repo($b.repo)} end) as $b
         | if $rc_ts == null then $b else $b + {recheck_clean_ts: $rc_ts} end)
 '
 
@@ -259,7 +259,10 @@ BLOCKED_ITEMS_JQ='
 # a caller that joins this array against a repo's current configured slug
 # (`refiner_candidate_items`'s `is_blocked`, `exclude_blocked_or_void_items`)
 # finds a block recorded under a slug in `previous_slugs` without needing its
-# own alias resolution.
+# own alias resolution. An entry with no `repo` at all (the hand-appended
+# form requirement 34 allows) keeps no `repo` key rather than gaining one of
+# `""` — `coordinator_blocked_view`'s own `has("repo")` projection, and every
+# other reader of this shape, must see the same absence it always has.
 blocked_items() {
   local src="${1:--}" aliases="${2:-{\}}" out=""
   jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
@@ -297,6 +300,11 @@ VOID_ITEMS_EVENTS="item-void unvoided"
 # against the *raw* repo it was logged under, via its own `canon_repo` call,
 # and must keep doing so.
 #
+# An entry with no `repo` at all (the hand-appended form requirement 34c
+# allows) keeps no `repo` key rather than gaining one of `""`, the same
+# preservation `blocked_items` makes above and for the same reason
+# (`coordinator_blocked_view`'s `has("repo")` projection).
+#
 # A void is scoped to the item id, so it cannot outstay its welcome: next week's
 # review files its recommendations under fresh refs (review-<new-date>-R-NN),
 # which no void covers. Voiding R-02 today cannot silence a genuine regression a
@@ -309,11 +317,11 @@ void_items() {
   out="$(_latest_unresolved "$2" "$3" "$1" "$aliases")"
   jq -c --argjson aliases "$aliases" '
     def canon_repo($r): ($aliases[$r] // $r);
-    map(. + {repo: canon_repo(.repo // "")})
+    map(if (.repo // "") == "" then . else . + {repo: canon_repo(.repo)} end)
   ' <<<"$out" 2>/dev/null || printf '%s' "$out"
 }
 
-# void_object_closed_items [LOG_FILE]
+# void_object_closed_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array of {repo, item}, every void item requirement 34k's
 # act-on-void sweep has already handled — closed the GitHub object for, or
 # found it already closed. Reads LOG_FILE, or stdin if it is omitted or "-".
@@ -333,24 +341,42 @@ void_items() {
 # `void-object-closed` is a fact, not a state with a clearing event like
 # `item-void`/`unvoided` — once an item has been actioned, it stays actioned,
 # so the latest occurrence is enough; no _latest_unresolved pairing is needed.
+#
+# ALIASES_JSON (agent-ops#2548) maps a repo slug this pipeline used to be
+# configured under to the slug it is configured under now
+# (`config_repo_slug_aliases`), applied to each emitted entry's own `repo` —
+# never the raw event's — on the same defaulting contract `subtract_retired_
+# voids` and `refinement_blocked_label_stale` already use: absent, or not a
+# JSON object, means `{}` (every repo resolves to itself), a strict extension
+# with no behaviour change where no `previous_slugs` is configured. Both
+# consumers (`void_close_candidates_json`'s `$done` and `void_actioned_json`'s
+# `$closed_here`, `lib/candidate-gather.sh`) intersect this array's `repo`
+# against `void_json`'s own — already canonical by construction (`void_items`
+# above) — on a plain string match, so a caller that does not resolve this
+# function's own output through the same map a renamed repo's block was
+# recorded under would never see it as already actioned, and the sweep would
+# re-close (or re-count as unactioned) an object every cycle forever.
 void_object_closed_items() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
+  # shellcheck disable=SC2016  # jq's $r/$aliases, not the shell's.
   local jq_prog='
+    def canon_repo($r): ($aliases[$r] // $r);
     [ .[] | select(.event == "void-object-closed"
                    and (.repo // "") != "" and (.item // "") != "")
-      | {repo, item} ] | unique'
+      | {repo: canon_repo(.repo), item} ] | unique'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
+      | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
+      | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
 }
 
-# decision_vetoes_processed_items [LOG_FILE]
+# decision_vetoes_processed_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array of {repo, item}, every `pw::decision` decision-log
 # issue #937's veto sweep has already handled — logged
 # `decision-vetoed` for. `item` here is the *log issue's own number*
@@ -369,18 +395,30 @@ void_object_closed_items() {
 # `decision-vetoed` is a fact, not a state with a clearing event: once a veto
 # has been recorded for a given log issue, it stays recorded, so the latest
 # occurrence (there should only ever be one) is enough.
+#
+# ALIASES_JSON (agent-ops#2548) maps a repo slug this pipeline used to be
+# configured under to the slug it is configured under now
+# (`config_repo_slug_aliases`), applied to each emitted entry's own `repo` —
+# never the raw event's — same defaulting contract as `void_object_closed_
+# items` above. `run_decision_veto_sweep` (`lib/decision-veto.sh`) filters this
+# array's `repo` against each configured repo's own canonical `slug` on a
+# plain string match, so a veto logged under a repo's old slug would never be
+# recognized as already processed without this.
 decision_vetoes_processed_items() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
+  # shellcheck disable=SC2016  # jq's $r/$aliases, not the shell's.
   local jq_prog='
+    def canon_repo($r): ($aliases[$r] // $r);
     [ .[] | select(.event == "decision-vetoed"
                    and (.repo // "") != "" and (.issue_number // "") != "")
-      | {repo, item: (.issue_number | tostring)} ] | unique'
+      | {repo: canon_repo(.repo), item: (.issue_number | tostring)} ] | unique'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
+      | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
+      | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"

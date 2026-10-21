@@ -673,7 +673,16 @@
       rename splits one item's identity across two slugs: a block recorded
       under the slug the repository had before the rename is never cleared
       by an `unblocked`/`item-void` logged under the slug it has now
-      (agent-ops#2359).
+      (agent-ops#2359). The entry each extract emits is itself resolved the
+      same way (agent-ops#2548): `blocked_items`/`void_items` carry the
+      canonical slug, never the raw slug the originating `attempt-failed`/
+      `item-void` event was logged under, so a caller that joins the extract
+      against a repo's current configured slug (`refiner_candidate_items`'s
+      `is_blocked`/`is_void`, `exclude_blocked_or_void_items`) needs no alias
+      resolution of its own. A caller that instead joins the extract against
+      a *raw* union-log event — one not yet resolved through the same map —
+      still has to resolve that side itself; the extract's own
+      canonicalization does not relieve it of that.
 34a. <a id="impl-34a"></a>Whatever computes requirement 34 must be the **only** definition of it.
     Anything else that reports blocked items — notably the monitoring
     dashboard (`docs/spec/dashboard/README.md`) — shares that one

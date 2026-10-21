@@ -1012,7 +1012,7 @@ if ! (( DRY_RUN )); then
         "$(jq -nc --arg d "could not retry removing the $stale_label label from $stale_repo#$stale_item" \
            '{detail: $d}')"
     fi
-  done < <(refinement_blocked_label_stale "$(blocked_items "$union_log" "$repo_slug_aliases_json")" "$union_log")
+  done < <(refinement_blocked_label_stale "$(blocked_items "$union_log" "$repo_slug_aliases_json")" "$union_log" "$repo_slug_aliases_json")
 fi
 
 # Requirement 34i, applied last of the three reconciliations, and for the same
@@ -1277,7 +1277,7 @@ fi
 # of action). Skipped on --dry-run: the sweep closes issues and pull
 # requests.
 if ! (( DRY_RUN )); then
-  void_object_closed_json="$(void_object_closed_items "$union_log")"
+  void_object_closed_json="$(void_object_closed_items "$union_log" "$repo_slug_aliases_json")"
   # Both arrays arrive on stdin, one document per line, never in argv
   # (requirement 4g): the void extract and the closed set are unbounded, and
   # on 2026-08-12 the extract crossed MAX_ARG_STRLEN — an `--argjson`
@@ -1670,7 +1670,7 @@ if (( void_retire_after_days > 0 )); then
        | select((.value | ascii_downcase) == "resolved" or (.value | ascii_downcase) == "not-debt")
        | {repo: $repo, item: .key, by: "register-resolved"})) as $reg_done
     | $closed_here + $reg_done + $liveness + $revplan + $config' \
-    <<<"$void_json"$'\n'"$(void_object_closed_items "$union_log")" 2>&1)" \
+    <<<"$void_json"$'\n'"$(void_object_closed_items "$union_log" "$repo_slug_aliases_json")" 2>&1)" \
     || { guard_warn "void_actioned_json:closed-merge" "$void_actioned_json"; void_actioned_json='[]'; }
 
   void_json_before_retire="$void_json"

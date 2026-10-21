@@ -73,7 +73,7 @@ run_decision_veto_sweep() {
   local veto_repo="" veto_item="" veto_issue_number="" veto_issue_url=""
   local na_repo="" na_item="" na_already_blocked=0 na_recorded=0
   local pending_acts_json cancelled_act
-  processed_json="$(decision_vetoes_processed_items "$union_log")"
+  processed_json="$(decision_vetoes_processed_items "$union_log" "$repo_slug_aliases_json")"
   # Requirement 36f: a veto of a decision whose act has not been performed
   # yet cancels the act, and says so on the log. The retirement itself is
   # already mechanical — `pending_decision_acts` excludes anything a

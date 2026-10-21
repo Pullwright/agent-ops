@@ -2749,19 +2749,29 @@ blocked_json="$(open_blocked_items "$union_kept_dir/open-blocked.jsonl" "$repo_s
 # to a temp file ahead of the events costs nothing that the here-string this
 # replaced did not already cost, and stops the events half from ever passing
 # through bash (agent-ops#1620).
+#
+# `$r.repo` arrives canonical — `blocked_json` is `open_blocked_items`' own
+# output, already resolved through `$repo_slug_aliases_json` above
+# (agent-ops#2548) — but `escalated`/`enabler-examined` are raw union-log
+# events, never themselves resolved, so each match canonicalizes the event's
+# own `repo` before comparing it to `$r.repo` rather than comparing two
+# values only one side of which is canonical: without it, a block recorded
+# under a repo's old slug would never pick up an escalation or an Enabler
+# verdict logged under the slug the repository has now, or the mirror.
 blocked_rows_file="$work_tmp/blocked-rows.json"
 printf '%s\n' "$blocked_json" > "$blocked_rows_file"
-# shellcheck disable=SC2016  # jq's $rows/$events/$r/$esc/$exam, not the shell's.
+# shellcheck disable=SC2016  # jq's $rows/$events/$r/$esc/$exam/$aliases, not the shell's.
 # union-reader: blocked-enrichment
-blocked_json="$(jq -nc "$UNION_STREAM_JQ"'
+blocked_json="$(jq -nc --argjson aliases "$repo_slug_aliases_json" "$UNION_STREAM_JQ"'
+  def canon_repo($r): ($aliases[$r] // $r);
   input as $rows
   | ([ inputs ] | union_split_span).events as $events
   | [ $rows[]
       | . as $r
       | ([ $events[] | select(.event == "escalated" and (.item // "") == $r.item
-                              and (.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $esc
+                              and canon_repo(.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $esc
       | ([ $events[] | select(.event == "enabler-examined" and (.item // "") == $r.item
-                              and (.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $exam
+                              and canon_repo(.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $exam
       | $r
         + (if $esc == null then {}
            else {escalation_issue: ($esc.issue_number // null),
