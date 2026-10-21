@@ -5,7 +5,7 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
 <!-- toc:start -->
   - [Acceptance checks](acceptance-checks/acceptance-checks-01.md)
   - [Acceptance checks — continued (part 2 of 9; items 2m–7f)](acceptance-checks/acceptance-checks-02.md)
-  - [Acceptance checks — continued (part 3 of 9; items 7g–8p)](acceptance-checks/acceptance-checks-03.md)
+  - [Acceptance checks — continued (part 3 of 9; items 7g–25c)](acceptance-checks/acceptance-checks-03.md)
   - [Acceptance checks — continued (part 4 of 9; items 39a–8s)](acceptance-checks/acceptance-checks-04.md)
   - [Acceptance checks — continued (part 5 of 9; items 8t–50)](acceptance-checks/acceptance-checks-05.md)
   - [Acceptance checks — continued (part 6 of 9; items 51–52c)](acceptance-checks/acceptance-checks-06.md)
