@@ -550,6 +550,14 @@ publish_cleanup() {
   for staged in "$data_tmp" "$stamp_tmp" "${payload_cache:+$payload_cache.tmp}"; do
     [[ -n "$staged" && -e "$staged" ]] && rm -f -- "$staged"
   done
+  # ISSUE_PRIORITY_CACHE_DIR (lib/issue-priority.sh) is this process's own to
+  # remove, the same convention scripts/doctor.sh's own EXIT trap follows
+  # (agent-ops#2422) — but lib/pager.sh and lib/merge-budget.sh, sourced
+  # above (directly and transitively), only source lib/issue-priority.sh
+  # lazily, on the branch that actually applies a Priority band. An ordinary
+  # publish never reaches either branch, so `issue_priority_cache_cleanup`
+  # is often never defined at all; call it only when it is.
+  declare -F issue_priority_cache_cleanup >/dev/null 2>&1 && issue_priority_cache_cleanup
   scratch_release
   return 0
 }

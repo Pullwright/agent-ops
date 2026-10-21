@@ -21,8 +21,11 @@
 #
 # Sourced, never executed: like lib/dependency-gate.sh, it sets no shell
 # options and expects the caller already running under `set -uo pipefail`.
-# `issue_blocked_by_ref` below calls `dependency_refs`
-# (lib/dependency-gate.sh), which the caller must source first.
+# `issue_blocked_by_ref` below calls `dependency_refs` and
+# `dependency_native_open_ref` (lib/dependency-gate.sh), which the caller
+# must source first; `issue_priority_inherit`, also there, is the shared
+# priority-inheritance pass both callers run over `issue_prefetch_annotate_priority`'s
+# own output (requirement 4 of agent-ops#2422).
 
 # ISSUE_DETERMINISTIC_FILTER_JQ — two jq function definitions, meant to be
 # concatenated ahead of a `[.[] | select(issue_deterministic_ok) | ...]`
@@ -78,33 +81,47 @@ def issue_exclude_reason:
   else null end;
 JQ
 
-# issue_blocked_by_ref SLUG THREAD_TEXT
+# issue_blocked_by_ref SLUG NUMBER THREAD_TEXT
 # Print the display form (`#195` for a same-repo reference, `owner/repo#42`
 # for a cross-repo one) of THREAD_TEXT's first still-open `Blocked-by:`
-# reference (requirement 34j), or print nothing — and return 0 either way —
-# when it names none, or every one it names is already closed. A reference
-# whose live state cannot be read counts as still-open, the same fail-safe
-# direction every other deterministic exclusion in this file takes.
+# reference (requirement 34j), or — when the thread names none, or every one
+# it names is already closed — of the first still-open reference GitHub's
+# native Issue Dependencies feature records for SLUG#NUMBER
+# (`dependency_native_open_ref`, lib/dependency-gate.sh); or print nothing —
+# and return 0 either way — when neither convention names an open blocker.
+# A reference whose live state cannot be read counts as still-open, the same
+# fail-safe direction every other deterministic exclusion in this file
+# takes. NUMBER is this candidate's own issue number — needed only for the
+# native check, which asks GitHub about *this* issue's own dependencies
+# rather than parsing text; pass the empty string to skip it and check the
+# text convention alone. Both gatherers pass the empty string for an issue
+# the listing walk itself already reported has no native dependency at all
+# (`issue_prefetch_native_dep_skip_set` below), and
+# test/dependency-gate.test.sh's narrower fixtures pass it to exercise the
+# text convention on its own.
 issue_blocked_by_ref() {
-  local slug="$1" thread_text="$2" dep_refs ref ref_repo ref_n ref_state ref_display
+  local slug="$1" number="$2" thread_text="$3" dep_refs ref ref_repo ref_n ref_state ref_display
   dep_refs="$(dependency_refs "$thread_text")"
-  [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]] || return 0
-  while IFS= read -r ref; do
-    [[ -n "$ref" ]] || continue
-    if [[ "$ref" == */* ]]; then
-      ref_repo="${ref%%#*}"
-      ref_n="${ref##*#}"
-    else
-      ref_repo="$slug"
-      ref_n="$ref"
-    fi
-    ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
-    if [[ "$ref_state" != "closed" ]]; then
-      ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
-      printf '%s\n' "$ref_display"
-      return 0
-    fi
-  done < <(jq -r '.[]' <<<"$dep_refs")
+  if [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]]; then
+    while IFS= read -r ref; do
+      [[ -n "$ref" ]] || continue
+      if [[ "$ref" == */* ]]; then
+        ref_repo="${ref%%#*}"
+        ref_n="${ref##*#}"
+      else
+        ref_repo="$slug"
+        ref_n="$ref"
+      fi
+      ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
+      if [[ "$ref_state" != "closed" ]]; then
+        ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
+        printf '%s\n' "$ref_display"
+        return 0
+      fi
+    done < <(jq -r '.[]' <<<"$dep_refs")
+  fi
+  [[ -n "$number" ]] || return 0
+  dependency_native_open_ref "$slug" "$number"
   return 0
 }
 
@@ -157,6 +174,92 @@ issue_prefetch_blocked_by_additions() {
   printf '%s' "$out"
 }
 
+# issue_prefetch_annotate_priority ISSUES_JSON
+# Print ISSUES_JSON (the shape `issue_prefetch_open_issues` returns — each
+# element carrying its own `issue_field_values`) with `priority` (one of the
+# four band names, "Medium" standing in for unset) and `priority_set` (true
+# iff any option at all is chosen, including one outside the four names)
+# added to every element — the same parse `scripts/gather-issues.sh` always
+# applied inline, lifted out here so `scripts/gather-tech-debt.sh` can read
+# the identical field the identical way (requirement 1/2 of agent-ops#2422:
+# tech-debt now carries a band too) and so both scripts can run
+# `issue_priority_inherit` (lib/dependency-gate.sh) over the very same
+# annotated array — every open issue in the repository, not only the ones
+# either script's own label filter keeps — before either one narrows to its
+# own band. Falls back to ISSUES_JSON unchanged on its own jq failure, never
+# `[]`, so a caller already past its degrade() guard does not lose its whole
+# candidate set to a transient jq error here.
+issue_prefetch_annotate_priority() {
+  local issues_json="${1:-[]}"
+  jq -c '
+    [.[] | . as $e
+     | ([$e.issue_field_values[]? | select(.issue_field_name == "Priority")
+                                   | .single_select_option.name | select(. != null)]) as $priority_names
+     | ($priority_names | map(select(. == "Urgent" or . == "High" or . == "Medium" or . == "Low"))) as $priority_values
+     | $e + {priority: (($priority_values | first) // "Medium"),
+             priority_set: (($priority_names | length) > 0)}]' \
+    <<<"$issues_json" 2>/dev/null || printf '%s' "$issues_json"
+}
+
+# issue_prefetch_native_dep_skip_set ISSUES_JSON
+# Print, space-delimited and space-wrapped (` 21 42 `, so a caller tests
+# membership with a single `[[ $set == *" $n "* ]]` and no fork of its own),
+# every issue number in ISSUES_JSON whose native Issue Dependencies need
+# **not** be read live — the pre-filter that keeps `issue_blocked_by_ref`'s
+# own native half (`dependency_native_open_ref`, lib/dependency-gate.sh) from
+# costing one REST call per candidate.
+#
+# Why it exists: the native check asks GitHub about one issue at a time, and
+# both gatherers' candidate loops are uncapped, so without a pre-filter the
+# holding check spends one `repos/<slug>/issues/<n>/dependencies/blocked_by`
+# read for every candidate it does *not* drop — 529 of them on this
+# repository's own backlog (107 `issues` plus 422 `pw::type:tech-debt`
+# candidates, measured 2026-10-18 at ~1.2 s and one REST `core` point each:
+# ~10 minutes and ~529 points added to every cycle's gather phase).
+# That is precisely the one-REST-call-per-surviving-candidate shape
+# `issue_prefetch_open_issues`'s own header records agent-ops#1085 as having
+# removed, so it is not a shape to reintroduce.
+#
+# The walk already answers the question for free: `issueDependenciesSummary`
+# rides along on the same GraphQL page as the listing itself, at no further
+# call, no further page and no further point — `rateLimit{cost}` on the
+# selection set with the field added reports the same 4 per 100-issue page
+# `issue_prefetch_open_issues`'s own header records without it — and that
+# function carries it
+# through as `issue_dependencies_summary` (same field names GitHub's own REST
+# single-issue payload uses). An issue whose summary says `total_blocked_by`
+# is **zero** has no native dependency recorded at all — whatever its state —
+# so there is nothing for a live read to find, and that is the one and only
+# issue this function names.
+#
+# Stated as what may be *skipped* rather than what must be asked, so that
+# every way of not knowing fails safe into asking with no case left to
+# enumerate: a summary that is absent, null, not an object or carrying a
+# non-numeric `total_blocked_by`, an issue this array does not describe at
+# all, and this function's own `jq` failing outright all leave the number out
+# of the set — and a number outside the set is read live exactly as it was
+# before this pre-filter existed, the same "a block I cannot verify counts as
+# still-open" direction `issue_blocked_by_ref` and
+# `dependency_native_open_ref` already take. A GraphQL schema change that
+# stopped returning the field therefore costs the per-candidate reads back;
+# it can never silently switch native blocking off. (It is also what keeps
+# every pre-existing fixture that stubs the walk without the field
+# exercising the native path unchanged.)
+#
+# Always prints at least a single space, never nothing, so a caller's own
+# membership test is well-formed on an empty set.
+issue_prefetch_native_dep_skip_set() {
+  local issues_json="${1:-[]}" numbers
+  numbers="$(jq -r '[.[]
+      | select((.number // "") != "")
+      | select((.issue_dependencies_summary | type) == "object")
+      | select((.issue_dependencies_summary.total_blocked_by | type) == "number")
+      | select(.issue_dependencies_summary.total_blocked_by == 0)
+      | (.number | tostring)]
+    | join(" ")' <<<"$issues_json" 2>/dev/null || true)"
+  printf ' %s ' "${numbers:-}"
+}
+
 # How many 100-issue pages `issue_prefetch_open_issues` will walk before
 # giving up on a repository whose open-issue count keeps paging past it —
 # stated and checked the same way `lib/github-limit.sh`'s own header requires
@@ -189,6 +292,14 @@ ISSUE_PREFETCH_MAX_PAGES="${ISSUE_PREFETCH_MAX_PAGES:-20}"
 #    labels: [{name}],
 #    assignees: [{} …one placeholder element per assignee — only the count is
 #                ever read, by issue_deterministic_ok above],
+#    issue_dependencies_summary: {blocked_by, total_blocked_by} — GitHub's own
+#                native Issue Dependencies counts, named as its REST
+#                single-issue payload names them; `null` where the walk could
+#                not report them. Read by
+#                issue_prefetch_native_dep_skip_set above, and by nothing
+#                else: it rides along on this page at no further call, so the
+#                native holding check reads the live endpoint only for an
+#                issue that actually has a dependency,
 #    issue_field_values: [{issue_field_name, single_select_option: {name}}],
 #    comments: [{user: {login}, created_at, body}]}
 #
@@ -247,6 +358,7 @@ issue_prefetch_open_issues() {
                   }
                 }
               }
+              issueDependenciesSummary{ blockedBy totalBlockedBy }
               comments(last:100){ nodes{ author{ login } createdAt body } }
             }
           }
@@ -265,6 +377,10 @@ issue_prefetch_open_issues() {
                    | select(.__typename == "IssueFieldSingleSelectValue")
                    | {issue_field_name: (.field.name // ""),
                       single_select_option: {name: .name}}],
+                 issue_dependencies_summary: (.issueDependenciesSummary
+                   | if type == "object"
+                     then {blocked_by: .blockedBy, total_blocked_by: .totalBlockedBy}
+                     else null end),
                  comments: [.comments.nodes[] | {
                    user: {login: (.author.login // "")},
                    created_at: .createdAt, body: (.body // "")}]}]}' \

@@ -90,10 +90,10 @@ heading, the Script gives you one JSON object:
 - `refined_label` is the label the Script projects onto an issue once you
   refine it (empty if the installation has switched that off — it changes
   nothing about what you do).
-- `triage_only` (issues only) is `true` when this item reached you solely
+- `triage_only` (issues and tech-debt) is `true` when this item reached you solely
   because its `Priority` is unset — it is already refined, and you are not
   here to write it a second specification. See "Banding" below.
-- `entry.priority_set` (issues only) is `true` when somebody has chosen an
+- `entry.priority_set` (issues and tech-debt) is `true` when somebody has chosen an
   option on the field at all — including one outside the four bands, which
   `entry.priority` still reports as `Medium`; `false` means nobody has
   triaged this issue and `entry.priority` is only the `Medium` default
@@ -297,7 +297,8 @@ handoff) are what actually confirm it.
 
 ## Banding
 
-Every open issue in this pipeline carries a `Priority` band — `Urgent`,
+Every open issue in this pipeline — and every tech-debt item, which is simply
+an issue carrying `pw::type:tech-debt` — carries a `Priority` band — `Urgent`,
 `High`, `Medium` or `Low` — which decides where the Co-Ordinator's walk
 reaches it (`prompts/coordinator.md`'s own table under "Issue priority"
 defines what each band means and ranks; read it there, it is not restated
@@ -339,9 +340,9 @@ that a human never has to do it by hand.
   silently skipped. You do not need to check the current band yourself
   before setting `priority` — reading it into your verdict costs nothing
   even when the Script ends up skipping the write.
-- **Omit `priority` entirely** for a banded issue (`entry.priority_set` is
-  already `true`) or for any non-`issues` source — there is no field to set
-  and nothing reads it.
+- **Omit `priority` entirely** for a banded item (`entry.priority_set` is
+  already `true`) or for any source but `issues`/`tech-debt` — there is no
+  field to set and nothing reads it.
 
 ## Choosing a verdict
 
@@ -457,7 +458,7 @@ final message is a wire format, not a report.
       "reason": "one line: what you concluded and on what evidence",
       "comments_posted": ["https://github.com/…/issues/125#issuecomment-…"],
       "refined_spec": "items with no thread only: the specification, as self-contained markdown",
-      "priority": "issues only, optional: one of Urgent, High, Medium, Low",
+      "priority": "issues and tech-debt only, optional: one of Urgent, High, Medium, Low",
       "labels": [{"name": "optional, up to 3: a label worth applying to this item", "colour": "optional hex, no #", "description": "optional"}],
       "missing": "needs-refinement only: what a selectable version would need",
       "evidence": "needs-refinement only: what you actually read"
@@ -478,7 +479,7 @@ final message is a wire format, not a report.
   with none; a `refined` entry needs exactly the one its item can hold, and
   never both, **except** a `triage_only` item, which needs neither — see
   "Banding".
-- `priority` is optional and belongs on an `issues`-source item only, on
+- `priority` is optional and belongs on an `issues`- or `tech-debt`-source item only, on
   either verdict — see "Banding" for when to set it and what it means.
 - `labels` is optional, on either verdict, and independent of both `priority`
   and the outcome: up to 3 entries, `{name, colour?, description?}`, applied

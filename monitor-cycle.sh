@@ -359,6 +359,13 @@ cleanup() {
   local exit_code=$?
   trap '' TERM INT HUP
   [[ -d "$run_dir" ]] && rm -rf "$run_dir"
+  # ISSUE_PRIORITY_CACHE_DIR (lib/issue-priority.sh) is this process's own to
+  # remove, the same convention agent-cycle.sh's own cleanup() follows
+  # (agent-ops#2422) — but lib/pager.sh, sourced above, only sources
+  # lib/issue-priority.sh lazily, on the branch that actually applies a
+  # Priority band, so `issue_priority_cache_cleanup` is often never defined
+  # at all; call it only when it is.
+  declare -F issue_priority_cache_cleanup >/dev/null 2>&1 && issue_priority_cache_cleanup
   # The stage-health verdict for this pipeline (M17), written from day one
   # rather than left for a later issue the way the review pipeline's was
   # (agent-ops#996). Merged into `.stage-health.json` rather than written over
@@ -1055,14 +1062,42 @@ monitor_open_finding() {
     <<<"$open_findings_json" 2>/dev/null || true
 }
 
-# monitor_create_issue REPO TITLE BODY_FILE LABEL ASSIGNEE -> "<number>\t<url>"
+# monitor_create_issue REPO TITLE BODY_FILE LABEL ASSIGNEE [PRIORITY] ->
+#   "<number>\t<url>"
 # One create, with the retry-without-label every filer makes
 # (`issue_create_with_retry`, lib/issue-file.sh) and for the same reason: a
 # repository whose label catalogue has not been ensured yet must still get
-# its issue.
+# its issue. PRIORITY (agent-ops#2422), one of Urgent/High/Medium/Low,
+# applies through `issue_priority_apply`'s own ratchet on a fresh create
+# only — a dedup hit (M13's `monitor_open_finding`, above) never reaches
+# this function at all, so there is no existing issue's band to touch here.
+# `issue_priority_apply` (lib/issue-priority.sh) is sourced lazily, right
+# before this uses it, the same pattern lib/pager.sh's `_pager_create_issue`,
+# lib/merge-budget.sh and lib/tech-debt-file.sh's `_techdebt_apply_priority`
+# use, and for the same reason: that file's source-time `mktemp -d` is a cost
+# only the branch that actually bands an issue should pay. This file's own
+# top-level sources do not include it — lib/pager.sh (line 137) is the only
+# route to it and sources it lazily too — so without this guard the call
+# below runs undefined, and its `>/dev/null 2>&1 || true` swallows the
+# `command not found`: both of this script's banded filings (M14a's
+# mechanical finding at `High`, M13a's promoted pager invariant at `Medium`)
+# would file at the unset default with nothing saying so.
 monitor_create_issue() {
-  local repo="$1" title="$2" body_file="$3" label="$4" assignee="$5"
-  issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee"
+  local repo="$1" title="$2" body_file="$3" label="$4" assignee="$5" priority="${6:-}"
+  local result number
+  result="$(issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee")" || return 1
+  [[ -n "$result" ]] || return 1
+  number="${result%%$'\t'*}"
+  case "$priority" in
+    Urgent | High | Medium | Low)
+      if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+        # shellcheck source=lib/issue-priority.sh
+        . "$SCRIPT_DIR/lib/issue-priority.sh"
+      fi
+      issue_priority_apply "$repo" "$number" "$priority" >/dev/null 2>&1 || true
+      ;;
+  esac
+  printf '%s' "$result"
 }
 
 while IFS= read -r finding; do
@@ -1143,8 +1178,11 @@ while IFS= read -r finding; do
       printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
     } > "$body_file"
     labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$pager_repo" target >/dev/null 2>&1 || true
+    # Medium (agent-ops#2422): proposing a new pager invariant is tooling
+    # work, not a live defect — the finding it restates has already been
+    # filed (or not) under its own class's own band.
     promoted_created="$(monitor_create_issue "$pager_repo" "pager: add invariant $f_key" \
-      "$body_file" "pw::type:tech-debt" "" || true)"
+      "$body_file" "pw::type:tech-debt" "" "Medium" || true)"
     if [[ -n "$promoted_created" ]]; then
       promoted_url="${promoted_created#*$'\t'}"
       log_event "monitor-promoted" "$(jq -nc --arg k "$f_key" --arg i "$promoted_url" '{key: $k, issue: $i}')"
@@ -1217,7 +1255,10 @@ while IFS= read -r finding; do
         printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
       } > "$body_file"
       labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$f_repo" target >/dev/null 2>&1 || true
-      created="$(monitor_create_issue "$f_repo" "$f_title" "$body_file" "pw::type:tech-debt" "" || true)"
+      # High (agent-ops#2422): a mechanical finding is a reasoning or logic
+      # defect in the pipeline's own code, caught live — a correctness
+      # issue, not wording or tidying.
+      created="$(monitor_create_issue "$f_repo" "$f_title" "$body_file" "pw::type:tech-debt" "" "High" || true)"
       ;;
     tactical)
       if [[ -z "$escalation_repo" ]]; then

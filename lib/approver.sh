@@ -681,9 +681,9 @@ run_approver_stage() {
   local number="" protected_rc=0 protected_hit=0 critical_reason=""
   local posted_review="" posted_bool="false"
   local ap_file_debt ap_fd_title ap_fd_body ap_fd_result ap_fd_number ap_fd_url \
-    ap_fd_default_fix ap_fd_owner_decision
+    ap_fd_default_fix ap_fd_owner_decision ap_fd_priority
   local ap_file_issue ap_fi_title ap_fi_body ap_fi_body_file ap_fi_result ap_fi_number ap_fi_url \
-    ap_fi_default_fix ap_fi_owner_decision
+    ap_fi_default_fix ap_fi_owner_decision ap_fi_priority
   approver_last_post_ok=""
 
   # `fresh` (issue #513, PR #506 review follow-up): this stage posts a real
@@ -989,6 +989,10 @@ $node_name
         'if (.owner_decision // false) == true then "true" else "false" end' \
         <<<"$ap_file_debt" 2>/dev/null || true)"
       [[ -n "$ap_fd_owner_decision" ]] || ap_fd_owner_decision="false"
+      # requirement 1 of agent-ops#2422: the Script's own filers set the
+      # band directly, through _techdebt_apply_priority's ratchet call —
+      # silently skipped there for anything empty or unrecognised.
+      ap_fd_priority="$(jq -r '.priority // ""' <<<"$ap_file_debt" 2>/dev/null || true)"
       if [[ -z "$ap_fd_title" || -z "$ap_fd_body" ]]; then
         log_event "warning" "$(jq -nc --arg u "$pr_url" \
           --arg d "approver set file_debt for $pr_url, but it carries no title or body — ignored" \
@@ -1005,7 +1009,7 @@ $node_name
         fi
         if ap_fd_result="$(techdebt_file_debt "$selected_repo" "$ap_fd_title" "$ap_fd_body" \
                "while the Approver was judging $pr_url" "$token" \
-               "$ap_fd_default_fix" "$ap_fd_owner_decision")" \
+               "$ap_fd_default_fix" "$ap_fd_owner_decision" "$ap_fd_priority")" \
                && [[ -n "$ap_fd_result" ]]; then
           IFS=$'\t' read -r ap_fd_number ap_fd_url <<<"$ap_fd_result"
           log_event "tech-debt-filed" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" \
@@ -1028,6 +1032,7 @@ $node_name
         'if (.owner_decision // false) == true then "true" else "false" end' \
         <<<"$ap_file_issue" 2>/dev/null || true)"
       [[ -n "$ap_fi_owner_decision" ]] || ap_fi_owner_decision="false"
+      ap_fi_priority="$(jq -r '.priority // ""' <<<"$ap_file_issue" 2>/dev/null || true)"
       if [[ -z "$ap_fi_title" || -z "$ap_fi_body" ]]; then
         log_event "warning" "$(jq -nc --arg u "$pr_url" \
           --arg d "approver set file_issue for $pr_url, but it carries no title or body — ignored" \
@@ -1048,7 +1053,8 @@ $node_name
         printf '%s\n\n---\nNoticed by the autonomous pipeline while approving %s.\n' \
           "$ap_fi_body" "$pr_url" > "$ap_fi_body_file"
         if ap_fi_result="$(techdebt_file_issue "$selected_repo" "$pr_url" "$ap_fi_title" \
-               "$ap_fi_body_file" "$token" "$ap_fi_default_fix" "$ap_fi_owner_decision")" \
+               "$ap_fi_body_file" "$token" "$ap_fi_default_fix" "$ap_fi_owner_decision" \
+               "$ap_fi_priority")" \
                && [[ -n "$ap_fi_result" ]]; then
           IFS=$'\t' read -r ap_fi_number ap_fi_url <<<"$ap_fi_result"
           log_event "issue-filed" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" \

@@ -662,7 +662,7 @@
       "label": "8i-i",
       "anchor": "impl-ac-8i-i",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 701,
+      "line": 723,
       "title": "A `needs_refinement` report re-asserting a resolved dependency is"
     },
     "IMPL AC 8j": {
@@ -670,7 +670,7 @@
       "label": "8j",
       "anchor": "impl-ac-8j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 726,
+      "line": 748,
       "title": "A corroborated void closes the GitHub object it names, exactly once"
     },
     "IMPL AC 36f": {
@@ -678,7 +678,7 @@
       "label": "36f",
       "anchor": "impl-ac-36f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 759,
+      "line": 781,
       "title": "The delegate mandate reaches exactly three things, and its act waits out"
     },
     "IMPL AC 8l": {
@@ -686,7 +686,7 @@
       "label": "8l",
       "anchor": "impl-ac-8l",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 865,
+      "line": 887,
       "title": "A closing keyword is enforced, not requested (requirements 23b, 25a,"
     },
     "IMPL AC 8m": {
@@ -694,7 +694,7 @@
       "label": "8m",
       "anchor": "impl-ac-8m",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 961,
+      "line": 983,
       "title": "The closing-keyword and changelog-section checks block, not just"
     },
     "IMPL AC 8n": {
@@ -702,7 +702,7 @@
       "label": "8n",
       "anchor": "impl-ac-8n",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 983,
+      "line": 1005,
       "title": "A claimed item's gone work is caught before the Implementer runs, not"
     },
     "IMPL AC 8o": {
@@ -710,7 +710,7 @@
       "label": "8o",
       "anchor": "impl-ac-8o",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1014,
+      "line": 1036,
       "title": "A void that is both actioned and old drops out of the extract; every"
     },
     "IMPL AC 8p": {
@@ -718,7 +718,7 @@
       "label": "8p",
       "anchor": "impl-ac-8p",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1036,
+      "line": 1058,
       "title": "The closing-keyword gate applies to every target repository, not only"
     },
     "IMPL AC 66": {
@@ -726,7 +726,7 @@
       "label": "66",
       "anchor": "impl-ac-66",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1064,
+      "line": 1086,
       "title": "The ready-gate backstop catches a required context with no check run at"
     },
     "IMPL AC 56": {
@@ -734,7 +734,7 @@
       "label": "56",
       "anchor": "impl-ac-56",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1082,
+      "line": 1104,
       "title": "The deterministic pre-flight finds a deleted or edited-away required"
     },
     "IMPL AC 25b": {
@@ -742,7 +742,7 @@
       "label": "25b",
       "anchor": "impl-ac-25b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1108,
+      "line": 1130,
       "title": "The tech-debt close-guard finds exactly what requirement 25b's"
     },
     "IMPL AC 25c": {
@@ -750,7 +750,7 @@
       "label": "25c",
       "anchor": "impl-ac-25c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1140,
+      "line": 1162,
       "title": "A changelog section is enforced, not requested (requirement 25c,"
     },
     "IMPL AC 39a": {
@@ -798,7 +798,7 @@
       "label": "11c",
       "anchor": "impl-ac-11c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 349,
+      "line": 392,
       "title": "A broken Enabler cannot break a cycle (requirement 37)."
     },
     "IMPL AC 33a": {
@@ -806,7 +806,7 @@
       "label": "33a",
       "anchor": "impl-ac-33a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 362,
+      "line": 405,
       "title": "The per-stage metering record matches `docs/reference/metering-schema.md`"
     },
     "IMPL AC 77": {
@@ -814,7 +814,7 @@
       "label": "77",
       "anchor": "impl-ac-77",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 391,
+      "line": 434,
       "title": "The configuration matches its schema, and the schema is an enforced"
     },
     "IMPL AC 76": {
@@ -822,7 +822,7 @@
       "label": "76",
       "anchor": "impl-ac-76",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 441,
+      "line": 484,
       "title": "The prose configuration tables are generated from the schema, and"
     },
     "IMPL AC 1m": {
@@ -830,7 +830,7 @@
       "label": "1m",
       "anchor": "impl-ac-1m",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 489,
+      "line": 532,
       "title": "`doctor.sh` checks write access, Claude credentials, the rendered"
     },
     "IMPL AC 1n": {
@@ -838,7 +838,7 @@
       "label": "1n",
       "anchor": "impl-ac-1n",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 542,
+      "line": 585,
       "title": "`--unattended` runs the GitHub section in full and skips only the two"
     },
     "IMPL AC 6h": {
@@ -846,7 +846,7 @@
       "label": "6h",
       "anchor": "impl-ac-6h",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 569,
+      "line": 612,
       "title": "The pipeline creates the labels it applies, and touches no others"
     },
     "IMPL AC 6j": {
@@ -854,7 +854,7 @@
       "label": "6j",
       "anchor": "impl-ac-6j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 588,
+      "line": 631,
       "title": "Labels a stage asks for are minted safely, and only within the caps"
     },
     "IMPL AC 38": {
@@ -862,7 +862,7 @@
       "label": "38",
       "anchor": "impl-ac-38",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 636,
+      "line": 679,
       "title": "Human-visibility (requirements 38a–38c)."
     },
     "IMPL AC 38e": {
@@ -870,7 +870,7 @@
       "label": "38e",
       "anchor": "impl-ac-38e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 764,
+      "line": 807,
       "title": "A violation the sweep cannot heal is read back and re-verified, not"
     },
     "IMPL AC 38f": {
@@ -878,7 +878,7 @@
       "label": "38f",
       "anchor": "impl-ac-38f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 871,
+      "line": 914,
       "title": "Merge-queue awareness reads the field GitHub actually exposes, and"
     },
     "IMPL AC 38g": {
@@ -886,7 +886,7 @@
       "label": "38g",
       "anchor": "impl-ac-38g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 907,
+      "line": 950,
       "title": "Requirement 38c's ruleset dependency is reported, not silent"
     },
     "IMPL AC 39": {
@@ -894,7 +894,7 @@
       "label": "39",
       "anchor": "impl-ac-39",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 920,
+      "line": 963,
       "title": "Finish-then-continue's chain decision is a pure, tested function of what"
     },
     "IMPL AC 67a": {
@@ -902,7 +902,7 @@
       "label": "67a",
       "anchor": "impl-ac-67a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 929,
+      "line": 972,
       "title": "The chain only ever launches when it should, and never waits on what it"
     },
     "IMPL AC 39b": {
@@ -910,7 +910,7 @@
       "label": "39b",
       "anchor": "impl-ac-39b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 946,
+      "line": 989,
       "title": "A sub-hourly cycle interval is an explicit cron minute list, correct at"
     },
     "IMPL AC 68": {
@@ -918,7 +918,7 @@
       "label": "68",
       "anchor": "impl-ac-68",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 959,
+      "line": 1002,
       "title": "A pending image roll overrides an otherwise-eligible chain, never"
     },
     "IMPL AC 17e": {
@@ -926,7 +926,7 @@
       "label": "17e",
       "anchor": "impl-ac-17e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 1028,
+      "line": 1071,
       "title": "Contended-claim-loss reporting is correct per node and per era"
     },
     "IMPL AC 8s": {
@@ -934,7 +934,7 @@
       "label": "8s",
       "anchor": "impl-ac-8s",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 1038,
+      "line": 1081,
       "title": "The Approver runs only above `human`, picks its tier correctly, and"
     },
     "IMPL AC 8t": {
@@ -2454,7 +2454,7 @@
       "label": "16",
       "anchor": "impl-16",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 297,
+      "line": 312,
       "title": "Excludes from candidacy any item that is:"
     },
     "IMPL 16a": {
@@ -2462,7 +2462,7 @@
       "label": "16a",
       "anchor": "impl-16a",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 449,
+      "line": 464,
       "title": "Under-specified and decision-gated skips are reported, not silent."
     },
     "IMPL 17": {
@@ -2470,7 +2470,7 @@
       "label": "17",
       "anchor": "impl-17",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 499,
+      "line": 514,
       "title": "From the remaining candidates, ranks the qualifying items best-first and"
     },
     "IMPL 64": {
@@ -2478,7 +2478,7 @@
       "label": "64",
       "anchor": "impl-64",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 509,
+      "line": 524,
       "title": "A refined item is selected on what the refinement says."
     },
     "IMPL 17f": {
@@ -2486,7 +2486,7 @@
       "label": "17f",
       "anchor": "impl-17f",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 525,
+      "line": 540,
       "title": "The Script verifies traceability before claiming, rather than trusting"
     },
     "IMPL 65": {
@@ -2494,7 +2494,7 @@
       "label": "65",
       "anchor": "impl-65",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 697,
+      "line": 712,
       "title": "No check verifies a trimmed candidate's `acceptance` against the"
     },
     "IMPL 17h": {
@@ -2502,7 +2502,7 @@
       "label": "17h",
       "anchor": "impl-17h",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 739,
+      "line": 754,
       "title": "The Script composes `context`/`acceptance`/`title` for a Co-Ordinator"
     },
     "IMPL 17a": {
@@ -2510,7 +2510,7 @@
       "label": "17a",
       "anchor": "impl-17a",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 828,
+      "line": 843,
       "title": "The claim."
     },
     "IMPL 17b": {
@@ -2518,7 +2518,7 @@
       "label": "17b",
       "anchor": "impl-17b",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1046,
+      "line": 1061,
       "title": "The orphan-branch sweep."
     },
     "IMPL 17c": {
@@ -2526,7 +2526,7 @@
       "label": "17c",
       "anchor": "impl-17c",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1149,
+      "line": 1164,
       "title": "The post-merge closing-keyword sweep."
     },
     "IMPL 17g": {
@@ -2534,7 +2534,7 @@
       "label": "17g",
       "anchor": "impl-17g",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1213,
+      "line": 1228,
       "title": "The reservation-release retry sweep."
     },
     "IMPL 18": {
@@ -2542,7 +2542,7 @@
       "label": "18",
       "anchor": "impl-18",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1274,
+      "line": 1289,
       "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
     },
     "IMPL 18a": {
@@ -3078,7 +3078,7 @@
       "label": "34k",
       "anchor": "impl-34k",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 235,
+      "line": 289,
       "title": "Act on void: close the GitHub object a void names."
     },
     "IMPL 34m": {
@@ -3086,7 +3086,7 @@
       "label": "34m",
       "anchor": "impl-34m",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 382,
+      "line": 436,
       "title": "A freshly claimed item gets the same gone-work check, before the"
     },
     "IMPL 34n": {
@@ -3094,7 +3094,7 @@
       "label": "34n",
       "anchor": "impl-34n",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 502,
+      "line": 556,
       "title": "A void that is both actioned and old retires from the extract."
     },
     "IMPL 34o": {
@@ -3102,7 +3102,7 @@
       "label": "34o",
       "anchor": "impl-34o",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 826,
+      "line": 880,
       "title": "A refined specification is exactly what a `needs-refinement` block was"
     },
     "IMPL 39": {
@@ -3174,7 +3174,7 @@
       "label": "39h",
       "anchor": "impl-39h",
       "file": "docs/spec/implementation/requirements/refiner.md",
-      "line": 726,
+      "line": 731,
       "title": "May name labels for the item behind its verdict (requirement 6c, issue"
     },
     "IMPL 28": {
@@ -3518,7 +3518,7 @@
       "label": "3k",
       "anchor": "impl-3k",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 691,
+      "line": 702,
       "title": "Implementation-plan path and report-directory passthrough."
     },
     "IMPL 3h": {
@@ -3526,7 +3526,7 @@
       "label": "3h",
       "anchor": "impl-3h",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 751,
+      "line": 762,
       "title": "Refinement carry-forward."
     },
     "IMPL 3o": {
@@ -3534,7 +3534,7 @@
       "label": "3o",
       "anchor": "impl-3o",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 822,
+      "line": 833,
       "title": "Claim visibility (issue #175)."
     },
     "IMPL 3p": {
@@ -3542,7 +3542,7 @@
       "label": "3p",
       "anchor": "impl-3p",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 866,
+      "line": 877,
       "title": "PR-level candidate exclusion (issue #238)."
     },
     "IMPL 3q": {
@@ -3550,7 +3550,7 @@
       "label": "3q",
       "anchor": "impl-3q",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 889,
+      "line": 900,
       "title": "Item-level candidate exclusion."
     },
     "IMPL 3t": {
@@ -3558,7 +3558,7 @@
       "label": "3t",
       "anchor": "impl-3t",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 916,
+      "line": 927,
       "title": "Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue"
     },
     "IMPL 3u": {
@@ -3566,7 +3566,7 @@
       "label": "3u",
       "anchor": "impl-3u",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1086,
+      "line": 1105,
       "title": "Blocked/void exclusion, extended to every other pre-fetched band, and"
     },
     "IMPL 3v": {
@@ -3574,7 +3574,7 @@
       "label": "3v",
       "anchor": "impl-3v",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1188,
+      "line": 1207,
       "title": "Corroboration, scoped to the repositories that said no, and mechanical"
     },
     "IMPL 3w": {
@@ -4270,7 +4270,7 @@
       "label": "M13b",
       "anchor": "mon-m13b",
       "file": "docs/spec/monitor.md",
-      "line": 532,
+      "line": 537,
       "title": "Retirement."
     },
     "MON M14": {
@@ -4278,7 +4278,7 @@
       "label": "M14",
       "anchor": "mon-m14",
       "file": "docs/spec/monitor.md",
-      "line": 546,
+      "line": 551,
       "title": "Filing by class"
     },
     "MON M14a": {
@@ -4286,7 +4286,7 @@
       "label": "M14a",
       "anchor": "mon-m14a",
       "file": "docs/spec/monitor.md",
-      "line": 548,
+      "line": 553,
       "title": "Mechanical"
     },
     "MON M14b": {
@@ -4294,7 +4294,7 @@
       "label": "M14b",
       "anchor": "mon-m14b",
       "file": "docs/spec/monitor.md",
-      "line": 557,
+      "line": 569,
       "title": "Tactical"
     },
     "MON M14c": {
@@ -4302,7 +4302,7 @@
       "label": "M14c",
       "anchor": "mon-m14c",
       "file": "docs/spec/monitor.md",
-      "line": 569,
+      "line": 581,
       "title": "Strategic, or owner-only under requirement 36a"
     },
     "MON M14c1": {
@@ -4310,7 +4310,7 @@
       "label": "M14c1",
       "anchor": "mon-m14c1",
       "file": "docs/spec/monitor.md",
-      "line": 577,
+      "line": 589,
       "title": "A filing reaches GitHub and nothing else."
     },
     "MON M14d": {
@@ -4318,7 +4318,7 @@
       "label": "M14d",
       "anchor": "mon-m14d",
       "file": "docs/spec/monitor.md",
-      "line": 587,
+      "line": 599,
       "title": "Nowhere to file is not a failure."
     },
     "MON M15": {
@@ -4326,7 +4326,7 @@
       "label": "M15",
       "anchor": "mon-m15",
       "file": "docs/spec/monitor.md",
-      "line": 597,
+      "line": 609,
       "title": "The Monitor is the consumer of pager pages."
     },
     "MON M15a": {
@@ -4334,7 +4334,7 @@
       "label": "M15a",
       "anchor": "mon-m15a",
       "file": "docs/spec/monitor.md",
-      "line": 614,
+      "line": 626,
       "title": "The Monitor never closes a page."
     },
     "MON M16": {
@@ -4342,7 +4342,7 @@
       "label": "M16",
       "anchor": "mon-m16",
       "file": "docs/spec/monitor.md",
-      "line": 630,
+      "line": 642,
       "title": "A dated report in the state store."
     },
     "MON M17": {
@@ -4350,7 +4350,7 @@
       "label": "M17",
       "anchor": "mon-m17",
       "file": "docs/spec/monitor.md",
-      "line": 654,
+      "line": 666,
       "title": "A stage-health verdict, from day one."
     },
     "MON M18": {
@@ -4358,7 +4358,7 @@
       "label": "M18",
       "anchor": "mon-m18",
       "file": "docs/spec/monitor.md",
-      "line": 683,
+      "line": 695,
       "title": "Streams."
     },
     "MON M18a": {
@@ -4366,7 +4366,7 @@
       "label": "M18a",
       "anchor": "mon-m18a",
       "file": "docs/spec/monitor.md",
-      "line": 709,
+      "line": 721,
       "title": "`monitor-log.jsonl` is never rotated."
     },
     "MON M19": {
@@ -4374,7 +4374,7 @@
       "label": "M19",
       "anchor": "mon-m19",
       "file": "docs/spec/monitor.md",
-      "line": 717,
+      "line": 729,
       "title": "No `node-state` transition."
     },
     "MON C 1": {
@@ -4382,7 +4382,7 @@
       "label": "1",
       "anchor": "mon-c-1",
       "file": "docs/spec/monitor.md",
-      "line": 728,
+      "line": 740,
       "title": "`monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both"
     },
     "MON C 2": {
@@ -4390,7 +4390,7 @@
       "label": "2",
       "anchor": "mon-c-2",
       "file": "docs/spec/monitor.md",
-      "line": 739,
+      "line": 756,
       "title": "`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the"
     },
     "MON C 3": {
@@ -4398,7 +4398,7 @@
       "label": "3",
       "anchor": "mon-c-3",
       "file": "docs/spec/monitor.md",
-      "line": 743,
+      "line": 760,
       "title": "`prompts/monitor.md` implementing M10, M10a and M15."
     },
     "MON C 4": {
@@ -4406,7 +4406,7 @@
       "label": "4",
       "anchor": "mon-c-4",
       "file": "docs/spec/monitor.md",
-      "line": 744,
+      "line": 761,
       "title": "`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,"
     },
     "MON C 5": {
@@ -4414,7 +4414,7 @@
       "label": "5",
       "anchor": "mon-c-5",
       "file": "docs/spec/monitor.md",
-      "line": 746,
+      "line": 763,
       "title": "`lib/stage-budget.sh`'s `monitor` prior, implementing M9a."
     },
     "MON C 6": {
@@ -4422,7 +4422,7 @@
       "label": "6",
       "anchor": "mon-c-6",
       "file": "docs/spec/monitor.md",
-      "line": 747,
+      "line": 764,
       "title": "`lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s"
     },
     "MON C 7": {
@@ -4430,7 +4430,7 @@
       "label": "7",
       "anchor": "mon-c-7",
       "file": "docs/spec/monitor.md",
-      "line": 749,
+      "line": 766,
       "title": "`deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s"
     },
     "MON C 8": {
@@ -4438,7 +4438,7 @@
       "label": "8",
       "anchor": "mon-c-8",
       "file": "docs/spec/monitor.md",
-      "line": 751,
+      "line": 768,
       "title": "`config.schema.json`'s `monitor_*`, `schedule.monitor_*` and"
     },
     "MON AC 1": {
@@ -4446,7 +4446,7 @@
       "label": "1",
       "anchor": "mon-ac-1",
       "file": "docs/spec/monitor.md",
-      "line": 764,
+      "line": 781,
       "title": "`shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are"
     },
     "MON AC 2": {
@@ -4454,7 +4454,7 @@
       "label": "2",
       "anchor": "mon-ac-2",
       "file": "docs/spec/monitor.md",
-      "line": 766,
+      "line": 783,
       "title": "The digest is what it says it is (M6, M6a)."
     },
     "MON AC 3": {
@@ -4462,7 +4462,7 @@
       "label": "3",
       "anchor": "mon-ac-3",
       "file": "docs/spec/monitor.md",
-      "line": 778,
+      "line": 795,
       "title": "The bound holds exactly (M7)."
     },
     "MON AC 4": {
@@ -4470,7 +4470,7 @@
       "label": "4",
       "anchor": "mon-ac-4",
       "file": "docs/spec/monitor.md",
-      "line": 782,
+      "line": 799,
       "title": "Four findings file three and defer the fourth by key (M12)."
     },
     "MON AC 5": {
@@ -4478,7 +4478,7 @@
       "label": "5",
       "anchor": "mon-ac-5",
       "file": "docs/spec/monitor.md",
-      "line": 788,
+      "line": 805,
       "title": "Dedup (M13)."
     },
     "MON AC 5a": {
@@ -4486,7 +4486,7 @@
       "label": "5a",
       "anchor": "mon-ac-5a",
       "file": "docs/spec/monitor.md",
-      "line": 791,
+      "line": 808,
       "title": "Promotion (M13a)."
     },
     "MON AC 5b": {
@@ -4494,7 +4494,7 @@
       "label": "5b",
       "anchor": "mon-ac-5b",
       "file": "docs/spec/monitor.md",
-      "line": 797,
+      "line": 814,
       "title": "Retirement (M13b)."
     },
     "MON AC 5c": {
@@ -4502,15 +4502,23 @@
       "label": "5c",
       "anchor": "mon-ac-5c",
       "file": "docs/spec/monitor.md",
-      "line": 802,
+      "line": 819,
       "title": "Promotion spends the M12 budget (M12/M13a)."
+    },
+    "MON AC 5d": {
+      "kind": "mon-ac",
+      "label": "5d",
+      "anchor": "mon-ac-5d",
+      "file": "docs/spec/monitor.md",
+      "line": 825,
+      "title": "Both banded filings actually write their band (M14a/M13a)."
     },
     "MON AC 6": {
       "kind": "mon-ac",
       "label": "6",
       "anchor": "mon-ac-6",
       "file": "docs/spec/monitor.md",
-      "line": 808,
+      "line": 838,
       "title": "The tactical gate is closed by default (M14b)."
     },
     "MON AC 6a": {
@@ -4518,7 +4526,7 @@
       "label": "6a",
       "anchor": "mon-ac-6a",
       "file": "docs/spec/monitor.md",
-      "line": 812,
+      "line": 842,
       "title": "The pages read targets the repository the pager writes to (M6/M15)."
     },
     "MON AC 7": {
@@ -4526,7 +4534,7 @@
       "label": "7",
       "anchor": "mon-ac-7",
       "file": "docs/spec/monitor.md",
-      "line": 820,
+      "line": 850,
       "title": "The stage-health verdict exists (M17)."
     },
     "MON AC 8": {
@@ -4534,7 +4542,7 @@
       "label": "8",
       "anchor": "mon-ac-8",
       "file": "docs/spec/monitor.md",
-      "line": 824,
+      "line": 854,
       "title": "The untrusted framing is byte-identical (M10a)."
     },
     "MON AC 9": {
@@ -4542,7 +4550,7 @@
       "label": "9",
       "anchor": "mon-ac-9",
       "file": "docs/spec/monitor.md",
-      "line": 827,
+      "line": 857,
       "title": "The cadence gate (M4)."
     },
     "MON AC 10": {
@@ -4550,7 +4558,7 @@
       "label": "10",
       "anchor": "mon-ac-10",
       "file": "docs/spec/monitor.md",
-      "line": 831,
+      "line": 861,
       "title": "The role guard and the switch stand this pipeline down too (M2a/M2b)."
     },
     "MON AC 11": {
@@ -4558,7 +4566,7 @@
       "label": "11",
       "anchor": "mon-ac-11",
       "file": "docs/spec/monitor.md",
-      "line": 835,
+      "line": 865,
       "title": "The config tables regenerate clean."
     },
     "REV AC 1": {
