@@ -36,9 +36,11 @@
 # Only a build and an image roll deliver a change to any of these, so they
 # are code here however they read to a human.
 #
-# Paths on the command line, or one per line on stdin when there are none:
+# Paths on the command line, or one per line on stdin when there are none, an
+# optional leading `--skip-suite-only` asking the narrower question instead:
 #
 #   git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh
+#   git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh --skip-suite-only
 #
 # The inert set is an explicit allowlist of paths, deliberately not a rule
 # about file extensions, and that is the whole point of this file. The
@@ -56,8 +58,25 @@
 # It fails safe in one direction only: no paths at all — an empty diff, or a
 # caller that could not work out what changed — is "not documentation-only",
 # because "may we skip the build?" must never be answered yes by silence.
+#
+# `--skip-suite-only` asks a narrower question: does this set of paths need
+# the in-image `test/` suite run at all? A path the image delivers to a
+# running stage is still code (`is_inert` says so), but `docs/
+# STANDING-DECISIONS.md` is read by no test — see is_suite_exempt below for
+# which, and why — so a change confined to that file and the inert set still
+# needs a build and a publish, just not the ~40 minutes the suite spends
+# proving nothing a changed STANDING-DECISIONS.md could break. The four
+# specification files stay off this list on purpose: test/monitor-digest.test.sh
+# reads their real `## Gotchas` sections, so a change to one of those can
+# fail a test and must still run the suite.
 
 set -uo pipefail
+
+mode=inert
+if [[ "${1:-}" == --skip-suite-only ]]; then
+  mode=skip-suite-only
+  shift
+fi
 
 # Every pattern anchored whole, so `README.mdx` and `docsy/note.md` are code.
 is_inert() {
@@ -83,6 +102,20 @@ is_inert() {
   esac
 }
 
+# Paths that reach a node through the image (so is_inert alone calls them
+# code), but whose content no test exercises — only consulted under
+# --skip-suite-only, never for the docs_only question above. docs/
+# STANDING-DECISIONS.md is the only member: test/escalation-autonomy.test.sh
+# feeds enabler_decide_precedents a fixture of its own rather than this
+# file's real content, and nothing else under test/ reads it at all (the
+# guard in test/is-docs-only.test.sh is what keeps that true).
+is_suite_exempt() {
+  case "$1" in
+    docs/STANDING-DECISIONS.md) return 0 ;;
+    *) is_inert "$1" ;;
+  esac
+}
+
 paths=( "$@" )
 if (( ${#paths[@]} == 0 )); then
   while IFS= read -r line; do
@@ -97,6 +130,10 @@ fi
 
 status=0
 for path in "${paths[@]}"; do
-  is_inert "$path" || { printf '%s\n' "$path"; status=1; }
+  if [[ "$mode" == skip-suite-only ]]; then
+    is_suite_exempt "$path" || { printf '%s\n' "$path"; status=1; }
+  else
+    is_inert "$path" || { printf '%s\n' "$path"; status=1; }
+  fi
 done
 exit "$status"
