@@ -442,7 +442,7 @@
     regenerating them is gated (requirement 1b, component 16).**
     `scripts/render-config-table.sh` with no arguments run against this
     repository's own `config.schema.json`, `docs/reference/configuration.md`,
-    `docs/spec/implementation/README.md` and `docs/spec/review.md`
+    `docs/spec/implementation/README.md` and `docs/spec/review/README.md`
     leaves every file byte-identical to what is committed — regenerating a
     clean tree is a no-op — and `--check` exits 0 against it; `git diff`
     confirms nothing moved. `test/render-config-table.test.sh` passes: a key

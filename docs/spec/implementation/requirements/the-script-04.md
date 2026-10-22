@@ -579,7 +579,7 @@
    inside them would cost tens of gigabytes. A tick that ran nothing leaves
    no record directory to count: the lock-held skip (requirement 1) and the
    review pipeline's lock-held skip and busy-peer stand-down
-   (`docs/spec/review.md` R2) each remove the directory they made,
+   (`docs/spec/review/requirements.md` R2) each remove the directory they made,
    whose only content is the snapshot taken before the lock.
    `STATE_SYNC_STREAMS_RETAINED`, forwarded from a node's `.env` by
    `deploy/docker/compose.yaml`, sets the count for that node ahead of the

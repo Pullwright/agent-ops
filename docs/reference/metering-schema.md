@@ -1,7 +1,7 @@
 # Metering schema — as-built specification
 
 Companion to `docs/spec/implementation/README.md` (requirement 33a) and
-`docs/spec/review.md` (R16), and referenced by `docs/spec/dashboard/README.md`.
+`docs/spec/review/requirements.md` (R16), and referenced by `docs/spec/dashboard/README.md`.
 This document is the field-by-field contract for the per-stage, per-cycle
 token and cost accounting both pipelines produce: field names, types, units,
 aggregation rules, and a stability policy for changing any of it later. Like

@@ -2,7 +2,7 @@
 #
 # test/prompt-untrusted-framing.test.sh — the untrusted-external-content
 # framing (docs/spec/implementation/requirements/every-stage.md requirement 45,
-# docs/spec/review.md R18, docs/spec/monitor.md M10a) is present in
+# docs/spec/review/requirements.md R18, docs/spec/monitor.md M10a) is present in
 # every prompt that reads forge-authored text, and every copy — the spec's
 # canonical one included — is byte-identical.
 #
@@ -59,7 +59,7 @@ fi
 printf 'ok   - canonical block lifted from requirement 45a (%s lines)\n' "$(wc -l <<<"$canon")"
 
 # Requirement 45's implementation-pipeline prompts, plus
-# project-reviewer.md under docs/spec/review.md R18 and monitor.md under
+# project-reviewer.md under docs/spec/review/requirements.md R18 and monitor.md under
 # docs/spec/monitor.md M10a.
 prompts=(coordinator implementer reviewer approver enabler enabler-adjudicate
          enabler-decide approver-adjudicate-open-question

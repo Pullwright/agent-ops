@@ -2,7 +2,7 @@
 #
 # scripts/spec.sh — read-only lookup and validation for every anchored
 # requirement, acceptance-check and component label across
-# docs/spec/implementation/, docs/spec/review.md and docs/spec/monitor.md
+# docs/spec/implementation/, docs/spec/review/ and docs/spec/monitor.md
 # (issue #2095).
 #
 # A label is addressed by a *qualified* form naming which specification and

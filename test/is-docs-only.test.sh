@@ -76,7 +76,7 @@ assert_not_docs_only "the standing decisions file is read at /app by agent-cycle
 assert_not_docs_only "the implementation pipeline spec's Gotchas feed the Monitor" \
   docs/spec/implementation/gotchas.md
 assert_not_docs_only "the review pipeline spec's Gotchas feed the Monitor" \
-  docs/spec/review.md
+  docs/spec/review/README.md
 assert_not_docs_only "the monitor pipeline spec's Gotchas feed the Monitor" \
   docs/spec/monitor.md
 assert_not_docs_only "the dashboard spec's Gotchas feed the Monitor" \

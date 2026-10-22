@@ -1045,14 +1045,14 @@ equivalent for the repository-review pipeline's own one real stage,
 `project-reviewer`: it renders `status.review_stage_health`, read from
 `state_dir/.review-stage-health.json` (written by `lib/stage-health.sh`'s
 `stage_health_write_status` at the end of every `review-cycle.sh` run that
-reviewed at least one repository, `docs/spec/review.md` R19) rather
+reviewed at least one repository, `docs/spec/review/requirements.md` R19) rather
 than recomputed, on the Stage health panel's own precedent just above. One
 row — `project-reviewer` — badged and detailed exactly the same way (`failing`
 red, `idle` grey, `ok` green; a `failing` row's consecutive-failure count and
 last-attempt detail); no run having completed since this check shipped says
 so, rather than rendering an empty table. A `failing` row raises its own
 page-top banner, the same as `Stage health`'s own — this is the reading R17
-of `docs/spec/review.md` deferred as a follow-on, closed here: the
+of `docs/spec/review/requirements.md` deferred as a follow-on, closed here: the
 `review-stage-end`/`review-attempt-failed` detection this panel reads
 already existed, but until #996 nothing read it, the exact gap #662 closed
 for the implementation pipeline's own nine stages.
@@ -1061,7 +1061,7 @@ A separate panel and a separate `review_stage_health` field, not a
 `project-reviewer` row folded into `Stage health` itself: the two pipelines'
 event streams (`log.jsonl` vs `review-log.jsonl`) and cycle-id shapes differ
 (a `review-cycle.sh` run's own `cycle` id, unlike `agent-cycle.sh`'s, can
-cover several repositories, `docs/spec/review.md` R19), so their
+cover several repositories, `docs/spec/review/requirements.md` R19), so their
 verdicts are computed, written and travel separately, and this page renders
 them separately rather than implying a shared computation that does not
 exist. Unlike `status.doctor`, this verdict is not local to the node that

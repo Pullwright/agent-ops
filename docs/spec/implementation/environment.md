@@ -743,7 +743,7 @@ occupies four separate ranks rather than one:
   today's behaviour rather than to an unranked pile.
 
 The `project-review` source draws on the review pipeline's own
-output (see `docs/spec/review.md`), which lands in each repo via a
+output (see `docs/spec/review/README.md`), which lands in each repo via a
 merged PR:
 
 - **`project-review`** — the prioritised **recommendations** produced by the

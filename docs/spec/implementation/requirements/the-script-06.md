@@ -702,7 +702,7 @@
    falling back to the shipped `reviews/project-review-%Y-%m-%d` where the
    repo configures neither, the identical value the Refiner's own pre-fetch
    (requirement 3y) and the Reviewer-Agent's write path
-   (`docs/spec/review.md` R4a) already resolve to, read
+   (`docs/spec/review/requirements.md` R4a) already resolve to, read
    from the same helper rather than re-derived — so a repo overriding
    `report_directory` needs only its own config, never a prompt change.
    Unlike `implementation_plan_path`, a repo listing `project-review` with no

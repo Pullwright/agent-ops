@@ -75,7 +75,7 @@
    unresolved. `review-cycle.sh` applies the same resolution to every
    repository's own resolved `repository_review.defaults.model` (or its own
    override in `repository_review.repos`, issue #342)
-   (`docs/spec/review.md`). Both scripts share one implementation,
+   (`docs/spec/review/README.md`). Both scripts share one implementation,
    `lib/model-id.sh`'s `resolve_model_id_into` (and its siblings
    `resolve_model_id`, the same resolution as a value on stdout, and
    `resolve_model_provider`, which names the provider a key resolves to
@@ -169,7 +169,7 @@
    `config.json` — every key an installation may set, its type, its
    constraints, and the value the code falls back to when it is absent. It
    covers both pipelines' keys, including the `repository_review` object of
-   `docs/spec/review.md`, because there is one configuration file
+   `docs/spec/review/README.md`, because there is one configuration file
    and a schema that described half of it would licence the other half to
    drift. Every object in it is closed (`additionalProperties: false`), which
    is the point: an unread key is a default nobody chose, so a misspelling is
@@ -190,7 +190,7 @@
    (component 14) is what an operator runs ahead of time, against the same
    library function, so its verdict and the Script's own refusal can never
    disagree. The schema is also the single source for the three prose
-   configuration tables — this document's, `docs/spec/review.md`'s
+   configuration tables — this document's, `docs/spec/review/README.md`'s
    and the README's — each leaf key's `x-docs` fields carrying the prose,
    `scripts/render-config-table.sh` (component 16) rendering it into the
    documents' marked regions and gating it in CI, so a key can no longer be
@@ -324,7 +324,7 @@
    condition as a `fail` through that one implementation, so those two cannot
    drift either (component 14 below; `config_duplicate_repository_review_slugs`
    is the same rule for `repository_review.repos`, shared with `review-cycle.sh`
-   instead — `docs/spec/review.md` requirement R1b).
+   instead — `docs/spec/review/requirements.md` requirement R1b).
 
    An eighth guard, `config_provider_errors` (issue #2131), stays in code for
    a reason none of the first seven share: it holds *within* one key,
@@ -948,7 +948,7 @@
    — a renamed heading, a moved file or a new citation anywhere in the tree
    can break any of the five.
 52c. <a id="impl-52c"></a>**Every requirement, acceptance-check and component label across
-   `docs/spec/implementation/`, `docs/spec/review.md` and `docs/spec/monitor.md`
+   `docs/spec/implementation/`, `docs/spec/review/` and `docs/spec/monitor.md`
    is unique within its own (specification, sequence) pair, and every
    citation of one resolves to that same kind.** `scripts/spec.sh check`
    (component 24c) scans every anchored `<a id="…">` label in those three

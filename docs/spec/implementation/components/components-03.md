@@ -1078,7 +1078,7 @@
 24c. <a id="impl-c-24c"></a>`scripts/spec.sh` and `.github/workflows/spec.yml` implementing
    requirement 52c: unique, linkable requirement/acceptance-check/component
    labels and a validated citation of one, across `docs/spec/implementation/`,
-   `docs/spec/review.md` and `docs/spec/monitor.md` (issue #2095). `show`
+   `docs/spec/review/` and `docs/spec/monitor.md` (issue #2095). `show`
    and `where` look a label up against the committed `docs/spec/index.json`
    rather than the raw spec files; `check` re-derives every anchored label
    from those files directly, fails on a duplicate within a (specification,

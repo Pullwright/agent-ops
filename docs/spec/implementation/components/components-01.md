@@ -532,7 +532,7 @@ What exists, and the requirements each part answers to:
 3y. <a id="impl-c-3y"></a>`scripts/gather-project-review.sh` implementing requirement 3y's
    project-review half: given a repo slug, default branch and — optionally —
    that repository's own resolved `report_directory`
-   (`docs/spec/review.md` R4a: a GNU `date`(1) format string,
+   (`docs/spec/review/requirements.md` R4a: a GNU `date`(1) format string,
    defaulting here to `reviews/project-review-%Y-%m-%d`, so a caller passing
    only the first two arguments reads the shipped layout), reads the latest
    existing directory that format names — the only one ever live, discovered

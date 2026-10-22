@@ -1162,7 +1162,7 @@
    (default `stage-end`/`attempt-failed`) and the output filename (default
    `.stage-health.json`) as parameters, generalized rather than hard-coded so
    a second pipeline with its own event stream can reuse the identical
-   reduction over its own events (agent-ops#996): `docs/spec/review.md`
+   reduction over its own events (agent-ops#996): `docs/spec/review/requirements.md`
    requirement R19 is the repository-review pipeline's own symmetric verdict,
    for its one real stage `project-reviewer`, computed from `review-log.jsonl`'s
    `review-stage-end`/`review-attempt-failed` events into its own

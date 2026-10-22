@@ -121,7 +121,7 @@ This repository follows the as-built specification rule: a change that alters wh
 Each pipeline component has a numbered, requirement-based specification that describes it as-built:
 
 - **Implementation pipeline** (`agent-cycle.sh`, `lib/`, `scripts/`, stage prompts): `docs/spec/implementation/README.md` and its numbered requirements
-- **Repository-review pipeline** (`review-cycle.sh`, prompts): `docs/spec/review.md`
+- **Repository-review pipeline** (`review-cycle.sh`, prompts): `docs/spec/review/README.md`
 - **Pipeline Monitor** (`monitor-cycle.sh`, `lib/monitor-digest.sh`, prompts): `docs/spec/monitor.md`
 - **Monitoring dashboard** (`scripts/publish-dashboard.sh`, `dashboard/index.html`): `docs/spec/dashboard/README.md` and its numbered requirements
 

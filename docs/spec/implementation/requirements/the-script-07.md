@@ -578,7 +578,7 @@
 4d. <a id="impl-4d"></a>**One stage launcher, provider-neutral, and it streams.** Every headless
    model invocation either pipeline makes — the five stages of this document,
    the usage-limit probe of requirement 1b, and the Reviewer-Agent of
-   `docs/spec/review.md` R5.3 — goes through `run_model_stage` in
+   `docs/spec/review/requirements.md` R5.3 — goes through `run_model_stage` in
    `lib/stage-run.sh`: one implementation, sourced by both cycle scripts,
    rather than a copy in each. `run_model_stage` is itself provider-neutral
    (issue #2133): it owns the process group and the two caps, the

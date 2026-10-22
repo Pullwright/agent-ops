@@ -75,10 +75,10 @@
     drift on either. A third, `config_duplicate_repository_review_slugs`, holds
     between two *entries* of `repository_review.repos` rather than between two
     keys of one object — two entries naming the same repository leave
-    issue #342's resolution rule (`docs/spec/review.md`) with no
+    issue #342's resolution rule (`docs/spec/review/README.md`) with no
     way to say which one's overrides apply — and is shared the same way
     between `review-cycle.sh`'s own startup refusal and `doctor.sh`'s `fail`
-    (`docs/spec/review.md` requirement R1b) instead of
+    (`docs/spec/review/requirements.md` requirement R1b) instead of
     `agent-cycle.sh`'s. A fourth, `config_duplicate_repos_slugs`, holds the
     same way between two entries of the top-level `repos[]` array: two
     entries sharing a `slug` but differing elsewhere pass
@@ -997,7 +997,7 @@
     `test/pr-label-ensure-wiring.test.sh`); must pass `shellcheck`.
 16. <a id="impl-c-16"></a>`scripts/render-config-table.sh` implementing requirement 1b's generated-
     table property: renders the Markdown table body rows of the three prose
-    configuration tables (this document's, `docs/spec/review.md`'s,
+    configuration tables (this document's, `docs/spec/review/README.md`'s,
     and the two in `docs/reference/configuration.md`) from `config.schema.json`'s leaf keys, in the
     schema's own property order — `schedule` and `repository_review` flatten one
     level into dotted keys (`schedule.review_hour`,

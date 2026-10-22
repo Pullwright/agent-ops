@@ -4289,437 +4289,437 @@
       "line": 835,
       "title": "The config tables regenerate clean."
     },
-    "REV R1": {
-      "kind": "rev",
-      "label": "R1",
-      "anchor": "rev-r1",
-      "file": "docs/spec/review.md",
-      "line": 384,
-      "title": "Bootstrap."
-    },
-    "REV R1a": {
-      "kind": "rev",
-      "label": "R1a",
-      "anchor": "rev-r1a",
-      "file": "docs/spec/review.md",
-      "line": 389,
-      "title": "Model id resolution, against a configured set of providers (D12,"
-    },
-    "REV R1b": {
-      "kind": "rev",
-      "label": "R1b",
-      "anchor": "rev-r1b",
-      "file": "docs/spec/review.md",
-      "line": 416,
-      "title": "Duplicate-slug refusal."
-    },
-    "REV R1c": {
-      "kind": "rev",
-      "label": "R1c",
-      "anchor": "rev-r1c",
-      "file": "docs/spec/review.md",
-      "line": 429,
-      "title": "Review-instructions/context path validation (issue #589, D7)."
-    },
-    "REV R2": {
-      "kind": "rev",
-      "label": "R2",
-      "anchor": "rev-r2",
-      "file": "docs/spec/review.md",
-      "line": 451,
-      "title": "Lock."
-    },
-    "REV R3": {
-      "kind": "rev",
-      "label": "R3",
-      "anchor": "rev-r3",
-      "file": "docs/spec/review.md",
-      "line": 476,
-      "title": "Stand-down checks."
-    },
-    "REV R2a": {
-      "kind": "rev",
-      "label": "R2a",
-      "anchor": "rev-r2a",
-      "file": "docs/spec/review.md",
-      "line": 527,
-      "title": "The switch."
-    },
-    "REV R2b": {
-      "kind": "rev",
-      "label": "R2b",
-      "anchor": "rev-r2b",
-      "file": "docs/spec/review.md",
-      "line": 569,
-      "title": "The role guard."
-    },
-    "REV R2c": {
-      "kind": "rev",
-      "label": "R2c",
-      "anchor": "rev-r2c",
-      "file": "docs/spec/review.md",
-      "line": 582,
-      "title": "The fleet's memory and state publication."
-    },
-    "REV R4": {
-      "kind": "rev",
-      "label": "R4",
-      "anchor": "rev-r4",
-      "file": "docs/spec/review.md",
-      "line": 625,
-      "title": "Per-repo skip-guard (idempotency; this is how \"once a week\" is"
-    },
-    "REV R4a": {
-      "kind": "rev",
-      "label": "R4a",
-      "anchor": "rev-r4a",
-      "file": "docs/spec/review.md",
-      "line": 658,
-      "title": "Report directory (issue #761)."
-    },
-    "REV R5": {
-      "kind": "rev",
-      "label": "R5",
-      "anchor": "rev-r5",
-      "file": "docs/spec/review.md",
-      "line": 729,
-      "title": "Per non-skipped repo"
-    },
-    "REV R6": {
-      "kind": "rev",
-      "label": "R6",
-      "anchor": "rev-r6",
-      "file": "docs/spec/review.md",
-      "line": 896,
-      "title": "Usage-limit detection."
-    },
-    "REV R7": {
-      "kind": "rev",
-      "label": "R7",
-      "anchor": "rev-r7",
-      "file": "docs/spec/review.md",
-      "line": 909,
-      "title": "Cleanup (always, via a trap)."
-    },
-    "REV R7a": {
-      "kind": "rev",
-      "label": "R7a",
-      "anchor": "rev-r7a",
-      "file": "docs/spec/review.md",
-      "line": 915,
-      "title": "A signal is a failure with a record."
-    },
-    "REV R7b": {
-      "kind": "rev",
-      "label": "R7b",
-      "anchor": "rev-r7b",
-      "file": "docs/spec/review.md",
-      "line": 930,
-      "title": "One stage launcher, shared, provider-neutral."
-    },
-    "REV R8": {
-      "kind": "rev",
-      "label": "R8",
-      "anchor": "rev-r8",
-      "file": "docs/spec/review.md",
-      "line": 975,
-      "title": "Flags."
-    },
-    "REV R9": {
-      "kind": "rev",
-      "label": "R9",
-      "anchor": "rev-r9",
-      "file": "docs/spec/review.md",
-      "line": 985,
-      "title": "One-shot constraint"
-    },
-    "REV R10": {
-      "kind": "rev",
-      "label": "R10",
-      "anchor": "rev-r10",
-      "file": "docs/spec/review.md",
-      "line": 993,
-      "title": "Obey the repo."
-    },
-    "REV R11": {
-      "kind": "rev",
-      "label": "R11",
-      "anchor": "rev-r11",
-      "file": "docs/spec/review.md",
-      "line": 999,
-      "title": "Run the skill end-to-end."
-    },
-    "REV R11a": {
-      "kind": "rev",
-      "label": "R11a",
-      "anchor": "rev-r11a",
-      "file": "docs/spec/review.md",
-      "line": 1020,
-      "title": "State a recommendation's default fix."
-    },
-    "REV R12": {
-      "kind": "rev",
-      "label": "R12",
-      "anchor": "rev-r12",
-      "file": "docs/spec/review.md",
-      "line": 1037,
-      "title": "File review-sourced debt as labelled issues."
-    },
-    "REV R12a": {
-      "kind": "rev",
-      "label": "R12a",
-      "anchor": "rev-r12a",
-      "file": "docs/spec/review.md",
-      "line": 1064,
-      "title": "Cross-reference every mirrored recommendation."
-    },
-    "REV R13": {
-      "kind": "rev",
-      "label": "R13",
-      "anchor": "rev-r13",
-      "file": "docs/spec/review.md",
-      "line": 1088,
-      "title": "Raise one pull request."
-    },
-    "REV R14": {
-      "kind": "rev",
-      "label": "R14",
-      "anchor": "rev-r14",
-      "file": "docs/spec/review.md",
-      "line": 1105,
-      "title": "Prove it is landable."
-    },
-    "REV R15": {
-      "kind": "rev",
-      "label": "R15",
-      "anchor": "rev-r15",
-      "file": "docs/spec/review.md",
-      "line": 1116,
-      "title": "Final message."
-    },
-    "REV R18": {
-      "kind": "rev",
-      "label": "R18",
-      "anchor": "rev-r18",
-      "file": "docs/spec/review.md",
-      "line": 1120,
-      "title": "Untrusted external content."
-    },
-    "REV R16": {
-      "kind": "rev",
-      "label": "R16",
-      "anchor": "rev-r16",
-      "file": "docs/spec/review.md",
-      "line": 1133,
-      "title": "Streams."
-    },
-    "REV R17": {
-      "kind": "rev",
-      "label": "R17",
-      "anchor": "rev-r17",
-      "file": "docs/spec/review.md",
-      "line": 1193,
-      "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
-    },
-    "REV R19": {
-      "kind": "rev",
-      "label": "R19",
-      "anchor": "rev-r19",
-      "file": "docs/spec/review.md",
-      "line": 1201,
-      "title": "Per-stage health, mirrored (agent-ops#996)."
-    },
-    "REV C 1": {
-      "kind": "rev-c",
-      "label": "1",
-      "anchor": "rev-c-1",
-      "file": "docs/spec/review.md",
-      "line": 1263,
-      "title": "`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,"
-    },
-    "REV C 2": {
-      "kind": "rev-c",
-      "label": "2",
-      "anchor": "rev-c-2",
-      "file": "docs/spec/review.md",
-      "line": 1273,
-      "title": "`prompts/project-reviewer.md` implementing R9–R15. It must embed the"
-    },
-    "REV C 3": {
-      "kind": "rev-c",
-      "label": "3",
-      "anchor": "rev-c-3",
-      "file": "docs/spec/review.md",
-      "line": 1276,
-      "title": "`.claude/skills/project-review/` — the vendored skill (pinned; re-sync"
-    },
-    "REV C 4": {
-      "kind": "rev-c",
-      "label": "4",
-      "anchor": "rev-c-4",
-      "file": "docs/spec/review.md",
-      "line": 1278,
-      "title": "`config.json` — the `repository_review` block."
-    },
-    "REV C 5": {
-      "kind": "rev-c",
-      "label": "5",
-      "anchor": "rev-c-5",
-      "file": "docs/spec/review.md",
-      "line": 1279,
-      "title": "`docs/guides/operating/README.md` names the review pipeline under \"How"
-    },
-    "REV C 6": {
-      "kind": "rev-c",
-      "label": "6",
-      "anchor": "rev-c-6",
-      "file": "docs/spec/review.md",
-      "line": 1283,
-      "title": "The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in th..."
-    },
     "REV AC 1": {
       "kind": "rev-ac",
       "label": "1",
       "anchor": "rev-ac-1",
-      "file": "docs/spec/review.md",
-      "line": 1298,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 14,
       "title": "`shellcheck review-cycle.sh` is clean."
     },
     "REV AC 2": {
       "kind": "rev-ac",
       "label": "2",
       "anchor": "rev-ac-2",
-      "file": "docs/spec/review.md",
-      "line": 1299,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 15,
       "title": "`--dry-run` completes against the real repos: the stand-down and skip-guard"
     },
     "REV AC 3": {
       "kind": "rev-ac",
       "label": "3",
       "anchor": "rev-ac-3",
-      "file": "docs/spec/review.md",
-      "line": 1302,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 18,
       "title": "A second invocation while the review lock is held exits without acting; and"
     },
     "REV AC 4": {
       "kind": "rev-ac",
       "label": "4",
       "anchor": "rev-ac-4",
-      "file": "docs/spec/review.md",
-      "line": 1305,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 21,
       "title": "Skip-guard: with today's report directory present on a repo's default"
     },
     "REV AC 4b": {
       "kind": "rev-ac",
       "label": "4b",
       "anchor": "rev-ac-4b",
-      "file": "docs/spec/review.md",
-      "line": 1310,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 26,
       "title": "The role guard stands this pipeline down too (R2b)."
     },
     "REV AC 4c": {
       "kind": "rev-ac",
       "label": "4c",
       "anchor": "rev-ac-4c",
-      "file": "docs/spec/review.md",
-      "line": 1314,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 30,
       "title": "A peer's usage-limit hit stands this pipeline down too (R2c/R6)."
     },
     "REV AC 4a": {
       "kind": "rev-ac",
       "label": "4a",
       "anchor": "rev-ac-4a",
-      "file": "docs/spec/review.md",
-      "line": 1319,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 35,
       "title": "The switch stands this pipeline down too (R2a)."
     },
     "REV AC 4d": {
       "kind": "rev-ac",
       "label": "4d",
       "anchor": "rev-ac-4d",
-      "file": "docs/spec/review.md",
-      "line": 1330,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 46,
       "title": "The review-branch claim gates the review (R5.0)."
     },
     "REV AC 4e": {
       "kind": "rev-ac",
       "label": "4e",
       "anchor": "rev-ac-4e",
-      "file": "docs/spec/review.md",
-      "line": 1339,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 55,
       "title": "Per-repository resolution, and duplicate slugs refused (R1b)."
     },
     "REV AC 4f": {
       "kind": "rev-ac",
       "label": "4f",
       "anchor": "rev-ac-4f",
-      "file": "docs/spec/review.md",
-      "line": 1357,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 73,
       "title": "The dated stand-down is two-tier (R3.3)."
     },
     "REV AC 4g": {
       "kind": "rev-ac",
       "label": "4g",
       "anchor": "rev-ac-4g",
-      "file": "docs/spec/review.md",
-      "line": 1372,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 88,
       "title": "The report directory is configurable, and unset is unchanged (R4a)."
     },
     "REV AC 4h": {
       "kind": "rev-ac",
       "label": "4h",
       "anchor": "rev-ac-4h",
-      "file": "docs/spec/review.md",
-      "line": 1410,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 126,
       "title": "Instructions and context reach the review, and a broken configured path"
     },
     "REV AC 5": {
       "kind": "rev-ac",
       "label": "5",
       "anchor": "rev-ac-5",
-      "file": "docs/spec/review.md",
-      "line": 1451,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 167,
       "title": "Injected-skill isolation:"
     },
     "REV AC 6": {
       "kind": "rev-ac",
       "label": "6",
       "anchor": "rev-ac-6",
-      "file": "docs/spec/review.md",
-      "line": 1460,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 176,
       "title": "Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review"
     },
     "REV AC 7": {
       "kind": "rev-ac",
       "label": "7",
       "anchor": "rev-ac-7",
-      "file": "docs/spec/review.md",
-      "line": 1463,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 179,
       "title": "One supervised full run (`--once`): for each non-skipped repo it produces a"
     },
     "REV AC 8": {
       "kind": "rev-ac",
       "label": "8",
       "anchor": "rev-ac-8",
-      "file": "docs/spec/review.md",
-      "line": 1468,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 184,
       "title": "Cross-references land (R12a):"
     },
     "REV AC 9": {
       "kind": "rev-ac",
       "label": "9",
       "anchor": "rev-ac-9",
-      "file": "docs/spec/review.md",
-      "line": 1475,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 191,
       "title": "The untrusted-content framing holds for the Reviewer-Agent too"
     },
     "REV AC 10": {
       "kind": "rev-ac",
       "label": "10",
       "anchor": "rev-ac-10",
-      "file": "docs/spec/review.md",
-      "line": 1481,
+      "file": "docs/spec/review/acceptance-checks.md",
+      "line": 197,
       "title": "A stage-health verdict for `project-reviewer` (R19, agent-ops#996)."
+    },
+    "REV C 1": {
+      "kind": "rev-c",
+      "label": "1",
+      "anchor": "rev-c-1",
+      "file": "docs/spec/review/components.md",
+      "line": 5,
+      "title": "`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,"
+    },
+    "REV C 2": {
+      "kind": "rev-c",
+      "label": "2",
+      "anchor": "rev-c-2",
+      "file": "docs/spec/review/components.md",
+      "line": 15,
+      "title": "`prompts/project-reviewer.md` implementing R9–R15. It must embed the"
+    },
+    "REV C 3": {
+      "kind": "rev-c",
+      "label": "3",
+      "anchor": "rev-c-3",
+      "file": "docs/spec/review/components.md",
+      "line": 18,
+      "title": "`.claude/skills/project-review/` — the vendored skill (pinned; re-sync"
+    },
+    "REV C 4": {
+      "kind": "rev-c",
+      "label": "4",
+      "anchor": "rev-c-4",
+      "file": "docs/spec/review/components.md",
+      "line": 20,
+      "title": "`config.json` — the `repository_review` block."
+    },
+    "REV C 5": {
+      "kind": "rev-c",
+      "label": "5",
+      "anchor": "rev-c-5",
+      "file": "docs/spec/review/components.md",
+      "line": 21,
+      "title": "`docs/guides/operating/README.md` names the review pipeline under \"How"
+    },
+    "REV C 6": {
+      "kind": "rev-c",
+      "label": "6",
+      "anchor": "rev-c-6",
+      "file": "docs/spec/review/components.md",
+      "line": 25,
+      "title": "The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in th..."
+    },
+    "REV R1": {
+      "kind": "rev",
+      "label": "R1",
+      "anchor": "rev-r1",
+      "file": "docs/spec/review/requirements.md",
+      "line": 5,
+      "title": "Bootstrap."
+    },
+    "REV R1a": {
+      "kind": "rev",
+      "label": "R1a",
+      "anchor": "rev-r1a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 10,
+      "title": "Model id resolution, against a configured set of providers (D12,"
+    },
+    "REV R1b": {
+      "kind": "rev",
+      "label": "R1b",
+      "anchor": "rev-r1b",
+      "file": "docs/spec/review/requirements.md",
+      "line": 37,
+      "title": "Duplicate-slug refusal."
+    },
+    "REV R1c": {
+      "kind": "rev",
+      "label": "R1c",
+      "anchor": "rev-r1c",
+      "file": "docs/spec/review/requirements.md",
+      "line": 50,
+      "title": "Review-instructions/context path validation (issue #589, D7)."
+    },
+    "REV R2": {
+      "kind": "rev",
+      "label": "R2",
+      "anchor": "rev-r2",
+      "file": "docs/spec/review/requirements.md",
+      "line": 72,
+      "title": "Lock."
+    },
+    "REV R3": {
+      "kind": "rev",
+      "label": "R3",
+      "anchor": "rev-r3",
+      "file": "docs/spec/review/requirements.md",
+      "line": 97,
+      "title": "Stand-down checks."
+    },
+    "REV R2a": {
+      "kind": "rev",
+      "label": "R2a",
+      "anchor": "rev-r2a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 148,
+      "title": "The switch."
+    },
+    "REV R2b": {
+      "kind": "rev",
+      "label": "R2b",
+      "anchor": "rev-r2b",
+      "file": "docs/spec/review/requirements.md",
+      "line": 190,
+      "title": "The role guard."
+    },
+    "REV R2c": {
+      "kind": "rev",
+      "label": "R2c",
+      "anchor": "rev-r2c",
+      "file": "docs/spec/review/requirements.md",
+      "line": 203,
+      "title": "The fleet's memory and state publication."
+    },
+    "REV R4": {
+      "kind": "rev",
+      "label": "R4",
+      "anchor": "rev-r4",
+      "file": "docs/spec/review/requirements.md",
+      "line": 246,
+      "title": "Per-repo skip-guard (idempotency; this is how \"once a week\" is"
+    },
+    "REV R4a": {
+      "kind": "rev",
+      "label": "R4a",
+      "anchor": "rev-r4a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 279,
+      "title": "Report directory (issue #761)."
+    },
+    "REV R5": {
+      "kind": "rev",
+      "label": "R5",
+      "anchor": "rev-r5",
+      "file": "docs/spec/review/requirements.md",
+      "line": 350,
+      "title": "Per non-skipped repo"
+    },
+    "REV R6": {
+      "kind": "rev",
+      "label": "R6",
+      "anchor": "rev-r6",
+      "file": "docs/spec/review/requirements.md",
+      "line": 517,
+      "title": "Usage-limit detection."
+    },
+    "REV R7": {
+      "kind": "rev",
+      "label": "R7",
+      "anchor": "rev-r7",
+      "file": "docs/spec/review/requirements.md",
+      "line": 530,
+      "title": "Cleanup (always, via a trap)."
+    },
+    "REV R7a": {
+      "kind": "rev",
+      "label": "R7a",
+      "anchor": "rev-r7a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 536,
+      "title": "A signal is a failure with a record."
+    },
+    "REV R7b": {
+      "kind": "rev",
+      "label": "R7b",
+      "anchor": "rev-r7b",
+      "file": "docs/spec/review/requirements.md",
+      "line": 551,
+      "title": "One stage launcher, shared, provider-neutral."
+    },
+    "REV R8": {
+      "kind": "rev",
+      "label": "R8",
+      "anchor": "rev-r8",
+      "file": "docs/spec/review/requirements.md",
+      "line": 596,
+      "title": "Flags."
+    },
+    "REV R9": {
+      "kind": "rev",
+      "label": "R9",
+      "anchor": "rev-r9",
+      "file": "docs/spec/review/requirements.md",
+      "line": 606,
+      "title": "One-shot constraint"
+    },
+    "REV R10": {
+      "kind": "rev",
+      "label": "R10",
+      "anchor": "rev-r10",
+      "file": "docs/spec/review/requirements.md",
+      "line": 614,
+      "title": "Obey the repo."
+    },
+    "REV R11": {
+      "kind": "rev",
+      "label": "R11",
+      "anchor": "rev-r11",
+      "file": "docs/spec/review/requirements.md",
+      "line": 620,
+      "title": "Run the skill end-to-end."
+    },
+    "REV R11a": {
+      "kind": "rev",
+      "label": "R11a",
+      "anchor": "rev-r11a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 641,
+      "title": "State a recommendation's default fix."
+    },
+    "REV R12": {
+      "kind": "rev",
+      "label": "R12",
+      "anchor": "rev-r12",
+      "file": "docs/spec/review/requirements.md",
+      "line": 658,
+      "title": "File review-sourced debt as labelled issues."
+    },
+    "REV R12a": {
+      "kind": "rev",
+      "label": "R12a",
+      "anchor": "rev-r12a",
+      "file": "docs/spec/review/requirements.md",
+      "line": 685,
+      "title": "Cross-reference every mirrored recommendation."
+    },
+    "REV R13": {
+      "kind": "rev",
+      "label": "R13",
+      "anchor": "rev-r13",
+      "file": "docs/spec/review/requirements.md",
+      "line": 709,
+      "title": "Raise one pull request."
+    },
+    "REV R14": {
+      "kind": "rev",
+      "label": "R14",
+      "anchor": "rev-r14",
+      "file": "docs/spec/review/requirements.md",
+      "line": 726,
+      "title": "Prove it is landable."
+    },
+    "REV R15": {
+      "kind": "rev",
+      "label": "R15",
+      "anchor": "rev-r15",
+      "file": "docs/spec/review/requirements.md",
+      "line": 737,
+      "title": "Final message."
+    },
+    "REV R18": {
+      "kind": "rev",
+      "label": "R18",
+      "anchor": "rev-r18",
+      "file": "docs/spec/review/requirements.md",
+      "line": 741,
+      "title": "Untrusted external content."
+    },
+    "REV R16": {
+      "kind": "rev",
+      "label": "R16",
+      "anchor": "rev-r16",
+      "file": "docs/spec/review/requirements.md",
+      "line": 754,
+      "title": "Streams."
+    },
+    "REV R17": {
+      "kind": "rev",
+      "label": "R17",
+      "anchor": "rev-r17",
+      "file": "docs/spec/review/requirements.md",
+      "line": 814,
+      "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
+    },
+    "REV R19": {
+      "kind": "rev",
+      "label": "R19",
+      "anchor": "rev-r19",
+      "file": "docs/spec/review/requirements.md",
+      "line": 822,
+      "title": "Per-stage health, mirrored (agent-ops#996)."
     }
   }
 }

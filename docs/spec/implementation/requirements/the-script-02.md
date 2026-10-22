@@ -198,7 +198,7 @@
       review-cycle.sh's own — and logged as a `clone-footprint` event,
       `{repo, bytes}`, against the cloned repository's own slug. The review
       pipeline writes it to the *shared* `log.jsonl` rather than its own
-      `review-log.jsonl` (`docs/spec/review.md` R16's second shared
+      `review-log.jsonl` (`docs/spec/review/requirements.md` R16's second shared
       exception, `limit-hit` being the first), because this is where its reader
       is. The figure is never GitHub's own reported repository size, which is
       the packed size, not what a clone occupies, and never a network call this
@@ -1276,7 +1276,7 @@
 2.3. <a id="impl-2-3"></a>**The switch.** A file, `state_dir/disabled.json`, whose presence stops
    cycles starting. Checked *before* the lock and before any `gh` call — a
    disabled pipeline should cost nothing — and honoured by both this Script and
-   `review-cycle.sh` (`docs/spec/review.md`, R2a) through one shared
+   `review-cycle.sh` (`docs/spec/review/requirements.md`, R2a) through one shared
    implementation (requirement 34a), with `agent-cycle.sh` the only writer.
    Managed by four flags that manage the switch and run no cycle:
    `--disable [<reason>] [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]`,

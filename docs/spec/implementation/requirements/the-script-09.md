@@ -625,7 +625,7 @@
    human's comment from the pipeline's, including which comments are a human's
    own. `lib/pipeline-marker.sh`'s `pipeline_comment_header ACTOR NODE` prints
    the line; `pipeline_actor_label TOKEN` is the token→display map, matching
-   this document's, `docs/spec/review.md`'s and
+   this document's, `docs/spec/review/README.md`'s and
    `docs/spec/monitor.md`'s *Actors* sections and
    the vocabulary `dashboard/index.html`'s `ACTOR` map already uses, and it
    fails open on an unknown token — prints it raw — so an Actor added later

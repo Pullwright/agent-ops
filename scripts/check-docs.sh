@@ -272,8 +272,8 @@ check_links_in_schema() {
     explicit_anchor_ids docs/reference/configuration.md
     markdown_heading_slugs docs/spec/implementation/configuration.md
     explicit_anchor_ids docs/spec/implementation/configuration.md
-    markdown_heading_slugs docs/spec/review.md
-    explicit_anchor_ids docs/spec/review.md
+    markdown_heading_slugs docs/spec/review/README.md
+    explicit_anchor_ids docs/spec/review/README.md
   } | sort -u > "$combined_slugs"
 
   while IFS= read -r link; do

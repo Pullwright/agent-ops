@@ -395,7 +395,7 @@
       `attempt-failed` toward its streak — the threshold is shared, the
       reduction is this invariant's own, because the two pipelines record
       a failed attempt differently.) **This invariant is the fleet-vantage
-      reader of the same fact `docs/spec/review.md` R19 publishes
+      reader of the same fact `docs/spec/review/requirements.md` R19 publishes
       per node as `review_stage_health` (agent-ops#996): R19 states the
       verdict where a human or the dashboard can read it, this invariant
       reduces the fleet's replicated `review-log.jsonl` union and files a
