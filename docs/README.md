@@ -35,6 +35,7 @@ to read first.
 | Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
 | View the monitoring dashboard | `docs/guides/operating/watch.md` § "The dashboard" |
 | Look up a configuration key, its default, and its notes | `docs/reference/configuration.md` |
+| Understand a reason code (stand-down cause, void/block reason, pager signature, etc.) | `docs/reference/reasons.md` |
 | Get an overview of the whole system: the pipelines, the actors, nodes, and the state they share | `docs/concepts/architecture.md` |
 | Trace what happens to one piece of work from an open issue to a landed commit | `docs/concepts/life-of-an-item.md` § "State diagram" |
 | Understand how a long-blocked item reaches a human for a decision | `docs/concepts/escalation.md` § "How escalation reaches the owner" |
@@ -87,6 +88,7 @@ set under `docs/reviews/` one entry for its directory.
 | `docs/reference/configuration.md` | operator, agent, contributor | reference | Every configuration key, its default, and its extended notes (generated from `config.schema.json`) |
 | `docs/reference/labels.md` | operator, contributor, person working in a target repository | reference | Every label the pipeline creates or reads, what applies it, what it means, and what removing it does (generated from `lib/labels.sh`) |
 | `docs/reference/scripts.md` | contributor, agent | reference | Index of every script under `lib/` and `scripts/`, grouped by purpose (generated from each script's own header comment) |
+| `docs/reference/reasons.md` | operator, agent, contributor, person working in a target repository | reference | Catalogue of every reason code the pipeline emits: stand-down causes, item fates, pager signatures, and escalation kinds |
 | `docs/reference/flow-schema.md` | agent, evaluator | reference | Complete schema of the flow metadata structure |
 | `docs/reference/host-facts-schema.md` | agent, operator | reference | Schema of host facts collected by the pipeline |
 | `docs/reference/metering-schema.md` | operator, evaluator | reference | Schema of metering and usage tracking |

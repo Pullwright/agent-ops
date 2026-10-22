@@ -20,7 +20,6 @@ The node running this installation is explicitly paused. Human action required.
 
 - **Is a fault?** No. The node is paused by design.
 - **What to do:** The operator or another actor set this node to disabled status. Check the configuration and re-enable when ready.
-- **See also:** [Node lifecycle](../guides/operating/NODE-LIFECYCLE.md) (when deployed)
 
 ### `disabled-fleet`
 
@@ -35,7 +34,6 @@ This node hit a usage limit (most often token spend or request rate) and is now 
 
 - **Is a fault?** No. Cooldown is automatic and temporary.
 - **What to do:** Wait for the cooldown to expire, or run `agent-cycle.sh --clear-limit` to clear it immediately if you want to resume sooner.
-- **See also:** [Usage limits and budgets](../guides/operating/BUDGETS.md) (when deployed)
 
 ### `github-budget`
 
