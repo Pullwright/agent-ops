@@ -447,7 +447,10 @@
    that its body carries a different cycle id and node name and only the
    `_landing_notice_stamp` comparison can recognise it as unchanged; called
    with a changed class or reason PATCHes the same standing comment id rather
-   than posting a second one; called again for the protected-path cool-off
+   than posting a second one; sourcing `lib/reason-url.sh` first makes the
+   body additionally link the refusal class to its own `docs/reference/
+   reasons.md` entry (issue #2098), and without it the body carries no such
+   link; called again for the protected-path cool-off
    with the same `approved`/`landing_cool_off_hours` but a different embedded
    "<N>h remaining" figure — the live countdown
    `landing_protected_path_controls_ok` recomputes every pass — is also a
