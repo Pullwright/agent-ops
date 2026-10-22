@@ -1170,6 +1170,19 @@ else
   warn "shellcheck is not on PATH — an Implementer working on shell cannot lint before it pushes"
 fi
 
+# lib/approver-token.sh's hard dependency (agent-ops#407) for RS256-signing
+# the Pullwright Approver App's JWT — surfaced here only when some configured
+# merge_autonomy source (computed above) is above human and so actually needs
+# the Approver identity; otherwise a missing openssl would only ever be
+# discovered as a silent mint failure mid-cycle.
+if (( ma_above_human )); then
+  if command -v openssl >/dev/null 2>&1; then
+    ok "openssl — $(openssl version 2>/dev/null)"
+  else
+    fail "openssl is not on PATH; merge_autonomy is above human and lib/approver-token.sh needs it to RS256-sign the Approver App's JWT, or approver_token_get cannot mint"
+  fi
+fi
+
 # --- Directories ---
 
 section "Directories"
