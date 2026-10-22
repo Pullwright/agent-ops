@@ -563,15 +563,31 @@ while IFS=$'\t' read -r _ slug default_branch; do
       fi
     fi
   fi
-  tech_debt="[]"; tech_debt_raw="[]"
+  tech_debt="[]"; tech_debt_raw="[]"; tech_debt_excluded="[]"; tech_debt_excluded_raw="null"
   if jq -e 'any(.[]; . == "tech-debt")' <<<"$sources" >/dev/null 2>&1; then
     tech_debt_raw="$(gather_tech_debt "$slug")"
     emit_first_seen "$slug" tech-debt "$tech_debt_raw"
     tech_debt="$(exclude_claimed_items "$tech_debt_raw" "$claimed_item_refs_json")"
+    # Requirement 34j's unresolved-`Blocked-by:` drop, reported rather than
+    # lost the moment scripts/gather-tech-debt.sh applies it (agent-ops#2603,
+    # the same fix agent-ops#447 already gave scripts/gather-issues.sh's own
+    # identical drop): `lib/eligibility.sh`'s own open-`Blocked-by:`-reference
+    # Enabler filter (requirement 35f) reads this record directly rather than
+    # re-deriving the live check from a thread the drop already removed from
+    # this very `tech_debt` array — deliberately unlogged, unlike
+    # `issues_excluded` just above: this record exists to be read by that one
+    # filter, not to be surfaced on the shared log, and adding the identical
+    # on-change dashboard event — along with the documented Co-Ordinator key
+    # `issues_excluded` has in prompts/coordinator.md, which this array
+    # reaches that engagement's runtime input without — is tracked separately
+    # (issue #2606) rather than bundled into the fix this filter needed to
+    # work at all.
+    tech_debt_excluded_raw="$(gather_tech_debt_excluded "$slug")"
+    [[ "$tech_debt_excluded_raw" != "null" ]] && tech_debt_excluded="$tech_debt_excluded_raw"
   fi
   expensive_gather_fresh=1
   expensive_gather_as_of="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # The nine raw bands below are each unbounded past this call — agent-ops's
+  # The ten raw values below are each unbounded past this call — agent-ops's
   # own tech_debt_raw alone has reached 421,622 bytes, far past MAX_ARG_STRLEN
   # (131072) — so, exactly like the per-repo entry build further down, they
   # arrive on stdin, one document per line, bound positionally with `input as
@@ -584,15 +600,15 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # input outright rather than writing a 0-byte cache (agent-ops#1107).
   expensive_gather_cache_docs="$(printf '%s\n' "$findings_raw" "$review_feedback_raw" \
     "$abandoned_drafts_raw" "$merge_conflicts_raw" "$dequeued_raw" "$landing_refusals_raw" \
-    "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw")"
+    "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw" "$tech_debt_excluded_raw")"
   expensive_gather_cache_save "$state_dir" "$slug" "$(jq -nc --arg at "$expensive_gather_as_of" \
       'input as $f | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
-       | input as $is | input as $ie | input as $td
+       | input as $is | input as $ie | input as $td | input as $tde
        | {gathered_at: $at, findings_raw: $f, review_feedback_raw: $rf,
           abandoned_drafts_raw: $ad, merge_conflicts_raw: $mc, dequeued_raw: $dq,
           landing_refusals_raw: $lr,
           issues_raw: $is, issues_excluded_raw: $ie,
-          tech_debt_raw: $td}' <<<"$expensive_gather_cache_docs")" \
+          tech_debt_raw: $td, tech_debt_excluded_raw: $tde}' <<<"$expensive_gather_cache_docs")" \
     || log_event "warning" "$(jq -nc --arg d "could not persist the expensive-gather cache for $slug — its next non-selected cycle will see empty bands, not this cycle's read" '{detail: $d}')"
   else
   # Not this cycle's turn (see the requirement-48 comment above): reuse the
@@ -617,6 +633,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
   issues_raw="$(jq -c '.issues_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   issues_excluded_raw="$(jq -c '.issues_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
   tech_debt_raw="$(jq -c '.tech_debt_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
+  tech_debt_excluded_raw="$(jq -c '.tech_debt_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
 
   findings="[]"
   if jq -e 'any(.[]; . == "security" or . == "code-quality")' <<<"$sources" >/dev/null 2>&1; then
@@ -655,9 +672,10 @@ while IFS=$'\t' read -r _ slug default_branch; do
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
     [[ "$issues_excluded_raw" != "null" ]] && issues_excluded="$issues_excluded_raw"
   fi
-  tech_debt="[]"
+  tech_debt="[]"; tech_debt_excluded="[]"
   if jq -e 'any(.[]; . == "tech-debt")' <<<"$sources" >/dev/null 2>&1; then
     tech_debt="$(exclude_claimed_items "$tech_debt_raw" "$claimed_item_refs_json")"
+    [[ "$tech_debt_excluded_raw" != "null" ]] && tech_debt_excluded="$tech_debt_excluded_raw"
   fi
   fi
   # The implementation-plan source's path is per-repo config, never a path
@@ -722,16 +740,17 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # MAX_ARG_STRLEN this build would silently drop the repo's whole entry.
   entry_docs="$(printf '%s\n' "$findings" "$review_feedback" "$abandoned_drafts" \
     "$merge_conflicts" "$dequeued" "$landing_refusals" "$issues" "$tech_debt")"
-  # `issues_excluded` rides in as its own --argjson, not on this stdin
-  # stream: unlike the eight bands above, it is bounded by the gatherer's own
-  # 100-item page (scripts/gather-issues.sh) and each entry is a bare number
-  # and a short reason, tens of bytes at most — nowhere near MAX_ARG_STRLEN.
+  # `issues_excluded`/`tech_debt_excluded` ride in as their own --argjson, not
+  # on this stdin stream: unlike the eight bands above, each is bounded by its
+  # gatherer's own 100-item page (scripts/gather-issues.sh, scripts/gather-
+  # tech-debt.sh) and each entry is a bare number and a short reason, tens of
+  # bytes at most — nowhere near MAX_ARG_STRLEN.
   entry="$(jq -nc --arg slug "$slug" --arg db "$default_branch" --argjson sources "$sources" \
     --arg ipp "$implementation_plan_path" --arg rd "$report_directory" --arg rdr "$report_directory_resolved" \
-    --argjson ie "$issues_excluded" \
+    --argjson ie "$issues_excluded" --argjson tde "$tech_debt_excluded" \
     'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
      | input as $issues | input as $td
-     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
+     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td, tech_debt_excluded: $tde}
      + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)
      + (if $rd == "" then {} else {report_directory: $rd} end)
      + (if $rdr == "" then {} else {report_directory_resolved: $rdr} end)' <<<"$entry_docs")"

@@ -521,17 +521,23 @@
    carry `comments` and a four-name `priority`.
 2j. <a id="impl-ac-2j"></a>**Tech-debt arrives pre-fetched, pre-excluded, and its verdict is
    corroborated (requirement 3t).** `test/gather-tech-debt.test.sh` passes:
-   against a stubbed issues endpoint, `scripts/gather-tech-debt.sh` prints one
-   entry per open `pw::type:tech-debt`-labelled issue that survives the
+   against a stubbed issues endpoint, `scripts/gather-tech-debt.sh` prints a
+   `candidates` array carrying one entry per open `pw::type:tech-debt`-labelled
+   issue that survives the
    deterministic filter — `source: "tech-debt"`, the bare issue number as
    `ref` (a string) and as `number`, its `title`, `labels`, `author`,
    `created_at`, `updated_at`, `url`, its `body` and its whole comment thread
    verbatim as `comments`, sorted by issue number ascending — while an
    assigned issue, a `Blocked`-labelled one (whatever the case), a
    `pw::pager`-labelled one (agent-ops#2564) and one naming
-   a still-open `Blocked-by:` reference yield nothing, that last one arriving
-   once its reference closes, and a failing API degrades to
-   `[]` (exit 0) with the failure on stderr.
+   a still-open `Blocked-by:` reference are absent from it, that last one
+   arriving
+   once its reference closes; each of those four drops is reported in the
+   sibling `excluded` array as `{number, reason}`, with the `Blocked-by:`
+   one's reason carrying the reference's own display form (agent-ops#2603),
+   while an issue that never carried the label is reported in neither array;
+   and a failing API degrades to
+   `{"candidates":[],"excluded":null}` (exit 0) with the failure on stderr.
    `test/verdict-corroboration.test.sh` passes:
    `exclude_blocked_or_void_items` drops a candidate blocked or void for its
    own repo, leaves the same ref alone for a different repo, honours a

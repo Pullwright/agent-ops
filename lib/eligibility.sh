@@ -24,7 +24,9 @@
 # cycle's own globals directly — `refinements_json`, `decisions_json`,
 # `enabler_eligible_json`, `enabler_allowed`, `refiner_prefetch_source_json`,
 # `refiner_repos_json`, `refiner_candidates_json`, `refiner_allowed`,
-# `open_issues_json`, `live_pr_refs_json`, `stale_enabler_refs_json`/`_n` —
+# `open_issues_json`, `live_pr_refs_json`, `live_td_refs_json`,
+# `stale_enabler_refs_json`/`_n`, `still_blocked_by_json`,
+# `open_blocked_by_json`/`_n` —
 # so each call is
 # indistinguishable, to the
 # rest of the cycle, from the inline block it replaces. Their bodies keep the
@@ -329,6 +331,92 @@ if [[ "$stale_enabler_refs_n" != "0" ]]; then
     ($stale | map((.repo // "") + "#" + (.item // ""))) as $staleset
     | [ .[] | (.repo // "") as $repo | (.item // "") as $item
             | select(($staleset | index($repo + "#" + $item)) == null) ]
+    ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+fi
+
+# --- Open-`Blocked-by:`-reference exclusion (requirement 34j's own ---
+# --- convention, applied to Enabler eligibility; issue #2593, #2603) ---
+# A blocked candidate whose own GitHub thread (body or any comment) named a
+# `Blocked-by: #N` reference that is still open is dropped from this cycle's
+# eligible set: requirement 34j's `dependency_clearances`
+# (lib/candidate-gather.sh) already clears the block itself, mechanically,
+# the instant every reference the thread names closes, so an Enabler
+# engagement reaching such a candidate first can only re-derive the same
+# `still-blocked` verdict the thread already states — a full engagement of
+# the most expensive model in the system spent re-deriving a conclusion the
+# dependency gate already tracks (observed on item `2581`, blocked on the
+# still-open `#2565`, issue #2593).
+#
+# The first version of this filter (issue #2593) re-derived that verdict
+# itself: it read each eligible candidate's own thread out of a pre-
+# subtraction snapshot of `ordered_repos_json`'s `issues`/`tech_debt` bands,
+# re-parsed it for a `Blocked-by:` line with `dependency_refs`
+# (lib/dependency-gate.sh), and tested each reference against
+# `open_issues_json` itself. That could never fire on its own target class
+# (agent-ops#2603): scripts/gather-issues.sh and scripts/gather-tech-debt.sh
+# already drop a candidate naming a still-open `Blocked-by:` reference at
+# gather time (requirement 34j, `issue_blocked_by_ref`,
+# lib/issue-prefetch.sh), live, right there — so a candidate in exactly the
+# shape this filter exists to catch was never present in either band for the
+# snapshot to carry forward. Both gathers report the drop and its reason —
+# `{number, reason: "blocked-by: <ref>"}` — in their own `excluded` sidecar
+# array (`issues_excluded`, and, since #2603, `tech_debt_excluded`), neither
+# of which the blocked/void subtraction below ever touches (it only ever
+# rewrites the `issues`/`tech_debt` bands themselves, never their `_excluded`
+# siblings) — so reading them needs no pre-subtraction snapshot the way
+# requirement 35e's own `live_pr_refs_json`/`live_td_refs_json` do, and,
+# because the live check that produced them already resolved every reference
+# against its own actual repo directly (a plain `gh api` read, not a local
+# digest lookup), this reuse also drops the first version's own cross-repo
+# fail-safe trap: a reference naming a repo absent from `open_issues_json`
+# used to read as still-open forever, even once closed, purely because that
+# digest never carried the repo at all. No fresh `gh` call is made by this
+# filter either way.
+still_blocked_by_json='[]'
+[[ -z "$ordered_repos_json" ]] || still_blocked_by_json="$(jq -c '
+  [.[] | .slug as $s
+       | ((.issues_excluded // []) + (.tech_debt_excluded // []))[]
+       | select((.reason // "") | startswith("blocked-by: "))
+       | {repo: $s, item: (.number | tostring)}]
+  ' <<<"$ordered_repos_json" 2>/dev/null || true)"
+[[ -n "$still_blocked_by_json" ]] || still_blocked_by_json='[]'
+
+# A candidate whose repo this cycle's own gather did not walk fresh — so
+# neither `_excluded` array carries anything for it at all — decides nothing
+# and is left eligible, the same "unknown is never gone" rule
+# `dependency_clearances` itself observes: it simply has no entry in
+# `still_blocked_by_json` to match.
+open_blocked_by_json='[]'
+while IFS=$'\t' read -r obd_orig_repo obd_item; do
+  [[ -n "$obd_orig_repo" && -n "$obd_item" ]] || continue
+  # The candidate's own repo is resolved through the alias map before the
+  # lookup, exactly as requirement 35a's own escalation-issue lookup resolves
+  # its repo (agent-ops#2064): `still_blocked_by_json` is keyed by
+  # `ordered_repos_json`'s own `.slug`, always a repo's *current* configured
+  # slug, while a block can be logged under whichever slug the repo had at
+  # the time.
+  obd_repo="$(jq -rn --arg r "$obd_orig_repo" --argjson a "$repo_slug_aliases_json" '$a[$r] // $r' \
+    2>/dev/null || printf '%s' "$obd_orig_repo")"
+  if jq -e --arg r "$obd_repo" --arg i "$obd_item" \
+       'any(.[]; .repo == $r and .item == $i)' <<<"$still_blocked_by_json" >/dev/null 2>&1; then
+    # The candidate's *original* repo string, not the canonicalised one used
+    # for the lookup above: the final subtraction below matches against
+    # `enabler_eligible_json`'s own `.repo` field verbatim, which is recorded
+    # under whichever slug the block itself was logged under.
+    open_blocked_by_json="$(jq -c --arg r "$obd_orig_repo" --arg i "$obd_item" '. + [{repo: $r, item: $i}]' \
+      <<<"$open_blocked_by_json" 2>/dev/null || printf '%s' "$open_blocked_by_json")"
+  fi
+done < <(jq -r '.[] | [(.repo // ""), (.item // "")] | @tsv' <<<"$enabler_eligible_json" 2>/dev/null || true)
+open_blocked_by_n="$(jq 'length' <<<"$open_blocked_by_json" 2>/dev/null || printf 0)"
+[[ "$open_blocked_by_n" =~ ^[0-9]+$ ]] || open_blocked_by_n=0
+if (( open_blocked_by_n > 0 )); then
+  # An *object* payload, for the same reason the stale-ref skip above is one
+  # (issue #361): log_event's envelope merge can only add objects.
+  log_event "enabler-open-blocked-by-skipped" "$(jq -c '{skipped: [.[] | {repo, item}]}' <<<"$open_blocked_by_json")"
+  enabler_eligible_json="$(jq -c --argjson skip "$open_blocked_by_json" '
+    ($skip | map((.repo // "") + "#" + (.item // ""))) as $skipset
+    | [ .[] | (.repo // "") as $repo | (.item // "") as $item
+            | select(($skipset | index($repo + "#" + $item)) == null) ]
     ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
 fi
 

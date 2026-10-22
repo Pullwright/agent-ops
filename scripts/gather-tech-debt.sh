@@ -6,8 +6,14 @@
 #
 # Usage: gather-tech-debt.sh <owner/repo>
 #
-# Prints a JSON array; each entry is one candidate tech-debt item, issue-shaped
-# exactly like a scripts/gather-issues.sh candidate but tagged `tech-debt`:
+# Prints one JSON object, `{"candidates": […], "excluded": […]|null}` — the
+# same shape scripts/gather-issues.sh prints (agent-ops#2603), since both
+# scripts share the identical deterministic drops via lib/issue-prefetch.sh
+# and a drop here is exactly as unreported-elsewhere as one there was before
+# agent-ops#447 fixed it:
+#
+# `candidates` — one entry per candidate tech-debt item, issue-shaped exactly
+# like a scripts/gather-issues.sh candidate but tagged `tech-debt`:
 #
 #   {
 #     "source": "tech-debt",
@@ -22,12 +28,40 @@
 #     "comments": [{"author": "…", "created_at": "…", "body": "…verbatim…"}]
 #   }
 #
-# Sorted by issue number ascending — the same "lowest-id-first" rule the
-# register-backed gatherer this replaces always applied, restated over issue
-# numbers instead of register ids. That is the gatherer's order only, and a
-# prose-only fit leaves it alone; when requirement 4i's entry caps do drop
-# entries, `keep_order_tech_debt` (lib/coordinator-input.sh) keeps the
-# freshest thread first, not the lowest number (agent-ops#1379).
+# `excluded` — one entry per issue the deterministic filter below dropped,
+# `{"number": 42, "reason": "assigned" | "blocked-label" | "pager" |
+# "blocked-by: <ref>"}`, `null` rather than `[]` when the deterministic
+# filter did not run to completion — see scripts/gather-issues.sh's own
+# header for why that distinction matters. An issue the label-scoped listing
+# itself never returned (it never carried `pw::type:tech-debt`) is not this
+# script's own candidacy drop to report, and is simply absent from both
+# arrays, the same way a pull request is absent from scripts/gather-issues.sh's
+# own `excluded`.
+#
+# `candidates` is sorted by issue number ascending — the same
+# "lowest-id-first" rule the register-backed gatherer this replaces always
+# applied, restated over issue numbers instead of register ids. That is the
+# gatherer's order only, and a prose-only fit leaves it alone; when
+# requirement 4i's entry caps do drop entries, `keep_order_tech_debt`
+# (lib/coordinator-input.sh) keeps the freshest thread first, not the lowest
+# number (agent-ops#1379).
+#
+# ## Why `excluded` is reported at all (agent-ops#2603)
+#
+# Before this, a tech-debt candidate this script's own deterministic filter
+# dropped — assigned, `blocked`-labelled, `pw::pager`-labelled, or naming a
+# still-open `Blocked-by:` reference — left no trace anywhere a later reader
+# could see: not on stdout, not in the shared log. That silence is exactly
+# what broke `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler
+# filter (requirement 35f, issue #2593) the first time it shipped: the filter
+# read each eligible candidate's own thread out of `ordered_repos_json`'s
+# `issues`/`tech_debt` bands, but a candidate this script (or
+# scripts/gather-issues.sh) had already dropped for naming a still-open
+# `Blocked-by:` reference is, by construction, never present in either band —
+# the filter could never fire on its own target class. Reporting the drop and
+# its reason here, the same way scripts/gather-issues.sh already does, is what
+# lets that filter (and any other reader) learn "candidate N was excluded,
+# and why" from data this gather already produced, with no second `gh` call.
 #
 # ## The store moved from the register to labelled issues (D15 as revised, #869)
 #
@@ -82,13 +116,16 @@
 # in hand, so there is one definition of each exclusion rather than one per
 # gatherer.
 #
-# Degrades to `[]` (exit 0) on any failure, like gather-findings.sh — and like
-# gather-issues.sh, whose own degraded result is
-# `{"candidates":[],"excluded":null}`
-# rather than a bare array: this output *is* the Co-Ordinator's input, so an empty
-# array faithfully records what it saw, and a repo's `head_sha` (already in the
-# no-op fingerprint) still busts the fingerprint when a real commit changes the
-# candidate set out from under a transient failure. Failures are loud on stderr.
+# Degrades to `{"candidates":[],"excluded":null}` (exit 0) on any failure, the
+# identical contract scripts/gather-issues.sh's own degrade() follows and for
+# the identical reason: this output *is* the Co-Ordinator's input, so an empty
+# `candidates` faithfully records what it saw, and a repo's `head_sha` (already
+# in the no-op fingerprint) still busts the fingerprint when a real commit
+# changes the candidate set out from under a transient failure. `excluded`
+# degrades to `null`, not `[]` — the deterministic filter did not run to
+# completion, so the exclusion set is unknown, not known-empty (the same
+# review decision on agent-ops#452 concern 3 scripts/gather-issues.sh already
+# follows). Failures are loud on stderr.
 
 set -uo pipefail
 
@@ -113,7 +150,7 @@ fi
 
 degrade() {
   echo "gather-tech-debt: $slug: $*" >&2
-  printf '[]\n'
+  printf '{"candidates":[],"excluded":null}\n'
   exit 0
 }
 
@@ -158,6 +195,22 @@ candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
   | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
   || degrade "issues filter failed"
 
+# `excluded` mirrors scripts/gather-issues.sh's own (agent-ops#2603): scoped to
+# issues that actually carry `pw::type:tech-debt` — an issue without the label
+# was never a tech-debt candidate to begin with, the same "never a candidate"
+# reasoning that already keeps a pull request off this array — tagged with the
+# assigned/blocked-label/pager reason `issue_exclude_reason` reports. The
+# fourth, structured reason (`blocked-by: <ref>`) is appended below, once each
+# surviving candidate's whole thread has been checked.
+excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
+  [.[]
+   | select(has("pull_request") | not)
+   | select(([.labels[]?.name] | index("pw::type:tech-debt")) != null)
+   | select(issue_exclude_reason != null)
+   | {number: .number, reason: issue_exclude_reason}]
+  | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
+  || degrade "issues excluded-filter failed"
+
 out='[]'
 while IFS= read -r candidate; do
   [[ -n "$candidate" ]] || continue
@@ -167,10 +220,20 @@ while IFS= read -r candidate; do
   # reference still open anywhere in the thread holds this candidate back.
   # `$candidate` already carries its own thread (`issue_prefetch_open_issues`
   # fetched it alongside the listing itself, agent-ops#1085), so no further
-  # `gh` call is made to get it.
+  # `gh` call is made to get it. Reported into `excluded`, with the reference's
+  # own display form, the same way scripts/gather-issues.sh already reports it
+  # (agent-ops#2603) — this is the one record `lib/eligibility.sh`'s own
+  # open-`Blocked-by:`-reference Enabler filter (requirement 35f) reads,
+  # rather than re-deriving the same live check from a thread this drop
+  # already removed from the `tech_debt` band.
   thread_text="$(jq -r '.body' <<<"$candidate")
 $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
-  if [[ -n "$(issue_blocked_by_ref "$slug" "$thread_text")" ]]; then
+  ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+  if [[ -n "$ref_display" ]]; then
+    excl_entry="$(jq -nc --argjson n "$n" --arg ref "$ref_display" \
+      '{number: $n, reason: ("blocked-by: " + $ref)}')" || degrade "excluded entry assembly failed for issue #$n"
+    excluded="$(jq -nc 'input as $arr | input as $e | $arr + [$e]' <<<"$excluded"$'\n'"$excl_entry")" \
+      || degrade "excluded array assembly failed at issue #$n"
     continue
   fi
 
@@ -184,4 +247,8 @@ $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
     || degrade "array assembly failed at issue #$n"
 done < <(jq -c '.[]' <<<"$candidates")
 
-printf '%s\n' "$out"
+# $out and $excluded both arrive on stdin, never as --argjson: both are
+# unbounded past this call the same way requirement 4g already treats every
+# other aggregate this script builds.
+printf '%s\n' "$out" "$excluded" \
+  | jq -nc 'input as $c | input as $e | {candidates: $c, excluded: ($e | sort_by(.number))}'

@@ -307,6 +307,67 @@
     the eligible set unfiltered — this
     is a cost saving, never the correctness gate; the Enabler still voids a stale
     item it does reach, exactly as it always has.
+35f. <a id="impl-35f"></a>**A candidate scripts/gather-issues.sh or scripts/gather-tech-debt.sh has
+    already excluded for naming a still-open `Blocked-by:` reference is
+    dropped before it reaches eligibility (issue #2593; corrected by
+    #2603).** Requirement 34j's `dependency_clearances`
+    (`lib/candidate-gather.sh`) already clears a block the instant every
+    reference its thread names closes — but until then, the block sits
+    eligible on the ordinary `threshold`/`recheck` terms of requirement 35a
+    exactly like any other, and an Enabler engagement reaching it first can
+    only re-derive the same `still-blocked` verdict the thread already
+    states, at full engagement price, every time its clock comes round (item
+    `2581` reached the Enabler with reason `threshold` while its thread
+    already carried an Implementer's `Blocked-by: #2565`, with `#2565` still
+    open).
+
+    The filter does not re-derive that verdict from the candidate's own
+    thread, and cannot: scripts/gather-issues.sh and scripts/
+    gather-tech-debt.sh already drop a candidate naming a still-open
+    `Blocked-by:` reference at gather time (requirement 34j,
+    `issue_blocked_by_ref`, `lib/issue-prefetch.sh`) — live, checked right
+    there — so a candidate in exactly the shape this filter exists to catch
+    is, by construction, never present in `ordered_repos_json`'s
+    `issues`/`tech_debt` bands for any snapshot of them to carry forward, and
+    a `dependency_refs` re-parse of those bands could never fire on its own
+    target class. What both gathers *do* leave behind is the drop and its
+    reason, in their own `excluded` sidecar arrays, and that is what this
+    filter reads.
+
+    Before `enabler_allowed` is set, each eligible entry's own repo and item
+    number is therefore tested against `still_blocked_by_json` — built,
+    directly from `ordered_repos_json`, by collecting every entry of every
+    repo's own `issues_excluded` and `tech_debt_excluded` arrays (component
+    3j, component 3t) whose `reason` starts `"blocked-by: "`, resolving the
+    candidate's own repo through `config_repo_slug_aliases`' map first
+    exactly as requirement 35a's own escalation-issue lookup does
+    (agent-ops#2064). Neither `_excluded` array is touched by the
+    blocked/void subtraction (requirements 3t/3u) — only the `issues`/
+    `tech_debt` bands themselves are rewritten — so no pre-subtraction
+    snapshot is needed the way requirement 35e's own `live_pr_refs_json`/
+    `live_td_refs_json` are. Every eligible entry whose repo and item match
+    an entry of `still_blocked_by_json` is dropped, and the drop is logged
+    (`enabler-open-blocked-by-skipped`, an object payload `{skipped:
+    [{repo, item}…]}`, for the identical reason requirement 35e's own
+    `enabler-stale-refs-skipped` is one) rather than silent. No fresh `gh`
+    call is made by this filter: the live check already ran once, at gather
+    time, and its result is what `still_blocked_by_json` reads.
+
+    A candidate whose repo this cycle's own gather did not walk fresh at
+    all — so neither `_excluded` array carries anything for it — decides
+    nothing and is left eligible, the same "unknown is never gone" rule
+    `dependency_clearances` itself observes; it simply has no entry in
+    `still_blocked_by_json` to match. This is a cost saving, never the
+    correctness gate: an Enabler engagement that does reach such an item
+    still reports it, exactly as it always has. A cross-repo `Blocked-by:`
+    reference is decided no differently from a same-repo one, and needs no
+    special handling here: the live check that produced
+    `issues_excluded`/`tech_debt_excluded` resolved each reference against
+    its own actual repo directly (a plain `gh api` read, not a lookup in this
+    cycle's `open_issues_json` digest), so a reference naming a repository
+    this cycle never sampled — one that is not configured at all, or did not
+    sample cleanly — is read at its true state rather than fail-safing to
+    still-open on every cycle for as long as the digest lacks it.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with

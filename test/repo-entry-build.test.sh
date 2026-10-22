@@ -63,7 +63,7 @@ run_entry_build() {  # run_entry_build <slug> <default_branch> <sources-json> <i
   #                     <findings> <review_feedback> <abandoned_drafts>
   #                     <merge_conflicts> <dequeued> <landing_refusals>
   #                     <issues>
-  #                     <tech_debt> [issues_excluded]
+  #                     <tech_debt> [issues_excluded] [tech_debt_excluded]
   # Every one of these is consumed only by the eval'd entry_build_block,
   # invisible to shellcheck, including the `entry` it assigns.
   # `report_directory`/`report_directory_resolved` are set again, unrelated,
@@ -75,7 +75,7 @@ run_entry_build() {  # run_entry_build <slug> <default_branch> <sources-json> <i
     report_directory="$5" report_directory_resolved="$6" \
     findings="$7" review_feedback="$8" abandoned_drafts="$9" merge_conflicts="${10}" \
     dequeued="${11}" landing_refusals="${12}" issues="${13}" tech_debt="${14}" \
-    issues_excluded="${15:-[]}"
+    issues_excluded="${15:-[]}" tech_debt_excluded="${16:-[]}"
     eval "$entry_build_block"
     # shellcheck disable=SC2154
     printf '%s' "$entry" )
@@ -91,7 +91,8 @@ out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" "" "" \
   '[{"source":"landing-refusals","ref":"pr-5-landing-refusal-ee"}]' \
   '[{"source":"issues","ref":"11"}]' \
   '[{"source":"tech-debt","ref":"TD1"}]' \
-  '[{"number":12,"reason":"assigned"}]')"
+  '[{"number":12,"reason":"assigned"}]' \
+  '[{"number":13,"reason":"blocked-by: #14"}]')"
 
 assert_eq "slug and default_branch carry through" "o/r main" \
   "$(jq -r '"\(.slug) \(.default_branch)"' <<<"$out")"
@@ -106,6 +107,8 @@ assert_eq "issues carries through" "11" "$(jq -r '.issues[0].ref' <<<"$out")"
 assert_eq "issues_excluded carries through" '{"number":12,"reason":"assigned"}' \
   "$(jq -c '.issues_excluded[0]' <<<"$out")"
 assert_eq "tech_debt carries through" "TD1" "$(jq -r '.tech_debt[0].ref' <<<"$out")"
+assert_eq "tech_debt_excluded carries through" '{"number":13,"reason":"blocked-by: #14"}' \
+  "$(jq -c '.tech_debt_excluded[0]' <<<"$out")"
 assert_eq "human_visibility starts empty — always filled in later" "[]" "$(jq -c '.human_visibility' <<<"$out")"
 assert_eq "no implementation_plan_path key when the source isn't configured" "false" \
   "$(jq 'has("implementation_plan_path")' <<<"$out")"
@@ -246,7 +249,7 @@ out_big_body="$(jq -r '.issues[0].body // ""' <<<"$out_big")"
 assert_eq "  ... carrying the issue's full body, not truncated or dropped" \
   "1" "$([[ "$out_big_body" == *"$oversized_body"* ]] && echo 1 || echo 0)"
 assert_eq "  ... and every other band still comes through, none dropped" "true" \
-  "$(jq '(.findings == []) and (.review_feedback == []) and (.tech_debt == [])' <<<"$out_big")"
+  "$(jq '(.findings == []) and (.review_feedback == []) and (.tech_debt == []) and (.tech_debt_excluded == [])' <<<"$out_big")"
 
 # --- The expensive-gather cache save (requirement 4g/48, agent-ops#1107) ----
 # lib/candidate-gather.sh's fresh branch folds the same nine bands (the eight
@@ -298,6 +301,7 @@ run_cache_build() {  # run_cache_build <state_dir> <slug> <findings_raw>
                       #   <review_feedback_raw> <abandoned_drafts_raw>
                       #   <merge_conflicts_raw> <dequeued_raw> <landing_refusals_raw>
                       #   <issues_raw> <issues_excluded_raw> <tech_debt_raw>
+                      #   [tech_debt_excluded_raw]
   # Every one of these is consumed only by the eval'd cache_build_block,
   # invisible to shellcheck — including expensive_gather_fresh and
   # expensive_gather_as_of, which the block itself assigns.
@@ -305,7 +309,8 @@ run_cache_build() {  # run_cache_build <state_dir> <slug> <findings_raw>
   ( state_dir="$1" slug="$2" findings_raw="$3" review_feedback_raw="$4" \
     abandoned_drafts_raw="$5" merge_conflicts_raw="$6" dequeued_raw="$7" \
     landing_refusals_raw="$8" issues_raw="$9" issues_excluded_raw="${10}" \
-    tech_debt_raw="${11}" cycle_id="test-cycle" node_name="node-a" \
+    tech_debt_raw="${11}" tech_debt_excluded_raw="${12:-null}" \
+    cycle_id="test-cycle" node_name="node-a" \
     log_file="$1/cache-build.log.jsonl"
     eval "$cache_build_block" )
 }
@@ -327,7 +332,16 @@ cache_loaded="$(expensive_gather_cache_load "$cache_state" "o/cache-repo")"
 assert_eq "the cache round-trips an oversized tech-debt band intact, not truncated or dropped" "1" \
   "$([[ "$(jq -r '.tech_debt_raw[0].body // ""' <<<"$cache_loaded")" == "$oversized_td_body" ]] && echo 1 || echo 0)"
 assert_eq "  ... and every other band still comes through, none dropped" "true" \
-  "$(jq '(.findings_raw == []) and (.review_feedback_raw == []) and (.issues_excluded_raw == null)' <<<"$cache_loaded")"
+  "$(jq '(.findings_raw == []) and (.review_feedback_raw == []) and (.issues_excluded_raw == null) and (.tech_debt_excluded_raw == null)' <<<"$cache_loaded")"
+
+# --- tech_debt_excluded_raw round-trips the same way issues_excluded_raw ---
+# --- already does (agent-ops#2603) ------------------------------------------
+run_cache_build "$cache_state" "o/cache-repo-2" '[]' '[]' '[]' '[]' '[]' '[]' '[]' 'null' '[]' \
+  '[{"number":13,"reason":"blocked-by: #14"}]'
+cache_loaded_2="$(expensive_gather_cache_load "$cache_state" "o/cache-repo-2")"
+assert_eq "tech_debt_excluded_raw round-trips through the cache, not left behind" \
+  '[{"number":13,"reason":"blocked-by: #14"}]' \
+  "$(jq -c '.tech_debt_excluded_raw' <<<"$cache_loaded_2")"
 
 printf '\n'
 if (( failures > 0 )); then
