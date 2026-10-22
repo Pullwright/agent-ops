@@ -111,7 +111,7 @@ spec_scan() {
     lineno=0
     while IFS= read -r line; do
       lineno=$((lineno + 1))
-      if [[ $line =~ ^[[:space:]]*([A-Za-z0-9]+)\.\ \<a\ id=\"([a-z0-9-]+)\"\>\</a\>(.*)$ ]]; then
+      if [[ $line =~ ^[[:space:]]*([A-Za-z0-9-]+)\.\ \<a\ id=\"([a-z0-9-]+)\"\>\</a\>(.*)$ ]]; then
         label="${BASH_REMATCH[1]}"
         anchor="${BASH_REMATCH[2]}"
         rest="${BASH_REMATCH[3]}"
@@ -343,6 +343,15 @@ spec_ratchet_has() {
 # unqualified numbering scheme this script does not model yet
 # (agent-ops#2521) — skipped here rather than mismatched against the
 # truncated integer part.
+#
+# A citation with a hyphenated suffix ("1c-vi", "8e-iiiA") names a
+# self-qualifying sub-item of an acceptance check or component — unlike the
+# dotted case, this needs no parse state, so each pattern below captures an
+# optional "-<suffix>" of one or more lowercase letters plus an optional
+# single uppercase disambiguator. The suffix class deliberately excludes
+# digits: a numeric range citation ("requirements 57-60") must still
+# truncate to its first number rather than be checked as a dangling
+# "57-60", since that is not this convention's grammar at all.
 cmd_check() {
   spec_require_index
   local violations=0
@@ -354,12 +363,12 @@ cmd_check() {
 
   local pattern
   for pattern in \
-    '[Rr]equirements? [0-9]+(\.[0-9]+)?[A-Za-z]?' \
-    '[Aa]cceptance checks? [0-9]+(\.[0-9]+)?[A-Za-z]?' \
-    '[Cc]omponents? [0-9]+(\.[0-9]+)?[A-Za-z]?' \
-    '\bIMPL( AC| C)? [A-Za-z0-9]+' \
-    '\bREV( AC| C)? [A-Za-z0-9]+' \
-    '\bMON( AC| C)? [A-Za-z0-9]+'
+    '[Rr]equirements? [0-9]+(\.[0-9]+)?[A-Za-z]?(-[a-z]+[A-Z]?)?' \
+    '[Aa]cceptance checks? [0-9]+(\.[0-9]+)?[A-Za-z]?(-[a-z]+[A-Z]?)?' \
+    '[Cc]omponents? [0-9]+(\.[0-9]+)?[A-Za-z]?(-[a-z]+[A-Z]?)?' \
+    '\bIMPL( AC| C)? [A-Za-z0-9]+(-[a-z]+[A-Z]?)?' \
+    '\bREV( AC| C)? [A-Za-z0-9]+(-[a-z]+[A-Z]?)?' \
+    '\bMON( AC| C)? [A-Za-z0-9]+(-[a-z]+[A-Z]?)?'
   do
     # `-H` rather than bare `-n`: grep omits the filename when it is handed a
     # single path, and xargs hands it one whenever the file list spills into a

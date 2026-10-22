@@ -25,6 +25,14 @@
       "line": 23,
       "title": "The image builds and carries the whole toolchain, on both"
     },
+    "IMPL AC 1b-i": {
+      "kind": "impl-ac",
+      "label": "1b-i",
+      "anchor": "impl-ac-1b-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 49,
+      "title": "A documentation-only change builds nothing, everything else builds,"
+    },
     "IMPL AC 1c": {
       "kind": "impl-ac",
       "label": "1c",
@@ -32,6 +40,54 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
       "line": 130,
       "title": "The stack comes up from nothing and is idempotent."
+    },
+    "IMPL AC 1c-i": {
+      "kind": "impl-ac",
+      "label": "1c-i",
+      "anchor": "impl-ac-1c-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 144,
+      "title": "A roll waits for a cycle."
+    },
+    "IMPL AC 1c-ii": {
+      "kind": "impl-ac",
+      "label": "1c-ii",
+      "anchor": "impl-ac-1c-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 182,
+      "title": "The dashboard is published to the host's loopback and to no network."
+    },
+    "IMPL AC 1c-iii": {
+      "kind": "impl-ac",
+      "label": "1c-iii",
+      "anchor": "impl-ac-1c-iii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 201,
+      "title": "A node can tell when its compose.yaml has fallen behind."
+    },
+    "IMPL AC 1c-iv": {
+      "kind": "impl-ac",
+      "label": "1c-iv",
+      "anchor": "impl-ac-1c-iv",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 213,
+      "title": "A node can tell when it has fallen behind the newest published"
+    },
+    "IMPL AC 1c-v": {
+      "kind": "impl-ac",
+      "label": "1c-v",
+      "anchor": "impl-ac-1c-v",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 235,
+      "title": "The tailnet sidecar refuses to start without `TS_AUTHKEY`, and does"
+    },
+    "IMPL AC 1c-vi": {
+      "kind": "impl-ac",
+      "label": "1c-vi",
+      "anchor": "impl-ac-1c-vi",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 277,
+      "title": "A node applies its own merged compose.yaml, and only when it is"
     },
     "IMPL AC 1d": {
       "kind": "impl-ac",
@@ -49,6 +105,14 @@
       "line": 434,
       "title": "The fleet flags reach every node."
     },
+    "IMPL AC 1e-i": {
+      "kind": "impl-ac",
+      "label": "1e-i",
+      "anchor": "impl-ac-1e-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 513,
+      "title": "The drain is a mode on the same switch, and never loosens a stop"
+    },
     "IMPL AC 1f": {
       "kind": "impl-ac",
       "label": "1f",
@@ -65,6 +129,22 @@
       "line": 574,
       "title": "Every shell script in the repository is shellcheck-clean, and a caller"
     },
+    "IMPL AC 1g-i": {
+      "kind": "impl-ac",
+      "label": "1g-i",
+      "anchor": "impl-ac-1g-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 601,
+      "title": "A script too large to lint in the memory available is degraded, or —"
+    },
+    "IMPL AC 1g-ii": {
+      "kind": "impl-ac",
+      "label": "1g-ii",
+      "anchor": "impl-ac-1g-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "line": 695,
+      "title": "Every GraphQL document this repository sends still validates"
+    },
     "IMPL AC 2m": {
       "kind": "impl-ac",
       "label": "2m",
@@ -80,6 +160,22 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
       "line": 184,
       "title": "A cycle does not start work the host has no room to finish, on either"
+    },
+    "IMPL AC 2n-i": {
+      "kind": "impl-ac",
+      "label": "2n-i",
+      "anchor": "impl-ac-2n-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 263,
+      "title": "A cycle does not start work the host has no memory to run (requirement"
+    },
+    "IMPL AC 2n-ii": {
+      "kind": "impl-ac",
+      "label": "2n-ii",
+      "anchor": "impl-ac-2n-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 326,
+      "title": "A cycle does not start work that overcommits the host it shares with"
     },
     "IMPL AC 2c": {
       "kind": "impl-ac",
@@ -152,6 +248,30 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
       "line": 574,
       "title": "Blocked/void exclusion reaches every pre-fetched band, `issues`"
+    },
+    "IMPL AC 2j-i": {
+      "kind": "impl-ac",
+      "label": "2j-i",
+      "anchor": "impl-ac-2j-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 622,
+      "title": "The merge reconciles repositories correctly, and a rejected verdict"
+    },
+    "IMPL AC 2j-ii": {
+      "kind": "impl-ac",
+      "label": "2j-ii",
+      "anchor": "impl-ac-2j-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 721,
+      "title": "The corroboration covers every pre-fetched band (requirement 3x,"
+    },
+    "IMPL AC 2j-iii": {
+      "kind": "impl-ac",
+      "label": "2j-iii",
+      "anchor": "impl-ac-2j-iii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
+      "line": 759,
+      "title": "A `needs_refinement` block against an entry the fit ladder trimmed"
     },
     "IMPL AC 2f": {
       "kind": "impl-ac",
@@ -409,6 +529,30 @@
       "line": 242,
       "title": "A `pr-ready` event means the pull request is not a draft (requirement"
     },
+    "IMPL AC 8d-i": {
+      "kind": "impl-ac",
+      "label": "8d-i",
+      "anchor": "impl-ac-8d-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 252,
+      "title": "A handed-off pull request is in somebody's review queue (requirement"
+    },
+    "IMPL AC 8d-ii": {
+      "kind": "impl-ac",
+      "label": "8d-ii",
+      "anchor": "impl-ac-8d-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 268,
+      "title": "A `ready` verdict is confirmed against GitHub, not trusted, before any"
+    },
+    "IMPL AC 8d-iii": {
+      "kind": "impl-ac",
+      "label": "8d-iii",
+      "anchor": "impl-ac-8d-iii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 366,
+      "title": "A standing human comment is reconciled — implemented or explicitly"
+    },
     "IMPL AC 69": {
       "kind": "impl-ac",
       "label": "69",
@@ -416,6 +560,54 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
       "line": 441,
       "title": "A pull request nobody could hand off reaches the Enabler, not the human"
+    },
+    "IMPL AC 8e-i": {
+      "kind": "impl-ac",
+      "label": "8e-i",
+      "anchor": "impl-ac-8e-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 465,
+      "title": "A stage that says nothing still names its pull request (requirement"
+    },
+    "IMPL AC 8e-ii": {
+      "kind": "impl-ac",
+      "label": "8e-ii",
+      "anchor": "impl-ac-8e-ii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 479,
+      "title": "A subject pull request that merges mid-stage is a completion, not an"
+    },
+    "IMPL AC 8e-iii": {
+      "kind": "impl-ac",
+      "label": "8e-iii",
+      "anchor": "impl-ac-8e-iii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 513,
+      "title": "`pr_merge_state` (requirement 31d) is fail-closed, the same"
+    },
+    "IMPL AC 8e-iiiA": {
+      "kind": "impl-ac",
+      "label": "8e-iiiA",
+      "anchor": "impl-ac-8e-iiia",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 522,
+      "title": "A `merge-conflicts` work order carries `base` from both producers"
+    },
+    "IMPL AC 8e-iv": {
+      "kind": "impl-ac",
+      "label": "8e-iv",
+      "anchor": "impl-ac-8e-iv",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 533,
+      "title": "A `merge-conflicts` item's rebase-only push skips the Reviewer"
+    },
+    "IMPL AC 8e-v": {
+      "kind": "impl-ac",
+      "label": "8e-v",
+      "anchor": "impl-ac-8e-v",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 561,
+      "title": "The Implementer's own stage-start pays the same advisory merge check"
     },
     "IMPL AC 8f": {
       "kind": "impl-ac",
@@ -449,6 +641,14 @@
       "line": 615,
       "title": "A block outlives its impediment, never its work (requirement 34i)."
     },
+    "IMPL AC 8h-i": {
+      "kind": "impl-ac",
+      "label": "8h-i",
+      "anchor": "impl-ac-8h-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 648,
+      "title": "A `needs-refinement` block clears the moment its own specification"
+    },
     "IMPL AC 8i": {
       "kind": "impl-ac",
       "label": "8i",
@@ -456,6 +656,14 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
       "line": 678,
       "title": "A structured dependency is held and released without a model ever"
+    },
+    "IMPL AC 8i-i": {
+      "kind": "impl-ac",
+      "label": "8i-i",
+      "anchor": "impl-ac-8i-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
+      "line": 701,
+      "title": "A `needs_refinement` report re-asserting a resolved dependency is"
     },
     "IMPL AC 8j": {
       "kind": "impl-ac",
@@ -969,6 +1177,14 @@
       "line": 5,
       "title": "A log past `log_retained_bytes` rotates, keeps `log_generations`, and"
     },
+    "IMPL AC 1h-i": {
+      "kind": "impl-ac",
+      "label": "1h-i",
+      "anchor": "impl-ac-1h-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-07.md",
+      "line": 14,
+      "title": "Analytics retention is a stated policy, and rotation and pruning"
+    },
     "IMPL AC 1i": {
       "kind": "impl-ac",
       "label": "1i",
@@ -1233,6 +1449,14 @@
       "line": 148,
       "title": "An under-specified item is reported, blocked, refined and carried"
     },
+    "IMPL AC 11d-i": {
+      "kind": "impl-ac",
+      "label": "11d-i",
+      "anchor": "impl-ac-11d-i",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-09.md",
+      "line": 171,
+      "title": "An escalation the Script did not file is never claimed on the work"
+    },
     "IMPL C 1": {
       "kind": "impl-c",
       "label": "1",
@@ -1408,6 +1632,14 @@
       "file": "docs/spec/implementation/components/components-01.md",
       "line": 539,
       "title": "`scripts/gather-project-review.sh` implementing requirement 3y's"
+    },
+    "IMPL C 3y-ii": {
+      "kind": "impl-c",
+      "label": "3y-ii",
+      "anchor": "impl-c-3y-ii",
+      "file": "docs/spec/implementation/components/components-01.md",
+      "line": 595,
+      "title": "`scripts/gather-implementation-plan.sh` implementing requirement 3y's"
     },
     "IMPL C 3q": {
       "kind": "impl-c",
