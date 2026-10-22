@@ -62,6 +62,7 @@ fi
 # --- The surroundings the block reads ----------------------------------------
 blocked_rows_file="$tmp_dir/blocked-rows.json"
 events_file="$tmp_dir/blocked-enrichment.jsonl"
+# shellcheck disable=SC2034  # read by the lifted block, invisible to a static reader
 union_kept_dir="$tmp_dir"  # the lifted block reads "$union_kept_dir/blocked-enrichment.jsonl"
 
 run_enrichment() { eval "$enrichment_src"; }
@@ -72,6 +73,7 @@ run_enrichment() { eval "$enrichment_src"; }
 # mirror (an escalation logged under the old slug reaching a block already
 # read back under the new one).
 # =============================================================================
+# shellcheck disable=SC2034  # read by the lifted block, invisible to a static reader
 repo_slug_aliases_json='{"o/old":"o/r"}'
 
 jq -nc '[{repo: "o/r", item: "500", ts: "2026-10-01T00:00:00Z", detail: "d", stage: "coordinator", kind: "needs-refinement"},
@@ -89,6 +91,7 @@ EOF
 
 run_enrichment
 
+# shellcheck disable=SC2154  # assigned by the lifted block, invisible to a static reader
 assert_eq "an escalation logged under the repo's old slug still attaches to a block read back under the new one" \
   "77" "$(jq -r '.[] | select(.item == "500") | .escalation_issue' <<<"$blocked_json")"
 assert_eq "...and carries its own issue_url" \
@@ -99,6 +102,7 @@ assert_eq "an Enabler verdict logged under the repo's old slug still attaches th
 # =============================================================================
 # With no aliases map, the rename splits the join: nothing attaches.
 # =============================================================================
+# shellcheck disable=SC2034  # read by the lifted block, invisible to a static reader
 repo_slug_aliases_json='{}'
 run_enrichment
 assert_eq "...with no aliases map, the old-slug event never reaches the new-slug row" \
