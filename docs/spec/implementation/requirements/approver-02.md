@@ -50,6 +50,10 @@
     is prose naming what the owner must decide; the tracking issue is
     assigned to `enabler_assignee`, the load-bearing half that excludes it
     from the `issues` source, requirement 16.4, exactly as an ordinary
+    Enabler escalation). Every tracking issue's own body also carries a
+    link to that KEY's entry in `docs/reference/reasons.md` (issue #2098),
+    built by `reason_code_url` (`lib/reason-url.sh`, sourced by `lib/pager.sh`
+    itself).
     Enabler escalation).
 
     `pager_evaluate` runs every registered invariant once, from
