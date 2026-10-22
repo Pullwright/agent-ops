@@ -2590,7 +2590,7 @@
       "label": "35b",
       "anchor": "impl-35b",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 223,
+      "line": 231,
       "title": "The eligible set is part of the no-op fingerprint"
     },
     "IMPL 35c": {
@@ -2598,7 +2598,7 @@
       "label": "35c",
       "anchor": "impl-35c",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 243,
+      "line": 251,
       "title": "One engagement per item, fleet-wide."
     },
     "IMPL 35d": {
@@ -2606,7 +2606,7 @@
       "label": "35d",
       "anchor": "impl-35d",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 268,
+      "line": 276,
       "title": "Refinement items are capped per engagement."
     },
     "IMPL 35e": {
@@ -2614,7 +2614,7 @@
       "label": "35e",
       "anchor": "impl-35e",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 285,
+      "line": 293,
       "title": "A stale merge-conflict/abandoned-draft ref, or a retired tech-debt"
     },
     "IMPL 35f": {
@@ -2622,7 +2622,7 @@
       "label": "35f",
       "anchor": "impl-35f",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 341,
+      "line": 349,
       "title": "A candidate scripts/gather-issues.sh or scripts/gather-tech-debt.sh has"
     },
     "IMPL 36": {
@@ -2630,7 +2630,7 @@
       "label": "36",
       "anchor": "impl-36",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 402,
+      "line": 410,
       "title": "The Enabler's powers."
     },
     "IMPL 36a": {
@@ -2638,7 +2638,7 @@
       "label": "36a",
       "anchor": "impl-36a",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 449,
+      "line": 457,
       "title": "What the Script does with a verdict."
     },
     "IMPL 36b": {
@@ -2646,7 +2646,7 @@
       "label": "36b",
       "anchor": "impl-36b",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 629,
+      "line": 637,
       "title": "The refinement duty."
     },
     "IMPL 36c": {
@@ -2654,7 +2654,7 @@
       "label": "36c",
       "anchor": "impl-36c",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 852,
+      "line": 860,
       "title": "`file_debt`/`file_issue` (agent-ops#631): filing what the Enabler"
     },
     "IMPL 36d": {
@@ -2662,7 +2662,7 @@
       "label": "36d",
       "anchor": "impl-36d",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 914,
+      "line": 922,
       "title": "`decide-tactical` (D18, agent-ops#936)."
     },
     "IMPL 36e": {
@@ -2670,7 +2670,7 @@
       "label": "36e",
       "anchor": "impl-36e",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 1126,
+      "line": 1134,
       "title": "The decision log and veto (D18, agent-ops#937)."
     },
     "IMPL 36f": {
