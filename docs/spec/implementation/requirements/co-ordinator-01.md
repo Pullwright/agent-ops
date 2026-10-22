@@ -297,9 +297,9 @@
 
     **An entry's `priority` may already be raised above what it was triaged
     to** (priority inheritance, agent-ops#2422, requirement 34j): an open item
-    that blocks another — named in a same-repo `Blocked-by:` reference on the
-    blocked item's own thread, text or native — ranks at least as high as the
-    highest band among every item it blocks, whichever of `issues`/`tech_debt`
+    that blocks another — named in a same-repo `Blocked-by:` reference on
+    the blocked item's own thread — ranks at least as high as the highest
+    band among every item it blocks, whichever of `issues`/`tech_debt`
     either one is in. This runs once, upstream of the Co-Ordinator's own
     input (`issue_priority_inherit`, `lib/dependency-gate.sh`), so the walk
     above reads the raised band exactly as it would a band a human stated
