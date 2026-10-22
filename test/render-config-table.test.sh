@@ -53,7 +53,7 @@ assert_not_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/docs/spec/implementation" "$tmp/lib"
+mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/docs/spec/implementation" "$tmp/docs/spec/review" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-config-table.sh" "$tmp/scripts/render-config-table.sh"
 cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-config-table.sh"
@@ -295,7 +295,7 @@ MD
 }
 
 write_fixture_review_spec() {
-  cat > "$tmp/docs/spec/review.md" <<'MD'
+  cat > "$tmp/docs/spec/review/README.md" <<'MD'
 # Fixture review spec
 
 <!-- config-table:start id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
@@ -427,7 +427,7 @@ else
   pass "the impl spec does not render the README's prose"
 fi
 
-review_spec_content="$(cat "$tmp/docs/spec/review.md")"
+review_spec_content="$(cat "$tmp/docs/spec/review/README.md")"
 # shellcheck disable=SC2016
 assert_contains "the review spec renders repository_review.defaults.sub_key" "$review_spec_content" '| `repository_review.defaults.sub_key` |'
 
