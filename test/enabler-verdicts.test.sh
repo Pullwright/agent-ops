@@ -1952,7 +1952,7 @@ assert_eq "reconciliation-refused: enabler-examined records the flip as failed" 
 # human-change-request (agent-ops#1032, D23): the Enabler's own
 # handoff-recovery path is a second detector site for this class — see the
 # Reviewer's own site in test/rework-record.test.sh / agent-cycle.sh. Always
-# attributed to "reviewer" (docs/FLOW-SCHEMA.md): the recovery path only
+# attributed to "reviewer" (docs/reference/flow-schema.md): the recovery path only
 # reaches this branch for a pull request with a Reviewer verdict already on
 # record, so the request escaped the Reviewer whichever site observed it.
 rw_evt="$(events_named "$calls" rework | jq -c 'select(.class == "human-change-request")' | head -n1)"

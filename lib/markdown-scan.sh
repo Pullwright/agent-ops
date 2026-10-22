@@ -152,11 +152,12 @@ markdown_heading_slugs() {
 #
 # The regions AGENTS.md's "Generated regions" section describes: each one is
 # rewritten by a renderer and never edited by hand. A region is generated
-# only if it is listed here. scripts/render-toc.sh and
-# scripts/render-config-table.sh render exactly the regions listed, and
-# scripts/check-docs.sh leaves exactly these out of the size budget, so a
-# marker pair placed anywhere else, or one carrying an id or fragment that
-# nothing renders, holds hand-written bytes like any other line.
+# only if it is listed here. scripts/render-toc.sh, scripts/render-config-table.sh,
+# scripts/render-labels-table.sh and scripts/render-scripts-index.sh render
+# exactly the regions listed, and scripts/check-docs.sh leaves exactly these
+# out of the size budget, so a marker pair placed anywhere else, or one
+# carrying an id or fragment that nothing renders, holds hand-written bytes
+# like any other line.
 
 # The files whose table of contents scripts/render-toc.sh renders, one region
 # each, from toc_start_re to toc_end_re, built from that file's own `##`/`###`
@@ -195,6 +196,22 @@ CONFIG_TABLE_REGIONS=(
   "docs/spec/review.md:review:spec"
 )
 
+# The one file whose labels table scripts/render-labels-table.sh renders,
+# from labels_table_start_re to labels_table_end_re, built from
+# lib/labels.sh's own catalogue.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+LABELS_TABLE_FILES=(
+  "docs/reference/labels.md"
+)
+
+# The one file whose script index scripts/render-scripts-index.sh renders,
+# from scripts_index_start_re to scripts_index_end_re, built from the first
+# paragraph of every script's own header comment under lib/ and scripts/.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+SCRIPTS_INDEX_FILES=(
+  "docs/reference/scripts.md"
+)
+
 # FILE:FRAGMENT for each region Pullwright/.agent's scripts/sync.sh stamps in
 # this repository, from stamp_start_re FRAGMENT to stamp_end_re FRAGMENT. That
 # repository's sync/manifest.tsv decides them and nothing here can read it, so
@@ -222,6 +239,10 @@ config_notes_start_re() { printf '^<!-- config-table:notes id=%s($| .*-->$)' "$1
 config_notes_end_re() { printf '%s' '^<!-- config-table:notes-end -->$'; }
 stamp_start_re() { printf '^<!-- agent-info:start fragment=%s( .*)? -->$' "$1"; }
 stamp_end_re() { printf '^<!-- agent-info:end fragment=%s -->$' "$1"; }
+labels_table_start_re() { printf '%s' '^<!-- labels-table:start -->$'; }
+labels_table_end_re() { printf '%s' '^<!-- labels-table:end -->$'; }
+scripts_index_start_re() { printf '%s' '^<!-- scripts-index:start -->$'; }
+scripts_index_end_re() { printf '%s' '^<!-- scripts-index:end -->$'; }
 
 # markdown_generated_regions FILE
 # Print the first and last line numbers of each generated region FILE carries,
@@ -264,6 +285,16 @@ markdown_generated_regions() {
     id="${entry#*:}"
     if [[ "$path" == "$file" ]]; then
       markers+=("$(stamp_start_re "$id")" "$(stamp_end_re "$id")")
+    fi
+  done
+  for path in "${LABELS_TABLE_FILES[@]}"; do
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(labels_table_start_re)" "$(labels_table_end_re)")
+    fi
+  done
+  for path in "${SCRIPTS_INDEX_FILES[@]}"; do
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(scripts_index_start_re)" "$(scripts_index_end_re)")
     fi
   done
   if (( ${#markers[@]} == 0 )); then

@@ -599,7 +599,7 @@
       "anchor": "impl-ac-33a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
       "line": 362,
-      "title": "The per-stage metering record matches `docs/METERING-SCHEMA.md`"
+      "title": "The per-stage metering record matches `docs/reference/metering-schema.md`"
     },
     "IMPL AC 77": {
       "kind": "impl-ac",
@@ -839,7 +839,7 @@
       "anchor": "impl-ac-47",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1013,
-      "title": "The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at"
+      "title": "The rework record matches `docs/reference/flow-schema.md` and is emitted at"
     },
     "IMPL AC 48": {
       "kind": "impl-ac",
@@ -855,7 +855,7 @@
       "anchor": "impl-ac-49",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1076,
-      "title": "The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key"
+      "title": "The item lifecycle record matches `docs/reference/flow-schema.md`, the join key"
     },
     "IMPL AC 50": {
       "kind": "impl-ac",
@@ -863,7 +863,7 @@
       "anchor": "impl-ac-50",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 1141,
-      "title": "The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`"
+      "title": "The node time-state record matches `docs/reference/flow-schema.md`, a `node-state`"
     },
     "IMPL AC 51": {
       "kind": "impl-ac",
@@ -952,6 +952,14 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
       "line": 670,
       "title": "Every requirement, acceptance-check and component label is unique,"
+    },
+    "IMPL AC 52d": {
+      "kind": "impl-ac",
+      "label": "52d",
+      "anchor": "impl-ac-52d",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 690,
+      "title": "The labels reference and the scripts index regenerate from the"
     },
     "IMPL AC 1h": {
       "kind": "impl-ac",
@@ -1960,6 +1968,22 @@
       "file": "docs/spec/implementation/components/components-03.md",
       "line": 1078,
       "title": "`scripts/spec.sh` and `.github/workflows/spec.yml` implementing"
+    },
+    "IMPL C 24d": {
+      "kind": "impl-c",
+      "label": "24d",
+      "anchor": "impl-c-24d",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1097,
+      "title": "`scripts/render-labels-table.sh` and"
+    },
+    "IMPL C 24e": {
+      "kind": "impl-c",
+      "label": "24e",
+      "anchor": "impl-c-24e",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1123,
+      "title": "`scripts/render-scripts-index.sh` and"
     },
     "IMPL 40": {
       "kind": "impl",
@@ -3158,8 +3182,16 @@
       "label": "52c",
       "anchor": "impl-52c",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 948,
+      "line": 950,
       "title": "Every requirement, acceptance-check and component label across"
+    },
+    "IMPL 52d": {
+      "kind": "impl",
+      "label": "52d",
+      "anchor": "impl-52d",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 987,
+      "title": "The labels reference and the scripts index are generated from the"
     },
     "IMPL 2": {
       "kind": "impl",

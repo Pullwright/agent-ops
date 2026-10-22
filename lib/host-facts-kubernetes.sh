@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/host-facts-kubernetes.sh — the Kubernetes driver's own section of the
-# host-facts record (docs/HOST-FACTS-SCHEMA.md: "pods"/"rollouts"/
+# host-facts record (docs/reference/host-facts-schema.md: "pods"/"rollouts"/
 # "cronjobs"/"node_conditions"/"pvcs"). Reads the Kubernetes API directly
 # over `curl` with the pod's own in-cluster ServiceAccount credentials,
 # never the `kubectl` binary, which this image does not install (the same
@@ -106,7 +106,7 @@ host_facts_k8s_node_conditions_json() {
 # host_facts_k8s_pvcs_json PVCS-LIST-JSON — `pvcs[]`. `used_percent` is
 # always `null` here: this image has no metrics-API client, so usage
 # against capacity is never guessed from `spec.resources.requests.storage`
-# alone (docs/HOST-FACTS-SCHEMA.md's own "never populated by guessing"
+# alone (docs/reference/host-facts-schema.md's own "never populated by guessing"
 # rule) — present for the identity list, honestly `null` for the figure.
 host_facts_k8s_pvcs_json() {
   jq -c '

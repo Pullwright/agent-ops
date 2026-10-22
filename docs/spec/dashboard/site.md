@@ -764,7 +764,7 @@ never a bare percentage a reader cannot judge the weight of.
 
 The **Rework** panel (D23, `docs/ROADMAP.md`; issue #611) answers exactly
 three questions from the rework record and the item lifecycle record
-(`docs/FLOW-SCHEMA.md`, requirements 47 and 49) and adds nothing else. It
+(`docs/reference/flow-schema.md`, requirements 47 and 49) and adds nothing else. It
 renders `rework`, assembled by `lib/rework-panel.sh`'s `rework_panel_build`
 from the same fleet-wide event union `escape_audits` above already reads,
 and — like that panel, never `revert_rate`'s own rolling window — **never
@@ -794,7 +794,7 @@ rework bad":
 - **How much?** `how_much.tokens`/`.elapsed_ms`/`.cost_usd`, each
   `{total, rework, rework_share}` — the fleet's whole per-cycle spend
   (`stage-end`'s own `cost_usd`/`duration_ms`/`tokens.*`, summed null-as-zero
-  per `docs/METERING-SCHEMA.md`, joined to a `rework` event by the `cycle`
+  per `docs/reference/metering-schema.md`, joined to a `rework` event by the `cycle`
   field both carry from the same `log_event` envelope) against the subset
   spent on a cycle that also carries at least one rework record. That join is
   cycle-granular and the page says so in those words beneath the figure: a
@@ -818,7 +818,7 @@ rework bad":
   figures are — see the signature below. Every *count* on this panel
   (`rework_count`, `whose`, the escape ladder) reads a stream reduced
   first-wins-by-`ts` on the record's own stable identity, per
-  `docs/FLOW-SCHEMA.md`'s "Do not double-count": `{repo, item, class}`,
+  `docs/reference/flow-schema.md`'s "Do not double-count": `{repo, item, class}`,
   plus `evidence.by` for `post-merge-revert` (more than one corrective pull
   request can be detected for the same original), plus `ts` and `evidence`
   for the fleet-wide classes that carry neither `repo` nor `item` (crash-loop
@@ -833,7 +833,7 @@ rework bad":
   non-null `attributed_stage` value actually present (today: `reviewer`,
   from `human-change-request`, and whichever stage names its own
   `stage-rerun`) — plus `whose.not_attributed`, `{count, by_class}`: the
-  seven classes `docs/FLOW-SCHEMA.md`'s own attribution rule leaves `null`
+  seven classes `docs/reference/flow-schema.md`'s own attribution rule leaves `null`
   by design, broken down by class. Never inferred: a class with no
   detector-supplied attribution stays in `not_attributed` here exactly as it
   does in the record itself.
@@ -855,7 +855,7 @@ rework bad":
   once, separately, rather than folded into a rate that would otherwise
   overstate how much passed undetected. `caught` at a rung is
   **item-granular, not defect-granular**: a rework record carries no defect
-  identity (`docs/FLOW-SCHEMA.md`), so every item is first collapsed to the
+  identity (`docs/reference/flow-schema.md`), so every item is first collapsed to the
   single furthest rung any of its own rework records reached, and only then
   is `caught` tallied as the landed items whose furthest rung was this row —
   never a count of the defects actually caught there. An item carrying two
@@ -884,7 +884,7 @@ rework bad":
   row states "terminal rung, nothing further to escape to," while
   `human-gate`'s row states that a `post-merge-revert` record carries no
   `cycle` at all (mined after the fact, outside any cycle,
-  `docs/FLOW-SCHEMA.md`) and so its cost is genuinely unmeasurable — a
+  `docs/reference/flow-schema.md`) and so its cost is genuinely unmeasurable — a
   different reason for the same `null`, and the panel never conflates them.
   A catch whose own `cycle` the log carries no `stage-end` for (a peer's log
   that failed to fetch, a cycle whose stage events no longer survive) is
@@ -1097,7 +1097,7 @@ otherwise count as two examined items and, if it landed, two landed ones,
 halving that row's own cost-per-landed. Cost and wall-clock still sum across
 every one of that item's own stage-ends in the row; only the item count is
 deduplicated. `landed_with_rework`
-reads a landed item's deduped `rework` records (docs/FLOW-SCHEMA.md, "Do not
+reads a landed item's deduped `rework` records (docs/reference/flow-schema.md, "Do not
 double-count") for one whose own `attributed_stage` names this row's actor —
 today that is only ever non-empty for a `stage-rerun` (any actor) or a
 `human-change-request` (Reviewer only), per that document's own "Attribution"
@@ -1111,7 +1111,7 @@ would; `clean` is a stage-end with no `kill_reason` — the other half of
 attempt among several sharing a stage and node and is not subtracted here.
 
 Cost and wall-clock per landed item read the landed stage-end's own
-`cost_usd`/`duration_ms` (docs/METERING-SCHEMA.md) directly, summed across
+`cost_usd`/`duration_ms` (docs/reference/metering-schema.md) directly, summed across
 every stage-end that touched the item and divided by items landed — not
 `counts.cost_rows[]`, whose own `attributed` field is `false` by construction
 for the Enabler and the Refiner (they share their triggering cycle's id with
@@ -1141,7 +1141,7 @@ figures its own row already states. The **Refiner's** is refinement success:
 items it refined (`item-refined` events carrying `by: "refiner"` — the
 Enabler logs the same event, with no `by`, for its own unblock-as-refined act,
 and is excluded here) against how many were later bounced back
-(docs/FLOW-SCHEMA.md's `refinement-bounce-back`) — never the Refiner's own
+(docs/reference/flow-schema.md's `refinement-bounce-back`) — never the Refiner's own
 stage-end attempts, since that engagement spans several items and has no
 per-item identity of its own to count.
 
@@ -1186,7 +1186,7 @@ answer "what did yesterday cost" gets the same narrowing applied to "what did
 yesterday's tokens buy." A `cost_rows[]` row whose four `tokens_*` fields are
 all `null` (an `unknown`-model row with no readable `modelUsage`) is excluded
 from both breakdowns entirely, never folded in as zero — see
-`docs/METERING-SCHEMA.md`.
+`docs/reference/metering-schema.md`.
 
 Each row's own `n` counts distinct transcripts, deduped by `(cycle, actor)`
 rather than by `cycle` alone (`aggregateTokenRows`, issue #1591): the by-stage
@@ -1216,10 +1216,10 @@ each stage went silent, by stage. It states its own window
 (`window_from`/`window_to`) above the table, deliberately not the cost charts'
 `COST_SCAN_DAYS`: its source is the `gaps` object on `stage-end`/
 `review-stage-end` events in the retained log union, a materially different —
-usually longer — span (`docs/METERING-SCHEMA.md`). The caption also states,
+usually longer — span (`docs/reference/metering-schema.md`). The caption also states,
 in words, that `median_of_run_p50` and `worst_run_p95` are read "across runs"
 rather than as pooled percentiles, and that `worst_run_max` alone is exact (a
-max of maxima is a max) — the same distinction `docs/METERING-SCHEMA.md`'s own
+max of maxima is a max) — the same distinction `docs/reference/metering-schema.md`'s own
 `gaps` section draws, restated here since it is the one place on the page a
 reader could otherwise mistake a per-run figure for a fleet-wide percentile.
 

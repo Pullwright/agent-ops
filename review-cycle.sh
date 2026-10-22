@@ -366,8 +366,9 @@ impl_lock_file="$state_dir/lock.json"           # the implementation pipeline's 
 # One definition, read by two callers with different jobs. The stand-down at
 # "an implementation cycle is running" below uses it to decide whether to run
 # at all; every stand-down *above* it uses it to decide whether this tick owns
-# a node-second worth logging a `node-state` transition for (docs/FLOW-
-# SCHEMA.md, "A tick that owns no node-second emits nothing"). Those earlier
+# a node-second worth logging a `node-state` transition for
+# (docs/reference/flow-schema.md, "A tick that owns no node-second emits
+# nothing"). Those earlier
 # ones exit before that check is ever reached, and each records a terminal
 # state, so without this they would write the competing idle/`down` transition
 # the same section calls actively wrong — over a timeline `agent-cycle.sh` is
@@ -560,7 +561,7 @@ cleanup() {
   # agent-cycle.sh's own cleanup (agent-ops#1826). Guarded because a run can
   # end before the snapshot is taken.
   [[ -z "${union_log:-}" ]] || rm -f -- "$union_log" || true
-  # node-state (docs/FLOW-SCHEMA.md, D21): logged last, same reasoning as
+  # node-state (docs/reference/flow-schema.md, D21): logged last, same reasoning as
   # agent-cycle.sh's own finalize_node_state_for_cycle — nothing in this
   # pipeline's own cleanup runs after this point, but the call is placed
   # here rather than at the exit sites for symmetry with that one.
@@ -829,7 +830,7 @@ acquire_lock() {
         stale_after_sec="$lock_stale_after_sec"
         if kill -0 "$pid" 2>/dev/null && (( age_sec < stale_after_sec )); then
           log_event "review-skipped" "$(jq -nc --arg d "review lock held by pid $pid, age ${age_sec}s" '{detail: $d}')"
-          # node-state (docs/FLOW-SCHEMA.md, D21): a skipped tick is not a
+          # node-state (docs/reference/flow-schema.md, D21): a skipped tick is not a
           # state — see agent-cycle.sh's own `cycle-skipped` site and
           # suppress_node_state_transitions' header.
           suppress_node_state_transitions
@@ -977,7 +978,7 @@ fi
 #     process, stand down (two heavy claude runs must not overlap on one quota).
 if impl_cycle_running; then
   impl_pid="$(jq -r '.pid // empty' "$impl_lock_file" 2>/dev/null || true)"
-  # No node-state transition here, deliberately (docs/FLOW-SCHEMA.md,
+  # No node-state transition here, deliberately (docs/reference/flow-schema.md,
   # "Node time-state record", "A tick that owns no node-second emits
   # nothing"): this node is not idle — agent-cycle.sh is actively running on
   # it right now, and that process's own node-state events are already the
@@ -993,7 +994,7 @@ if impl_cycle_running; then
   exit 0
 fi
 
-# node-state (docs/FLOW-SCHEMA.md, D21): here, past every ending that owns no
+# node-state (docs/reference/flow-schema.md, D21): here, past every ending that owns no
 # node-second — see agent-cycle.sh's own comment beside `acquire_lock`, and
 # the stand-down immediately above, which is silent for the same reason.
 log_node_state_transition overhead
@@ -1484,7 +1485,7 @@ while IFS= read -r entry; do
     log_event "review-stand-down" "$(jq -nc --arg r "usage-limit cooldown $(limit_describe "$resume_at" \
       "$(jq -r '.class // "other"' <<<"$governing" 2>/dev/null || echo other)" \
       "$(limit_reset_known "$governing")")" '{reason: $r, cause: "usage-limit"}')"
-    # node-state (docs/FLOW-SCHEMA.md, D21): the same terminal state its
+    # node-state (docs/reference/flow-schema.md, D21): the same terminal state its
     # sibling at the top of this script records, for the same reason. Without
     # it this `break` falls through to finalize_node_state_for_review's
     # unconditional `idle-without-demand`/`no-demand`, filing a node a usage

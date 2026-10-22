@@ -924,7 +924,7 @@
 
     These are ordinary `cycle-skipped` events, sharing their name with
     requirement 1's own lock-contention case, but unlike that case they
-    never call `suppress_node_state_transitions` (`docs/FLOW-SCHEMA.md`):
+    never call `suppress_node_state_transitions` (`docs/reference/flow-schema.md`):
     the seconds they describe already belong to this cycle's own node-state
     timeline, finalized immediately before them at cleanup, not seconds of
     their own to account for separately.
@@ -1125,7 +1125,7 @@
     so the cycle runs normally. When it does say so, the cycle idles instead
     of running: it logs a `stand-down` naming `cause: "roll-pending"` and the
     marker's own `until`, settles into `externally-blocked`/`roll-pending`
-    (`set_node_state_terminal`, `docs/FLOW-SCHEMA.md`'s closed cause
+    (`set_node_state_terminal`, `docs/reference/flow-schema.md`'s closed cause
     vocabulary), and exits 0 without ever reaching the Co-Ordinator — `chain_
     eligible` plays no part, since it is never raised this early in the
     cycle. This is capped at one stand-down per pending marker (`chain_roll_

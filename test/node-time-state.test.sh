@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/node-time-state.test.sh — self-contained regression test for
-# lib/node-time-state.sh (docs/FLOW-SCHEMA.md's "Node time-state record",
+# lib/node-time-state.sh (docs/reference/flow-schema.md's "Node time-state record",
 # D21 of docs/ROADMAP.md, issue #597).
 #
 # What matters here:
@@ -388,7 +388,7 @@ assert_eq "  ... externally_blocked_by_cause is empty too, same as idle_with_dem
 # --- review-cycle.sh: a stand-down that exits while agent-cycle.sh owns the
 #     node emits no node-state transition -----------------------------------
 #
-# The rule docs/FLOW-SCHEMA.md states as "A tick that owns no node-second
+# The rule docs/reference/flow-schema.md states as "A tick that owns no node-second
 # emits nothing", checked at the sites most likely to break it silently.
 # review-cycle.sh's implementation-cycle stand-down is only the *last* ending
 # that can fire while agent-cycle.sh is mid-stage on this node; six others —

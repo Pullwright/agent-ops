@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/stage-gaps.test.sh — a stage's inter-event gaps are measured while it
-# runs, and summarised as requirement 33a / docs/METERING-SCHEMA.md describe.
+# runs, and summarised as requirement 33a / docs/reference/metering-schema.md describe.
 #
 # A gap is the interval between one growth of the stage's event stream and the
 # next. Nothing in the finished transcript records it — the envelope says the

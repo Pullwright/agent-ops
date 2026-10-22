@@ -405,9 +405,9 @@ with the Reviewer's own.
     evidence itself names one, the stage the repetition is attributed to;
     `rework_fields` degrades an unparseable evidence argument to
     `evidence: null` rather than failing, the same fail-safe contract
-    requirement 33a's own record keeps. `docs/FLOW-SCHEMA.md` is the
+    requirement 33a's own record keeps. `docs/reference/flow-schema.md` is the
     field-by-field contract, the class enumeration and each class's detector
-    site, under the same stability policy `docs/METERING-SCHEMA.md` already
+    site, under the same stability policy `docs/reference/metering-schema.md` already
     established.
 
     Nine classes, nine sites, none of them a new detector: each already
@@ -486,7 +486,7 @@ with the Reviewer's own.
     there: a change request posted after a pull request is already ready, or
     one a human acts on directly without either handoff ever running, is
     still outside what this class's detector can see.
-    `docs/FLOW-SCHEMA.md` states that residual coverage plainly, rather than
+    `docs/reference/flow-schema.md` states that residual coverage plainly, rather than
     letting a later reader assume the class covers every human change
     request there is.
 
@@ -646,11 +646,11 @@ with the Reviewer's own.
     checkable: one durable record per `{repo, item}`, *derived* rather than
     emitted, folded from the union log by `lib/item-lifecycle.sh`'s
     `item_lifecycle_fold`, behind the read-only `scripts/item-lifecycle.sh`.
-    `docs/FLOW-SCHEMA.md`'s "The item lifecycle record" section is the
+    `docs/reference/flow-schema.md`'s "The item lifecycle record" section is the
     field-by-field contract — identity, every instant and its originating
     event, the six terminal fates and their assignment priority, the
     `unaccounted` case, and the window caveat — under the same stability
-    policy `docs/METERING-SCHEMA.md` already established.
+    policy `docs/reference/metering-schema.md` already established.
 
     Most of the instants this record accumulates already existed as
     scattered facts; what this requirement adds is narrower than the
@@ -734,7 +734,7 @@ with the Reviewer's own.
     read off the item's own whole event history, not only the events inside
     `--since`'s window: `--since` bounds which items are reported at all
     (population), never the fate an item that is reported resolves to (see
-    `docs/FLOW-SCHEMA.md`'s window caveat). An item that is both void and
+    `docs/reference/flow-schema.md`'s window caveat). An item that is both void and
     already landed, with the void's own `ts` later than the earliest landing
     evidence, is a contradiction the fold does not resolve by guessing: it
     lands in `unaccounted[]` with the reason, counted, never dropped —
@@ -743,7 +743,7 @@ with the Reviewer's own.
     abandoned` (`leaving`) plus `blocked + open` (`in_progress`) plus
     `unaccounted`, which holds by construction. Voided-after-landed is
     deliberately the only contradiction detected this way for now —
-    `docs/FLOW-SCHEMA.md`'s `unaccounted` section names the candidate
+    `docs/reference/flow-schema.md`'s `unaccounted` section names the candidate
     siblings considered and deferred, and the rule for reactivating one.
 
     `scripts/pickup-metrics.sh`'s own first-seen/selection pairing
@@ -763,12 +763,12 @@ with the Reviewer's own.
     the state it was in a moment before; and a pure fold,
     `lib/node-time-state.sh`'s `node_time_state_fold` (behind the read-only
     `scripts/node-time-state.sh`), reconstructing seconds per state from
-    those events alone. `docs/FLOW-SCHEMA.md`'s "The node time-state record"
+    those events alone. `docs/reference/flow-schema.md`'s "The node time-state record"
     section is the field-by-field contract — the six states, the definitional
     pin for what counts as `producing` versus `overhead`, the closed cause
     vocabulary and its mapping to states, how absence resolves to `down`, and
     the documented known limitations — under the same stability policy
-    `docs/METERING-SCHEMA.md` already established.
+    `docs/reference/metering-schema.md` already established.
 
     Most of the instants this record rides on already existed as ordinary
     events; what this requirement adds is narrower than D21's own list
@@ -798,7 +798,7 @@ with the Reviewer's own.
       `disk-full`, `memory-low`) and are unchanged; the claim-race
       stand-down's own four causes (`raced`, `unreachable`, `pre-claimed`,
       `untraceable`) are unchanged too, since renaming an
-      existing field's values is breaking (docs/FLOW-SCHEMA.md's stability
+      existing field's values is breaking (docs/reference/flow-schema.md's stability
       policy) — `node_time_state_for_cause` translates the three of those
       four this requirement's own vocabulary does not already share
       (`unreachable` needed no translation) onto `peer-claimed`/
@@ -862,7 +862,7 @@ with the Reviewer's own.
       peer review run, owning the node; a node genuinely idle under both
       pipelines still records its idle state from these sites.
       `agent-cycle.sh`'s own two switch stand-downs are the one known gap in
-      this rule and are documented as such (`docs/FLOW-SCHEMA.md`, "Known
+      this rule and are documented as such (`docs/reference/flow-schema.md`, "Known
       limitations"; issue #1268). This is #597's own named pitfall
       ("`cycle-skipped` is not a state"), and it is not cosmetic: the fold
       holds each point's state until the next point's `ts`, and a running
@@ -878,7 +878,7 @@ with the Reviewer's own.
     (`lib/fleet.sh`'s `fleet_logs`, once per basename) before folding, since
     a node can run either pipeline — briefly, both at once — and folding only
     one would misread a node running the other as `down`. Five known
-    limitations are stated rather than modelled further (docs/FLOW-SCHEMA.md
+    limitations are stated rather than modelled further (docs/reference/flow-schema.md
     has all of them in full, with the issues that carry them): the node set
     the invariant's denominator uses is
     every node that has *ever* emitted a `node-state` event, not evaluated

@@ -21,6 +21,8 @@ For a map of all documentation and how to find answers, see `docs/README.md`.
   - [Configuration tables](#configuration-tables)
   - [Table of contents](#table-of-contents)
   - [Stamped regions](#stamped-regions)
+  - [Labels table](#labels-table)
+  - [Scripts index](#scripts-index)
 - [Documentation workflow](#documentation-workflow)
   - [Where a new document goes](#where-a-new-document-goes)
   - [Size budget and checks](#size-budget-and-checks)
@@ -184,6 +186,26 @@ Never hand-edit content between these markers:
 ### Stamped regions
 
 Three `<!-- agent-info:start fragment=... -->` regions in `AGENTS.md` carry text stamped from the organisation's `.agent` repository. Never hand-edit inside them — change the fragment there, then re-stamp.
+
+### Labels table
+
+`docs/reference/labels.md` has a labels table in a `<!-- labels-table:start -->` … `<!-- labels-table:end -->` region, generated from `lib/labels.sh`'s own catalogue (`labels_catalogue`) by `scripts/render-labels-table.sh`. Never hand-edit a row inside this region.
+
+To make a change to a label:
+
+1. Edit the catalogue entry in `lib/labels.sh` (name, colour, description), and — for what applies it and what removing it does — the matching entry in `scripts/render-labels-table.sh`'s own `METADATA_JSON`
+2. Run `scripts/render-labels-table.sh` (no arguments) to regenerate
+3. Run `scripts/render-labels-table.sh --check` before you push — CI runs the same check
+
+### Scripts index
+
+`docs/reference/scripts.md` has an index of every script under `lib/` and `scripts/` in a `<!-- scripts-index:start -->` … `<!-- scripts-index:end -->` region, generated from each script's own header-comment first paragraph by `scripts/render-scripts-index.sh`. Never hand-edit a row inside this region.
+
+To make a change to an entry:
+
+1. Edit the script's own header comment
+2. Run `scripts/render-scripts-index.sh` (no arguments) to regenerate
+3. Run `scripts/render-scripts-index.sh --check` before you push — CI runs the same check
 
 ## Documentation workflow
 

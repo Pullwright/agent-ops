@@ -175,7 +175,7 @@ M2b. <a id="mon-m2b"></a>**The role guard.** `lib/role.sh`'s `role_is_active`: o
 
 M3. <a id="mon-m3"></a>**CronJob-shaped.** The Monitor uses no Docker socket, no `ssh`, no host
    path and no privileged mount. Everything it knows about a host it learns
-   from that node's own host-facts record (`docs/HOST-FACTS-SCHEMA.md`),
+   from that node's own host-facts record (`docs/reference/host-facts-schema.md`),
    published by `scripts/collect-host-facts.sh` and carried fleet-wide by the
    ordinary state-sync push. This is not incidental: it is what makes a later
    move of this pipeline into a control plane (ROADMAP D6) a matter of moving
@@ -697,7 +697,7 @@ M18. <a id="mon-m18"></a>**Streams.** Monitor *operational* events go to
    ISO-8601 `ts`, a `monitor` id, `node`, an `event`. `stage-end` carries
    `stage: "monitor"`, `exit_code`, an optional `kill_reason`, and the
    metering record of requirement 33a via `lib/metering.sh`
-   (`docs/METERING-SCHEMA.md`). `monitor-report-written` carries `date`,
+   (`docs/reference/metering-schema.md`). `monitor-report-written` carries `date`,
    `path`, `trigger`, `findings_stated`, `findings_filed`, the whole `ledger`
    and the whole `page_triage` — it is the durable record of what one run did,
    and it is what M4's own due gate reads.
@@ -715,7 +715,7 @@ M18a. <a id="mon-m18a"></a>**`monitor-log.jsonl` is never rotated.** It joins `l
    `cron.log` and `review-cron.log`.
 
 M19. <a id="mon-m19"></a>**No `node-state` transition.** The Monitor writes none of requirement
-   50's `node-state` events. `docs/FLOW-SCHEMA.md`'s fold reconstructs one
+   50's `node-state` events. `docs/reference/flow-schema.md`'s fold reconstructs one
    timeline per node from two writers that already coordinate through the
    `impl_cycle_running` checks; a third writer contributing a few minutes a
    day would risk clobbering a live `producing` span for a smaller gain than

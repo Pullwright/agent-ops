@@ -1714,7 +1714,7 @@ record_needs_refinement_block() {
   log_event "attempt-failed" "$(item_event_fields "$stage" "$reason" "$repo" "$item" \
     "$(refinement_block_fields "$entry" "$label" "$blocked_label" "$blocked_reason_label")")"
 
-  # refinement-bounce-back (docs/FLOW-SCHEMA.md, D23, issue #596): this is a
+  # refinement-bounce-back (docs/reference/flow-schema.md, D23, issue #596): this is a
   # *fresh* needs-refinement block (the already-blocked check above already
   # returned 1 for a re-report of a standing one) on an item `refinements_json`
   # — the same lookup line 1337's own `refined_label` cleanup reads — already
@@ -1892,7 +1892,7 @@ detect_and_log_limit_hit() {
     --arg n "$node_name" --arg e "$evidence" --arg p "${stage_provider:-anthropic}" \
     '{resume_at: $r, class: $c, reset_known: $k, kind: "auto", actor: $n, provider: $p,
       evidence: (if $e == "" then null else $e end)}')"
-  # node-state (docs/FLOW-SCHEMA.md, D21): this is discovered mid-stage, not
+  # node-state (docs/reference/flow-schema.md, D21): this is discovered mid-stage, not
   # at a cycle-ending stand-down, so it logs immediately rather than through
   # set_node_state_terminal — this cycle's own remaining overhead (failure
   # handling, cleanup) still lands on the timeline after it.

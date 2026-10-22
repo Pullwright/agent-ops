@@ -669,7 +669,7 @@ services:
       # Optional: enables the registry-digest comparison
       # (image.registry_digest / digest_match in the record). Unset, both
       # read null — an honest degradation, not an error
-      # (docs/HOST-FACTS-SCHEMA.md).
+      # (docs/reference/host-facts-schema.md).
       HOST_FACTS_IMAGE_REPO: ${HOST_FACTS_IMAGE_REPO:-}
       # Optional: where the viewer-vantage probe (agent-ops#1286) fetches
       # each peer's dashboard data.js. Left unset, the script's own default

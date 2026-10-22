@@ -37,11 +37,11 @@
     `warning`, `cycle-end`. `rework` is requirement 47's own record, one
     entry per repetition, and `node-state` is requirement 50's own
     transition, one entry per node-state change, whose field-by-field
-    contracts are `docs/FLOW-SCHEMA.md` rather than this list.
+    contracts are `docs/reference/flow-schema.md` rather than this list.
     `cycle-skipped {reason: "overlap", slot_ts, held_by, elapsed_s}` is
     requirement 11a's own overrun-slot record, one entry per schedule slot a
     cycle's own run overlapped, documented there rather than here or in
-    `docs/FLOW-SCHEMA.md` (which is scoped to the rework, item-lifecycle and
+    `docs/reference/flow-schema.md` (which is scoped to the rework, item-lifecycle and
     node-time-state records alone); the requirement 1 lock-contention
     `cycle-skipped` carries no `reason` at all and is unaffected.
     `classifier-escape` and `landing-audit`
@@ -608,7 +608,7 @@
     `stage_result_line`, and hands the result to `metering_fields` beside the
     gap statistics. `null` when the stream carries no readable answer, never
     a guessed lane. Distinct from `stage-start`'s own `lane`
-    (`docs/METERING-SCHEMA.md`'s own note), which is
+    (`docs/reference/metering-schema.md`'s own note), which is
     what the Script *intended* before the run — and, since requirement 4d's
     draw (issue #2241, D30), also distinct from the lane `run_model_stage`
     actually *forced* the launch onto: that forced lane is verified against
@@ -643,7 +643,7 @@
     fell quiet and was killed has its longest silence at the end, and a sample
     that dropped it would omit exactly the runs the measurement exists to
     describe.
-    `docs/METERING-SCHEMA.md` is the field-by-field contract: types, units,
+    `docs/reference/metering-schema.md` is the field-by-field contract: types, units,
     the per-cycle aggregation rule, and what future change is additive versus
     breaking.
 34. <a id="impl-34"></a>Blocked semantics: an item is blocked iff the most recent

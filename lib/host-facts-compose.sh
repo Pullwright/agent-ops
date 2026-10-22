@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/host-facts-compose.sh — the compose driver's own section of the
-# host-facts record (docs/HOST-FACTS-SCHEMA.md, "containers"). Reads the
+# host-facts record (docs/reference/host-facts-schema.md, "containers"). Reads the
 # Docker Engine API directly over `curl --unix-socket` rather than the
 # `docker` CLI, which this image does not install (D20: no new base-image
 # package for a control-plane question still open at Phase 2 — see
@@ -219,7 +219,7 @@ _host_facts_compose_same_repo() {
 # (watchtower, tailscale, whatever else the host runs) carry real repo
 # digests of their own, and comparing one of those against this repository's
 # `:latest` would publish `digest_match: false` forever for a container that
-# is not stale at all — a wrong fact, where docs/HOST-FACTS-SCHEMA.md's own
+# is not stale at all — a wrong fact, where docs/reference/host-facts-schema.md's own
 # "Degradation" contract asks for an honest `null` instead.
 host_facts_compose_containers_json() {
   local inspects="${1:-[]}" registry_digest="${2:-}" root="${3:-}" driver="${4:-}" \

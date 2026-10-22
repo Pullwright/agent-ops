@@ -1,6 +1,6 @@
 # Flow schema — as-built specification
 
-Sibling to `docs/METERING-SCHEMA.md` (requirements 47, 49 and 50 of
+Sibling to `docs/reference/metering-schema.md` (requirements 47, 49 and 50 of
 `docs/spec/implementation/README.md`), under the same stability policy.
 Where that document is the field-by-field contract for what a stage *spent*,
 this one is the contract for D21/D23 of `docs/ROADMAP.md`'s **flow-and-outcome**
@@ -81,7 +81,7 @@ requirement 33a's record.
 | --- | --- | --- |
 | `class` | string | One of the nine classes below. |
 | `detector` | string | The file (and, where it disambiguates, the function or event name) whose own logic decided this is a repetition — e.g. `scripts/gather-review-feedback.sh`, `lib/reconciliation-gate.sh:reconciliation_gate`, `agent-cycle.sh:review-gate-checks-read`. Never "the Script" or "the pipeline" in general — always the specific site. |
-| `evidence` | any \| null | Whatever the detector's own logic actually saw — an event id, a check name, a comment id, a `kill_reason`, a claim `cause` — never a summary and never re-derived by `rework_fields` itself. `null` only when the caller's own evidence argument was not valid JSON, which `rework_fields` degrades to rather than failing the event it may be riding alongside (the same fail-safe contract `metering_fields` keeps for `docs/METERING-SCHEMA.md`'s own record). |
+| `evidence` | any \| null | Whatever the detector's own logic actually saw — an event id, a check name, a comment id, a `kill_reason`, a claim `cause` — never a summary and never re-derived by `rework_fields` itself. `null` only when the caller's own evidence argument was not valid JSON, which `rework_fields` degrades to rather than failing the event it may be riding alongside (the same fail-safe contract `metering_fields` keeps for `docs/reference/metering-schema.md`'s own record). |
 | `attributed_stage` | string \| null | Which stage this repetition is attributed to, spelled exactly as the corresponding `stage-end` event's own `stage` field spells it — `coordinator`, `implementer`, `reviewer`, `approver`, `approver-adjudicate-open-question`, `approver-reapprove-protected-path-tier`, `enabler`, `enabler-adjudicate`, `enabler-decide`, `refiner` — plus `pre-selection`, which has no `stage-end` of its own because it names a cycle that died before any stage started. `null` whenever the detector's own evidence does not name one directly; see "Attribution" below. |
 | `repo` | string | Present where the repetition is about one repository. Omitted (never `null`) for a fleet-wide detector — crash-loop escalation foremost — that spans every configured repository at once. |
 | `item` | string | Present where the repetition is about one work item. Omitted on the same terms as `repo`, and independently: a fleet-wide stage kill (the Co-Ordinator, the Enabler, the Refiner, all of which span several items in one engagement) carries neither. |
@@ -276,7 +276,7 @@ identity — `{repo, item, class}` for most classes, `{repo, item, class,
 evidence.by}` for `post-merge-revert`, where more than one corrective pull
 request can in principle be detected for the same original) before counting,
 the same way every other fleet-wide count in this codebase (`counts.by_day`
-et al., `docs/METERING-SCHEMA.md`) already reduces over the union rather than
+et al., `docs/reference/metering-schema.md`) already reduces over the union rather than
 per-node. This document defines the record only; computing a rate from it —
 the rework panel — is D23's Phase 2, out of this document's scope.
 
@@ -878,7 +878,7 @@ document is, rather than hidden:
 
 ## Stability policy
 
-Identical to `docs/METERING-SCHEMA.md`'s own, restated here rather than
+Identical to `docs/reference/metering-schema.md`'s own, restated here rather than
 merely referenced because this is a contract other code will depend on the
 same way. It binds all three records this document defines — the rework
 record, the item lifecycle record, and the node time-state record, all

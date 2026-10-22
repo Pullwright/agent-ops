@@ -483,7 +483,7 @@ for (( ci = 0; ci < n_cand; ci++ )); do
   log_event "claim-lost" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg b "$c_branch" \
     --argjson rc "$claim_rc" --arg cause "$claim_cause" --arg pr "$c_pr_key" \
     '{repo: $r, item: $i, branch: $b, rc: $rc, cause: $cause} + (if $pr == "" then {} else {pr_claim_key: $pr} end)')"
-  # claim-race-duplicate (docs/FLOW-SCHEMA.md, D23): only `held`/`pr-held` —
+  # claim-race-duplicate (docs/reference/flow-schema.md, D23): only `held`/`pr-held` —
   # healthy contention, a peer genuinely already working this item — is a
   # repetition; `unreachable` is an outage and any other cause is a selection
   # defect, neither of which is "work duplicated by a race". The same
@@ -552,7 +552,7 @@ if [[ -z "$claimed_json" ]]; then
     '{reason: $r, candidates: $n, cause: $c, race_losses: $rl}
      + (if $sk > 0 then {claim_skips: $sk} else {} end)
      + (if $tf > 0 then {trace_faults: $tf} else {} end)')"
-  # node-state (docs/FLOW-SCHEMA.md, D21): translates this stand-down's own
+  # node-state (docs/reference/flow-schema.md, D21): translates this stand-down's own
   # (unchanged) cause vocabulary onto the six-state one — see
   # node_time_state_for_cause's header for why raced/pre-claimed/
   # untraceable are translated rather than renamed.
@@ -602,7 +602,7 @@ log_event "selection" "$(jq -c --argjson n "$race_losses" --argjson fb "$selecte
    + (if $fb == 1 then {selected_by: "script-fallback"} else {} end)' \
   <<<"$work_order_json")"
 
-# Rework record (docs/FLOW-SCHEMA.md, D23, issue #596): three of the nine
+# Rework record (docs/reference/flow-schema.md, D23, issue #596): three of the nine
 # classes are detected the moment a finishing source is selected — the
 # candidate itself (gather-review-feedback.sh, gather-merge-conflicts.sh,
 # gather-abandoned-drafts.sh) is the detector, and selection is this cycle's
@@ -1438,7 +1438,7 @@ if [[ "$rev_status" == "ready" ]]; then
   log_event "review-gate-checks-read" "$(jq -nc --argjson ok "$gate_checks_ok" \
     --arg r "$selected_repo" --arg i "$selected_item" \
     '{ok: $ok} + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
-  # check-failure (docs/FLOW-SCHEMA.md, D23, issue #596's own detector
+  # check-failure (docs/reference/flow-schema.md, D23, issue #596's own detector
   # naming): `ok: false` here is this per-attempt read failing — the same
   # node/API fact `review_gate_unknown_streak_verdict` counts a run of
   # (`gate_checks_unreadable`, `handoff_complete_review`'s exit 2). The
@@ -1518,7 +1518,7 @@ if [[ "$rev_status" == "ready" ]]; then
       # comment=<id> -->` line naming it — a requested change silently
       # dropped rather than implemented or contested (PR #512).
       #
-      # human-change-request (docs/FLOW-SCHEMA.md, D23, issue #596): this is
+      # human-change-request (docs/reference/flow-schema.md, D23, issue #596): this is
       # the class #533 used to leave undetected entirely (a plain PR comment
       # is invisible to the review gate) — now caught here, at this same
       # refusal, and given its own machine-legible class rather than living

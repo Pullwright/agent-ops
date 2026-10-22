@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/collect-host-facts-compose.test.sh — the compose driver of the
-# host-facts collector (issue #1283, docs/HOST-FACTS-SCHEMA.md), against
+# host-facts collector (issue #1283, docs/reference/host-facts-schema.md), against
 # fixture Docker Engine API JSON — the same shape `docker inspect` prints,
 # since it is a thin client over exactly this API (lib/host-facts-
 # compose.sh's own header). No real Docker socket exists where this suite
@@ -185,7 +185,7 @@ assert_eq "watchtower_log_tail carries the raw log for the caller to parse" \
 # containrrr/watchtower — a real repo digest, from a repository this
 # collector never asked the registry about — and must read registry_digest
 # null / digest_match null rather than a foreign repository's digest and a
-# permanent `false` (docs/HOST-FACTS-SCHEMA.md's own `image.registry_digest`
+# permanent `false` (docs/reference/host-facts-schema.md's own `image.registry_digest`
 # row).
 assert_eq "the configured repository's own container compares against the registry" \
   "sha256:regdigest" \

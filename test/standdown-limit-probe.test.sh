@@ -10,7 +10,7 @@
 # lib/standdown.sh and asserts it carries `stage: "limit-probe"`, the real
 # exit code, and the same metering record every other stage-end carries —
 # `lane`, `cost_usd` and `tokens` included — exactly as `lib/metering.sh`'s
-# `metering_fields` derives it (docs/METERING-SCHEMA.md).
+# `metering_fields` derives it (docs/reference/metering-schema.md).
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:

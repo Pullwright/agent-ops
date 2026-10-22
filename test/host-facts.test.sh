@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/host-facts.test.sh — the driver-independent half of the host-facts
-# record (lib/host-facts.sh, docs/HOST-FACTS-SCHEMA.md): `host.network`'s
+# record (lib/host-facts.sh, docs/reference/host-facts-schema.md): `host.network`'s
 # MTU comparison, the updater ledger/last-session parse, and the
 # viewer-vantage probe. The compose- and Kubernetes-specific sections each
 # have their own test file; this one covers what both drivers share.

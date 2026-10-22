@@ -4,7 +4,7 @@
 # docs/ROADMAP.md, issue #597): every node-second in a window classified into
 # exactly one of six states — producing, overhead, externally-blocked,
 # idle-with-demand, idle-without-demand, down — with idle-with-demand split
-# by cause. `docs/FLOW-SCHEMA.md`'s "Node time-state record" section is the
+# by cause. `docs/reference/flow-schema.md`'s "Node time-state record" section is the
 # field-by-field contract this prints; `lib/node-time-state.sh`'s
 # `node_time_state_fold` is the pure derivation this script only wires to the
 # fleet's own logs.

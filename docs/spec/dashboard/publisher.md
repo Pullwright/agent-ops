@@ -405,7 +405,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   token/prompt-cache panels' own use of
                                      //   the same selector (issue #594, D21).
                                      //   tokens_* are that model's own token
-                                     //   counts (docs/METERING-SCHEMA.md) —
+                                     //   counts (docs/reference/metering-schema.md) —
                                      //   null together on an `unknown`-model
                                      //   row, never 0, since that row has no
                                      //   per-model breakdown to attribute them
@@ -450,7 +450,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   all four as
                                      //   null and `attributed:false`, never
                                      //   dropping the row itself. See
-                                     //   docs/METERING-SCHEMA.md for the
+                                     //   docs/reference/metering-schema.md for the
                                      //   field-by-field contract
              actor_scorecards: {    // one card per actor with a model choice
                window_from, window_to, //   (D12), one row per model and tier,
@@ -492,7 +492,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                       //   row's stage-ends touched;
                                       //   `landed_with_rework` is a landed
                                       //   item carrying a deduped `rework`
-                                      //   record (docs/FLOW-SCHEMA.md) whose
+                                      //   record (docs/reference/flow-schema.md) whose
                                       //   `attributed_stage` names this row's
                                       //   own actor; `other_fate` sums
                                       //   blocked/open/superseded/unaccounted
@@ -504,7 +504,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                    cost_per_landed_usd, wallclock_per_landed_ms,
                                       // summed from the landed item's own
                                       //   stage-end(s) `cost_usd`/
-                                      //   `duration_ms` (docs/METERING-SCHEMA.md)
+                                      //   `duration_ms` (docs/reference/metering-schema.md)
                                       //   divided by items landed — not
                                       //   `cost_rows`, which is never
                                       //   `attributed` for the Enabler or the
@@ -559,7 +559,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                       //   attempts, since the Refiner's own
                                       //   stage-end spans several items
              stage_gaps: {          // the stall profile (issue #594, D21):
-               window_from, window_to, //   docs/METERING-SCHEMA.md's own
+               window_from, window_to, //   docs/reference/metering-schema.md's own
                                       //   `gaps`, rolled up by stage. Its own
                                       //   window, deliberately not
                                       //   COST_SCAN_DAYS — the source is

@@ -528,7 +528,7 @@
     reached, whenever `state_dir/host-facts/<node>.json` — this node's own
     record, or the copy state-sync has carried in from a peer, at
     `<peers_dir>/<peer>/host-facts/<peer>.json` — already carries the fact
-    an ask would ask for (`docs/HOST-FACTS-SCHEMA.md`): a container's state,
+    an ask would ask for (`docs/reference/host-facts-schema.md`): a container's state,
     restart count, or running-versus-registry image digest; a container's
     cgroup memory figures; the watchtower ledger tail and last completed
     session; the host's own disk, memory and load; the host's egress MTU
@@ -544,7 +544,7 @@
     runs the other driver, a fact this document does not carry at all, or
     an ask for something the record was never for — deciding an action on
     the strength of a fact, rather than reading one
-    (`docs/HOST-FACTS-SCHEMA.md`'s own "What this record is not for") —
+    (`docs/reference/host-facts-schema.md`'s own "What this record is not for") —
     still escalates exactly as before, and so does every account the
     installation does not hold and every fact that exists only in someone's
     head.

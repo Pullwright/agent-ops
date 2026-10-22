@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/collect-host-facts-kubernetes.test.sh — the Kubernetes driver of the
-# host-facts collector (issue #1283, docs/HOST-FACTS-SCHEMA.md), against
+# host-facts collector (issue #1283, docs/reference/host-facts-schema.md), against
 # fixture Kubernetes API JSON — the same `List` shape `kubectl get -o json`
 # prints, since it is a thin client over exactly this API
 # (lib/host-facts-kubernetes.sh's own header). No real cluster exists where

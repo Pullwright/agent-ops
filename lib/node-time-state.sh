@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/node-time-state.sh — the node time-state record (docs/FLOW-SCHEMA.md,
+# lib/node-time-state.sh — the node time-state record (docs/reference/flow-schema.md,
 # D21 of docs/ROADMAP.md, issue #597, Phase 1's time account): a `node-state`
 # transition event every time a node changes what it is doing, carrying the
 # cause, so idleness is recorded with its reason at the moment it happens
@@ -17,7 +17,7 @@
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
 
-# --- The closed cause vocabulary (docs/FLOW-SCHEMA.md) ---
+# --- The closed cause vocabulary (docs/reference/flow-schema.md) ---
 #
 # `node_time_state_for_cause CAUSE` maps one of the closed vocabulary's
 # tokens to its state, as "STATE\tCAUSE\n" (cause echoed back verbatim, so a
@@ -81,8 +81,9 @@ node_time_state_idle_split() {
 }
 
 # node_state_for_stage ACTOR -> producing | overhead
-# The one place D21's narrow reading of "producing" lives (docs/FLOW-
-# SCHEMA.md's "node time-state record", the definitional pin): wall time
+# The one place D21's narrow reading of "producing" lives
+# (docs/reference/flow-schema.md's "node time-state record", the
+# definitional pin): wall time
 # between a stage's own stage-start and stage-end counts as producing only
 # for the Implementer and the Reviewer — the two stages whose output becomes
 # a delivered change. Every other actor (coordinator, enabler,
@@ -102,7 +103,7 @@ node_state_for_stage() {
 # `down` on this process's first transition — the pitfall this requirement's
 # refinement names: `down` is derived from absence and never emits its own
 # transition, so a live node's very first transition of a fresh process is
-# always read as "out of down" (docs/FLOW-SCHEMA.md), regardless of what a
+# always read as "out of down" (docs/reference/flow-schema.md), regardless of what a
 # peer's log might say this node was doing under a different process a
 # moment before. The fold itself never trusts `prev_state` for interval
 # reconstruction — it re-derives every interval from consecutive events'
@@ -195,7 +196,7 @@ finalize_node_state_for_cycle() {
 # backlog — so a review run that ends without any `review-stand-down` ever
 # calling `set_node_state_terminal` settles into `idle-without-demand`/
 # `no-demand` unconditionally. Documented as a known simplification in
-# docs/FLOW-SCHEMA.md rather than a modelled account: this pipeline's own
+# docs/reference/flow-schema.md rather than a modelled account: this pipeline's own
 # demand shape is not part of D21's four idle-with-demand causes, all of
 # which name a *backlog* agent-cycle.sh's Co-Ordinator declines against.
 finalize_node_state_for_review() {
@@ -209,7 +210,7 @@ finalize_node_state_for_review() {
   log_node_state_transition idle-without-demand no-demand
 }
 
-# The pure fold (docs/FLOW-SCHEMA.md's "Node time-state record"). Reads
+# The pure fold (docs/reference/flow-schema.md's "Node time-state record"). Reads
 # `node-state` events only — every other event this requirement touches
 # (`stand-down`, `none-selected`, `limit-hit`, …) already has its own
 # `node-state` sibling logged beside it at the same instant, so the fold
@@ -230,7 +231,7 @@ finalize_node_state_for_review() {
 # nothing is double-counted, because a node contributes exactly one
 # `window_seconds`-wide timeline no matter how many events land on it.
 #
-# One documented simplification (docs/FLOW-SCHEMA.md states it plainly
+# One documented simplification (docs/reference/flow-schema.md states it plainly
 # rather than hiding it): the node set considered is every node that has
 # *ever* logged a `node-state` event, over the fold's whole unwindowed input
 # — not evaluated per second of the window the way a node truly joining or

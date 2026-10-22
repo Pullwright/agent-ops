@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/item-lifecycle.sh — the item-lifecycle record (docs/FLOW-SCHEMA.md,
+# lib/item-lifecycle.sh — the item-lifecycle record (docs/reference/flow-schema.md,
 # requirement 49, issue #595): one durable record per work item, folded from
 # the union log's own item-scoped events, ending in an explicit terminal
 # fate. A pure derivation, on the same terms `lib/rework.sh`'s `rework_fields`
@@ -163,7 +163,7 @@ item_lifecycle_pickup_pairs() {
   printf '%s' "$out"
 }
 
-# The main fold (docs/FLOW-SCHEMA.md's "Item lifecycle record"). $all/$span/
+# The main fold (docs/reference/flow-schema.md's "Item lifecycle record"). $all/$span/
 # $void/$blocked/$obsolete are bound by the caller from files (requirement 4g
 # — big things travel in files, never argv):
 #
@@ -247,7 +247,7 @@ item_lifecycle_pickup_pairs() {
 # earliest such event. Further landing evidence itself (a second
 # `merge-observed`/`issue-closed-post-merge`) is excluded from consideration:
 # multiple merges is not rework. The field is omitted entirely, never
-# `false`/`null`, when no such later event exists (docs/FLOW-SCHEMA.md,
+# `false`/`null`, when no such later event exists (docs/reference/flow-schema.md,
 # issue #1181).
 #
 # One case is deliberately not folded into the priority order above:

@@ -293,7 +293,7 @@
       <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/spec/review.md" target="_blank" rel="noopener noreferrer">Review spec</a> ·
       <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/spec/dashboard/README.md" target="_blank" rel="noopener noreferrer">Dashboard spec</a> ·
       <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/spec/dashboard/README.md#what-a-badge-means" target="_blank" rel="noopener noreferrer">What a badge means</a> ·
-      <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/METERING-SCHEMA.md" target="_blank" rel="noopener noreferrer">Metering</a> ·
+      <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/reference/metering-schema.md" target="_blank" rel="noopener noreferrer">Metering</a> ·
       <a href="https://github.com/Pullwright/agent-ops/blob/main/docs/ROADMAP.md" target="_blank" rel="noopener noreferrer">Roadmap</a>
     </nav>
     <!-- The menu itself (#tocmenu) is populated by renderToc() from the
@@ -1555,7 +1555,7 @@
   }
 
   // Whether the host-facts record (scripts/collect-host-facts.sh,
-  // agent-ops#1283, docs/HOST-FACTS-SCHEMA.md) this node's own collector
+  // agent-ops#1283, docs/reference/host-facts-schema.md) this node's own collector
   // last wrote carries anything worth a human's attention. The record is
   // large — per-container memory/cpu, the updater ledger tail, a full
   // viewer-probe map — and most of it is exactly the kind of detail this
@@ -2615,7 +2615,7 @@
 
   // ---------- rework panel (D23, issue #611) ----------
   // Renders `D.rework` — lib/rework-panel.sh's own fold over the rework
-  // record and the item lifecycle record (docs/FLOW-SCHEMA.md). All-time,
+  // record and the item lifecycle record (docs/reference/flow-schema.md). All-time,
   // never windowed, on `escape_audits`' own precedent just above: a caught
   // defect's rung is a permanent fact about it.
   // pct() is defined once, further down (Co-Ordinator verdict quality) — reused here.
@@ -2723,7 +2723,7 @@
       "fewer defects. \"Caught here (furthest rung)\" counts items whose furthest rung was this one, " +
       "never individual defects: an item carrying two defects caught at different rungs shows up only " +
       "at the later one, so the figure is a floor on defects actually caught here, not an exact count."}));
-    // The residual detection gap docs/FLOW-SCHEMA.md documents: the human-gate
+    // The residual detection gap docs/reference/flow-schema.md documents: the human-gate
     // rung can only see what the reconciliation gate itself observes.
     body.push(el("div", {class:"panel muted", text:
       "Coverage gap: the human-gate rung only catches a change request the reconciliation gate itself " +
@@ -3415,7 +3415,7 @@
   //
   // An `unknown`-model row (an envelope whose `modelUsage` could not be
   // read) carries `tokens_*: null` on every field, never `0`
-  // (docs/METERING-SCHEMA.md) — folding it in as zero would understate that
+  // (docs/reference/metering-schema.md) — folding it in as zero would understate that
   // row's true token spend and, worse, corrupt the cache ratio computed over
   // it, so it is skipped here entirely rather than counted as "zero tokens."
   function fmtTokens(n) { return n == null ? "—" : Number(n).toLocaleString(); }
@@ -3513,7 +3513,7 @@
 
   // ---------- stall profile (issue #594, D21) ----------
   // The other half of what `lib/metering.sh` records and nothing read:
-  // `gaps` (docs/METERING-SCHEMA.md), rolled up by `scripts/publish-
+  // `gaps` (docs/reference/metering-schema.md), rolled up by `scripts/publish-
   // dashboard.sh` into `counts.stage_gaps`. Its own window — never
   // COST_SCAN_DAYS — since the source is the retained log union
   // (`log.jsonl`/`review-log.jsonl`, `analytics_retained_days`), not the

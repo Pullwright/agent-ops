@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/metering.sh — the per-stage metering record (docs/METERING-SCHEMA.md,
+# lib/metering.sh — the per-stage metering record (docs/reference/metering-schema.md,
 # requirement 33a of docs/spec/implementation/README.md).
 #
 # Sourced by agent-cycle.sh and review-cycle.sh so both pipelines derive the

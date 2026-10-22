@@ -89,7 +89,7 @@
     (issue #1587).
 
     60e. <a id="impl-60e"></a>**`--metrics`' field list is the node metrics shape
-    `docs/METERING-SCHEMA.md` documents under its own stability policy.**
+    `docs/reference/metering-schema.md` documents under its own stability policy.**
     Node identity (`node`, `role`, `ts`, `version`), all three other
     verdicts and their components in full (`live`, `ready`, `health`),
     cycle counters over this node's own retained `log.jsonl`

@@ -998,7 +998,7 @@ What exists, and the requirements each part answers to:
    carry-forward, requirement 33's `attempt-failed` field shape, requirement
    33a's per-stage metering record (`lib/metering.sh`'s `metering_fields`,
    sourced by `agent-cycle.sh` and `review-cycle.sh` so a stage in either
-   pipeline emits the same shape; `docs/METERING-SCHEMA.md` is the contract;
+   pipeline emits the same shape; `docs/reference/metering-schema.md` is the contract;
    unit-tested in `test/metering.test.sh`), the usage-limit
    phrase pattern of requirement 10, the switch of requirement 2.3 and the
    fleet flags of requirements 2.3a and 2.1 (`lib/toggle.sh`'s `fleet_*`

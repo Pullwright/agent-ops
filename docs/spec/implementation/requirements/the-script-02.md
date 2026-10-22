@@ -628,7 +628,7 @@
       one driver with a Docker socket, and so the only one that can enumerate
       every container on the host, not only this compose project's own three
       services — gains a `budget` section
-      (`docs/HOST-FACTS-SCHEMA.md`) summing every *running* container's own
+      (`docs/reference/host-facts-schema.md`) summing every *running* container's own
       declared `memory.max_bytes`/`cpu.limit_nanos` from `containers[]`
       (agent-ops#606's own per-container actuals section) and reporting each
       dimension's headroom alongside it, so the number is visible in the
@@ -653,7 +653,7 @@
       cluster owns the machine, which is a different problem this
       requirement does not attempt. The `budget` key is therefore absent
       outright under the `kubernetes` driver, a driver-specific omission
-      (docs/HOST-FACTS-SCHEMA.md), not a degraded fact.
+      (docs/reference/host-facts-schema.md), not a degraded fact.
 
       This requirement's own gate reads the just-published record from this
       node's own `state_dir/host-facts/<node>.json` — the same file 0f's
@@ -686,7 +686,7 @@
       `host_budget_enforce` at its default does, with no fight against this
       requirement required. On: an overcommit logs a `stand-down` event with
       `cause: "host-overcommit"` (one of the seventeen tokens in the closed
-      cause vocabulary, `docs/FLOW-SCHEMA.md`) whose `reason` carries
+      cause vocabulary, `docs/reference/flow-schema.md`) whose `reason` carries
       `lib/host-budget.sh`'s own `host_budget_describe` — both dimensions'
       arithmetic, the declared sum, the reserve, the host total, and the
       unknown-container counts, regardless of which dimension actually
@@ -733,7 +733,7 @@
       check uses, and logs `stand-down` with `cause: "credential-refused"`
       before exiting ahead of the gather. `credential-refused` is the
       seventeenth token in the closed `externally-blocked` cause vocabulary
-      (`lib/node-time-state.sh`, `docs/FLOW-SCHEMA.md`).
+      (`lib/node-time-state.sh`, `docs/reference/flow-schema.md`).
 
       It is not a stage — it logs no `stage-start`, like 1b's limit-probe and
       a `<stage>-salvage` resume — but it still spends real tokens, so

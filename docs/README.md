@@ -85,6 +85,11 @@ set under `docs/reviews/` one entry for its directory.
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
 | `docs/reference/configuration.md` | operator, agent, contributor | reference | Every configuration key, its default, and its extended notes (generated from `config.schema.json`) |
+| `docs/reference/labels.md` | operator, contributor, person working in a target repository | reference | Every label the pipeline creates or reads, what applies it, what it means, and what removing it does (generated from `lib/labels.sh`) |
+| `docs/reference/scripts.md` | contributor, agent | reference | Index of every script under `lib/` and `scripts/`, grouped by purpose (generated from each script's own header comment) |
+| `docs/reference/flow-schema.md` | agent, evaluator | reference | Complete schema of the flow metadata structure |
+| `docs/reference/host-facts-schema.md` | agent, operator | reference | Schema of host facts collected by the pipeline |
+| `docs/reference/metering-schema.md` | operator, evaluator | reference | Schema of metering and usage tracking |
 
 #### Concepts (explanations)
 
@@ -158,13 +163,10 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/spec/review.md` | agent, contributor, evaluator | reference | As-built specification of the repository-review pipeline |
 | `docs/spec/monitor.md` | operator, evaluator | reference | As-built specification of the Pipeline Monitor |
 
-#### Schemas (reference)
+#### Data handling
 
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
-| `docs/FLOW-SCHEMA.md` | agent, evaluator | reference | Complete schema of the flow metadata structure |
-| `docs/HOST-FACTS-SCHEMA.md` | agent, operator | reference | Schema of host facts collected by the pipeline |
-| `docs/METERING-SCHEMA.md` | operator, evaluator | reference | Schema of metering and usage tracking |
 | `docs/DATA-HANDLING.md` | operator, evaluator | reference | Data handling, retention, and privacy policies |
 
 #### Planning and decision logs

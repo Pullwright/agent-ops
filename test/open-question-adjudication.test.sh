@@ -365,13 +365,13 @@ mkdir -p "$state_dir" "$cycle_dir"
 : >"$union_log"; : >"$log_file"
 
 log_event() { printf '%s\t%s\n' "$1" "$2" >>"$T/events"; }
-# docs/FLOW-SCHEMA.md, requirement 47, issue #596: run_open_question_
+# docs/reference/flow-schema.md, requirement 47, issue #596: run_open_question_
 # adjudication's own stage-end site calls lib/rework.sh's rework_stage_
 # rerun_maybe — out of this file's own scope (test/rework-record.test.sh
 # covers it directly). Stubbed to a no-op, the same "does not fire" shape
 # the real function takes whenever stage_kill_reason (set above) is empty.
 rework_stage_rerun_maybe() { :; }
-# docs/FLOW-SCHEMA.md, requirement 50, issue #597: the same stage-end site
+# docs/reference/flow-schema.md, requirement 50, issue #597: the same stage-end site
 # also calls lib/node-time-state.sh's log_node_state_transition — out of
 # this file's own scope (test/node-time-state.test.sh covers it directly).
 log_node_state_transition() { :; }

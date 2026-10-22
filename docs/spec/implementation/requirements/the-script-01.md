@@ -911,8 +911,10 @@
    whole directory, and every path that map names exists. No in-scope
    document's hand-written content — its bytes outside the generated regions
    `lib/markdown-scan.sh` lists, the configuration tables of requirement 1b,
-   the tables of contents of requirement 52 and the regions the organisation's
-   sync stamps, which a schema change, a new heading or a re-stamp regenerates
+   the tables of contents of requirement 52, the labels table and scripts
+   index of requirement 52d and the regions the organisation's sync stamps,
+   which a schema change, a new heading, a catalogue or header-comment
+   change, or a re-stamp regenerates
    — exceeds the 100,000-byte budget `docs/README.md`'s "Size budget" section
    fixed, unless the document is exempt there (`CHANGELOG.md`,
    `docs/ROADMAP.md`, `docs/reviews/**`, and every as-built specification,
@@ -982,3 +984,53 @@
    check` and `scripts/spec.sh index --check` on every pull request, on
    `merge_group` and on push to `main`, ungated by `paths:` — a citation can
    be added or broken from any file in the repository. Acceptance check 52c.
+52d. <a id="impl-52d"></a>**The labels reference and the scripts index are generated from the
+   code they describe, not hand-maintained, and regenerating each is gated
+   in CI.** `docs/reference/labels.md` carries a `<!-- labels-table:start -->`
+   … `<!-- labels-table:end -->` region holding one row per label the
+   pipeline creates or reads, and `docs/reference/scripts.md` a
+   `<!-- scripts-index:start -->` … `<!-- scripts-index:end -->` region
+   holding one row per script under `lib/` and `scripts/` — a fourth and a
+   fifth kind of generated region, under the same "generated, never
+   hand-edited" contract `AGENTS.md`'s "Generated regions" note states for
+   the configuration tables (requirement 1b, component 16) and the tables of
+   contents (requirement 52, component 24).
+   `scripts/render-labels-table.sh` (component 24d) builds its region from
+   `lib/labels.sh`'s own `labels_catalogue` (requirement 6a, component 15),
+   called once for each of the three roles a repository can hold and unioned
+   by label name, so a label two roles share appears once; the two
+   `pr_label` keys the catalogue cannot resolve on its own — both required,
+   with no product default — are supplied from their own schema
+   `x-docs.value`, the same documented example requirement 1b's tables
+   render. The catalogue carries a label's name, colour and description and
+   nothing else, so what applies a label and what removing it does come from
+   that script's own hand-authored metadata, keyed on the catalogue's
+   resolved name; a catalogue label with no metadata entry fails the render
+   naming the label, rather than rendering a blank cell, so the metadata
+   cannot silently fall behind the catalogue.
+   `scripts/render-scripts-index.sh` (component 24e) builds its region from
+   each script's own header comment — the first paragraph after the shebang,
+   wrapped lines joined with a single space except where the wrap fell inside
+   a token at its own ASCII hyphen or underscore, which rejoins with nothing
+   so a row prints the token rather than a word cut in half, a leading
+   `# shellcheck disable=` paragraph skipped in favour of the one after it,
+   and the lead-in naming the script's own path or basename stripped — grouped by the one
+   distinction this repository already enforces structurally: `lib/`, sourced
+   and never executed, and `scripts/`, run directly. A script with no such
+   paragraph fails the render naming the file, so a script cannot be added
+   without a header comment to index it by. Both renderers read the files
+   they write and the markers that delimit them from `lib/markdown-scan.sh`'s
+   `LABELS_TABLE_FILES`/`SCRIPTS_INDEX_FILES` and its
+   `labels_table_start_re`/`scripts_index_start_re` marker-regex pairs — the
+   same list component 24b reads to leave these two regions out of the size
+   budget — and both follow component 16's contract exactly: with no
+   arguments they regenerate in place, `--check` renders to a temporary file
+   instead and exits non-zero naming the stale file, and a target file
+   without exactly one marker pair is refused naming the file, in both
+   invocations, rather than copied through unchanged.
+   `.github/workflows/labels-table.yml` and
+   `.github/workflows/scripts-index.yml` each run their own `--check` on
+   every pull request, on `merge_group` and on push to `main`, ungated by
+   `paths:` — a catalogue edit, a script added, renamed or removed, and a
+   header comment reworded all drift a region from a file outside any narrow
+   path filter. Acceptance check 52d.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/rework.sh — the rework record (docs/FLOW-SCHEMA.md, D23 of
+# lib/rework.sh — the rework record (docs/reference/flow-schema.md, D23 of
 # docs/ROADMAP.md, issue #596).
 #
 # One shaping function, called from every detector site this repo already
@@ -11,13 +11,13 @@
 # is, what evidence it fired on and (sometimes) which stage it is attributed
 # to; this function only shapes that into the one documented record shape.
 # It never classifies, never reads a transcript, and never asks a model — the
-# "account, not a guess" line docs/FLOW-SCHEMA.md draws.
+# "account, not a guess" line docs/reference/flow-schema.md draws.
 #
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
 
 # rework_fields CLASS DETECTOR EVIDENCE_JSON [ATTRIBUTED_STAGE [REPO [ITEM [PR_URL]]]]
-# Print the `rework` event's own fields — everything docs/FLOW-SCHEMA.md
+# Print the `rework` event's own fields — everything docs/reference/flow-schema.md
 # documents beyond the envelope a caller's own logger already adds
 # (ts/cycle/node): `class`, `detector`, `evidence`, `attributed_stage`, and
 # `repo`/`item`/`pr_url` where the caller has them ("where applicable" —
@@ -26,7 +26,7 @@
 #
 # ATTRIBUTED_STAGE is the empty string, by default, meaning "not determined
 # from the detector's own evidence" — recorded as a JSON `null`, never a
-# guess (docs/FLOW-SCHEMA.md's attribution rule): a caller passes a stage
+# guess (docs/reference/flow-schema.md's attribution rule): a caller passes a stage
 # name only when its own detector's evidence names one directly, never by
 # arbitrating between plausible causes.
 #
@@ -56,7 +56,7 @@ rework_fields() {
 
 # Every function below is a pure predicate-and-builder pair: given exactly
 # the evidence its own detector already has, print that class's `rework_
-# fields` (docs/FLOW-SCHEMA.md's "The nine classes"), or nothing at all when
+# fields` (docs/reference/flow-schema.md's "The nine classes"), or nothing at all when
 # the evidence does not clear that class's own bar. None of them log
 # anything — the one exception, `rework_stage_rerun_maybe`, is named `_maybe`
 # for that reason and is the only one that calls `log_event` itself, since
@@ -127,7 +127,7 @@ rework_check_failure_fields() {
 
 # rework_human_change_request_fields REASON REPO ITEM PR_URL
 # Print `human-change-request` fields, attributed to `reviewer` — the one
-# class whose evidence names its stage directly (docs/FLOW-SCHEMA.md). The
+# class whose evidence names its stage directly (docs/reference/flow-schema.md). The
 # callers are the two `rc_word == "dirty"` branches that share requirement
 # 34a's one `handoff_complete_review` — `agent-cycle.sh`'s own Reviewer
 # handoff and `lib/enabler.sh`'s handoff-recovery path (agent-ops#1032) —

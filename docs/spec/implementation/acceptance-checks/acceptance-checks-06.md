@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 6 of 9; items 51–52c)
+### Acceptance checks — continued (part 6 of 9; items 51–52d)
 
 51. <a id="impl-ac-51"></a>**The pager framework files once per firing key, closes once the fact
     clears, and never twice for the same transition (requirement 51).**
@@ -687,4 +687,35 @@
     not exactly name — and fails on a duplicate label with no citation
     involved at all, naming the duplicate. `./scripts/lint-shell.sh` is
     clean.
+52d. <a id="impl-ac-52d"></a>**The labels reference and the scripts index regenerate from the
+    code and are gated (requirement 52d, components 24d and 24e).**
+    `scripts/render-labels-table.sh` and `scripts/render-scripts-index.sh`,
+    each with no arguments, run against this repository leave
+    `docs/reference/labels.md` and `docs/reference/scripts.md`
+    byte-identical to what is committed — regenerating a clean tree is a
+    no-op — and each `--check` exits 0 against it; `git diff` confirms
+    nothing moved. Every label `labels_catalogue` returns for any of the
+    three roles appears in the labels table, exactly once across the three,
+    with all four columns filled; every `*.sh`/`*.py` file directly under
+    `lib/` and under `scripts/` appears in the scripts index. A fixture header
+    comment wrapped inside a token, at the token's own hyphen or underscore,
+    renders that token whole, while a hyphen used as punctuation and a trailing
+    slash keep the space around them. A hand edit
+    inside either region makes that script's `--check` exit non-zero naming
+    the file, and regenerating repairs it. Removing a catalogue label's
+    entry from `scripts/render-labels-table.sh`'s own metadata makes the
+    plain invocation exit non-zero naming that label, rather than rendering
+    a row with blank cells; a script whose header carries no first paragraph
+    to index makes `scripts/render-scripts-index.sh` exit non-zero naming
+    that file. Deleting a target file's marker pair makes both invocations
+    exit non-zero naming the file, rather than leaving it byte-identical and
+    `--check` exiting 0 against a region that is not there.
+    `test/render-labels-table.test.sh` and
+    `test/render-scripts-index.test.sh` exercise each of these cases against
+    the real scripts and this repository's own real catalogue and header
+    comments. `.github/workflows/labels-table.yml` and
+    `.github/workflows/scripts-index.yml` run the two `--check`s on every
+    pull request, so a catalogue edit, an added or removed script, or a
+    reworded header comment without a matching regeneration fails CI rather
+    than leaving a stale reference page. `./scripts/lint-shell.sh` is clean.
 

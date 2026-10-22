@@ -1,0 +1,35 @@
+name: Scripts index check
+
+# Gates the generated scripts index: docs/reference/scripts.md's table must
+# be exactly what scripts/render-scripts-index.sh renders from every
+# script's own header comment under lib/ and scripts/, or an added, renamed
+# or removed script can drift out of the one index that lists it.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR
+# never runs with write-scoped secrets, and ungated by `paths:` — a new
+# script without a matching doc edit, or a doc edit without a matching
+# script, both need catching, and either can touch files outside a narrow
+# path filter.
+#
+# The `merge_group:` trigger is required for this context to report inside
+# the merge queue — without it, a required `scripts-index` would stall
+# every queue entry for the ruleset's 60-minute
+# `check_response_timeout_minutes`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the generated scripts index is fresh
+        run: scripts/render-scripts-index.sh --check

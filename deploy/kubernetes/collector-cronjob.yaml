@@ -42,7 +42,7 @@ metadata:
 ---
 # Namespaced grants only: pods, deployments and cronjobs are what the
 # collector's own namespace runs, and PVCs are the storage those workloads
-# claim — all four are exactly the fields docs/HOST-FACTS-SCHEMA.md
+# claim — all four are exactly the fields docs/reference/host-facts-schema.md
 # documents under "pods"/"rollouts"/"cronjobs"/"pvcs". Deliberately does NOT
 # include "nodes": that is cluster-scoped and cannot be granted by a
 # namespaced Role at all — see the ClusterRole below, kept separate and as
