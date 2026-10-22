@@ -333,9 +333,21 @@ your review:
    already tracked, so cite the existing issue rather than filing a duplicate
    — otherwise `gh issue create` in the target repo, labelled
    `pw::type:tech-debt`, naming this pull request in its body (e.g. "Noticed
-   while reviewing #631"). Then add a `Defers: #<n>` line to **this** pull
-   request's body — never a closing keyword, which would tell GitHub this PR
-   finishes the deferred work too. Where the gap is a question rather than a
+   while reviewing #631"). Before writing that body, check any claim it makes
+   about *default-branch* state — a file, trigger, or other precondition
+   "already exists on `main`", "nothing to land first", or anything else true
+   only of the pull request you are reviewing — against the default branch
+   itself with one cheap read: `gh api
+   repos/<slug>/contents/<path>?ref=<default_branch>` or `git ls-tree
+   origin/<default_branch> -- <path>`. Writing the pull request's own working
+   tree into the body as though it were the default branch's is exactly how
+   agent-ops#2563 happened — filed this same way, "Noticed while reviewing
+   #2506" — and where the precondition in fact lives only on the pull request
+   under review, say so in the body as a `Blocked-by: #<pr>` line instead of
+   asserting the work is already done. Then add a `Defers: #<n>` line to
+   **this** pull request's body — never a closing keyword, which would tell
+   GitHub this PR finishes the deferred work too. Where the gap is a question
+   rather than a
    scoped fix, `gh issue create` in the target repo instead, unlabelled, with
    no `Defers:` line. Either way, still leave a short pointer in your step-5
    comment for the human — the issue is the durable copy, the comment is what
