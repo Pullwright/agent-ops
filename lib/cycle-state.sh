@@ -234,7 +234,7 @@ BLOCKED_ITEMS_JQ='
                         and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($b.repo // ""))))
            | map(.ts // "")
            | sort | last) as $rc_ts
-        | (if ($b.repo // "") == "" then $b else $b + {repo: canon_repo($b.repo)} end) as $b
+        | (if ($b.repo // "") == "" then $b else $b + {repo: canon_repo($b.repo | tostring)} end) as $b
         | if $rc_ts == null then $b else $b + {recheck_clean_ts: $rc_ts} end)
 '
 
@@ -317,7 +317,7 @@ void_items() {
   out="$(_latest_unresolved "$2" "$3" "$1" "$aliases")"
   jq -c --argjson aliases "$aliases" '
     def canon_repo($r): ($aliases[$r] // $r);
-    map(if (.repo // "") == "" then . else . + {repo: canon_repo(.repo)} end)
+    map(if (.repo // "") == "" then . else . + {repo: canon_repo(.repo | tostring)} end)
   ' <<<"$out" 2>/dev/null || printf '%s' "$out"
 }
 
@@ -364,7 +364,7 @@ void_object_closed_items() {
     def canon_repo($r): ($aliases[$r] // $r);
     [ .[] | select(.event == "void-object-closed"
                    and (.repo // "") != "" and (.item // "") != "")
-      | {repo: canon_repo(.repo), item} ] | unique'
+      | {repo: canon_repo(.repo | tostring), item} ] | unique'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
       | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
@@ -412,7 +412,7 @@ decision_vetoes_processed_items() {
     def canon_repo($r): ($aliases[$r] // $r);
     [ .[] | select(.event == "decision-vetoed"
                    and (.repo // "") != "" and (.issue_number // "") != "")
-      | {repo: canon_repo(.repo), item: (.issue_number | tostring)} ] | unique'
+      | {repo: canon_repo(.repo | tostring), item: (.issue_number | tostring)} ] | unique'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
       | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"
@@ -875,7 +875,7 @@ REFINEMENTS_MAP_JQ='
                | not) ]
   | sort_by(.ts)
   | reduce .[] as $r ({};
-      .[canon_repo($r.repo)][($r.item | tostring)] =
+      .[canon_repo($r.repo | tostring)][($r.item | tostring)] =
         ({ts: ($r.ts // ""), cycle: ($r.cycle // "")}
          + (if ($r.spec // "") == "" then {} else {spec: $r.spec} end)
          + (if ($r.comment_url // "") == "" then {} else {comment_url: $r.comment_url} end)))
@@ -995,7 +995,7 @@ DECISIONS_MAP_JQ='
                | not) ]
   | sort_by(.ts)
   | reduce .[] as $d ({};
-      .[canon_repo($d.repo)][($d.item | tostring)] =
+      .[canon_repo($d.repo | tostring)][($d.item | tostring)] =
         {ts: ($d.ts // ""), decision: ($d.decision // ""), rationale: ($d.rationale // "")}
         + (if ($d.options_considered // "") == "" then {} else {options_considered: $d.options_considered} end)
         + (if ($d.comment_url // "") == "" then {} else {comment_url: $d.comment_url} end)

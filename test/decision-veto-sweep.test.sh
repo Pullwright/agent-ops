@@ -118,6 +118,10 @@ log_event_calls() { [[ -f "$LOG_EVENT_CALLS_FILE" ]] && cat "$LOG_EVENT_CALLS_FI
 # an item that already carries a live block when the sweep runs.
 RECORD_RESULT=0
 blocked_json='[]'
+# repo_slug_aliases_json is the cycle global decision_vetoes_processed_items
+# (lib/cycle-state.sh, agent-ops#2548) reads under `set -u`; '{}' resolves
+# every repo to itself, same as production with no previous_slugs configured.
+repo_slug_aliases_json='{}'
 RECORD_CALLS_FILE="$tmp_dir/record_calls"
 reset_record_calls() { rm -f "$RECORD_CALLS_FILE"; RECORD_RESULT=0; blocked_json='[]'; }
 # shellcheck disable=SC2317  # invoked only by run_decision_veto_sweep

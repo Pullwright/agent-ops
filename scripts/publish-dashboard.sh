@@ -2769,9 +2769,9 @@ blocked_json="$(jq -nc --argjson aliases "$repo_slug_aliases_json" "$UNION_STREA
   | [ $rows[]
       | . as $r
       | ([ $events[] | select(.event == "escalated" and (.item // "") == $r.item
-                              and canon_repo(.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $esc
+                              and canon_repo((.repo // "") | tostring) == $r.repo and .ts > $r.ts) ] | last) as $esc
       | ([ $events[] | select(.event == "enabler-examined" and (.item // "") == $r.item
-                              and canon_repo(.repo // "") == $r.repo and .ts > $r.ts) ] | last) as $exam
+                              and canon_repo((.repo // "") | tostring) == $r.repo and .ts > $r.ts) ] | last) as $exam
       | $r
         + (if $esc == null then {}
            else {escalation_issue: ($esc.issue_number // null),

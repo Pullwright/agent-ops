@@ -3006,7 +3006,7 @@
       "label": "34a",
       "anchor": "impl-34a",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 677,
+      "line": 686,
       "title": "Whatever computes requirement 34 must be the **only** definition of it."
     },
     "IMPL 34c": {
@@ -3014,7 +3014,7 @@
       "label": "34c",
       "anchor": "impl-34c",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 696,
+      "line": 705,
       "title": "Void semantics: an item is void iff the most recent `item-void` /"
     },
     "IMPL 34d": {
@@ -3022,7 +3022,7 @@
       "label": "34d",
       "anchor": "impl-34d",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 721,
+      "line": 730,
       "title": "Every `item-void` a stage writes is corroborated before it is made"
     },
     "IMPL 34e": {
@@ -3030,7 +3030,7 @@
       "label": "34e",
       "anchor": "impl-34e",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 992,
+      "line": 1001,
       "title": "Under-specification is a class of block, not a parallel state."
     },
     "IMPL 34f": {
@@ -3038,7 +3038,7 @@
       "label": "34f",
       "anchor": "impl-34f",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1126,
+      "line": 1135,
       "title": "The human's escape hatch reaches the human."
     },
     "IMPL 34g": {
@@ -3046,7 +3046,7 @@
       "label": "34g",
       "anchor": "impl-34g",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1196,
+      "line": 1205,
       "title": "A human's own hand-applied label is a report, not a state."
     },
     "IMPL 34h": {
@@ -3054,7 +3054,7 @@
       "label": "34h",
       "anchor": "impl-34h",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1264,
+      "line": 1273,
       "title": "Where the two states meet, void wins."
     },
     "IMPL 34i": {
@@ -3070,7 +3070,7 @@
       "label": "34j",
       "anchor": "impl-34j",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 126,
+      "line": 131,
       "title": "A structured dependency is held, and released, by code — never by a"
     },
     "IMPL 34k": {
@@ -3078,7 +3078,7 @@
       "label": "34k",
       "anchor": "impl-34k",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 230,
+      "line": 235,
       "title": "Act on void: close the GitHub object a void names."
     },
     "IMPL 34m": {
@@ -3086,7 +3086,7 @@
       "label": "34m",
       "anchor": "impl-34m",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 377,
+      "line": 382,
       "title": "A freshly claimed item gets the same gone-work check, before the"
     },
     "IMPL 34n": {
@@ -3094,7 +3094,7 @@
       "label": "34n",
       "anchor": "impl-34n",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 497,
+      "line": 502,
       "title": "A void that is both actioned and old retires from the extract."
     },
     "IMPL 34o": {
@@ -3102,7 +3102,7 @@
       "label": "34o",
       "anchor": "impl-34o",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 821,
+      "line": 826,
       "title": "A refined specification is exactly what a `needs-refinement` block was"
     },
     "IMPL 39": {
@@ -3534,7 +3534,7 @@
       "label": "3o",
       "anchor": "impl-3o",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 811,
+      "line": 822,
       "title": "Claim visibility (issue #175)."
     },
     "IMPL 3p": {
@@ -3542,7 +3542,7 @@
       "label": "3p",
       "anchor": "impl-3p",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 855,
+      "line": 866,
       "title": "PR-level candidate exclusion (issue #238)."
     },
     "IMPL 3q": {
@@ -3550,7 +3550,7 @@
       "label": "3q",
       "anchor": "impl-3q",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 878,
+      "line": 889,
       "title": "Item-level candidate exclusion."
     },
     "IMPL 3t": {
@@ -3558,7 +3558,7 @@
       "label": "3t",
       "anchor": "impl-3t",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 905,
+      "line": 916,
       "title": "Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue"
     },
     "IMPL 3u": {
@@ -3566,7 +3566,7 @@
       "label": "3u",
       "anchor": "impl-3u",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1075,
+      "line": 1086,
       "title": "Blocked/void exclusion, extended to every other pre-fetched band, and"
     },
     "IMPL 3v": {
@@ -3574,7 +3574,7 @@
       "label": "3v",
       "anchor": "impl-3v",
       "file": "docs/spec/implementation/requirements/the-script-06.md",
-      "line": 1177,
+      "line": 1188,
       "title": "Corroboration, scoped to the repositories that said no, and mechanical"
     },
     "IMPL 3w": {
