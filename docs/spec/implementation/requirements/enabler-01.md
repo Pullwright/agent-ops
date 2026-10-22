@@ -146,9 +146,17 @@
        against it; a candidate held back logs one
        `enabler-dependency-deferred` naming the item and the reference that
        held it, so the suppression is auditable rather than silent. Past that
-       age bound the candidate is eligible however open the reference is: a
-       dependency that is itself stuck needs the Enabler, and from there a
-       human, the same way any other permanently-stuck item does. `recheck`
+       age bound this clause releases the candidate however open the
+       reference is — a dependency that is itself stuck needs the Enabler,
+       and from there a human, the same way any other permanently-stuck item
+       does — but the release reaches only what requirement 35f does not
+       itself decide. 35f subtracts the same candidate, with no age bound of
+       its own, wherever this cycle's own gather walked its repo fresh and
+       recorded the exclusion, and it runs after this clause; so where both
+       apply, 35f has the last word and this age bound changes nothing. The
+       bounded release is effective exactly where 35f is silent — a repo this
+       cycle did not sample, or whose gather degraded. #1714 holds the open
+       request for a lapse that binds both. `recheck`
        is outside this clause, and so is `issue-closed` — a human has just
        acted on the escalation, and the thread's state is precisely what that
        engagement is there to re-read. This clause is a cost saving and never
