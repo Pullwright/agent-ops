@@ -319,6 +319,13 @@ if ! declare -F union_prefilter >/dev/null 2>&1; then
   # shellcheck source=lib/union-stream.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
 fi
+# `pager_file` links a fired page's own kind to its catalogue entry (issue
+# #2098) through `reason_code_url`; guarded and sourced on the same terms as
+# the two libraries above, so this file stays sourceable alone.
+if ! declare -F reason_code_url >/dev/null 2>&1; then
+  # shellcheck source=lib/reason-url.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reason-url.sh"
+fi
 
 # _pager_webhook_notify URL REPO ITEM TITLE BODY_FILE NODE CYCLE
 # Best-effort fallback, parameterised twin of lib/enabler.sh's
@@ -510,7 +517,8 @@ pager_file() {
         printf '## What the owner needs to decide\n\n%s\n\n' "$remedy_arg"
         ;;
     esac
-    printf -- '---\nFiled automatically by lib/pager.sh (issue #1278).\nref: %s\n' "$item"
+    printf -- '---\nFiled automatically by lib/pager.sh (issue #1278).\nref: %s\nSee %s for what this kind of page means and what to do about it.\n' \
+      "$item" "$(reason_code_url "$key")"
   } > "$body_file"
   local file_assignee=""
   [[ "$remedy_class" == "owner-only" ]] && file_assignee="$assignee"
