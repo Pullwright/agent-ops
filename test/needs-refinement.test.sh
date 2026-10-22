@@ -76,6 +76,8 @@ assert_contains() {
   fi
 }
 
+assert_empty() { assert_eq "$1" "" "$2"; }
+
 # --- The stub ------------------------------------------------------------------
 # `gh issue edit <n> -R <slug> --add-label|--remove-label <label>` appends one
 # line to $tmp_dir/label-calls and succeeds, unless the label is named in
