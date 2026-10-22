@@ -1013,6 +1013,43 @@ run_doctor
 assert_not_contains "merge_autonomy at the default (human) needs no approver_model_default" \
   "no approver_model_default configured" "$out"
 
+# --- agent-ops#1147: the Toolchain section's openssl check is gated on the
+#     same ma_above_human the Approver credential check above already
+#     computes, since openssl is lib/approver-token.sh's hard dependency
+#     (agent-ops#407) for RS256-signing the Approver App's JWT — a plain
+#     requirement only once some configured merge_autonomy source needs the
+#     Approver identity at all. ------------------------------------------
+run_doctor
+assert_not_contains "merge_autonomy at the default (human) never mentions openssl" \
+  "openssl" "$out"
+
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" bash "$DOCTOR" --config "$ma_approves_config" 2>&1)"
+assert_contains "merge_autonomy above human with openssl present reports it ok" \
+  "[ ok ] openssl —" "$out"
+
+# A PATH farm that symlinks every executable this suite's real $PATH already
+# resolves, except openssl — so the rest of doctor.sh (and everything it
+# sources) still finds a real bash/jq/git/etc., and only openssl is
+# genuinely absent from PATH, not merely shadowed by an earlier stub.
+no_openssl_bin="$tmp/no-openssl-bin"
+mkdir -p "$no_openssl_bin"
+IFS=: read -ra _openssl_path_dirs <<<"$PATH"
+for _d in "${_openssl_path_dirs[@]}"; do
+  [[ -d "$_d" ]] || continue
+  for _f in "$_d"/*; do
+    [[ -f "$_f" && -x "$_f" ]] || continue
+    _name="$(basename "$_f")"
+    [[ "$_name" == "openssl" ]] && continue
+    [[ -e "$no_openssl_bin/$_name" ]] && continue
+    ln -s "$_f" "$no_openssl_bin/$_name"
+  done
+done
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$no_openssl_bin" bash "$DOCTOR" --config "$ma_approves_config" 2>&1)"
+rc=$?
+assert_contains "merge_autonomy above human with openssl genuinely absent fails, naming why" \
+  "[fail] openssl is not on PATH; merge_autonomy is above human" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
+
 # --- agent-ops#627: escalation_autonomy's adjudicate-first needs the
 #     Enabler enabled to run its adjudication pass against ------------------
 ea_no_enabler_config="$tmp/ea-no-enabler-config.json"
