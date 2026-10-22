@@ -145,6 +145,11 @@ run_gate_block() {
     # about the closing-keyword/changelog-section consequence alone.
     printf '%s\n' 'required_check_preflight_findings() { :; }'
     printf '%s\n' 'required_check_preflight_escalate() { :; }'
+    # ci_trigger_ensure (issue #2560) is tested on its own terms in
+    # test/ci-trigger.test.sh — stubbed here to a no-op so this file's own
+    # assertions stay about the closing-keyword/changelog-section consequence
+    # alone, and so this harness never dials the real `gh`.
+    printf '%s\n' 'ci_trigger_ensure() { :; }'
     printf 'closing_keyword_gate() { printf %%s %q; [[ %q == dirty* ]] && return 1; return 0; }\n' \
       "$ck_verdict" "$ck_verdict"
     printf 'changelog_section_gate() { printf %%s %q; [[ %q == dirty* ]] && return 1; return 0; }\n' \

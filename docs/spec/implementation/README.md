@@ -9,12 +9,12 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
   - [Acceptance checks — continued (part 4 of 9; items 39a–8s)](acceptance-checks/acceptance-checks-04.md)
   - [Acceptance checks — continued (part 5 of 9; items 8t–50)](acceptance-checks/acceptance-checks-05.md)
   - [Acceptance checks — continued (part 6 of 9; items 51–52d)](acceptance-checks/acceptance-checks-06.md)
-  - [Acceptance checks — continued (part 7 of 9; items 1h–2s)](acceptance-checks/acceptance-checks-07.md)
+  - [Acceptance checks — continued (part 7 of 9; items 1h–2s, 79)](acceptance-checks/acceptance-checks-07.md)
   - [Acceptance checks — continued (part 8 of 9; items 11e–11e)](acceptance-checks/acceptance-checks-08.md)
   - [Acceptance checks — continued (part 9 of 9; items 8q–11d)](acceptance-checks/acceptance-checks-09.md)
   - [Components](components/components-01.md)
   - [Components — continued (part 2 of 3; 12b–17d)](components/components-02.md)
-  - [Components — continued (part 3 of 3; 17e–24e)](components/components-03.md)
+  - [Components — continued (part 3 of 3; 17e–24f)](components/components-03.md)
 - [Configuration](configuration.md)
 - [Cost profile](cost-profile.md)
 - [Design decisions](design-decisions.md)
@@ -42,7 +42,7 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
   - [The Script — requirements, continued (part 7 of 11; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)](requirements/the-script-07.md)
   - [The Script — requirements, continued (part 8 of 11; 4i–8c: The assembled Co-Ordinator prompt is bounded by its model'…)](requirements/the-script-08.md)
   - [The Script — requirements, continued (part 9 of 11; 8e–59: The classifier-escape audit re-checks the outcome, not jus…)](requirements/the-script-09.md)
-  - [The Script — requirements, continued (part 10 of 11; 60–60: The CLI surface: `scripts/node-health.sh`…)](requirements/the-script-10.md)
+  - [The Script — requirements, continued (part 10 of 11; 60–69: The CLI surface: `scripts/node-health.sh`…)](requirements/the-script-10.md)
   - [The Script — requirements, continued (part 11 of 11; 8d–8d: The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410)…)](requirements/the-script-11.md)
 <!-- toc:end -->
 

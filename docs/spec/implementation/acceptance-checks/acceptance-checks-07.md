@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 7 of 9; items 1h–2s)
+### Acceptance checks — continued (part 7 of 9; items 1h–2s, 79)
 
 1h. <a id="impl-ac-1h"></a>**A log past `log_retained_bytes` rotates, keeps `log_generations`, and
    never touches `log.jsonl`.** `test/rotate-logs.test.sh` passes: a log under
@@ -755,3 +755,23 @@
    reply on the new boot's first cycle keeps the state file's verdict at
    `"refused"` rather than resetting it, so a later genuinely clean reply on
    the new boot still retires the open escalation.
+
+79. <a id="impl-ac-79"></a>**A missed CI trigger is nudged exactly once, and only when genuinely
+   absent (requirement 69).** `test/ci-trigger.test.sh` proves, against a stubbed `gh`: a
+   check run appearing at any poll before the window elapses stops polling
+   and never calls the nudge push; a confirmed-empty check-runs list through
+   the whole window nudges exactly once, naming the head commit it nudged;
+   a nudge push that itself fails is reported `nudge-failed` and is not
+   retried within the same call; a window ending on an unreadable read is
+   `unknown` and never nudged, while one whose own last read came back
+   confirmed-empty after an earlier unreadable poll still nudges (the
+   window's own last read decides it); a `gh pr checks` that fails without
+   the `no checks reported on the` diagnosis is `unknown`, never
+   confirmed-empty, even though its exit status and empty stdout are
+   identical to the real zero-check-runs shape the stub reproduces — and
+   the empty array no `gh` on record emits is read as confirmed-empty too;
+   a pull request currently in a merge group is
+   left alone; and an unreadable merge-queue probe is `unknown`, never
+   nudged — fail-closed, not "assume not queued". The same file also proves
+   `review_gate_required_checks`'s own behaviour is unchanged by this
+   addition.
