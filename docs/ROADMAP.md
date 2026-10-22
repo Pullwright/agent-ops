@@ -386,7 +386,7 @@ Poetic-Poems, with no pipeline code in it.
       changes how strictly a review judges lives in the installation's
       configuration alone. `review-stage-start` records every resolved
       source and a digest of its text, so a review's inputs are
-      reconstructable (`docs/spec/review.md` R1c, R5 step 2a).
+      reconstructable (`docs/spec/review/README.md` R1c, R5 step 2a).
       This is the review pipeline's counterpart to the per-repo
       prompt-override item above; the two remain separate mechanisms — the
       per-repo prompt-override item is still open and may yet reuse this

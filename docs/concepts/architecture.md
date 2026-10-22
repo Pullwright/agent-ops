@@ -31,7 +31,7 @@ as-built specification:
   Reviewer-Agent that performs a full review of the target repository and
   raises its findings as a pull request, independently of the implementation
   cycle's own Reviewer stage.
-  Authoritative: `docs/spec/review.md` § "What it is".
+  Authoritative: `docs/spec/review/README.md` § "What it is".
 - **The Pipeline Monitor** (`monitor-cycle.sh`) — a scheduled reading of the
   other two pipelines' own recorded state. It never runs as a stage of
   `agent-cycle.sh`. Its mechanical findings are filed as `pw::type:tech-debt`
@@ -108,7 +108,7 @@ actors from the other pipelines:
 Authoritative: `docs/spec/implementation/README.md` § "Actors", items 1–10
 (numbered 5a for the Approver and 6–10 for everything from the Human
 Reviewer on, since inserting 5a shifts every item after it by one against
-this page's own sequential 1–11); `docs/spec/review.md` § "Actors";
+this page's own sequential 1–11); `docs/spec/review/README.md` § "Actors";
 `docs/spec/monitor.md` § "Actors".
 
 ## The Script is the only launcher of agents

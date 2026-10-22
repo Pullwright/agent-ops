@@ -48,7 +48,10 @@ docs/spec/implementation/requirements/the-script-06.md	7
 docs/spec/implementation/requirements/the-script-07.md	7
 docs/spec/implementation/requirements/the-script-08.md	7
 docs/spec/implementation/requirements/the-script-09.md	4
-docs/spec/review.md	1
+docs/spec/review/README.md	1
+docs/spec/review/requirements.md	0
+docs/spec/review/components.md	0
+docs/spec/review/acceptance-checks.md	0
 prompts/coordinator.md	13
 prompts/enabler.md	2
 prompts/implementer.md	9

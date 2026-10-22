@@ -160,7 +160,10 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/spec/dashboard/site.md` | operator, evaluator | reference | Monitoring dashboard specification: The Site (`dashboard/index.html`) |
 | `docs/spec/dashboard/state.md` | operator, evaluator | reference | Monitoring dashboard specification: State it reads (verified 2026-07-14) |
 | `docs/spec/dashboard/verifying-a-change.md` | operator, evaluator | reference | Monitoring dashboard specification: Verifying a change |
-| `docs/spec/review.md` | agent, contributor, evaluator | reference | As-built specification of the repository-review pipeline |
+| `docs/spec/review/README.md` | agent, contributor, evaluator | reference | Repository-review pipeline specification: index, environment, actors, directory table of contents |
+| `docs/spec/review/requirements.md` | agent, contributor, evaluator | reference | Repository-review pipeline specification: Requirements |
+| `docs/spec/review/components.md` | agent, contributor, evaluator | reference | Repository-review pipeline specification: Components |
+| `docs/spec/review/acceptance-checks.md` | agent, contributor, evaluator | reference | Repository-review pipeline specification: Acceptance checks |
 | `docs/spec/monitor.md` | operator, evaluator | reference | As-built specification of the Pipeline Monitor |
 
 #### Data handling
@@ -212,7 +215,7 @@ each with a `README.md` holding a directory-wide table of contents.
 
 Each file is the operating prompt a Script invocation hands to one headless
 agent for one pipeline stage; `docs/spec/implementation/README.md` and
-`docs/spec/review.md` are the specifications these prompts
+`docs/spec/review/README.md` are the specifications these prompts
 implement.
 
 | File | Audience | Kind | Purpose |
@@ -463,7 +466,7 @@ lookupable (`scripts/spec.sh show 14b`) the same way a document heading is.
 
 Three specifications each define their own requirements: the implementation
 specification (`docs/spec/implementation/`), the review specification
-(`docs/spec/review.md`) and the monitor specification (`docs/spec/monitor.md`).
+(`docs/spec/review/README.md`) and the monitor specification (`docs/spec/monitor.md`).
 Within each, a label is drawn from one of three sequences — requirements,
 acceptance checks, components — which may reuse each other's numbers: a
 label unique within its own sequence is not necessarily unique across all

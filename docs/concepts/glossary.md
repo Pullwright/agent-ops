@@ -372,7 +372,7 @@ request per run. Also called the Project Reviewer (token
 `project-reviewer`) in the implementation pipeline's own Actors list, and
 referred to informally as the repository reviewer.
 
-Authoritative: docs/spec/review.md § "Actors";
+Authoritative: docs/spec/review/README.md § "Actors";
 docs/spec/implementation/README.md § "Actors", item 9.
 
 <a id="script"></a>

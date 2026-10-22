@@ -17,7 +17,7 @@ see `docs/README.md`.
 Each component has an as-built requirements specification in `docs/spec/`:
 
 - `docs/spec/implementation/README.md` — implementation pipeline
-- `docs/spec/review.md` — repository-review pipeline
+- `docs/spec/review/README.md` — repository-review pipeline
 - `docs/spec/monitor.md` — Pipeline Monitor
 - `docs/spec/dashboard/README.md` — monitoring dashboard
 

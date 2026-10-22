@@ -5,7 +5,7 @@
 This is the as-built requirements specification for the **Pipeline Monitor**:
 a third pipeline, sibling to the implementation pipeline
 (`docs/spec/implementation/README.md`) and the repository-review pipeline
-(`docs/spec/review.md`), whose subject is not a repository but the
+(`docs/spec/review/README.md`), whose subject is not a repository but the
 pipelines themselves. Like them it describes the system as it exists — any
 change to this pipeline lands together with the edit that keeps this document
 accurate (see `AGENTS.md`, "As-built specifications").
@@ -22,7 +22,7 @@ the "straight-parse-else-last-fenced-```json```-block" result parser. This
 pipeline **reuses** those and must not reinvent them. References of the form
 "requirement N" mean requirement N of
 `docs/spec/implementation/README.md`; references of the form "R-n" mean
-requirement R-n of `docs/spec/review.md`. This document's own
+requirement R-n of `docs/spec/review/README.md`. This document's own
 requirements are numbered `Mn`.
 
 ## What it is
@@ -675,7 +675,7 @@ M17. <a id="mon-m17"></a>**A stage-health verdict, from day one.** The Monitor l
    stages do (`docs/spec/dashboard/README.md`). This closes for this pipeline, at
    its first release, the detection gap agent-ops#996 recorded for the
    repository-review pipeline — which that pipeline closes for itself, over
-   its own stream and into its own file, in `docs/spec/review.md`
+   its own stream and into its own file, in `docs/spec/review/README.md`
    R19.
 
 ### Logging and state

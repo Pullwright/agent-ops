@@ -45,7 +45,7 @@ heading, the Script gives you one JSON object:
 Use `review_date` as the review's date **throughout** — the branch and the PR
 title — and `report_dir` as the output folder, exactly as given: the Script has
 already resolved it (a GNU `date` format string, configurable per repository,
-`docs/spec/review.md` requirement R4a) — never derive a folder name of
+`docs/spec/review/README.md` requirement R4a) — never derive a folder name of
 your own from `review_date`. `report_dir` is the review folder itself — what
 the skill's Step 0, item 4 calls a review folder the caller names — never a
 directory to create a dated `project-review-…` folder inside, however its
@@ -54,7 +54,7 @@ the PR label exactly as given.
 
 `instructions` and `context` are optional and may be empty arrays: this
 installation's own per-repository configuration (`review_instructions`,
-`review_context`, `repo_context_file`; `docs/spec/review.md`, "Review
+`review_context`, `repo_context_file`; `docs/spec/review/README.md`, "Review
 instructions and context"). Where `instructions` is non-empty, weigh what it
 says throughout the review — what to prioritise, what to ignore, which
 standards apply to this repository specifically. Where `context` is
