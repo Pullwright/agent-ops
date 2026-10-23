@@ -254,7 +254,7 @@
       "label": "2j-i",
       "anchor": "impl-ac-2j-i",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 622,
+      "line": 630,
       "title": "The merge reconciles repositories correctly, and a rejected verdict"
     },
     "IMPL AC 2j-ii": {
@@ -262,7 +262,7 @@
       "label": "2j-ii",
       "anchor": "impl-ac-2j-ii",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 721,
+      "line": 729,
       "title": "The corroboration covers every pre-fetched band (requirement 3x,"
     },
     "IMPL AC 2j-iii": {
@@ -270,7 +270,7 @@
       "label": "2j-iii",
       "anchor": "impl-ac-2j-iii",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 759,
+      "line": 767,
       "title": "A `needs_refinement` block against an entry the fit ladder trimmed"
     },
     "IMPL AC 2f": {
@@ -1638,7 +1638,7 @@
       "label": "3y-ii",
       "anchor": "impl-c-3y-ii",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 595,
+      "line": 602,
       "title": "`scripts/gather-implementation-plan.sh` implementing requirement 3y's"
     },
     "IMPL C 3q": {
