@@ -54,7 +54,6 @@
     link to that KEY's entry in `docs/reference/reasons.md` (issue #2098),
     built by `reason_code_url` (`lib/reason-url.sh`, sourced by `lib/pager.sh`
     itself).
-    Enabler escalation).
 
     `pager_evaluate` runs every registered invariant once, from
     `scripts/publish-dashboard.sh`'s own `WITH_GITHUB` tick of the Publisher

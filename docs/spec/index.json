@@ -2110,7 +2110,7 @@
       "label": "53",
       "anchor": "impl-53",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 806,
+      "line": 805,
       "title": "Landing-refusal pre-fetch (issue #979)."
     },
     "IMPL 55": {
@@ -2118,7 +2118,7 @@
       "label": "55",
       "anchor": "impl-55",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 931,
+      "line": 930,
       "title": "Resource usage and budgets, self-measured (D14, issue #606)."
     },
     "IMPL 14": {
