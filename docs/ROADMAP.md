@@ -351,7 +351,7 @@ Poetic-Poems, with no pipeline code in it.
       swept (the Enabler's assignee, the entrypoint's git identity, the
       implementation-plan path, the Co-Ordinator's repo/source table); the
       audit is done —
-      [`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`](PHASE-1-POETIC-SPECIFICS-AUDIT.md)
+      [`docs/records/PHASE-1-POETIC-SPECIFICS-AUDIT.md`](records/PHASE-1-POETIC-SPECIFICS-AUDIT.md)
       inventories what is left across `prompts/`, `lib/`, `scripts/`,
       `deploy/` and `config.schema.json`, classified, with one follow-up
       issue per hit that needs a config key or a generic default (#585,
@@ -483,7 +483,7 @@ Poetic-Poems, with no pipeline code in it.
       from Phase 3 on 2026-10-03 for a prospective customer, and decomposed
       per the Dogfood rule: an audit of every place the pipeline assumes the
       Claude Code CLI, classified for the seam, which is
-      [`docs/PROVIDER-SEAM-AUDIT.md`](PROVIDER-SEAM-AUDIT.md) and names the
+      [`docs/records/PROVIDER-SEAM-AUDIT.md`](records/PROVIDER-SEAM-AUDIT.md) and names the
       substrate contract any agentic CLI must satisfy (#2130, done); a
       `providers` block in `config.json` naming each provider's substrate
       and credential, under which a model id qualified with a configured
