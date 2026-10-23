@@ -600,16 +600,16 @@ Poetic-Poems, with no pipeline code in it.
       block in `config.json` (provider, URL resolution, credential shape,
       or `none`), so an adopting repository declares its own arrangement
       instead of inheriting Poetic's. *[fleet]*
-- [ ] Re-home agent-ops in the Pullwright organisation by transfer (D8 as
-      amended; the name and org exist — D13). The repository — both
-      pipelines, the dashboard, and the review skill
+- [x] Re-home agent-ops in the Pullwright organisation by transfer (D8 as
+      amended; the name and org exist — D13; completed 2026-09-07 #912). The
+      repository — both pipelines, the dashboard, and the review skill
       `.claude/skills/project-review/` that `review-cycle.sh` stages into
       each clone at runtime, which stops being a pinned copy of a personal
-      authoring repo and becomes product source (D7) — becomes the product
+      authoring repo and becomes product source (D7) — became the product
       repository in place, and its `merge_autonomy` level, Approver and D18
-      evidence move with it: Principle 8 met by construction rather than by
-      re-provisioning. Prerequisites, order and owner acts:
-      `docs/PULLWRIGHT-REHOMING.md`, tracked by #912. *[interactive]*
+      evidence moved with it: Principle 8 met by construction. Prerequisites,
+      order and owner acts: `docs/records/PULLWRIGHT-REHOMING.md`, tracked
+      by #912. *[interactive]*
 - [ ] Extract Poetic's consumer configuration and deployment into a new
       repository in Poetic-Poems (a fresh name — the transfer retires the
       old one), leaving no pipeline code in it, and provision it per

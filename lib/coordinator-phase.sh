@@ -1303,7 +1303,7 @@ rev_out="$cycle_dir/reviewer.out"
 # across a push that changed no content costs nothing; the Approver's verdict
 # is a GitHub artefact, and every repository this pipeline may act on mandates
 # `dismiss_stale_reviews_on_push: true` (D18 Stage 3,
-# `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a), so that push dismissed the
+# `docs/records/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a), so that push dismissed the
 # standing approval whatever its patch-id said. `run_approver_stage` below is
 # the only thing that mints a replacement, and `_landing_retry_sweep_repo`'s
 # own recovery cannot reach a pull request with no standing approval left to

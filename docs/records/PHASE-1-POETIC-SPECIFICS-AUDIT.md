@@ -1,5 +1,7 @@
 # Phase 1 Poetic-specifics audit
 
+**Status: filed 2026-08-28.** Audit of Poetic-specific hardcoding in agent-ops; records the state as of that date. Each finding linked a follow-up issue.
+
 This is the inventory `docs/ROADMAP.md` Phase 1's first checklist item asks
 for: every place `prompts/`, `lib/`, `scripts/`, `deploy/` and
 `config.schema.json` assume Poetic-Poems' own arrangement — a repository

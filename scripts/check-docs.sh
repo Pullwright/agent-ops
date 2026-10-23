@@ -170,9 +170,7 @@ in_project_review_subdir() {
 is_frozen_record() {
   case "$1" in
     docs/reviews/*) return 0 ;;
-    docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md|docs/VOCABULARY-SWEEP-679-AUDIT.md) return 0 ;;
-    docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md|docs/PULLWRIGHT-REHOMING.md) return 0 ;;
-    docs/PROVIDER-SEAM-AUDIT.md) return 0 ;;
+    docs/records/*) return 0 ;;
     CHANGELOG.md) return 0 ;;
     *) return 1 ;;
   esac
