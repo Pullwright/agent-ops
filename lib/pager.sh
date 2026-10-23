@@ -127,6 +127,12 @@ declare -gA PAGER_MIN_FIRING_MINUTES_OVERRIDE=()
 declare -ga PAGER_KEYS=()
 
 # pager_register KEY EVAL_FN REMEDY_CLASS REMEDY_ARG [MIN_FIRING_MINUTES_OVERRIDE]
+# KEY must match ^[A-Za-z0-9-]+$, enforced here rather than left to the
+# reader on the other end: lib/pager-invariants.sh's `_pager_page_key`
+# extracts a filed page's own key back out of its `ref: pager:<key>` footer
+# with that exact character class, so a key outside it would register and
+# file pages fine but extract truncated, never matching this registry again
+# (agent-ops#2600).
 # EVAL_FN is a shell function, `EVAL_FN FLEET_NODES_JSON UNION_LOG_FILE`,
 # called with the union log as EVAL_FN's own stdin is *not* used — it takes
 # the path so a pure jq reader can `-R -n` it directly without this framework
@@ -166,6 +172,9 @@ pager_register() {
     *) printf 'pager_register: unknown remedy class: %s\n' "$remedy_class" >&2; return 1 ;;
   esac
   [[ -n "$key" && -n "$eval_fn" ]] || { printf 'pager_register: key and eval_fn are required\n' >&2; return 1; }
+  [[ "$key" =~ ^[A-Za-z0-9-]+$ ]] \
+    || { printf 'pager_register: key %q must match ^[A-Za-z0-9-]+$ — lib/pager-invariants.sh'\''s _pager_page_key extracts a page'\''s own key from its "ref: pager:<key>" footer with that exact character class, and a key outside it would register but extract truncated, never matching this registry again (agent-ops#2600)\n' "$key" >&2
+       return 1; }
   PAGER_MIN_FIRING_MINUTES_OVERRIDE["$key"]="$min_firing_override"
   local k seen=0
   for k in "${PAGER_KEYS[@]}"; do [[ "$k" == "$key" ]] && { seen=1; break; }; done
