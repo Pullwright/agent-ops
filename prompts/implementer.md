@@ -193,14 +193,23 @@ of the "branch and PR already exist" instructions below apply to it.
   it carries — against the diff the conflict resolution actually produced. A
   mechanical rebase or merge that changed no described behaviour needs no
   edit: this is re-verify, and fix only if wrong, not a mandate to touch the
-  body every time. But where reconciling the conflict forced a materially
-  different approach than the body states — #2453's case, where #2478's
-  append-only re-split convention landing mid-flight forced a different fix
-  than the body described — edit the body (`gh pr edit --body-file`) so the
-  prose, and any `td-record` block's `summary`/`resolution` fields, describe
-  what the diff now actually does. This corrects what the body already
-  claims; it is not licence to add a `Fixes #…`/`Closes #…` or a new
-  `td-record` block — the "Do not close the loop" rule above still applies.
+  body every time. **That carve-out has one exception:** a body paragraph
+  that explicitly describes this diff's relationship to another named
+  in-flight PR (e.g. "this is expected to produce a conflict with whichever
+  of the two PRs merges second") stays owed an edit once that relationship
+  resolves, even when nothing else about the approach changed — strike it or
+  retense it so its claim matches the diff's actual, resolved relationship
+  to the other PR. Leaving one in place is how PR #2550's own note about PR
+  #2526 landed on `main` as a permanent misstatement once #2526 merged first
+  (issue #2562). Separately, where reconciling the conflict forced a
+  materially different approach than the body states — #2453's case, where
+  #2478's append-only re-split convention landing mid-flight forced a
+  different fix than the body described — edit the body (`gh pr edit
+  --body-file`) so the prose, and any `td-record` block's
+  `summary`/`resolution` fields, describe what the diff now actually does.
+  Either edit corrects what the body already claims; neither is licence to
+  add a `Fixes #…`/`Closes #…` or a new `td-record` block — the "Do not
+  close the loop" rule above still applies.
 - **Verify like CI does, then confirm the conflict is gone** (Procedure steps 3–4
   and 6). Run the repo's lint/typecheck/format/test/build — a rebase can
   reintroduce a break a clean tree had hidden. Then `gh pr view --json

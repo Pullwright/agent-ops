@@ -926,25 +926,37 @@
     may read one back to decide anything, exactly as requirement 6c's
     inertness invariant states.
 26c. <a id="impl-26c"></a>**Re-verifies the PR description against the diff when resolving a
-    `merge-conflicts` conflict changes the approach (issue #2486; PR #2453's
-    own case).** Where reconciling the conflict is a mechanical rebase or
-    merge that touches no described behaviour, the existing body still
-    describes the diff and needs no edit. Where resolving it forces a
-    materially different approach than the body — and any `td-record` block
-    it carries — already states (PR #2453's case: #2478's append-only
-    re-split convention landing mid-flight forced a different fix than the
-    body described), the Implementer re-reads the current body (`gh pr view
-    --json body`), compares it against the resulting diff, and edits the
-    body (`gh pr edit --body-file`) so the prose, and any `td-record`
-    block's `summary`/`resolution` fields, still describe what the diff
-    actually does — before reporting `"status": "complete"`. This is a
-    correction of a claim the body already makes, never an occasion to add
-    one: the "Do not close the loop on the originating item" rule this
-    source already carries (no `Fixes #…`/`Closes #…`, no new `td-record`
-    block) is unaffected and still binds. Because `main` squash-merges with
-    `squash_merge_commit_message: PR_BODY` (requirement 25), a body left
-    stale here becomes a permanent misstatement in `main`'s own history, not
-    merely a stale comment on GitHub.
+    `merge-conflicts` conflict changes the approach, or when it resolves a
+    cross-PR sequencing note the body still carries (issues #2486, #2562;
+    PR #2453's own case, and #2550's).** Where reconciling the conflict is a
+    mechanical rebase or merge that touches no described behaviour, the
+    existing body still describes the diff and needs no edit — except for
+    one case this carve-out does not reach: a body paragraph that explicitly
+    describes this diff's relationship to another named in-flight PR (PR
+    #2550's "this is expected to produce a conflict with whichever of the
+    two PRs merges second," naming PR #2526). Once that relationship
+    resolves — the other PR merges and this branch rebases, or the
+    reverse — such a paragraph keeps asserting a stale present-tense
+    relationship regardless of whether the round changed any approach, and
+    the Implementer must strike or retense it so its claim matches the
+    diff's actual, resolved relationship to the other PR. Where resolving
+    the conflict
+    separately forces a materially different approach than the body — and
+    any `td-record` block it carries — already states (PR #2453's case:
+    #2478's append-only re-split convention landing mid-flight forced a
+    different fix than the body described), the Implementer re-reads the
+    current body (`gh pr view --json body`), compares it against the
+    resulting diff, and edits the body (`gh pr edit --body-file`) so the
+    prose, and any `td-record` block's `summary`/`resolution` fields, still
+    describe what the diff actually does — before reporting `"status":
+    "complete"`. Either edit is a correction of a claim the body already
+    makes, never an occasion to add one: the "Do not close the loop on the
+    originating item" rule this source already carries (no
+    `Fixes #…`/`Closes #…`, no new `td-record` block) is unaffected and
+    still binds. Because `main` squash-merges with `squash_merge_commit_message:
+    PR_BODY` (requirement 25), a body left stale here becomes a permanent
+    misstatement in `main`'s own history, not merely a stale comment on
+    GitHub.
 26d. <a id="impl-26d"></a>**Re-verifies the PR description against the diff when a
     `review-feedback`, `landing-refusals`, `dequeued` or `abandoned-drafts`
     round changes the approach (issues #2496, #2512, #2546).** The same
