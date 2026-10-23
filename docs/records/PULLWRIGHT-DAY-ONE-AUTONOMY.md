@@ -1,6 +1,6 @@
 # Pullwright day-one autonomy — provisioning checklist
 
-**Status: completed on 2026-09-07 (#912); kept as the record of the provisioning checklist that guided Pullwright's setup.** The Pullwright product repository exists and has been provisioned at agent-ops's autonomy level following this checklist. This document is a historical record of that provisioning process.
+**Status: filed 2026-08-26 for #581; still in force.** The Pullwright product repository reached agent-ops's autonomy level by transfer (`docs/records/PULLWRIGHT-REHOMING.md`, #912), not by executing this checklist. This checklist remains the live provisioning instruction for the consumer repository that Phase 2's extraction step will create (`docs/ROADMAP.md`'s unticked extraction bullet; `docs/CONSUMER-EXTRACTION-PLAN.md` §Provisioning).
 
 Design material this checklist draws on rather than re-derives:
 `docs/reviews/2026-08-14-autonomy-investigation.md` §5.2 ("The Approver

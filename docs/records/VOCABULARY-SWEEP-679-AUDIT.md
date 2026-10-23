@@ -1,6 +1,6 @@
 # Vocabulary sweep audit (#679)
 
-**Status: filed 2026-08-28.** Audit of "human" terminology across agent-ops; records the state as of that date. Band A patterns were reworded to separate configuration from narrative, Band B confirmed as owner-only, Band C left as historical record.
+**Status: filed 2026-08-24.** Audit of "human" terminology across agent-ops; records the state as of that date. Band A patterns were reworded to separate configuration from narrative, Band B confirmed as owner-only, Band C left as historical record.
 
 This is the inventory #679's own "Done when" criterion 1 asks for: every one
 of the ~2,536 lines across agent-ops mentioning "human", read and placed in

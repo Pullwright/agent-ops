@@ -532,12 +532,11 @@ from day one, not at the product default — Principle 8
 (`docs/ROADMAP.md`) states this directly: "`docs/records/PULLWRIGHT-DAY-ONE-AUTONOMY.md`
 is the provisioning checklist this rule cashes out to for any repository
 created after the transfer — **the consumer repository first**." That
-checklist's own status header predates the 2026-08-28 D8 amendment and
-still describes a hypothetical product repository in Pullwright; correcting
-it is out of scope here (per the issue specification), but its checklist
-content — the default-branch ruleset matching agent-ops's own, extending
-the Pullwright Approver App installation to cover the new repository, and
-the `repos[]` entry mirroring agent-ops's own current one — applies
+checklist's own status header records that it is filed and still in
+force, not yet executed; its checklist content — the default-branch
+ruleset matching agent-ops's own, extending the Pullwright Approver App
+installation to cover the new repository, and the `repos[]` entry
+mirroring agent-ops's own current one — applies
 directly to the consumer repository created by this plan. This plan does
 not restate that checklist; it is referenced as the constraint governing
 step 2 of T0 ("populate it with... its own validation workflow") and the
