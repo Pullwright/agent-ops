@@ -137,6 +137,16 @@ if pager_register k1 stub_eval nonsense-class "" 2>/dev/null; then
 else
   printf 'ok   - an unknown remedy class is refused\n'
 fi
+# agent-ops#2600: a key outside ^[A-Za-z0-9-]+$ would register fine but
+# lib/pager-invariants.sh's _pager_page_key extraction truncates it at the
+# first disallowed character, so it can never match this registry again.
+# Refused loudly at registration instead.
+if pager_register foo_bar stub_eval pipeline-act "" 2>/dev/null; then
+  printf 'FAIL - a key outside ^[A-Za-z0-9-]+$ is refused\n'; failures=$(( failures + 1 ))
+else
+  printf 'ok   - a key outside ^[A-Za-z0-9-]+$ is refused\n'
+fi
+assert_eq "  ... and it is not added to the registry" "" "$(pager_registered_keys | tr '\n' ' ' | sed 's/ $//')"
 pager_register k1 stub_eval pipeline-act stub_remedy
 pager_register k2 stub_eval owner-only "decide this"
 assert_eq "registered keys, in registration order" "k1 k2" "$(pager_registered_keys | tr '\n' ' ' | sed 's/ $//')"
