@@ -32,7 +32,13 @@
 # `{"number": 42, "reason": "assigned" | "blocked-label" | "pager" |
 # "blocked-by: <ref>"}`, `null` rather than `[]` when the deterministic
 # filter did not run to completion — see scripts/gather-issues.sh's own
-# header for why that distinction matters. An issue the label-scoped listing
+# header for why that distinction matters. An issue dropped for one of the
+# first three reasons whose own thread *also* names a still-open
+# `Blocked-by:` reference contributes a second entry under the same number,
+# one `reason` each (issue #2607, mirroring scripts/gather-issues.sh's own
+# fix) — `issue_exclude_reason`'s own precedence decides which single one of
+# the first three is reported, never whether the fourth, independently-
+# checked ground applies too. An issue the label-scoped listing
 # itself never returned (it never carried `pw::type:tech-debt`) is not this
 # script's own candidacy drop to report, and is simply absent from both
 # arrays, the same way a pull request is absent from scripts/gather-issues.sh's
@@ -200,8 +206,11 @@ candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
 # was never a tech-debt candidate to begin with, the same "never a candidate"
 # reasoning that already keeps a pull request off this array — tagged with the
 # assigned/blocked-label/pager reason `issue_exclude_reason` reports. The
-# fourth, structured reason (`blocked-by: <ref>`) is appended below, once each
-# surviving candidate's whole thread has been checked.
+# fourth, structured reason (`blocked-by: <ref>`) is appended below, both for
+# a surviving candidate whose whole thread names an unresolved reference
+# (the loop further down) and, as a second entry under the same number, for
+# one of these deterministically-dropped issues whose thread does too (issue
+# #2607, just below).
 excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
   [.[]
    | select(has("pull_request") | not)
@@ -210,6 +219,22 @@ excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
    | {number: .number, reason: issue_exclude_reason}]
   | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
   || degrade "issues excluded-filter failed"
+
+# Issue #2607: `issue_exclude_reason`'s single-reason precedence (assigned >
+# blocked-label > pager) reports only the highest-precedence ground above,
+# even when a dropped issue's own thread *also* names a still-open
+# `Blocked-by:` reference — which would otherwise never earn the
+# `"blocked-by: "`-prefixed entry requirement 35f's own
+# `compute_enabler_eligible_set` (lib/eligibility.sh) subtraction matches on,
+# leaving it Enabler-eligible across every recheck window regardless.
+# `issue_prefetch_blocked_by_additions` (lib/issue-prefetch.sh, shared with
+# scripts/gather-issues.sh) re-tests just the issues already excluded above,
+# and reports a second entry alongside — never replacing — the one already
+# there.
+blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded")" \
+  || degrade "blocked-by additions check failed"
+excluded="$(jq -nc 'input as $a | input as $b | $a + $b' <<<"$excluded"$'\n'"$blocked_by_additions")" \
+  || degrade "excluded merge with blocked-by additions failed"
 
 out='[]'
 while IFS= read -r candidate; do

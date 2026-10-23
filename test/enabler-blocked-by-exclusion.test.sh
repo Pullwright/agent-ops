@@ -186,6 +186,21 @@ assert_eq "the still-blocked candidate is dropped" "0" \
 assert_eq "  ... while the unrelated eligible candidate in the same cycle survives" "1" \
   "$(jq '[.eligible[] | select(.item == "7")] | length' <<<"$mixed_result")"
 
+# --- issue #2607: a candidate reported excluded under BOTH its own ---------
+# --- deterministic reason (assigned/blocked-label/pager) AND a co-occurring
+# --- "blocked-by: " entry — the shape scripts/gather-issues.sh and ---------
+# --- scripts/gather-tech-debt.sh now produce for exactly this case — is ----
+# --- still dropped, because this filter only ever looks for an entry whose
+# --- own `reason` starts "blocked-by: ", regardless of what else that ------
+# --- candidate's own number is also reported under in the same array. ------
+co_occur_ordered='[{"slug": "o/r",
+  "issues_excluded": [{"number": 50, "reason": "assigned"},
+                       {"number": 50, "reason": "blocked-by: #51"}]}]'
+co_occur_eligible='[{"repo": "o/r", "item": "50", "reason": "threshold"}]'
+co_occur_result="$(run_open_blocked_by_block "$co_occur_ordered" "$co_occur_eligible")"
+assert_eq "a candidate carrying both its deterministic reason and a blocked-by one is still dropped (issue #2607)" "0" \
+  "$(jq '[.eligible[] | select(.item == "50")] | length' <<<"$co_occur_result")"
+
 # --- issues_excluded and tech_debt_excluded are both consulted, for the ---
 # --- same repo, in the same cycle ------------------------------------------
 both_ordered='[{"slug": "o/r",

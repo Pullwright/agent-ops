@@ -23,7 +23,13 @@
 #     `"blocked-label"`, `"pager"`, `"blocked-by: <ref>"` — this is the record
 #     `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler filter
 #     (requirement 35f) reads, so a drop that left no trace here would make
-#     that filter unable to fire on its own target class again.
+#     that filter unable to fire on its own target class again. An issue
+#     dropped under `issue_exclude_reason`'s own single-reason precedence
+#     whose own thread *also* names a still-open `Blocked-by:` reference
+#     contributes a second entry under the same number, one `reason` each
+#     (issue #2607) — that second ground is independently checked, not a
+#     fourth arm of the same precedence, so the one already reported must
+#     never hide it.
 #   - **Each candidate carries the whole issue thread verbatim** — `body` and
 #     every comment — plus `source`, `ref` (the bare issue number, as a
 #     string), `number`, `url`, `title`, `labels`, `author`, `created_at` and
@@ -125,8 +131,12 @@ export PATH="$tmp_dir/bin:$PATH"
 # `issue_prefetch_open_issues` returns every open issue — agent-ops#1085)
 # still excludes it; #25 carries both `pw::type:tech-debt` and `pw::pager`,
 # unassigned and not `Blocked`-labelled, proving the pager drop fires here
-# too (agent-ops#2564). One page (`hasNextPage: false`) is enough for this
-# fixture's six issues.
+# too (agent-ops#2564); #26 is assigned (the same single-reason drop #21
+# gets) and *also* names a still-open `Blocked-by: #27` in its own body,
+# proving issue #2607's fix: a deterministically-dropped issue's own thread
+# is checked for a co-occurring Blocked-by reference too, reported as a
+# second `excluded` entry rather than the one reason hiding the other. One
+# page (`hasNextPage: false`) is enough for this fixture's seven issues.
 export STUB_ISSUES="$tmp_dir/issues.json"
 export STUB_REFS_DIR="$tmp_dir/refs"
 mkdir -p "$STUB_REFS_DIR"
@@ -184,10 +194,21 @@ cat >"$STUB_ISSUES" <<'EOF'
    "assignees": {"totalCount": 0},
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
-   "body": "Labelled pw::pager, so not a candidate (agent-ops#2564).", "comments": {"nodes": []}}
+   "body": "Labelled pw::pager, so not a candidate (agent-ops#2564).", "comments": {"nodes": []}},
+  {"number": 26, "url": "https://github.com/o/r/issues/26", "title": "Assigned debt, and also Blocked-by",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::type:tech-debt"}]},
+   "assignees": {"totalCount": 1},
+   "issueFieldValues": {"nodes": []},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Assigned, so dropped for that reason alone under issue_exclude_reason's own precedence.\n\nBlocked-by: #27",
+   "comments": {"nodes": []}}
 ]}}}}
 EOF
 cat >"$STUB_REFS_DIR/24.json" <<'EOF'
+{"state": "open"}
+EOF
+cat >"$STUB_REFS_DIR/27.json" <<'EOF'
 {"state": "open"}
 EOF
 
@@ -209,23 +230,28 @@ assert_eq "an issue carrying no pw::type:tech-debt label at all is never a candi
   "false" "$(jq 'any(.[]; .number == 18)' <<<"$out")"
 assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
   "false" "$(jq 'any(.[]; .number == 25)' <<<"$out")"
+assert_eq "the assigned-and-also-Blocked-by issue is dropped too" \
+  "false" "$(jq 'any(.[]; .number == 26)' <<<"$out")"
 assert_eq "nothing on stderr on the success path" "" "$(cat "$tmp_dir/err")"
 
 # --- The exclusion report (agent-ops#2603) ---
-assert_eq "exactly the four dropped-but-labelled issues are reported excluded" \
-  "4" "$(jq 'length' <<<"$excl")"
-assert_eq "the assigned issue is reported, reason assigned" \
-  "assigned" "$(jq -r '.[] | select(.number == 21) | .reason' <<<"$excl")"
+assert_eq "exactly the four single-reason drops, plus #26's own two, are reported excluded" \
+  "6" "$(jq 'length' <<<"$excl")"
+assert_eq "the assigned issue (no co-occurring Blocked-by) is reported once, reason assigned only (issue #2607: unchanged single-reason behavior)" \
+  '[{"number":21,"reason":"assigned"}]' "$(jq -c '[.[] | select(.number == 21)]' <<<"$excl")"
 assert_eq "the Blocked-labelled issue is reported, reason blocked-label" \
   "blocked-label" "$(jq -r '.[] | select(.number == 22) | .reason' <<<"$excl")"
 assert_eq "the unresolved Blocked-by issue is reported, reason naming the reference" \
   "blocked-by: #24" "$(jq -r '.[] | select(.number == 23) | .reason' <<<"$excl")"
 assert_eq "the pw::pager-labelled issue is reported, reason pager" \
   "pager" "$(jq -r '.[] | select(.number == 25) | .reason' <<<"$excl")"
+assert_eq "issue #2607: the assigned issue that ALSO names an open Blocked-by reports both reasons" \
+  '[{"number":26,"reason":"assigned"},{"number":26,"reason":"blocked-by: #27"}]' \
+  "$(jq -c '[.[] | select(.number == 26)] | sort_by(.reason)' <<<"$excl")"
 assert_eq "the un-labelled issue #18 is never reported — it was never a candidate" \
   "false" "$(jq 'any(.[]; .number == 18)' <<<"$excl")"
 assert_eq "excluded is sorted by issue number ascending too" \
-  "21 22 23 25" "$(jq -r '[.[].number] | join(" ")' <<<"$excl")"
+  "21 22 23 25 26 26" "$(jq -r '[.[].number] | join(" ")' <<<"$excl")"
 
 # --- Sorted by issue number ascending ---
 assert_eq "sorted by issue number ascending, oldest first" \

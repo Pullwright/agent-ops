@@ -42,6 +42,16 @@
 #     request is dropped by both scripts without ever being reported, since
 #     it was never a candidate issue to begin with.
 #
+#     This single-reason precedence only ever decides which *one* of the
+#     three reportable grounds a caller's own `excluded` entry names — it
+#     never decides whether a fourth, independent ground (a still-open
+#     `Blocked-by:` reference, requirement 34j) also applies to the same
+#     issue, since that check runs as its own live read, not as a fourth arm
+#     of this `elif` chain. `issue_prefetch_blocked_by_additions` below is
+#     what reports that fourth ground too, alongside whichever of these
+#     three `issue_exclude_reason` already reported, rather than the issue
+#     needing to win the precedence to be checked at all (issue #2607).
+#
 # The `pw::pager` drop (issue #2564) keeps a Pager tracking issue — filed
 # unassigned by the `pipeline-act`/`config-lever` remedy classes
 # (lib/pager.sh) as a record, never a work item — out of ordinary Coordinator
@@ -96,6 +106,55 @@ issue_blocked_by_ref() {
     fi
   done < <(jq -r '.[]' <<<"$dep_refs")
   return 0
+}
+
+# issue_prefetch_blocked_by_additions SLUG ISSUES_RAW_JSON DET_EXCLUDED_JSON
+# For every distinct issue number in DET_EXCLUDED_JSON — the
+# `{number, reason}` entries a caller has already decided to report for
+# `issue_exclude_reason`'s own assigned/blocked-label/pager drop — test that
+# issue's own thread (looked up by number in ISSUES_RAW_JSON, which already
+# carries it; no further listing call) for a still-open `Blocked-by:`
+# reference via `issue_blocked_by_ref` above, and print one additional
+# `{number, reason: "blocked-by: <ref>"}` entry per hit, for the caller to
+# add alongside — never in place of — the entry it already has.
+#
+# `issue_exclude_reason`'s single-reason precedence (assigned >
+# blocked-label > pager) means a candidate scripts/gather-issues.sh or
+# scripts/gather-tech-debt.sh already dropped for being, say, assigned or
+# `blocked`-labelled is reported under that one reason alone, even when its
+# own thread also names a still-open `Blocked-by:` reference — the surviving-
+# candidate loop that runs `issue_blocked_by_ref` for real never reaches it,
+# because it was never a candidate to begin with. Left there, such an issue
+# never earns the `"blocked-by: "`-prefixed entry requirement 35f's own
+# `compute_enabler_eligible_set` (lib/eligibility.sh) subtraction matches on,
+# and stays Enabler-eligible across every recheck window for as long as the
+# dependency stands (issue #2607, noticed while approving #2603). This
+# function is the fix: called once, after the caller has already assembled
+# its own deterministic `excluded`/`tech_debt_excluded` array, it re-tests
+# only that narrow set — never every open issue, and never a candidate that
+# already survived to the ordinary live check.
+#
+# One `gh` read per still-named reference, the same cost `issue_blocked_by_ref`
+# already charges from the surviving-candidate loop below: it short-circuits
+# on `dependency_refs` finding no `Blocked-by:` line before ever calling
+# `gh`, so an issue dropped for an ordinary reason that names no such line
+# costs nothing extra here. Prints `[]` when DET_EXCLUDED_JSON is empty or
+# none of its issues name an open reference.
+issue_prefetch_blocked_by_additions() {
+  local slug="$1" issues_raw="$2" det_excluded="$3"
+  local out='[]' n thread_text ref_display
+  while IFS= read -r n; do
+    [[ -n "$n" ]] || continue
+    thread_text="$(jq -r --argjson n "$n" '
+      (.[] | select(.number == $n)) as $i
+      | ($i.body // "") + "\n" + (([$i.comments[]?.body]) | join("\n"))
+      ' <<<"$issues_raw" 2>/dev/null)" || continue
+    ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+    [[ -n "$ref_display" ]] || continue
+    out="$(jq -c --argjson n "$n" --arg ref "$ref_display" \
+      '. + [{number: $n, reason: ("blocked-by: " + $ref)}]' <<<"$out" 2>/dev/null)" || out='[]'
+  done < <(jq -r '[.[].number] | unique[]' <<<"$det_excluded" 2>/dev/null)
+  printf '%s' "$out"
 }
 
 # How many 100-issue pages `issue_prefetch_open_issues` will walk before

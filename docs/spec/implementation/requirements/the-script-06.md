@@ -589,10 +589,16 @@
    differently is the fingerprint failure requirement 3b exists to prevent),
    `labels`, `author`, `created_at`, `updated_at`, the `body` verbatim, and
    `comments` (author, timestamp, body — verbatim, oldest first). Each
-   `issues_excluded` entry is `{number, reason}` — one per issue the
-   deterministic filter below dropped, `reason` one of `"assigned"`,
-   `"blocked-label"`, `"pager"`, or `"blocked-by: <ref>"` — see "The
-   deterministic drop is reported, not lost" below.
+   `issues_excluded` entry is `{number, reason}` — one per drop the
+   deterministic filter below applied, `reason` one of `"assigned"`,
+   `"blocked-label"`, `"pager"`, or `"blocked-by: <ref>"`; an issue dropped
+   for one of the first three reasons whose own thread *also* names a
+   still-open `Blocked-by:` reference contributes a second entry under the
+   same number, one `reason` each (issue #2607) — `issue_exclude_reason`'s
+   own assigned/blocked-label/pager precedence decides which single one of
+   those three is reported, never whether the independently-checked fourth
+   ground applies too — see "The deterministic drop is reported, not lost"
+   below.
 
    - **Why this source is pre-fetched at all.** It used to be the
      Co-Ordinator's own read, and that contract failed closed: cycle
@@ -652,7 +658,9 @@
      so it logs nothing), when that repo's exclusion set changes from the one
      most recently logged, carrying the same `{number, reason}` pairs and a
      `count`, so the cycle log and the dashboard's log tail can both show "N
-     issues excluded, and why" without a reader re-deriving the filter. The
+     issues excluded, and why" without a reader re-deriving the filter — "N"
+     counts entries, so an issue excluded under two reasons (above) counts
+     twice. The
      Co-Ordinator receives
      the same array as `issues_excluded` on its own runtime input
      (prompts/coordinator.md) — informational only, never a candidate list:
@@ -916,9 +924,13 @@
    no still-open `Blocked-by:` reference (requirement 34j), shared between
    the two gatherers via
    `lib/issue-prefetch.sh` rather than re-derived. Each `tech_debt_excluded`
-   entry is `{number, reason}` — one per labelled issue the four drops above
-   removed, `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
-   `"blocked-by: <ref>"` — scoped to issues that actually carried the
+   entry is `{number, reason}` — one per drop the four above applied,
+   `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
+   `"blocked-by: <ref>"`; a labelled issue dropped for one of the first
+   three whose own thread *also* names a still-open `Blocked-by:` reference
+   contributes a second entry under the same number, the identical
+   co-occurrence requirement 3j's own `issues_excluded` reports (issue
+   #2607) — scoped to issues that actually carried the
    `pw::type:tech-debt` label (an issue never carrying it was never a
    `tech_debt` candidate to begin with, the same "never a candidate"
    reasoning requirement 3j's own `issues_excluded` already applies to the
