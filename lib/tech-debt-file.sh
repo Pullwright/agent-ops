@@ -243,6 +243,14 @@ _techdebt_extract_pr_url() {
 # #2573/#2574 described the same fault against the same PR in unrelated
 # words). Prints nothing on no match.
 #
+# This same-PR key alone is deliberate, not a narrower "same PR, same
+# gate/file" match: two genuinely distinct findings an Approver raises
+# against the same pull request across different Reviewer rounds still
+# collapse into one issue's comment thread rather than two, an accepted,
+# rare tradeoff rather than a defect (agent-ops#2590) — it keeps this
+# function symmetric with techdebt_file_issue's own unconditional
+# per-pull-request dedup.
+#
 # The comparison is boundary-guarded on its right, never a bare substring
 # test: `.../pull/25` is a plain substring of `.../pull/2567`, so a bare
 # test would dedup a filing raised against #25 into an issue naming only

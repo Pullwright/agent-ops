@@ -744,7 +744,13 @@
       `#issuecomment-…`) still matches, being the same pull request. A
       `PROVENANCE` naming no PR at all (the Enabler's own
       wording, which names an item reference instead) never matches by this
-      path, leaving its dedup exactly as before. That search states its own
+      path, leaving its dedup exactly as before. The same-PR key alone is
+      deliberate: two genuinely distinct findings an Approver raises
+      against the same pull request across different Reviewer rounds still
+      collapse into one issue's comment thread rather than two, an
+      accepted, rare tradeoff rather than a defect (agent-ops#2590) that
+      keeps this dedup symmetric with `techdebt_file_issue`'s own
+      unconditional per-pull-request dedup. That search states its own
       page cap —
       `--limit TECHDEBT_DEDUP_LIST_LIMIT` (default 500), never `gh issue
       list`'s undeclared default of 30 — for the reason every other listing in
