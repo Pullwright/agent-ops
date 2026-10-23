@@ -2734,7 +2734,7 @@
       "label": "26d",
       "anchor": "impl-26d",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 948,
+      "line": 960,
       "title": "Re-verifies the PR description against the diff when a"
     },
     "IMPL 27": {
@@ -2742,7 +2742,7 @@
       "label": "27",
       "anchor": "impl-27",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 980,
+      "line": 992,
       "title": "Ends with a single JSON object as its entire final message:"
     },
     "IMPL 33": {
