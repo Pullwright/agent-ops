@@ -1067,7 +1067,14 @@
     own reason winning a clash with a stale cached one for the same number,
     and a `null` prior with no fresh drop staying `null` rather than a false
     `[]` — without ever dropping a prior entry whose own issue is no longer a
-    candidate; and the cached-branch wiring in `gather_ordered_repos`
+    candidate, and without that number-keyed clash rule flattening a prior
+    number that carries both a deterministic reason and a co-occurring
+    `"blocked-by: <ref>"` one (requirement 3j's own two-entries-per-number
+    shape, issue #2607) down to the first of the two: the fresh reason still
+    overrides the stale deterministic one, while the `blocked-by: ` entry —
+    the only one requirement 35f's `compute_enabler_eligible_set` subtraction
+    matches on — is carried through alongside it; and the cached-branch
+    wiring in `gather_ordered_repos`
     (lib/candidate-gather.sh) calls it only when this cycle's own
     `gather_source_state` sample reports `ok == true`, otherwise leaving a
     replayed band unfiltered by this reapplication. `scripts/lint-shell.sh`

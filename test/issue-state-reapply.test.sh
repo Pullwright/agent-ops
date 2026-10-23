@@ -14,7 +14,9 @@
 #      transform: given an `issues` band, a `gather_source_state` issues
 #      sample and a prior `issues_excluded_raw`, it drops every candidate the
 #      sample now reports assigned or `blocked`-labelled, folding each fresh
-#      drop into the prior exclusion set.
+#      drop into the prior exclusion set — without flattening a prior number
+#      that carries both a deterministic reason and a co-occurring
+#      `blocked-by: ` one (issue #2607) down to the first of the two.
 #   2. The cached-branch issues-source block in `gather_ordered_repos`
 #      (lib/candidate-gather.sh) — the wiring that calls it only when this
 #      cycle's own source-state sample succeeded (`state.ok == true`),
@@ -99,6 +101,30 @@ assert_eq "the fresh drop still removes the candidate" \
 out_keep_prior="$(issue_state_reapply '[]' '[]' '[{"number":55,"reason":"assigned"}]')"
 assert_eq "a prior exclusion survives when its own issue is no longer a candidate" \
   '[{"number":55,"reason":"assigned"}]' "$(jq -c '.excluded' <<<"$out_keep_prior")"
+
+# --- Issue #2607: a co-occurring `blocked-by: ` entry survives the merge ---
+# Both gathers report two entries under one number for an issue dropped on
+# `issue_exclude_reason`'s own assigned/blocked-label/pager precedence whose
+# thread *also* names a still-open `Blocked-by:` reference. The number-keyed
+# clash rule above governs only those three mutually-exclusive reasons: were
+# the `blocked-by: ` entry subject to it, this fold would discard exactly the
+# entry requirement 35f's `compute_enabler_eligible_set` subtraction
+# (lib/eligibility.sh) matches on, and the issue would be Enabler-eligible
+# again on every one of requirement 48's own replayed cycles.
+out_co_occur="$(issue_state_reapply '[]' '[]' \
+  '[{"number":30,"reason":"blocked-label"},{"number":30,"reason":"blocked-by: #31"},{"number":40,"reason":"blocked-by: #41"}]')"
+assert_eq "a prior number carrying both a deterministic reason and a blocked-by one keeps both (issue #2607)" \
+  '[{"number":30,"reason":"blocked-label"},{"number":30,"reason":"blocked-by: #31"},{"number":40,"reason":"blocked-by: #41"}]' \
+  "$(jq -c '.excluded' <<<"$out_co_occur")"
+# The same pairing, with this cycle's own sample freshly dropping #30 for a
+# *different* reason: the fresh reason still wins the clash with the stale
+# deterministic one, and the blocked-by entry is still carried alongside.
+out_co_occur_fresh="$(issue_state_reapply '[{"number":30,"ref":"30"}]' \
+  '[{"n":30,"u":"","l":[],"a":"alice"}]' \
+  '[{"number":30,"reason":"blocked-label"},{"number":30,"reason":"blocked-by: #31"}]')"
+assert_eq "a fresh drop overrides only the stale deterministic reason, never the blocked-by one (issue #2607)" \
+  '[{"number":30,"reason":"assigned"},{"number":30,"reason":"blocked-by: #31"}]' \
+  "$(jq -c '.excluded' <<<"$out_co_occur_fresh")"
 
 # =============================================================================
 # Part 2: the cached-branch issues-source block in lib/candidate-gather.sh
