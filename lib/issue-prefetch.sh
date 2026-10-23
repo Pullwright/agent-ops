@@ -125,7 +125,7 @@ issue_blocked_by_ref() {
   return 0
 }
 
-# issue_prefetch_blocked_by_additions SLUG ISSUES_RAW_JSON DET_EXCLUDED_JSON
+# issue_prefetch_blocked_by_additions SLUG ISSUES_RAW_JSON DET_EXCLUDED_JSON NATIVE_DEP_SKIP_SET
 # For every distinct issue number in DET_EXCLUDED_JSON — the
 # `{number, reason}` entries a caller has already decided to report for
 # `issue_exclude_reason`'s own assigned/blocked-label/pager drop — test that
@@ -156,17 +156,23 @@ issue_blocked_by_ref() {
 # on `dependency_refs` finding no `Blocked-by:` line before ever calling
 # `gh`, so an issue dropped for an ordinary reason that names no such line
 # costs nothing extra here. Prints `[]` when DET_EXCLUDED_JSON is empty or
-# none of its issues name an open reference.
+# none of its issues name an open reference. NATIVE_DEP_SKIP_SET is
+# `issue_prefetch_native_dep_skip_set`'s own output (agent-ops#2422) — passed
+# through so this narrower re-test honours the same pre-filter the surviving-
+# candidate loop does, rather than paying for a native read on every
+# deterministically-dropped issue regardless of whether it has one recorded.
 issue_prefetch_blocked_by_additions() {
-  local slug="$1" issues_raw="$2" det_excluded="$3"
-  local out='[]' n thread_text ref_display
+  local slug="$1" issues_raw="$2" det_excluded="$3" native_dep_skip_set="${4:- }"
+  local out='[]' n native_n thread_text ref_display
   while IFS= read -r n; do
     [[ -n "$n" ]] || continue
     thread_text="$(jq -r --argjson n "$n" '
       (.[] | select(.number == $n)) as $i
       | ($i.body // "") + "\n" + (([$i.comments[]?.body]) | join("\n"))
       ' <<<"$issues_raw" 2>/dev/null)" || continue
-    ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+    native_n="$n"
+    [[ "$native_dep_skip_set" == *" $n "* ]] && native_n=""
+    ref_display="$(issue_blocked_by_ref "$slug" "$native_n" "$thread_text")"
     [[ -n "$ref_display" ]] || continue
     out="$(jq -c --argjson n "$n" --arg ref "$ref_display" \
       '. + [{number: $n, reason: ("blocked-by: " + $ref)}]' <<<"$out" 2>/dev/null)" || out='[]'

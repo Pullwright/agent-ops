@@ -267,7 +267,7 @@ excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
 # scripts/gather-issues.sh) re-tests just the issues already excluded above,
 # and reports a second entry alongside — never replacing — the one already
 # there.
-blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded")" \
+blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded" "$native_dep_skip_set")" \
   || degrade "blocked-by additions check failed"
 excluded="$(jq -nc 'input as $a | input as $b | $a + $b' <<<"$excluded"$'\n'"$blocked_by_additions")" \
   || degrade "excluded merge with blocked-by additions failed"
