@@ -26,14 +26,14 @@ When the pipeline pauses and does not evaluate candidates, the reason carries a 
 The node running this installation is explicitly paused. Human action required.
 
 - **Is a fault?** No. The node is paused by design.
-- **What to do:** The operator or another actor set this node to disabled status. Check the configuration and re-enable when ready.
+- **What to do:** The operator or another actor set this node's own disable switch. Run `agent-cycle.sh --status` for the detail of who set it and why, and `agent-cycle.sh --enable` to clear it when ready.
 
 ### `disabled-fleet`
 
 The entire fleet is paused. Human action required.
 
 - **Is a fault?** No. The fleet is paused by design.
-- **What to do:** Check the configuration for `disabled` set fleet-wide. Re-enable when ready.
+- **What to do:** The fleet switch (`fleet/disabled.json` on the state repository) is set, so every node stands down, not just this one. `agent-cycle.sh --enable` clears it everywhere.
 
 ### `usage-limit`
 
@@ -180,7 +180,7 @@ A `merge-observed` or `issue-closed-post-merge` event exists for this item — t
 The latest `item-void` event for this item has no later `unvoided` — a human or the Enabler recorded that no work exists here.
 
 - **Is a fault?** No, usually. A stale item correctly retired.
-- **What to do:** None, unless the void looks wrong — reopen with `unvoided` if so.
+- **What to do:** None, unless the void looks wrong — apply the `unvoid_label` (`pw::unvoided` by default) to the item on GitHub if so, which is what the pipeline turns into the `unvoided` event. No stage ever applies it, so only a human can clear a void.
 
 ### `superseded`
 
