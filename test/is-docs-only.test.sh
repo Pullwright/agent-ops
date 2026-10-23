@@ -190,13 +190,26 @@ fi
 #     that moved it would then be classified by its new path alone. Checked
 #     against the filesystem, so it holds in a checkout and inside the image
 #     alike (both carry these files; only the checkout carries .git). ---
-for doc in README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md docs site; do
+for doc in README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md docs; do
   if [[ -e "$SCRIPT_DIR/$doc" ]]; then
     pass "the allowlist's $doc still exists"
   else
     fail "the allowlist's $doc still exists" "it is gone — remove or repoint the entry"
   fi
 done
+
+# site/ is the one inert entry that does *not* carry this "exists inside the
+# image too" property — .dockerignore excludes it on purpose (it never
+# reaches a node), so a missing site/ means nothing when this test runs
+# inside the image itself (no .git there, per the comment above); only a
+# checkout is expected to carry it.
+if [[ ! -e "$SCRIPT_DIR/.git" ]]; then
+  pass "the allowlist's site still exists (skipped — running inside the image, where .dockerignore keeps it out)"
+elif [[ -e "$SCRIPT_DIR/site" ]]; then
+  pass "the allowlist's site still exists"
+else
+  fail "the allowlist's site still exists" "it is gone — remove or repoint the entry"
+fi
 
 # --- The set of documents the pipeline actually reads at run time, derived
 #     from the code rather than hand-maintained here, so the next machine-read
