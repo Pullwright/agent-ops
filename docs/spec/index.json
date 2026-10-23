@@ -2806,7 +2806,7 @@
       "label": "34f",
       "anchor": "impl-34f",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1123,
+      "line": 1126,
       "title": "The human's escape hatch reaches the human."
     },
     "IMPL 34g": {
@@ -2814,7 +2814,7 @@
       "label": "34g",
       "anchor": "impl-34g",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1193,
+      "line": 1196,
       "title": "A human's own hand-applied label is a report, not a state."
     },
     "IMPL 34h": {
@@ -2822,7 +2822,7 @@
       "label": "34h",
       "anchor": "impl-34h",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1261,
+      "line": 1264,
       "title": "Where the two states meet, void wins."
     },
     "IMPL 34i": {
