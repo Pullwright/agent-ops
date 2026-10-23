@@ -1083,7 +1083,7 @@ channel exists and is producing roadmap items.
 
 - [ ] Quickstart: one documented command sequence from clean machine to
       first cycle. *[fleet]*
-- [ ] Public documentation site generated from the repo. *[fleet]*
+- [x] Public documentation site generated from the repo. *[fleet]*
 - [ ] Multi-repo configuration UX reviewed against real partner setups.
       *[interactive]*
 - [ ] Dashboard authentication story for remote and multi-user viewing

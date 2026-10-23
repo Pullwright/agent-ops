@@ -239,6 +239,17 @@ principle it rests on.`
   layers between the images on a node, and a routine roll moves about
   4 MiB. Decided by the owner on 2026-10-02 on the investigation's
   findings (#1125).
+- 2026-10-02 · #2084/#2100 · **The public documentation site (Phase 3) is
+  brought forward, published with GitHub Pages' "GitHub Actions" source at
+  the default address `https://pullwright.github.io/agent-ops/`, and the
+  wiki is switched off.** #2084 asked whether to publish now and at which
+  address; the owner answered both at once rather than leaving the site for
+  Phase 3's own entry gate, so #2100 (Starlight, built and deployed by
+  `.github/workflows/docs-site.yml`) implements it immediately rather than
+  waiting. The wiki carried no content the repository's own `docs/` tree
+  did not already have, so switching it off loses nothing and removes a
+  second, unsearched place a reader might land. Decided by the owner on
+  2026-10-02.
 - 2026-10-03 · #2086/#2083 · **`docs-benchmark sources` becomes a required
   check at once** — without first running green for a while, as #2088 asks
   of its own check, because the pipeline lands past any check that is not

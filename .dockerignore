@@ -5,6 +5,9 @@
 .githooks
 .github
 node_modules
+# The public documentation site's own toolchain (issue #2100) — built and
+# deployed by .github/workflows/docs-site.yml, never read by a stage.
+site
 *.log
 .env
 .env.local

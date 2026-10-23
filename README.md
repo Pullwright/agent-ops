@@ -33,6 +33,7 @@ used above.
 
 | If you are… | Start with |
 |---|---|
+| browsing from outside this repository | the [public documentation site](https://pullwright.github.io/agent-ops/) — navigable and full-text searchable, generated from the same Markdown linked below |
 | a person working in a repository the pipeline works on | [Working with Pullwright from a target repository](docs/guides/working-with-pullwright/README.md) |
 | an operator running an installation | [Operating](docs/guides/operating/README.md) |
 | a contributor changing the pipeline itself | [Contributing](docs/guides/contributing/README.md) |
