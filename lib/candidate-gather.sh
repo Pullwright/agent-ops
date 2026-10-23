@@ -1169,27 +1169,39 @@ fi
 # reason as 34f, 34g and 34i above: it has to land before the extract the
 # Co-Ordinator, the Enabler's eligible set and the dashboard are all handed.
 # What it clears is a block whose own `Blocked-by:` dependency has resolved —
-# read from this cycle's own `issues` candidates, already reshaped once per
-# repo above, so no second `gh` read is spent deciding it: an already-blocked
-# issue reappearing there this cycle is itself gather-issues.sh's live proof
-# that every reference it named is now closed.
+# read from this cycle's own `issues` and `tech_debt` candidates, already
+# reshaped once per repo above, so no second `gh` read is spent deciding it:
+# an already-blocked issue (or tech-debt item — the same label-scoped issue,
+# agent-ops#2604) reappearing there this cycle is itself gather-issues.sh's
+# or gather-tech-debt.sh's live proof that every reference it named is now
+# closed.
 #
 # Requirement 48 (agent-ops#1086) is why the reshape starts by narrowing to
 # the repos this cycle actually read: that live proof is the whole mechanism
-# here, and a repo whose `issues` band was replayed from this node's
-# expensive-gather cache carries proof from whenever its last turn was, not
-# from this cycle. `dependency_clearances`' own rule already names the right
-# answer for the rest — an item this cycle's candidates do not carry, "simply
-# not walked this cycle", decides nothing and stays blocked — so a non-fresh
-# repo's dependency clearances wait for its own turn rather than being made
-# on stale proof. An entry with no `expensive_gather` stamp at all (a caller
-# that predates the field, every test that builds the array by hand) reads as
-# fresh, exactly as it did before this narrowing existed.
+# here, and a repo whose `issues`/`tech_debt` band was replayed from this
+# node's expensive-gather cache carries proof from whenever its last turn
+# was, not from this cycle. `dependency_clearances`' own rule already names
+# the right answer for the rest — an item this cycle's candidates do not
+# carry, "simply not walked this cycle", decides nothing and stays blocked —
+# so a non-fresh repo's dependency clearances wait for its own turn rather
+# than being made on stale proof. An entry with no `expensive_gather` stamp
+# at all (a caller that predates the field, every test that builds the array
+# by hand) reads as fresh, exactly as it did before this narrowing existed.
+#
+# `.issues` and `.tech_debt` are concatenated, `.tech_debt` last, before
+# keying by `(.number // .ref) | tostring` (agent-ops#2604): gather-issues.sh
+# deliberately excludes every `pw::type:tech-debt`-labelled issue from the
+# `issues` band, and gather-tech-debt.sh carries only those, so the two bands
+# partition a repo's open issues by label and a number can never legitimately
+# appear in both. Concatenating in this order simply means that if that
+# partition were ever violated, the tech-debt entry would win rather than
+# either being silently duplicated or the merge failing outright — not a
+# case this cycle expects to hit.
 issues_by_repo_json="$(jq -c '
   map(select((.expensive_gather // null) == null or (.expensive_gather.fresh == true)))
   | map({key: .slug,
-       value: ((.issues // [])
-               | map({key: (.number | tostring),
+       value: (((.issues // []) + (.tech_debt // []))
+               | map({key: ((.number // .ref) | tostring),
                       value: {body: (.body // ""), comments: (.comments // [])}})
                | from_entries)})
   | from_entries' <<<"$ordered_repos_json" 2>/dev/null || true)"

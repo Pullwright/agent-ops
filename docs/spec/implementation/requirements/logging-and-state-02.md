@@ -172,24 +172,31 @@
       (agent-ops#1095).
     - **Releasing.** Against the *open* blocked set (34h), in the same
       pre-extract window as 34f, 34g and 34i, the Script reshapes this
-      cycle's own freshly gathered `issues` candidates to a `repo → item →
-      thread` map and clears any blocked issue found there whose thread
-      still carries a `Blocked-by:` line: presence in that map, on its own,
-      already proves gather-issues.sh's holding check found every reference
-      resolved this same cycle, so the release asks no second question of
-      GitHub — it reads the holding check's own verdict rather than
-      re-deriving one. An item excluded from this cycle's candidates for
-      *any* reason — a reference still open, an assignment, the `blocked`
-      label, or simply a repo this cycle did not walk — is absent from the
-      map and decides nothing, the same "unknown is never gone" rule
-      requirement 34i's clearances observe. A repository whose `issues` band
-      requirement 48 replayed from this node's expensive-gather cache rather
-      than reading fresh counts as one this cycle did not walk, and is
-      narrowed out of the map before the reshape: its band carries the
-      holding check's verdict from whenever its own last turn was, which is
-      not the proof this release reads. Logged `unblocked` with
-      `by: "dependency-resolved"` and a `detail` naming the reference(s)
-      that resolved.
+      cycle's own freshly gathered `issues` *and* `tech_debt` candidates
+      (agent-ops#2604) to a single `repo → item → thread` map, keyed by each
+      candidate's own number, and clears any blocked issue or tech-debt item
+      found there whose thread still carries a `Blocked-by:` line: presence
+      in that map, on its own, already proves gather-issues.sh's or
+      gather-tech-debt.sh's holding check found every reference resolved
+      this same cycle, so the release asks no second question of GitHub —
+      it reads the holding check's own verdict rather than re-deriving one.
+      The two bands are concatenated before keying, `tech_debt` last — they
+      partition a repo's open issues by the `pw::type:tech-debt` label
+      (gather-issues.sh excludes it, gather-tech-debt.sh keeps only it), so
+      a number legitimately appearing in both never happens; the ordering
+      only decides which entry would win if that partition were ever
+      violated, not a case this reshape expects to hit. An item excluded
+      from this cycle's candidates for *any* reason — a reference still
+      open, an assignment, the `blocked` label, or simply a repo this cycle
+      did not walk — is absent from the map and decides nothing, the same
+      "unknown is never gone" rule requirement 34i's clearances observe. A
+      repository whose `issues`/`tech_debt` band requirement 48 replayed
+      from this node's expensive-gather cache rather than reading fresh
+      counts as one this cycle did not walk, and is narrowed out of the map
+      before the reshape: its bands carry the holding check's verdict from
+      whenever its own last turn was, which is not the proof this release
+      reads. Logged `unblocked` with `by: "dependency-resolved"` and a
+      `detail` naming the reference(s) that resolved.
 
     The rule has one implementation, `dependency_clearances` in
     `lib/dependency-gate.sh`, alongside the parser, `dependency_refs`, that
@@ -197,15 +204,18 @@
 
     This binds to GitHub issues only, for the same reason requirement 18a
     does: they are the one blocked-item shape with a thread the cycle
-    already reads whole. It does not need requirement 3b's fingerprint
-    extended to cover it: a same-repo reference's state is already part of
-    that repo's `issues` digest (open issues) or claim signal (open PRs),
-    and a cross-repo reference needs its own repo configured and walked
-    for the same reason 34i's register/review/plan reads do — so the
-    reference resolving always changes the `issues` array gather-issues.sh
-    hands the Co-Ordinator (a previously excluded candidate now appears),
-    which requirement 3b already fingerprints verbatim, waking the fleet
-    within the hour without a dedicated projection.
+    already reads whole — a tech-debt item is one of these, being simply a
+    GitHub issue carrying `pw::type:tech-debt` (D15 as revised). It does not
+    need requirement 3b's fingerprint extended to cover it: a same-repo
+    reference's state is already part of that repo's `issues` digest (open
+    issues) or claim signal (open PRs), and a cross-repo reference needs its
+    own repo configured and walked for the same reason 34i's register/
+    review/plan reads do — so the reference resolving always changes the
+    `issues` array gather-issues.sh hands the Co-Ordinator, or the
+    `tech_debt` array gather-tech-debt.sh does for a tech-debt item (either
+    way, a previously excluded candidate now appears), which requirement 3b
+    already fingerprints verbatim, waking the fleet within the hour without
+    a dedicated projection.
 
     A model's part in this is deliberately narrow. Nothing here edits an
     issue's body — an agent rewriting a human's own text is a cost this
