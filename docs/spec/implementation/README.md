@@ -152,7 +152,7 @@ has, whichever pipeline runs it (requirement 9d):
 
 9. The **Project Reviewer** (token `project-reviewer`) — the
    repository-review pipeline's single agent. Specified at
-   `docs/spec/review.md`, *Actors*, where that document calls it the
+   `docs/spec/review/README.md`, *Actors*, where that document calls it the
    Reviewer-Agent.
 10. The **Pipeline Monitor** (token `monitor`) — the Monitor pipeline's
    single agent: a scheduled reading of this pipeline's own recorded state,

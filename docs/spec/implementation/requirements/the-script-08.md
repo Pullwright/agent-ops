@@ -621,7 +621,7 @@
    unconditional listing below, not the rate-limited helper, because a
    repository is selected for review at most once per
    `min_days_between_reviews` days, longer than any interval a stamp there
-   could bound (`docs/spec/review.md` R5.0b) — and
+   could bound (`docs/spec/review/requirements.md` R5.0b) — and
    `create_escalation_issue` calls that same unstamped helper for
    `enabler_escalation_label` in the repository an escalation is filed in,
    which is often one no cycle otherwise touches. A label whose configured name is empty is switched off

@@ -49,7 +49,7 @@ INDEX_HTML="$SCRIPT_DIR/dashboard/index.html"
 for path in \
   docs/README.md \
   docs/spec/implementation/README.md \
-  docs/spec/review.md \
+  docs/spec/review/README.md \
   docs/spec/dashboard/README.md \
   docs/reference/metering-schema.md \
   docs/ROADMAP.md \

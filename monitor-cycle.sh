@@ -876,7 +876,7 @@ digest_json="$(monitor_digest_build \
   "$(monitor_digest_work "$union_log" "$since_iso")" \
   "$(monitor_digest_forge "$forge_prs_json" "$forge_issues_json" "$forge_escalations_json")" \
   "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
-       "$SCRIPT_DIR/docs/spec/review.md" "$SCRIPT_DIR/docs/spec/monitor.md" \
+       "$SCRIPT_DIR/docs/spec/review/README.md" "$SCRIPT_DIR/docs/spec/monitor.md" \
        "$SCRIPT_DIR/docs/spec/dashboard/README.md")" \
   "$(monitor_digest_promoted "$promoted_open_json")" \
   "$monitor_peers_json")"

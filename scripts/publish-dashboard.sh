@@ -420,7 +420,7 @@ self_resources_json="$(resource_budget_report "$self_resources_samples" "$self_r
 stage_health_file="$state_dir/.stage-health.json"
 stage_health_json="$(jq -c '.' "$stage_health_file" 2>/dev/null || echo null)"
 # The review pipeline's own symmetric verdict (agent-ops#996,
-# docs/spec/review.md R19), read the identical way from its own
+# docs/spec/review/requirements.md R19), read the identical way from its own
 # file — `review-cycle.sh`'s own cleanup writes it, over `review-log.jsonl`
 # rather than `log.jsonl` — and carried as `review_stage_health`, a field of
 # its own beside `stage_health` rather than merged into it, so a node running

@@ -967,7 +967,7 @@
 8z. <a id="impl-ac-8z"></a>**The untrusted-content framing is present and identical in every
     prompt (requirement 45).** `test/prompt-untrusted-framing.test.sh`
     passes: every shipped stage prompt — `prompts/project-reviewer.md`
-    included (docs/spec/review.md R18) — carries the marker-delimited
+    included (docs/spec/review/requirements.md R18) — carries the marker-delimited
     block exactly once, and every copy is byte-identical with requirement
     45a's canonical one, which the test lifts from this document at run
     time rather than restating.

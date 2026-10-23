@@ -42,7 +42,7 @@
    ```
 
    `prompts/project-reviewer.md` carries the same block under the review
-   pipeline's own requirement (docs/spec/review.md R18), and
+   pipeline's own requirement (docs/spec/review/requirements.md R18), and
    `prompts/monitor.md` under the Monitor's own (docs/spec/monitor.md
    M10a), both pinned to this same copy.
 

@@ -344,7 +344,7 @@
       PR references its ref (`review-<date>-R-NN`) — or that is already owned
       by a higher-priority source: the review files debt-shaped
       recommendations as `pw::type:tech-debt`-labelled issues
-      cross-referencing the `R-NN` (`docs/spec/review.md`, R12/R12a),
+      cross-referencing the `R-NN` (`docs/spec/review/requirements.md`, R12/R12a),
       so a recommendation cross-referenced by such an issue — or by a current
       tech-debt entry a repository's own register still carries — is left to
       that source and skipped
@@ -353,7 +353,7 @@
       Note that a merged PR is a *floor*, not a proof: work that landed as a
       direct commit, or before the repo required PRs, leaves no PR to find and
       so reads as outstanding forever. The cross-reference is what covers that
-      gap, which is why the review spec (`docs/spec/review.md`, R12a)
+      gap, which is why the review spec (`docs/spec/review/requirements.md`, R12a)
       is required to write it and not merely expected to; requirement 9a is
       the backstop for when it is missing anyway — the item is then
       investigated once, and the finding remembered.

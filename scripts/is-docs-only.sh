@@ -88,7 +88,7 @@ is_inert() {
     # these four don't name, e.g. a sibling requirements/*.md, is read only
     # from a fresh clone and is not listed here).
     docs/spec/implementation/gotchas.md) return 1 ;;
-    docs/spec/review.md) return 1 ;;
+    docs/spec/review/README.md) return 1 ;;
     docs/spec/monitor.md) return 1 ;;
     docs/spec/dashboard/README.md) return 1 ;;
     docs/*) return 0 ;;                   # the roadmap and the rest of docs/, read only from a fresh clone

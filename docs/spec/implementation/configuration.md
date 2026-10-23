@@ -161,7 +161,7 @@ Model IDs are pinned in config (one place to update); do not use floating
 aliases in the launch commands.
 
 Every `*_model` key above (and `repository_review.defaults.model`, or a repo's own
-override, in `docs/spec/review.md`) accepts a bare id
+override, in `docs/spec/review/README.md`) accepts a bare id
 (`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
 (`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider `providers`
 above configures), resolved per requirement 1a. `anthropic` is always

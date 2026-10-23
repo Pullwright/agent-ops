@@ -265,7 +265,7 @@ requirements above, which state only what is.
   code-quality findings). User stories and road maps were dropped — neither
   repo has them; the config structure accepts new sources when they appear.
 - **The weekly project review feeds the pipeline as a work source.** The
-  review pipeline (`docs/spec/review.md`) produces, for each repo,
+  review pipeline (`docs/spec/review/README.md`) produces, for each repo,
   two channels: the debt it surfaces, filed straight to GitHub as
   `pw::type:tech-debt`-labelled issues as the run goes (R12) — the primary,
   status-tracked channel, picked up by the `issues` source — and a
@@ -278,7 +278,7 @@ requirements above, which state only what is.
   recommendation beats an automated one) and below the curated channels, and
   dedups against them via the `R-NN` cross-reference the review writes into
   each mirrored issue's body (required of the review by R12a of
-  `docs/spec/review.md` — for a long time this bullet merely *assumed*
+  `docs/spec/review/requirements.md` — for a long time this bullet merely *assumed*
   it, which is why the dedup silently didn't work; see Gotchas). Because the recommendations file is
   regenerated each week (its `R-NN` IDs are per-review, so a ref is
   review-dated), an un-actioned recommendation is simply re-offered under a new

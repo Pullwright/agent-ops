@@ -70,7 +70,7 @@ See [Configure](configure.md) for the essentials. For every key and option, see 
 - **Something wrong?** See [Diagnose by symptom](diagnose-by-symptom.md)
 - **Want details?** Read the specification for your role:
   - Implementer stage: `docs/spec/implementation/README.md`
-  - Reviewer stage: `docs/spec/review.md`
+  - Reviewer stage: `docs/spec/review/README.md`
   - Monitor pipeline: `docs/spec/monitor.md`
   - Dashboard: `docs/spec/dashboard/README.md`
 

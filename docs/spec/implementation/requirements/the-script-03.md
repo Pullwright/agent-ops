@@ -120,7 +120,7 @@
    delete is sha-guarded and idempotent, so a lost race means a peer got
    there, and there is no singleton chore (requirement 2.5). The review
    pipeline honours the fleet switch but never sets or clears it, mirroring
-   its relationship to the local one (`docs/spec/review.md`, R2a).
+   its relationship to the local one (`docs/spec/review/requirements.md`, R2a).
 
    This flag's own mechanism — `fleet_flag_write`'s compare-and-set,
    `fleet_flag_fetch`'s three failure directions, the `by`/`actor`/`ts`
@@ -359,7 +359,7 @@
    itself. A `mode: "stop"` record is unchanged from before this
    requirement existed: `agent-cycle.sh` exits immediately at the check
    (requirement 2.3/2.3a's own site), before the lock, before any `gh` call,
-   and `review-cycle.sh` stands down identically (`docs/spec/review.md`,
+   and `review-cycle.sh` stands down identically (`docs/spec/review/requirements.md`,
    R2a). A `mode: "drain"` record does not exit there: `agent-cycle.sh` sets
    `DRAINING` (and `DRAIN_DISABLED_AT`, from whichever of the local or fleet
    record is active — the fleet one winning if both are, since it is the
@@ -534,4 +534,4 @@
    is opted into per machine, deliberately, never inherited from a typo.
 
    Implemented in `lib/role.sh`, shared with `review-cycle.sh`
-   (`docs/spec/review.md`, R2b) so "active" has one definition.
+   (`docs/spec/review/requirements.md`, R2b) so "active" has one definition.

@@ -193,7 +193,7 @@ CONFIG_TABLE_REGIONS=(
   "docs/reference/configuration.md:main:readme"
   "docs/reference/configuration.md:review:readme"
   "docs/spec/implementation/configuration.md:main:spec"
-  "docs/spec/review.md:review:spec"
+  "docs/spec/review/README.md:review:spec"
 )
 
 # The one file whose labels table scripts/render-labels-table.sh renders,
