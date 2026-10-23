@@ -118,9 +118,10 @@ export PATH="$tmp_dir/bin:$PATH"
 # #20 is clean, labelled `pw::type:tech-debt` plus an extra label, with a
 # two-comment thread; #21 is assigned; #22 is labelled `Blocked` (upper case,
 # proving the drop case-insensitive); #23 names an unresolved `Blocked-by:
-# #24` (still open); #19 is clean and commentless, the lowest number, to
-# prove ascending sort; #18 is open but carries no `pw::type:tech-debt` label
-# at all, proving the label filter (now this script's own `select`, since
+# #24` (still open); #19 is clean and commentless, unbanded, qualifying solely
+# on the `pw::type:tech-debt` label; #18 is open but carries no
+# `pw::type:tech-debt` label at all, proving the label filter (now this
+# script's own `select`, since
 # `issue_prefetch_open_issues` returns every open issue — agent-ops#1085)
 # still excludes it; #25 carries both `pw::type:tech-debt` and `pw::pager`,
 # unassigned and not `Blocked`-labelled, proving the pager drop fires here
