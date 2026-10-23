@@ -1934,7 +1934,7 @@
       "label": "23f",
       "anchor": "impl-c-23f",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 833,
+      "line": 839,
       "title": "`scripts/release-pending-reservations.sh` implementing requirement 17g's"
     },
     "IMPL C 23g": {
@@ -1942,7 +1942,7 @@
       "label": "23g",
       "anchor": "impl-c-23g",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 875,
+      "line": 881,
       "title": "`.github/workflows/tech-debt-close-guard.yml` and"
     },
     "IMPL C 24": {
@@ -1950,7 +1950,7 @@
       "label": "24",
       "anchor": "impl-c-24",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 919,
+      "line": 925,
       "title": "`scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing"
     },
     "IMPL C 24a": {
@@ -1958,7 +1958,7 @@
       "label": "24a",
       "anchor": "impl-c-24a",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 960,
+      "line": 966,
       "title": "`scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh`,"
     },
     "IMPL C 24b": {
@@ -1966,7 +1966,7 @@
       "label": "24b",
       "anchor": "impl-c-24b",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1041,
+      "line": 1047,
       "title": "`scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,"
     },
     "IMPL C 24c": {
@@ -1974,7 +1974,7 @@
       "label": "24c",
       "anchor": "impl-c-24c",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1078,
+      "line": 1084,
       "title": "`scripts/spec.sh` and `.github/workflows/spec.yml` implementing"
     },
     "IMPL C 24d": {
@@ -1982,7 +1982,7 @@
       "label": "24d",
       "anchor": "impl-c-24d",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1097,
+      "line": 1103,
       "title": "`scripts/render-labels-table.sh` and"
     },
     "IMPL C 24e": {
@@ -1990,7 +1990,7 @@
       "label": "24e",
       "anchor": "impl-c-24e",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1123,
+      "line": 1129,
       "title": "`scripts/render-scripts-index.sh` and"
     },
     "IMPL C 24f": {
@@ -1998,7 +1998,7 @@
       "label": "24f",
       "anchor": "impl-c-24f",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1158,
+      "line": 1164,
       "title": "`lib/ci-trigger.sh` implementing requirement 69: given a repository"
     },
     "IMPL 40": {
@@ -2038,7 +2038,7 @@
       "label": "43",
       "anchor": "impl-43",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 113,
+      "line": 119,
       "title": "Ends with a single JSON object:"
     },
     "IMPL 44": {
@@ -2046,7 +2046,7 @@
       "label": "44",
       "anchor": "impl-44",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 126,
+      "line": 132,
       "title": "One-shot, no resumption, same foreground-wait discipline every other"
     },
     "IMPL 46": {
@@ -2054,7 +2054,7 @@
       "label": "46",
       "anchor": "impl-46",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 139,
+      "line": 145,
       "title": "A pull request cannot rely on the cycle that owed it an Approver"
     },
     "IMPL 46a": {
@@ -2062,7 +2062,7 @@
       "label": "46a",
       "anchor": "impl-46a",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 351,
+      "line": 357,
       "title": "The stale trigger's own \"genuine progress\" test also asks whether the"
     },
     "IMPL 47": {
@@ -2070,7 +2070,7 @@
       "label": "47",
       "anchor": "impl-47",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 396,
+      "line": 402,
       "title": "Rework record."
     },
     "IMPL 48": {
@@ -2078,7 +2078,7 @@
       "label": "48",
       "anchor": "impl-48",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 493,
+      "line": 499,
       "title": "Expensive per-repository gather runs for one repository per cycle, not"
     },
     "IMPL 49": {
@@ -2086,7 +2086,7 @@
       "label": "49",
       "anchor": "impl-49",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 641,
+      "line": 647,
       "title": "Item lifecycle record."
     },
     "IMPL 50": {
@@ -2094,7 +2094,7 @@
       "label": "50",
       "anchor": "impl-50",
       "file": "docs/spec/implementation/requirements/approver-01.md",
-      "line": 755,
+      "line": 761,
       "title": "Node time-state record."
     },
     "IMPL 51": {
@@ -2430,7 +2430,7 @@
       "label": "36d",
       "anchor": "impl-36d",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 881,
+      "line": 883,
       "title": "`decide-tactical` (D18, agent-ops#936)."
     },
     "IMPL 36e": {
@@ -2438,7 +2438,7 @@
       "label": "36e",
       "anchor": "impl-36e",
       "file": "docs/spec/implementation/requirements/enabler-01.md",
-      "line": 1093,
+      "line": 1095,
       "title": "The decision log and veto (D18, agent-ops#937)."
     },
     "IMPL 36f": {

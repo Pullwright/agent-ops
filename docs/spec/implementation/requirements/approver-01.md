@@ -97,7 +97,13 @@ with the Reviewer's own.
       agent-ops#2576): either match gets the new body and provenance as a
       comment instead of a second filing, catching two Approver engagements
       that review the same pull request and word the same finding
-      differently, which the title check alone would miss. No id
+      differently, which the title check alone would miss. This same-PR
+      key alone is deliberate: a pull request that goes several Reviewer
+      rounds, each with a genuinely distinct Approver finding, still
+      collapses every later finding into the first issue's comment
+      thread rather than a fresh issue each round — an accepted, rare
+      tradeoff rather than a defect (agent-ops#2590), matching
+      `file_issue`'s own unconditional per-pull-request dedup below. No id
       reservation, no branch, no pull request. Logs `tech-debt-filed`
       (`pr_url`, `repo`, `by: "approver"`, `issue_number`, `issue_url`) on
       success; a `warning` naming `tech-debt-file.err` on failure.
