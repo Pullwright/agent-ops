@@ -17,8 +17,8 @@
 # string constants anywhere. Giving them one is a design decision — adding
 # a code vocabulary to a dense, already-large file — not a docs-and-wiring
 # change, so docs/reference/reasons.md says so in prose instead of
-# fabricating entries for codes that do not exist (see the pull request
-# that introduced this file for the tech-debt issue tracking it).
+# fabricating entries for codes that do not exist (see #2625 for the
+# tech-debt issue tracking it).
 #
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
