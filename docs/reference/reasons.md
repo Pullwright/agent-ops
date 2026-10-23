@@ -330,7 +330,7 @@ A `source-state-digest` event reported fewer items than a live query of the same
 
 ### `landing-never-armed`
 
-A pull request has stood approved for longer than `landing_armed_within_days` without ever reaching `landing-armed`.
+A pull request has stood approved for longer than `pager_landing_armed_within_days` without ever reaching `landing-armed`.
 
 - **Is a fault?** Yes, usually. Something keeps refusing to arm it.
 - **What to do:** Handled automatically by `pager_remedy_landing_never_armed`, which reads the pull request's own `landing-refused` history.
@@ -542,4 +542,4 @@ and nothing to link to without inventing one:
 Giving any of these a named code vocabulary is a design decision — touching
 a large, already-dense file (`doctor.sh` is over 3000 lines) to introduce a
 convention it does not have — not a docs-and-wiring change, so it is out of
-scope here. See the tech-debt issue this pull request files for the proposal.
+scope here. See #2625 for the proposal.
