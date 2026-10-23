@@ -219,6 +219,19 @@ exclude_claimed_items() {  # <candidates-json> <claimed-item-refs-json>
 # duplicated and sorted by issue number, a fresh drop's own reason winning any
 # clash with a stale cached one for the same number.
 #
+# That clash rule is keyed on the issue number alone, so it governs only the
+# assigned/blocked-label/pager reasons, which are mutually exclusive per issue
+# by `issue_exclude_reason`'s own precedence (lib/issue-prefetch.sh): a
+# `"blocked-by: <ref>"` entry is an independently-checked fourth ground that
+# co-occurs with one of those three under the same number (issue #2607), so it
+# is held out of the de-duplication rather than losing the clash to the
+# deterministic reason the gather already sorted ahead of it. Left in, the
+# number-keyed `unique_by` would discard exactly the entry requirement 35f's
+# `compute_enabler_eligible_set` subtraction (lib/eligibility.sh) matches on,
+# and a replayed repository's co-excluded issue would go back to being
+# Enabler-eligible every recheck window — the corner issue #2607 closed at
+# gather time, reopened one layer down on requirement 48's own off cycles.
+#
 # A candidate the sampled state no longer names (closed, or never sampled —
 # the digest's own page bound) is left exactly as it arrived: this is a
 # visibility layer over the gatherer's own deterministic filter, never a
@@ -258,11 +271,15 @@ issue_state_reapply() {  # <candidates-json> <state-issues-json> <prior-excluded
           end)) as $tagged
     | ($tagged | map(select(.keep) | .item)) as $kept
     | ($tagged | map(select(.keep | not) | {number: .item.number, reason})) as $fresh
+    | (($prior // []) | map(select((.reason // "") | startswith("blocked-by: ")))) as $prior_blocked_by
+    | (($prior // []) | map(select((.reason // "") | startswith("blocked-by: ") | not))) as $prior_rest
     | {
         candidates: $kept,
         excluded: (
           if ($prior == null and ($fresh | length) == 0) then null
-          else (($fresh + ($prior // [])) | unique_by(.number) | sort_by(.number))
+          else ((($fresh + $prior_rest) | unique_by(.number))
+                + ($prior_blocked_by | unique_by([.number, .reason]))
+                | sort_by(.number))
           end
         )
       }' <<<"$docs" 2>/dev/null || jq -nc \

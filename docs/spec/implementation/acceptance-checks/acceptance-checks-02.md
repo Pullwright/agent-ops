@@ -508,7 +508,11 @@
    `Medium`), its body, and its comments verbatim; the assigned,
    `Blocked`-labelled and `pw::pager`-labelled drops reappear in `excluded`
    tagged `assigned`, `blocked-label` and `pager` respectively, while the
-   pull request never does (agent-ops#447); a
+   pull request never does (agent-ops#447); a `Blocked`-labelled issue whose
+   own thread *also* names a still-open `Blocked-by:` reference reports both
+   reasons, as two entries under the same number, while an otherwise-identical
+   `Blocked`-labelled issue naming no such reference keeps reporting the one
+   (issue #2607); a
    `pw::type:tech-debt`-labelled issue is dropped from `candidates` and,
    like the pull request, never reported in `excluded` either — it is the
    `tech-debt` band's candidate, not this one's (agent-ops#875); a
@@ -534,8 +538,12 @@
    arriving
    once its reference closes; each of those four drops is reported in the
    sibling `excluded` array as `{number, reason}`, with the `Blocked-by:`
-   one's reason carrying the reference's own display form (agent-ops#2603),
-   while an issue that never carried the label is reported in neither array;
+   one's reason carrying the reference's own display form (agent-ops#2603);
+   an assigned issue whose own thread *also* names a still-open
+   `Blocked-by:` reference reports both reasons, as two entries under the
+   same number, while an otherwise-identical assigned issue naming no such
+   reference keeps reporting the one (issue #2607); an issue that never
+   carried the label is reported in neither array;
    and a failing API degrades to
    `{"candidates":[],"excluded":null}` (exit 0) with the failure on stderr.
    `test/verdict-corroboration.test.sh` passes:

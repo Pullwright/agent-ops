@@ -30,7 +30,13 @@
 # (requirement 16.4's deterministic half; agent-ops#447), each
 # `{"number": 125, "reason": "assigned" | "blocked-label" | "pager" | "blocked-by: <ref>"}`
 # — never a PR the issues endpoint interleaves, which is dropped unreported
-# because it was never a candidate issue to begin with. This is what lets a
+# because it was never a candidate issue to begin with. An issue dropped for
+# one of the first three reasons whose own thread *also* names a still-open
+# `Blocked-by:` reference contributes a second entry under the same number,
+# one `reason` each (issue #2607) — `issue_exclude_reason`'s own
+# assigned/blocked-label/pager precedence decides which single one of those
+# three is reported, never whether the fourth, independently-checked ground
+# applies too. This is what lets a
 # caller report "N issues excluded, and why" instead of a drop nothing else
 # ever recorded: before this, the deterministic drops removed an issue
 # from candidacy with nothing on stdout, nothing on stderr, and nothing in
@@ -207,7 +213,9 @@ jq -e 'type == "array"' <<<"$issues_raw" >/dev/null 2>&1 \
 # deterministically, before the Co-Ordinator ever sees it — so an item
 # declaring a dependency never earns a judgement, or an `attempt-failed`,
 # while that dependency stands. It is appended to `excluded` in the loop
-# below, once the unresolved reference is known.
+# below, once the unresolved reference is known — and, as a second entry
+# under the same number, for one of the assigned/blocked-label/pager drops
+# just above whose own thread names one too (issue #2607, just below).
 candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
   [.[]
    | select(issue_deterministic_ok)
@@ -238,6 +246,22 @@ excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
    | {number: .number, reason: issue_exclude_reason}]
   | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
   || degrade "issues excluded-filter failed"
+
+# Issue #2607: `issue_exclude_reason`'s single-reason precedence (assigned >
+# blocked-label > pager) reports only the highest-precedence ground above,
+# even when a dropped issue's own thread *also* names a still-open
+# `Blocked-by:` reference — which would otherwise never earn the
+# `"blocked-by: "`-prefixed entry requirement 35f's own
+# `compute_enabler_eligible_set` (lib/eligibility.sh) subtraction matches on,
+# leaving it Enabler-eligible across every recheck window regardless.
+# `issue_prefetch_blocked_by_additions` (lib/issue-prefetch.sh, shared with
+# scripts/gather-tech-debt.sh) re-tests just the issues already excluded
+# above, and reports a second entry alongside — never replacing — the one
+# already there.
+blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded")" \
+  || degrade "blocked-by additions check failed"
+excluded="$(jq -nc 'input as $a | input as $b | $a + $b' <<<"$excluded"$'\n'"$blocked_by_additions")" \
+  || degrade "excluded merge with blocked-by additions failed"
 
 out='[]'
 while IFS= read -r candidate; do

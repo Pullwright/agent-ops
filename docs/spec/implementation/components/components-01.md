@@ -486,10 +486,15 @@ What exists, and the requirements each part answers to:
    the bare issue number as
    its ref, the `Priority` band (default `Medium`, read as the source-state
    digest reads it), and the whole thread verbatim (`body` plus `comments`).
-   `excluded` is `{number, reason}` for every issue the four deterministic
-   drops above removed (never a pull request), `reason` one of `"assigned"`,
-   `"blocked-label"`, `"pager"`, `"blocked-by: <ref>"` (agent-ops#447,
-   agent-ops#2564). Fails safe to
+   `excluded` is `{number, reason}` for every drop the four deterministic
+   checks above applied (never a pull request), `reason` one of
+   `"assigned"`, `"blocked-label"`, `"pager"`, `"blocked-by: <ref>"`
+   (agent-ops#447, agent-ops#2564) — an issue dropped under one of the first
+   three whose own thread *also* names a still-open `Blocked-by:` reference
+   contributes a second entry under the same number (issue #2607), since
+   `issue_exclude_reason`'s own assigned/blocked-label/pager precedence
+   decides which single one of those three is reported, never whether the
+   independently-checked fourth ground applies too. Fails safe to
    `{"candidates":[],"excluded":null}` (exit 0) with failures loud on stderr —
    `excluded` is `null`, not `[]`, because a filter that did not run to
    completion does not know the set to be empty (requirement 3j).
@@ -509,9 +514,11 @@ What exists, and the requirements each part answers to:
    and as `number`, `url`, `title`, `labels`, `author`, `created_at`,
    `updated_at`, its `body`, and its whole comment thread verbatim as
    `comments` — sorted by issue number ascending. `excluded` is `{number,
-   reason}` for every labelled issue the four deterministic drops above
-   removed, `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
-   `"blocked-by: <ref>"` — an issue never carrying the label to begin with is
+   reason}` for every labelled-issue drop the four deterministic checks
+   above applied, `reason` one of `"assigned"`, `"blocked-label"`, `"pager"`,
+   `"blocked-by: <ref>"`, with the identical two-entries-per-number
+   co-occurrence `scripts/gather-issues.sh`'s own `excluded` reports (issue
+   #2607) — an issue never carrying the label to begin with is
    reported in neither array, the same "never a candidate" reasoning that
    already excludes a pull request from `scripts/gather-issues.sh`'s own
    `excluded`. `lib/eligibility.sh`'s open-`Blocked-by:`-reference Enabler
@@ -626,7 +633,19 @@ What exists, and the requirements each part answers to:
    otherwise — a pull request is never reported); and `issue_blocked_by_ref`,
    which prints the display form of a thread's first still-open `Blocked-by:`
    reference (requirement 34j) or nothing, treating a reference whose state
-   cannot be read as still open. Sourced by both `scripts/gather-issues.sh`
+   cannot be read as still open; and `issue_prefetch_blocked_by_additions`
+   (issue #2607), which, given a caller's own already-assembled
+   `{number, reason}` deterministic-drop array, re-tests just those issues'
+   own threads via `issue_blocked_by_ref` and prints one additional
+   `{number, reason: "blocked-by: <ref>"}` entry per hit — closing the
+   corner `issue_exclude_reason`'s own single-reason precedence otherwise
+   leaves: an issue dropped as, say, `"assigned"` whose thread also names a
+   still-open `Blocked-by:` reference never reached the ordinary
+   surviving-candidate live check, so it never earned the
+   `"blocked-by: "`-prefixed entry requirement 35f's own
+   `compute_enabler_eligible_set` subtraction (`lib/eligibility.sh`) matches
+   on, and stayed Enabler-eligible across every recheck window regardless.
+   Sourced by both `scripts/gather-issues.sh`
    and `scripts/gather-tech-debt.sh`, so the drops the two bands share cannot
    drift apart; `issue_blocked_by_ref` calls `dependency_refs`, so
    `lib/dependency-gate.sh` must be sourced first. What qualifies an issue for

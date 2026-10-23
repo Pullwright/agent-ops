@@ -19,7 +19,15 @@
 #     (never a pull request, which was never a candidate) must reappear in
 #     the sibling `excluded` array with its number and why — agent-ops#447:
 #     before this, a drop here left no trace anywhere a human or the
-#     dashboard could read.
+#     dashboard could read. An issue dropped under `issue_exclude_reason`'s
+#     own single-reason precedence (assigned > blocked-label > pager) whose
+#     own thread *also* names a still-open `Blocked-by:` reference must
+#     report both: that second ground is independently checked, not a fourth
+#     arm of the same precedence, so the one already reported must never
+#     hide it (issue #2607) — otherwise such an issue stays eligible for
+#     `lib/eligibility.sh`'s own open-`Blocked-by:`-reference Enabler filter
+#     (requirement 35f) forever, since that filter only ever sees what this
+#     array reports.
 #   - **Degrading.** An API failure must yield `{"candidates":[],
 #     "excluded":null}` (exit 0) with the failure on stderr: the output is
 #     *given to* the Co-Ordinator, so an empty `candidates` is a faithful
@@ -76,17 +84,44 @@ assert_eq() {
 #
 # `api graphql` (the listing-plus-comments walk) applies the caller's own
 # `--jq` filter to $STUB_ISSUES, a single-page GraphQL response fixture.
+# `api repos/…/issues/<n>` (the `Blocked-by:` live-check, `issue_blocked_by_ref`)
+# answers from $STUB_REFS_DIR, exactly as test/gather-tech-debt.test.sh's own
+# stub does — needed since issue #2607's fix runs that same live check
+# against a deterministically-dropped-but-labelled issue's own thread too.
 mkdir -p "$tmp_dir/bin"
+export STUB_REFS_DIR="$tmp_dir/refs"
+mkdir -p "$STUB_REFS_DIR"
 cat >"$tmp_dir/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
-[[ "${1:-}" == "api" && "${2:-}" == "graphql" ]] || { echo "stub gh: unexpected command: $*" >&2; exit 1; }
-shift 2
+[[ "${1:-}" == "api" ]] || { echo "stub gh: unexpected command: $*" >&2; exit 1; }
+if [[ "${2:-}" == "graphql" ]]; then
+  shift 2
+  filter='.'
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --jq) filter="$2"; shift 2;; *) shift;; esac
+  done
+  jq -c "$filter" "$STUB_ISSUES"
+  exit 0
+fi
+path="$2"
+case "$path" in
+  repos/*/issues/*)
+    n="${path##*/issues/}"
+    if [[ -f "$STUB_REFS_DIR/$n.json" ]]; then
+      body="$(cat "$STUB_REFS_DIR/$n.json")"
+    else
+      body='{"state":"open"}'
+    fi
+    ;;
+  *) echo "stub gh: unexpected path: $path" >&2; exit 1;;
+esac
 filter='.'
+shift 2
 while [[ $# -gt 0 ]]; do
   case "$1" in --jq) filter="$2"; shift 2;; *) shift;; esac
 done
-jq -c "$filter" "$STUB_ISSUES"
+jq -rc "$filter" <<<"$body"
 STUB
 chmod +x "$tmp_dir/bin/gh"
 export PATH="$tmp_dir/bin:$PATH"
@@ -100,7 +135,12 @@ export PATH="$tmp_dir/bin:$PATH"
 # listing this replaced, so there is nothing to fixture for it; #9 is clean,
 # untriaged (no `Priority` — the Medium default) and commentless; #16 is
 # labelled `pw::pager`, unassigned and not `Blocked`-labelled, proving the
-# pager drop fires on its own (agent-ops#2564).
+# pager drop fires on its own (agent-ops#2564); #30 is labelled `Blocked`
+# (the same single-reason drop #7 gets) and *also* names a still-open
+# `Blocked-by: #31` in its own body, proving issue #2607's fix: a
+# deterministically-dropped issue's own thread is checked for a
+# co-occurring Blocked-by reference too, reported as a second `excluded`
+# entry rather than the one reason hiding the other.
 export STUB_ISSUES="$tmp_dir/issues.json"
 cat >"$STUB_ISSUES" <<'EOF'
 {"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
@@ -181,8 +221,19 @@ cat >"$STUB_ISSUES" <<'EOF'
    "issueFieldValues": {"nodes": []},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
    "body": "A pager tracking issue, never ordinary selectable work (agent-ops#2564).",
+   "comments": {"nodes": []}},
+  {"number": 30, "url": "https://github.com/o/r/issues/30", "title": "Blocked-labelled, and also Blocked-by",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "Blocked"}]},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Labelled Blocked, so dropped for that reason alone under issue_exclude_reason's own precedence.\n\nBlocked-by: #31",
    "comments": {"nodes": []}}
 ]}}}}
+EOF
+cat >"$STUB_REFS_DIR/31.json" <<'EOF'
+{"state": "open"}
 EOF
 
 issues_json="$("$SCRIPT_DIR/scripts/gather-issues.sh" o/r)"
@@ -204,16 +255,23 @@ assert_eq "  ... and never reported as excluded either — it belongs to the oth
   "false" "$(jq 'any(.[]; .number == 14)' <<<"$excluded_json")"
 assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
   "false" "$(jq 'any(.[]; .number == 16)' <<<"$candidates_json")"
+assert_eq "the Blocked-labelled-and-also-Blocked-by issue is dropped too" \
+  "false" "$(jq 'any(.[]; .number == 30)' <<<"$candidates_json")"
 
 # --- The exclusion report: what was dropped, and why (agent-ops#447) ---
-assert_eq "exactly the three deterministic drops are reported" \
-  "3" "$(jq 'length' <<<"$excluded_json")"
+assert_eq "exactly the three single-reason drops, plus #30's own two, are reported" \
+  "5" "$(jq 'length' <<<"$excluded_json")"
 assert_eq "the assigned issue is reported, tagged assigned" \
   '{"number":6,"reason":"assigned"}' "$(jq -c '.[] | select(.number == 6)' <<<"$excluded_json")"
-assert_eq "the Blocked-labelled issue is reported, tagged blocked-label" \
-  '{"number":7,"reason":"blocked-label"}' "$(jq -c '.[] | select(.number == 7)' <<<"$excluded_json")"
+assert_eq "the Blocked-labelled issue (no co-occurring Blocked-by) is reported once, tagged blocked-label only (issue #2607: unchanged single-reason behavior)" \
+  '[{"number":7,"reason":"blocked-label"}]' "$(jq -c '[.[] | select(.number == 7)]' <<<"$excluded_json")"
 assert_eq "the pw::pager-labelled issue is reported, tagged pager" \
   '{"number":16,"reason":"pager"}' "$(jq -c '.[] | select(.number == 16)' <<<"$excluded_json")"
+assert_eq "issue #2607: the Blocked-labelled issue that ALSO names an open Blocked-by reports both reasons" \
+  '[{"number":30,"reason":"blocked-by: #31"},{"number":30,"reason":"blocked-label"}]' \
+  "$(jq -c '[.[] | select(.number == 30)] | sort_by(.reason)' <<<"$excluded_json")"
+assert_eq "  ... and it is excluded from the Enabler-eligible set too, same as any other blocked-by drop (requirement 35f)" \
+  "true" "$(jq '[.[] | select(.number == 30 and (.reason | startswith("blocked-by: ")))] | length == 1' <<<"$excluded_json")"
 assert_eq "the pull request is never reported as excluded" \
   "false" "$(jq 'any(.[]; .number == 8)' <<<"$excluded_json")"
 
