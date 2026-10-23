@@ -100,9 +100,9 @@
       recheck window. BLOCKED_JSON's own `.repo` already arrives canonical by
       the time it reaches this function — `open_blocked_items` resolves it
       through the same map before emitting it (agent-ops#2548) — so this is
-      now a second, harmless application to an already-canonical value, not
-      the one that does the work of surviving the rename; the aggregate's
-      own canonicalization is. The register/review/plan status maps are
+      a second, harmless application to an already-canonical value, not the
+      one that does the work of surviving the rename; the aggregate's own
+      canonicalization is. The register/review/plan status maps are
       looked up by the block's own `repo` unresolved, since each is already
       keyed by whatever repo its own blocked-id grouping was given, not by
       this digest.
