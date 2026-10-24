@@ -22,6 +22,17 @@
 # reimplementing most of its own setup, so the fact asserted here is a fact
 # about the shipped script's line order, not about a captured runtime trace.
 #
+# It also covers the derived-threshold cache `skip_cycle_if_lock_fresh`
+# reads (agent-ops#2321): the fast path runs before `lock_stale_after_sec`
+# is derived each cycle, so on its own it can only compare a held lock's
+# age against the pre-derivation default (14400s). The derivation site
+# persists its result to `$state_dir/.lock-stale-after-sec-cache`
+# immediately after deriving it, and the fast path reads that cache back —
+# the *previous* cycle's derived value — before computing its threshold.
+# Same textual/structural approach as above: this asserts the write and
+# read sites both exist and sit in the right order relative to each other
+# and to the fast path's own def/call sites, not a captured runtime trace.
+#
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:
 #
@@ -47,6 +58,7 @@ assert_eq() {
 }
 
 first_line_matching() { grep -n -m1 -- "$1" "$CYCLE" | cut -d: -f1; }
+first_line_matching_fixed() { grep -F -n -m1 -- "$1" "$CYCLE" | cut -d: -f1; }
 
 fast_check_def_line="$(first_line_matching '^skip_cycle_if_lock_fresh() {')"
 fast_check_call_line="$(first_line_matching '^skip_cycle_if_lock_fresh$')"
@@ -55,6 +67,12 @@ union_snapshot_line="$(first_line_matching 'fleet_logs .* > "\$union_log"')"
 # shellcheck disable=SC2016  # ditto.
 stage_budget_read_line="$(first_line_matching 'stage_budget_observations < "\$union_log"')"
 acquire_lock_call_line="$(first_line_matching '^acquire_lock$')"
+# shellcheck disable=SC2016  # fixed-string match: agent-cycle.sh's own literal cache-file redirect.
+cache_write_line="$(first_line_matching_fixed '> "$state_dir/.lock-stale-after-sec-cache"')"
+# shellcheck disable=SC2016  # ditto.
+cache_read_line="$(first_line_matching_fixed 'cat "$state_dir/.lock-stale-after-sec-cache"')"
+# shellcheck disable=SC2016  # ditto.
+derivation_line="$(first_line_matching 'lock_stale_after_sec="\$(stage_budget_lock_seconds')"
 
 assert_eq "the lock-held fast-path function is still defined" \
   "yes" "$([[ -n "$fast_check_def_line" ]] && echo yes || echo no)"
@@ -66,10 +84,17 @@ assert_eq "the stage-budget union read is still where this test expects to find 
   "yes" "$([[ -n "$stage_budget_read_line" ]] && echo yes || echo no)"
 assert_eq "the full acquire_lock call is still where this test expects to find it" \
   "yes" "$([[ -n "$acquire_lock_call_line" ]] && echo yes || echo no)"
+assert_eq "the derived lock_stale_after_sec is still cached to a file" \
+  "yes" "$([[ -n "$cache_write_line" ]] && echo yes || echo no)"
+assert_eq "the fast path still reads that cache back" \
+  "yes" "$([[ -n "$cache_read_line" ]] && echo yes || echo no)"
+assert_eq "the real derivation site is still where this test expects to find it" \
+  "yes" "$([[ -n "$derivation_line" ]] && echo yes || echo no)"
 
 if [[ -z "$fast_check_def_line" || -z "$fast_check_call_line" \
       || -z "$union_snapshot_line" || -z "$stage_budget_read_line" \
-      || -z "$acquire_lock_call_line" ]]; then
+      || -z "$acquire_lock_call_line" || -z "$cache_write_line" \
+      || -z "$cache_read_line" || -z "$derivation_line" ]]; then
   printf '\n%d assertion(s) failed\n' "$(( failures + 1 ))" >&2
   echo "FAIL - could not locate the lock/union wiring in agent-cycle.sh — has it moved?" >&2
   exit 1
@@ -85,6 +110,15 @@ assert_eq "the fast-path call precedes the full acquire_lock call" \
   "yes" "$([[ "$fast_check_call_line" -lt "$acquire_lock_call_line" ]] && echo yes || echo no)"
 assert_eq "the union snapshot precedes the stage-budget read that consumes it" \
   "yes" "$([[ "$union_snapshot_line" -lt "$stage_budget_read_line" ]] && echo yes || echo no)"
+assert_eq "the cache read sits inside the fast-path function, before it is called" \
+  "yes" "$([[ "$fast_check_def_line" -lt "$cache_read_line" && "$cache_read_line" -lt "$fast_check_call_line" ]] \
+    && echo yes || echo no)"
+assert_eq "the fast path's call (and its cache read) precede the real derivation" \
+  "yes" "$([[ "$fast_check_call_line" -lt "$derivation_line" ]] && echo yes || echo no)"
+assert_eq "the cache is written right after the real derivation, so the next cycle sees it" \
+  "yes" "$([[ "$derivation_line" -lt "$cache_write_line" ]] && echo yes || echo no)"
+assert_eq "the cache write precedes the full acquire_lock call" \
+  "yes" "$([[ "$cache_write_line" -lt "$acquire_lock_call_line" ]] && echo yes || echo no)"
 
 if (( failures )); then
   printf '\n%d assertion(s) failed\n' "$failures" >&2
