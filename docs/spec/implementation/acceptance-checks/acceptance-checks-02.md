@@ -881,13 +881,19 @@
    including `prompts/implementer.md`) still carry
    `PIPELINE_COMMENT_MARKER_PREFIX`.
 3. <a id="impl-ac-3"></a>A second invocation while one holds the lock exits without acting.
-3a. <a id="impl-ac-3a"></a>**The lock-held case above costs a `stat` and a `kill -0`, never the
-   fleet-log union (requirement 1; agent-ops#2312).** `test/lock-skip-before-
-   union.test.sh` passes: the lock pre-check that recognises a live,
-   not-yet-stale holder is defined and called in `agent-cycle.sh` before the
+3a. <a id="impl-ac-3a"></a>**The lock-held case above costs a `stat`, a cache read and a `kill -0`,
+   never the fleet-log union (requirement 1; agent-ops#2312).**
+   `test/lock-skip-before-union.test.sh` passes: the lock pre-check that
+   recognises a live, not-yet-stale holder
+   is defined and called in `agent-cycle.sh` before the
    `fleet_logs` snapshot that materialises `union_log`, before the
    stage-budget derivation that reads it, and before the full lock
-   acquisition that re-derives the precise `lock_stale_after` from it.
+   acquisition that re-derives the precise `lock_stale_after` from it. The
+   same file asserts the derived-threshold cache that pre-check compares
+   against (agent-ops#2321): `.lock-stale-after-sec-cache` is written
+   immediately after that derivation and read back inside the pre-check's
+   own body, so each cycle's write is what the *next* cycle's pre-check
+   reads.
    Separately, `test/union-read-memory-bound.test.sh` passes: run over a
    generated union of at least 100 MB, `log_latest_ts` (`lib/label-marker.sh`)
    and `crash_loop_open_escalations` (`lib/crash-loop.sh`) each still return

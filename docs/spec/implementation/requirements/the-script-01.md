@@ -4,13 +4,25 @@
 
 1. <a id="impl-1"></a>**Lock.** Before the fleet-log union below is built, a cheap pre-check
    reads any lock file already in `state_dir`: a recorded pid that is alive,
-   whose `host` matches (or carries none), and whose age is under the
-   pre-derivation default/floor `lock_stale_after` already holds (requirement
-   4f's own derivation from the union has not run yet) is treated as held and
-   fresh — log `cycle-skipped`, remove the record directory this tick made
+   whose `host` matches (or carries none), and whose age is under the larger
+   of the pre-derivation default/floor `lock_stale_after` and the last
+   threshold requirement 4f's own derivation produced on this node
+   (agent-ops#2321) already holds, and is treated as held and fresh —
+   log `cycle-skipped`, remove the record directory this tick made
    (which holds nothing at this point: the fleet-log union has not been
-   built) and exit 0. Every other case — no lock file, a dead pid, a foreign
-   host, or an age that already clears even that conservative threshold —
+   built) and exit 0. That derived threshold is not available this early, so
+   it is read back from `state_dir/.lock-stale-after-sec-cache`: a bare
+   integer the script writes immediately after deriving it, best-effort in
+   both directions and node-local (a cache of what this node derived, read by
+   nobody else, so it is excluded from replication like
+   `.image-drift-cache.json`). Missing, empty or non-numeric — no cycle has
+   reached the derivation on this node yet, or the write failed — the
+   pre-check compares against the pre-derivation default alone. Taking the
+   larger of the two never widens a takeover window, because this pre-check
+   only ever skips: too large a threshold delays the slow path reclaiming a
+   hung holder, exactly as too small a *derived* threshold already does, and
+   takes nothing over early. Every other case — no lock file, a dead pid, a
+   foreign host, or an age that already clears even that threshold —
    falls through unchanged: the union is built (requirement 2.5) and the
    precise `lock_stale_after` derived from it (requirement 4f), and only then
    does the script acquire the lock file in `state_dir`, recording PID, start
