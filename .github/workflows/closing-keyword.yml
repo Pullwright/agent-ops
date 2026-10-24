@@ -41,6 +41,17 @@ name: Closing keyword check
 # request's own changed-files listing (`gh api …/pulls/<n>/files`, gated by
 # `pull-requests: read` — a distinct scope from `contents`, since it reads
 # through the API rather than the checkout) to check it.
+#
+# A third, independent gap (issue #2645): requirement 25's own `td-record`
+# body block — the permanent record the squash-merge commit carries into
+# `main`'s immutable history — had no CI enforcement, so PR #2643 closed a
+# tech-debt issue with a valid marker and keyword and no `td-record` block,
+# caught only because a human happened to notice before merge.
+# `scripts/check-closing-keyword.sh` now fails a PR closing a
+# `pw::type:tech-debt` issue unless its body carries a well-formed
+# `td-record` block for that issue too — reading only the body already in
+# hand, so this half needs no extra scope beyond what the first gap already
+# granted.
 
 on:
   pull_request:
