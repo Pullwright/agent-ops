@@ -189,6 +189,19 @@ configuring any other provider on it is itself a config error at cycle
 start, naming the provider and the substrate (agent-ops#2198). No
 existing config needs to change.
 
+Each of those keys may instead name a weighted *set* of models, which is how
+a share of one actor's work is split across providers rather than across one
+provider's two credentials: `{"models": [{"id": "anthropic/claude-sonnet-5",
+"weight": 2}, {"id": "xai/grok-4.7", "weight": 1}]}`, each `id` in the same
+bare-or-qualified form as a single value and each `weight` an integer `>= 0`
+defaulting to `1`. One member is drawn per launch, by weight, before the
+credential lane is drawn — so a set says "which provider" and
+`providers.<name>.lanes` says "which credential of it", and an installation
+wanting both sets both. A member whose provider has no lane open right now
+is skipped in favour of a sibling. The weights are shares of the *draw*, not
+of measured usage: a share of API-key spend stated as a member weight has to
+be recomputed whenever the lane weights move.
+
 The `repository_review` object configures the separate repository-review pipeline — see [Repository review](../guides/operating/watch.md#the-pipeline-monitor).
 
 <!-- config-table:notes id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->

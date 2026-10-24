@@ -42,6 +42,21 @@
 # the same item or the claim locks nothing. Keying on the block's timestamp is
 # what lets a re-blocked item be examined again while the tombstone of its last
 # examination stands.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 enabler_claim_key() {
   local entry="$1" repo item ts issue epoch key
   repo="$(jq -r '.repo // ""' <<<"$entry" 2>/dev/null || true)"
@@ -989,6 +1004,11 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/enabler-adjudicate-$idx.out"
+  # Drawn once, before the lane (issue #2247), with the exact seed this
+  # call's own (seed-suffix-less) run_model_stage below uses for its lane
+  # draw — see the identical comment on the Implementer's own launch in
+  # lib/coordinator-phase.sh.
+  stage_model_resolve_into critical_model "$critical_model" "${cycle_id:-}:enabler-adjudicate"
   if run_model_stage enabler-adjudicate "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
@@ -1131,6 +1151,9 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/enabler-decide-$idx.out"
+  # Drawn once, before the lane (issue #2247) — see the identical comment on
+  # `enabler-adjudicate`'s own launch above.
+  stage_model_resolve_into critical_model "$critical_model" "${cycle_id:-}:enabler-decide"
   if run_model_stage enabler-decide "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
@@ -1402,10 +1425,20 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/enabler.out"
+  # Drawn once, before the lane (issue #2247), into its own local rather
+  # than overwriting `enabler_model` itself — this function's own
+  # decide-tactical/decide-with-veto handling reads that variable again
+  # later, expecting the configured value (or set handle), not whichever
+  # member this one launch happened to draw. See the identical comment on
+  # the Implementer's own launch in lib/coordinator-phase.sh, which is free
+  # to overwrite its own `impl_model` instead: that one launches at most
+  # once per cycle with nothing of its own reading the variable afterward.
+  local enabler_model_launch
+  stage_model_resolve_into enabler_model_launch "$enabler_model" "${cycle_id:-}:enabler"
   # The Enabler spans repositories by construction, so its cell is keyed `*`
   # (requirement 4f) — there is no repository this engagement belongs to.
-  stage_budget_apply enabler "*" "$enabler_model"
-  if run_model_stage enabler "$(( stage_backstop_min * 60 ))" "$enabler_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  stage_budget_apply enabler "*" "$enabler_model_launch" "$STAGE_MODEL_SET_EXTRA_JSON"
+  if run_model_stage enabler "$(( stage_backstop_min * 60 ))" "$enabler_model_launch" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?
@@ -1425,7 +1458,7 @@ $(jq . <<<"$input")
   fi
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --arg r "$enabler_refusal" --arg m "$enabler_refusal_msg" --arg c "$enabler_refusal_class" \
-    --argjson metered "$(metering_fields "$enabler_model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    --argjson metered "$(metering_fields "$enabler_model_launch" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     '{stage: "enabler", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end)
      + (if $r == "" then {} else {api_refusal: $r} end)
      + (if $m == "" then {} else {api_message: $m} end)
@@ -1451,7 +1484,7 @@ $(jq . <<<"$input")
   # living session behind it worth one more ask (issue #237); a timeout or a
   # non-zero exit does not, since nothing held the session open to resume.
   if (( rc == 0 )) && [[ -z "$parsed" ]]; then
-    parsed="$(stage_salvage_result enabler "$out" "$enabler_model" "$cycle_dir" || true)"
+    parsed="$(stage_salvage_result enabler "$out" "$enabler_model_launch" "$cycle_dir" || true)"
   fi
   if (( rc != 0 )) || [[ -z "$parsed" ]]; then
     # A timeout or unparseable output changes nothing: no verdict was reached, so

@@ -970,18 +970,37 @@ section "Models"
 # resolves cleanly but isn't on the ladder cannot be verified by the floor
 # check below, so it is warned here rather than silently treated as fine.
 tier_ladder_keys=" coordinator_model refiner_model enabler_model implementer_model_default implementer_model_trivial reviewer_model_default "
-while IFS=$'\t' read -r key value; do
-  [[ -n "$key" ]] || continue
+# doctor_report_model KEY MEMBER_ID [WEIGHT]
+# One key/value's worth of the loop below, factored out so a weighted set
+# (issue #2247) can call it once per member rather than duplicating the
+# resolve-then-tier-warn shape inline.
+doctor_report_model() {
+  local key="$1" value="$2" weight="${3:-}" resolved qualified label
+  label="$key"
+  [[ -n "$weight" ]] && label="$key: $value (weight $weight)"
   if resolved="$(resolve_model_id "$key" "$value" 2>&1)"; then
-    ok "$key → $resolved"
+    ok "$label → $resolved"
     if [[ "$tier_ladder_keys" == *" $key "* ]]; then
       qualified="$(resolve_model_qualified "$key" "$value" 2>/dev/null || true)"
       if ! model_tier_known "$qualified"; then
-        warn "$key ($qualified) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the other five"
+        warn "$label ($qualified) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the others"
       fi
     fi
   else
     fail "$resolved"
+  fi
+}
+while IFS=$'\t' read -r key value; do
+  [[ -n "$key" ]] || continue
+  if jq -e 'type == "object"' <<<"$value" >/dev/null 2>&1; then
+    # A weighted set (issue #2247): every member is its own resolution and
+    # its own tier-ladder check, never the set object itself.
+    while IFS=$'\t' read -r member_id member_weight; do
+      [[ -n "$member_id" ]] || continue
+      doctor_report_model "$key" "$member_id" "$member_weight"
+    done < <(jq -r '.models[]? | [(.id // ""), (.weight // 1)] | @tsv' <<<"$value")
+  else
+    doctor_report_model "$key" "$value"
   fi
 # Read against the raw config file, as every model key in this list is — so
 # the review pipeline's own model has to be looked up under either spelling
@@ -991,7 +1010,9 @@ while IFS=$'\t' read -r key value; do
 # an installation that has not renamed its config.json yet, which is exactly
 # the quiet failure the check exists to catch. The reported key name follows
 # whichever spelling config.json actually uses, so a `fail` names a key the
-# operator can find in their own file.
+# operator can find in their own file. A set-shaped `.v` is carried through
+# as JSON text (`tojson`) rather than left to `-r`'s own stringification, so
+# `@tsv` (which refuses a bare object field) never sees one.
 done < <(jq -r '
   (if .repository_review != null then "repository_review" else "project_review" end) as $rr_key |
   (.repository_review // .project_review // {}) as $rr |
@@ -1010,7 +1031,8 @@ done < <(jq -r '
   ]
   + [ ($rr.repos // [])[] | select(has("model"))
       | {k: (.slug + "'"'"'s \($rr_key).model override"), v: .model} ]
-  | .[] | select((.v // "") != "") | [.k, .v] | @tsv' "$config_file")
+  | .[] | select((.v // "") != "")
+  | [.k, (.v | if type == "object" then tojson else . end)] | @tsv' "$config_file")
 
 # model_tiers (requirement 1c's installation-level override, D29's
 # customer-control rule, issue #2465): model_tiers_load above already merged
@@ -1044,12 +1066,22 @@ done < <(model_tiers_rows "$(cfg_json '.model_tiers')")
 # tier it might write for is exactly the failure #815 (fixed by #819) and
 # #821 both trace to. A fail here mirrors agent-cycle.sh's own startup guard,
 # through the same lib/config-schema.sh function, so the two can never drift.
-refiner_model_q="$(resolve_model_qualified refiner_model "$(cfg '.refiner_model')" 2>/dev/null || true)"
-enabler_model_q="$(resolve_model_qualified enabler_model "$(cfg '.enabler_model')" 2>/dev/null || true)"
-implementer_model_default_q="$(resolve_model_qualified implementer_model_default "$(cfg '.implementer_model_default')" 2>/dev/null || true)"
-implementer_model_trivial_q="$(resolve_model_qualified implementer_model_trivial "$(cfg '.implementer_model_trivial')" 2>/dev/null || true)"
-tier_violations="$(config_model_tier_floor_violations "$refiner_model_q" "$enabler_model_q" \
-  "$implementer_model_default_q" "$implementer_model_trivial_q")"
+# Each key is loaded through `model_key_load_into` (issue #2247) first, so a
+# weighted set expands to every member's qualified id
+# (`model_key_qualified_ids`) rather than just one — any member that fails
+# to resolve was already reported by the per-key sweep above, and
+# `model_key_qualified_ids` on the resulting empty variable prints `[]`,
+# which the floor check already treats as "skip" (the same way an empty,
+# disabled key always has).
+model_key_load_into __doctor_refiner_model refiner_model "$(cfg '.refiner_model')" 2>/dev/null || true
+model_key_load_into __doctor_enabler_model enabler_model "$(cfg '.enabler_model')" 2>/dev/null || true
+model_key_load_into __doctor_implementer_model_default implementer_model_default "$(cfg '.implementer_model_default')" 2>/dev/null || true
+model_key_load_into __doctor_implementer_model_trivial implementer_model_trivial "$(cfg '.implementer_model_trivial')" 2>/dev/null || true
+tier_violations="$(config_model_tier_floor_violations \
+  "$(model_key_qualified_ids refiner_model "${__doctor_refiner_model:-}")" \
+  "$(model_key_qualified_ids enabler_model "${__doctor_enabler_model:-}")" \
+  "$(model_key_qualified_ids implementer_model_default "${__doctor_implementer_model_default:-}")" \
+  "$(model_key_qualified_ids implementer_model_trivial "${__doctor_implementer_model_trivial:-}")")"
 if [[ -n "$tier_violations" ]]; then
   while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
     [[ -n "$author_key" ]] || continue

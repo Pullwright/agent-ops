@@ -83,9 +83,9 @@ run_either() {
     # shellcheck disable=SC2034
     stage_kill_reason=""
     # shellcheck disable=SC2034
-    enabler_model="claude-haiku-4-5-20251001"
+    enabler_model_launch="claude-haiku-4-5-20251001"
     # shellcheck disable=SC2034
-    refiner_model="claude-haiku-4-5-20251001"
+    refiner_model_launch="claude-haiku-4-5-20251001"
     # shellcheck disable=SC2034
     stage_gaps_json="null"
     # shellcheck disable=SC2034

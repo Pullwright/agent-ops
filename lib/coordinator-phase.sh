@@ -25,6 +25,21 @@
 # Sourced by agent-cycle.sh, after every lib/*.sh file this function's body
 # calls into, as the very last statement of the cycle.
 
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 run_coordinator_through_finishing_phase() {
 # --- 4. Co-Ordinator stage — one invocation per repository (issue #587) ---
 # `coordinator_base_prompt` is rendered further up, ahead of requirement 4i's
@@ -851,13 +866,24 @@ stage_pr_head_sha_at_start=""
 if [[ -n "$implementer_subject_pr_url" ]]; then
   stage_pr_head_sha_at_start="$(gh pr view "$implementer_subject_pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
 fi
-stage_budget_apply implementer "$selected_repo" "$impl_model" "{}" "$selected_item"
-if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+# Drawn once, before the lane (issue #2247): a weighted `implementer_model_default`
+# reduces to one concrete member here, with the same seed `run_model_stage`'s
+# own lane draw below will reuse — so the model is chosen first, the budget
+# cell below keys on the member actually launched, and `stage-start` names
+# the set and the member drawn via STAGE_MODEL_SET_EXTRA_JSON. Its own
+# variable rather than `impl_model` itself, which the trivial-tier comparison
+# further down still needs as the Co-Ordinator wrote it — and a plain one,
+# never `local`: this whole function's variables are plain, and several tests
+# lift a range of its lines out and `eval` them in a bare shell, where a
+# `local` is an error.
+stage_model_resolve_into impl_model_launch "$impl_model" "${cycle_id:-}:implementer"
+stage_budget_apply implementer "$selected_repo" "$impl_model_launch" "$STAGE_MODEL_SET_EXTRA_JSON" "$selected_item"
+if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model_launch" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
   impl_rc=0
 else
   impl_rc=$?
 fi
-log_event "stage-end" "$(jq -nc --argjson rc "$impl_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$impl_model" "$impl_out" "$stage_gaps_json" "$stage_lane_json")" \
+log_event "stage-end" "$(jq -nc --argjson rc "$impl_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$impl_model_launch" "$impl_out" "$stage_gaps_json" "$stage_lane_json")" \
   --arg r "$selected_repo" --arg i "$selected_item" \
   '{stage: "implementer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
    + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
@@ -877,7 +903,7 @@ stage_lane_mismatch_standdown "${state_dir:-}" implementer || true
 impl_result="$(jq -r '.result // empty' "$impl_out" 2>/dev/null || true)"
 impl_status_json="$(extract_json_result "$impl_result" 2>/dev/null || true)"
 if (( impl_rc == 0 )) && [[ -z "$impl_status_json" ]]; then
-  impl_status_json="$(stage_salvage_result implementer "$impl_out" "$impl_model" "$clone_dir" || true)"
+  impl_status_json="$(stage_salvage_result implementer "$impl_out" "$impl_model_launch" "$clone_dir" || true)"
 fi
 # Requirement 9's fallback chain, cheapest first and least dependent on the
 # stage last. The first three all read something the Implementer had to do:
@@ -1243,6 +1269,13 @@ if [[ -n "$impl_pr_url" ]]; then
     --jq '.labels[].name | select(startswith("complexity:")) | sub("^complexity:"; "")' 2>/dev/null || true)
 fi
 impl_trivial=0
+# The work order's own `model` value, never the drawn member (issue #2247):
+# this asks "which of the two configured keys did the Co-Ordinator pick",
+# and `implementer_model_trivial` holds the set's own handle, not a model id,
+# for a key configured as a weighted set — so comparing the drawn member
+# against it would read every trivial-tier work order as non-trivial and
+# escalate its review a tier. Identical to comparing `impl_model_launch` for
+# a key that is not a set, since the draw passes an ordinary value through.
 [[ "$impl_model" == "$implementer_model_trivial" ]] && impl_trivial=1
 rev_complexity="$(reviewer_complexity "$impl_complexity" "$impl_trivial" ${label_grades[@]+"${label_grades[@]}"})"
 rev_model="$reviewer_model_default"
@@ -1333,14 +1366,18 @@ else
   if [[ -n "$impl_pr_url" ]]; then
     stage_pr_head_sha_at_start="$(gh pr view "$impl_pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
   fi
-  stage_budget_apply reviewer "$selected_repo" "$rev_model" \
-    "$(jq -nc --arg c "$rev_complexity" '{complexity: $c}')" "$selected_item"
-  if run_model_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+  # Drawn once, before the lane (issue #2247) — see the identical comment on
+  # the Implementer's own launch above.
+  stage_model_resolve_into rev_model_launch "$rev_model" "${cycle_id:-}:reviewer"
+  stage_budget_apply reviewer "$selected_repo" "$rev_model_launch" \
+    "$(jq -nc --arg c "$rev_complexity" --argjson s "$STAGE_MODEL_SET_EXTRA_JSON" \
+      '{complexity: $c} + $s')" "$selected_item"
+  if run_model_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model_launch" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
     rev_rc=0
   else
     rev_rc=$?
   fi
-  log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model" "$rev_out" "$stage_gaps_json" "$stage_lane_json")" \
+  log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model_launch" "$rev_out" "$stage_gaps_json" "$stage_lane_json")" \
     --arg r "$selected_repo" --arg i "$selected_item" \
     '{stage: "reviewer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
      + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
@@ -1360,7 +1397,7 @@ else
   rev_result="$(jq -r '.result // empty' "$rev_out" 2>/dev/null || true)"
   rev_status_json="$(extract_json_result "$rev_result" 2>/dev/null || true)"
   if (( rev_rc == 0 )) && [[ -z "$rev_status_json" ]]; then
-    rev_status_json="$(stage_salvage_result reviewer "$rev_out" "$rev_model" "$clone_dir" || true)"
+    rev_status_json="$(stage_salvage_result reviewer "$rev_out" "$rev_model_launch" "$clone_dir" || true)"
   fi
 fi
 
