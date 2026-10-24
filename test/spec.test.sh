@@ -54,10 +54,13 @@ assert_status() {
 # real script and a minimal set of fixture spec files covering all nine
 # (specification, sequence) kinds spec.sh knows about:
 #   IMPL 1 / IMPL 1a (requirements), IMPL AC 2 (acceptance check, deliberately
-#   not also a requirement number), IMPL C 3 (component, likewise);
+#   not also a requirement number), IMPL AC 2a-i (a hyphenated acceptance-check
+#   sub-item, agent-ops#2544), IMPL C 3 (component, likewise);
 #   REV R1 / REV AC 1 / REV C 1; MON M1 / MON AC 1 / MON C 1.
 # lib/fixture.sh cites "requirement 1" (valid), "requirement 2" (wrong
-# kind — 2 is only an acceptance check) and "requirement 99" (dangling).
+# kind — 2 is only an acceptance check), "requirement 99" (dangling),
+# "acceptance check 2a-i" (valid, hyphenated) and "acceptance check 2a-zzzz"
+# (dangling, hyphenated — must not silently truncate to its parent "2a").
 new_repo() {
   local dir
   dir="$(mktemp -d)"
@@ -81,6 +84,7 @@ MD
 ## Acceptance checks
 
 2. <a id="impl-ac-2"></a>**First check.** Verifies the thing.
+2a-i. <a id="impl-ac-2a-i"></a>**Hyphenated sub-check.** Verifies a sub-thing.
 MD
 
   cat > "$dir/docs/spec/implementation/components/fixture.md" <<'MD'
@@ -126,6 +130,8 @@ MD
 # Cites requirement 1 (valid).
 # Cites requirement 2 (wrong kind: 2 is an acceptance check, not a requirement).
 # Cites requirement 99 (dangling: no such label exists).
+# Cites acceptance check 2a-i (valid, hyphenated sub-item).
+# Cites acceptance check 2a-zzzz (dangling: no such hyphenated sub-item exists).
 EOF
 
   (cd "$dir" && git init -q && git add -A)
@@ -167,6 +173,9 @@ assert_eq "where: English 'acceptance check N'" \
 assert_eq "where: qualified IMPL AC form" \
   "docs/spec/implementation/acceptance-checks/fixture.md#impl-ac-2" \
   "$(run "$repo" where "IMPL AC 2")"
+assert_eq "where: English 'acceptance check N-i' (hyphenated sub-item)" \
+  "docs/spec/implementation/acceptance-checks/fixture.md#impl-ac-2a-i" \
+  "$(run "$repo" where "acceptance check 2a-i")"
 assert_eq "where: English 'component N'" \
   "docs/spec/implementation/components/fixture.md#impl-c-3" \
   "$(run "$repo" where "component 3")"
@@ -200,10 +209,12 @@ rm -rf "$repo"
 repo="$(new_repo)"
 run "$repo" index >/dev/null
 assert_eq "index: writes docs/spec/index.json" "1" "$(cd "$repo" && [[ -f docs/spec/index.json ]] && echo 1)"
-assert_eq "index: records every one of the nine kinds' fixture label" "10" \
+assert_eq "index: records every one of the nine kinds' fixture label, plus the hyphenated sub-item" "11" \
   "$(cd "$repo" && jq '.labels | length' docs/spec/index.json)"
 assert_eq "index: anchor for IMPL AC 2" "impl-ac-2" \
   "$(cd "$repo" && jq -r '.labels["IMPL AC 2"].anchor' docs/spec/index.json)"
+assert_eq "index: anchor for IMPL AC 2a-i (hyphenated sub-item)" "impl-ac-2a-i" \
+  "$(cd "$repo" && jq -r '.labels["IMPL AC 2a-i"].anchor' docs/spec/index.json)"
 
 index_check_out="$(run "$repo" index --check)"
 index_check_status=$?
@@ -225,18 +236,29 @@ check_status=$?
 assert_status "check: fails against the fixture's own wrong-kind and dangling citations" "1" "$check_status"
 assert_contains "check: reports the wrong-kind citation" "$check_out" "requirement 2"
 assert_contains "check: reports the dangling citation" "$check_out" "requirement 99"
+assert_contains "check: reports a dangling hyphenated sub-item citation rather than truncating to its parent" \
+  "$check_out" "acceptance check 2a-zzzz"
+if [[ "$check_out" == *"2a-i"* ]]; then
+  printf 'FAIL - %s\n     did not expect to find: %s\n     actual:                 %s\n' \
+    "check: does not report the valid hyphenated sub-item citation" "2a-i" "$check_out"
+  failures=$(( failures + 1 ))
+else
+  pass "check: does not report the valid hyphenated sub-item citation"
+fi
 
-# Ratchet both known violations away and confirm check passes.
+# Ratchet all three known violations away and confirm check passes.
 line2="$(grep -n 'requirement 2 ' "$repo/lib/fixture.sh" | head -1 | cut -d: -f1)"
 line99="$(grep -n 'requirement 99' "$repo/lib/fixture.sh" | head -1 | cut -d: -f1)"
+line_zzzz="$(grep -n 'acceptance check 2a-zzzz' "$repo/lib/fixture.sh" | head -1 | cut -d: -f1)"
 cat > "$repo/scripts/spec-check-ratchet.tsv" <<EOF
 label	file	line	issue
 IMPL 2	lib/fixture.sh	$line2	#000
 IMPL 99	lib/fixture.sh	$line99	#000
+IMPL AC 2a-zzzz	lib/fixture.sh	$line_zzzz	#000
 EOF
 ratcheted_out="$(run "$repo" check 2>&1)"
 ratcheted_status=$?
-assert_status "check: passes once both violations are ratcheted" "0" "$ratcheted_status"
+assert_status "check: passes once all three violations are ratcheted" "0" "$ratcheted_status"
 assert_contains "check: says every citation resolves" "$ratcheted_out" "every citation resolves"
 
 # A ratchet entry naming the wrong line must not mask the violation.

@@ -230,7 +230,7 @@ a node updates by pulling a new image rather than by pulling a branch.
   architecture, loaded (`load: true`) and run natively through requirement
   1b's acceptance checks — but publishes nothing. This is the whole update
   path: merge produces an image, and nodes replace containers. "Could change
-  it" is requirement 1b-i's question: a change confined to prose builds
+  it" is acceptance check 1b-i's question: a change confined to prose builds
   nothing and publishes nothing, so a documentation merge leaves the fleet
   where it is and no tag carries its SHA.
 - The image creates the volume mount points (`~/.claude`, `state_dir`,
