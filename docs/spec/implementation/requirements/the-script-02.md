@@ -598,7 +598,8 @@
       missing file from a failed write, reported neither, and left exactly
       the directory Docker then poisoned (agent-ops#1347). Installing the
       hook replaces any earlier entry naming the same parent, so the old form
-      does not survive an upgrade.
+      does not survive an upgrade. (0i, below, reads the parent's throttle
+      *rate* — level-based ceilings alone do not catch a wedge in progress.)
 
    0g. *Host budget* (requirement 2.0g, agent-ops#757). Free, and for the
       same reason as 0c/0f immediately above: it reads a file already sitting
@@ -853,6 +854,52 @@
       container is on, so an inconclusive probe right after a restart must
       not reset it to empty either, or the eventual clean reply on the new
       container would find no `"refused"` left to retire.
+
+   0i. *Parent-cgroup memory throttle* (requirement 2.0i, agent-ops#2469).
+      Free, like 0c/0f/0g: every value read is bind-mounted read-only (0f's
+      `MEMORY_CGROUP_PARENT_*` windows) or sits in `state_dir`. 0f reads the
+      *host's* MemAvailable on purpose, so it cannot see a node whose
+      *parent* cgroup is throttling it under `memory.high` while the host
+      has memory free — `doctor.sh`'s own `memory.events` warning names the
+      gap; nothing stood down on it before this.
+
+      `lib/memory.sh`'s `memory_cgroup_throttle_rate_per_min` computes the
+      parent's `memory.events` `high` rise, events/minute, between two
+      readings, kept in a gate-owned state file separate from `doctor.sh`'s
+      own; `memory_cgroup_throttle_verdict` judges it against
+      `max_cgroup_throttle_per_minute` — `throttling` above, `ok` at or
+      below, empty (never a guess, as 0c/0f's own unreadable-meter branches
+      hold) with no parent window, no previous reading, or a `0` threshold.
+      `memory_cgroup_headroom_verdict` adds an optional `near-ceiling`
+      signal when `memory.current` sits within `min_cgroup_headroom_bytes`
+      of the parent's `memory.high` — off (`0`) by default, the rate alone
+      having separated throttling from noise more cleanly on the incident
+      this is built from. Either trips a stand-down, cause
+      `memory-throttled`; `doctor.sh` reads the same threshold for its own
+      warning.
+
+      One `memory_throttle_check` function, at file scope so both call
+      sites reach it however an earlier check exits, runs this band (beside
+      0f/0g) and again immediately before the Co-Ordinator engages (top of
+      band 4) — the checkpoint that actually protects the stage, since the
+      gather phase between the two routinely outlasts the window a band can
+      open and close in. Either checkpoint leaves no claim held.
+
+      A sustained band is a configuration fault, not a transient dip.
+      `memory_throttle_escalate_after` (per node) counts consecutive
+      stand-downs; at the threshold, `_memory_throttle_escalate` files a
+      `memory-throttled:<node>` issue naming the `cgroup-parent-setup.sh`
+      remedy (agent-ops#1639), dedup'd by `create_escalation_issue`.
+      `memory_throttle_retire_resolved` (`lib/enabler.sh`) closes it on the
+      first clean reading after, the per-node shape 0h's `credential_
+      refused_retire_resolved` uses — an empty verdict moves neither the
+      count nor the escalation. Filing and retirement skip under
+      `--dry-run`; the stand-down does not.
+
+      Configurable: `max_cgroup_throttle_per_minute` (default 10,000/min),
+      `min_cgroup_headroom_bytes` (default `0`), `memory_throttle_
+      escalate_after` (default 3). Either of the first two at `0` turns
+      that half off; both off turns the whole check off.
 
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`

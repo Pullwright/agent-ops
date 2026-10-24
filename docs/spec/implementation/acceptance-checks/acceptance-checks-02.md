@@ -366,6 +366,64 @@
    `lib/memory.sh`'s own already-tested `memory_total_kb` closely enough that
    a second dedicated unreadable-path test would add no coverage `test/
    memory.test.sh` does not already give the same arithmetic.
+2n-iii. <a id="impl-ac-2n-iii"></a>**A cycle does not start work the host's own parent cgroup is
+   throttling, even while the host itself has memory free (requirement
+   2.0i, agent-ops#2469).** `test/memory.test.sh` passes:
+   `memory_cgroup_throttle_rate_per_min` reads the parent's `memory.events`
+   `high` counter's rise, in events per minute, between two readings, flooring
+   a falling counter's delta at `0` rather than reading it negative (the
+   parent cgroup was recreated), and is empty — never `0` — when the current
+   counter is unreadable, there is no previous reading, or the elapsed time
+   between the two is not strictly positive;
+   `memory_cgroup_throttle_verdict` reads `throttling` only when that rate
+   exceeds `max_cgroup_throttle_per_minute`, `ok` at or below it, and empty
+   for a `0`/non-numeric threshold or whenever the rate itself is empty —
+   never a verdict standing anything down on a guess;
+   `memory_cgroup_throttle_describe` names the measured rate, the configured
+   threshold and the elapsed window;
+   `memory_cgroup_headroom_verdict` reads `near-ceiling` only when the gap
+   between this cgroup's own `memory.current` and the parent's own
+   `memory.high` falls below `min_cgroup_headroom_bytes`, `ok` above it, and
+   empty for a `0`/non-numeric floor, an unreadable `memory.current`, or a
+   parent `memory.high` that is itself unreadable or `max`;
+   `memory_cgroup_headroom_describe` names what is held, the parent's own
+   ceiling and the configured floor.
+   `test/memory-throttle-wiring.test.sh` passes against the real
+   `memory_throttle_check`/`_memory_throttle_escalate` functions
+   (`lib/standdown.sh`), sourced directly rather than lifted by text
+   extraction since both are defined at file scope precisely so the same
+   function serves both call sites (requirement 2's own 0i slot and the
+   pre-Co-Ordinator recheck at the top of band 4) without duplicating the
+   logic: a `throttling` rate verdict or a `near-ceiling` headroom verdict
+   each independently exits 0 with a logged `stand-down` event carrying
+   `cause: "memory-throttled"` and the terminal node state to match, never
+   falling through; both verdicts `ok`, or both empty (no parent window, or
+   no previous reading), fall through untouched, standing nothing down;
+   the consecutive count only advances on a real `throttling`/`near-ceiling`
+   or a real `ok` — an empty verdict (no evidence either way) leaves it
+   exactly where it was, so a transient read failure can neither manufacture
+   nor erase a run; once the count reaches `memory_throttle_escalate_after`,
+   each further firing calls `_memory_throttle_escalate`, naming this node's
+   own `memory-throttled:<node>` item ref, and a clean reading immediately
+   afterward calls `lib/enabler.sh`'s `memory_throttle_retire_resolved`
+   instead — a clean reading that never reached the threshold calls neither,
+   since there is nothing open yet to retire; a count of `0` for
+   `memory_throttle_escalate_after` never escalates regardless of how high
+   the consecutive count climbs; `--dry-run` still stands the cycle down
+   (standing down changes nothing a dry run needs to suppress) but suppresses
+   both the escalation and the retirement lookup.
+   `test/doctor.test.sh` passes: the parent `memory.events` `high` rate,
+   read against a manually-seeded, non-real elapsed window (sub-second real
+   elapsed time between two subprocess runs cannot assert a reliable
+   per-minute rate), warns naming the measured rate and the configured
+   `max_cgroup_throttle_per_minute` threshold above it, and reads `[ ok ]`
+   naming the same rate and threshold when it stays at or below it;
+   `max_cgroup_throttle_per_minute: 0` falls back to the plain "any rise at
+   all" rule this warning held before this requirement existed, since there
+   is then no configured rate to compare against. `test/node-time-state.test.sh`
+   passes: `memory-throttled` maps to `externally-blocked`, and the fold's
+   own default all-empty shape and `eb_causes` list both carry it alongside
+   `memory-low`.
 2c. <a id="impl-ac-2c"></a>`scripts/gather-merge-conflicts.sh Poetic-Poems/does-not-exist autonomous-agent agent/`
    prints `[]` and exits 0 — a missing repo, a disabled feature, or an API error
    never aborts the cycle. Its candidate rule, including the `bot`,

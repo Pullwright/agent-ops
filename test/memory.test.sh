@@ -362,6 +362,58 @@ assert_contains "memory_cgroup_unconfirmed_describe says the state is unmeasured
 assert_contains "memory_cgroup_unconfirmed_describe points at the fix" \
   "cgroup-parent-setup.sh" "$desc"
 
+# --- memory_cgroup_throttle_rate_per_min / _verdict / _describe
+#     (agent-ops#2469) --------------------------------------------------------
+
+assert_eq "rate: 6000 events over 60s is 6000/min" \
+  "6000" "$(memory_cgroup_throttle_rate_per_min 6000 60 0 0)"
+assert_eq "rate: a cumulative counter that fell (cgroup recreated) floors the delta at 0" \
+  "0" "$(memory_cgroup_throttle_rate_per_min 100 60 500 0)"
+assert_eq "rate is empty when the current counter is unreadable (no parent window)" \
+  "" "$(memory_cgroup_throttle_rate_per_min "" 60 0 0)"
+assert_eq "rate is empty with no previous reading" \
+  "" "$(memory_cgroup_throttle_rate_per_min 6000 60 "" "")"
+assert_eq "rate is empty when elapsed time is not strictly positive" \
+  "" "$(memory_cgroup_throttle_rate_per_min 6000 60 0 60)"
+
+assert_eq "verdict: a rate above the threshold is throttling" \
+  "throttling" "$(memory_cgroup_throttle_verdict 20000 60 0 0 10000)"
+assert_eq "verdict: a rate at or below the threshold is ok" \
+  "ok" "$(memory_cgroup_throttle_verdict 5000 60 0 0 10000)"
+assert_eq "verdict: a threshold of 0 turns the check off" \
+  "" "$(memory_cgroup_throttle_verdict 20000 60 0 0 0)"
+assert_eq "verdict: a non-numeric threshold is treated as off" \
+  "" "$(memory_cgroup_throttle_verdict 20000 60 0 0 nonsense)"
+assert_eq "verdict: no previous reading never stands down on a guess" \
+  "" "$(memory_cgroup_throttle_verdict 20000 60 "" "" 10000)"
+assert_eq "verdict: no parent window never stands down on a guess" \
+  "" "$(memory_cgroup_throttle_verdict "" 60 0 0 10000)"
+
+desc="$(memory_cgroup_throttle_describe 20000 10000 1)"
+assert_contains "memory_cgroup_throttle_describe names the measured rate" "20000" "$desc"
+assert_contains "memory_cgroup_throttle_describe names the configured threshold" "10000" "$desc"
+assert_contains "memory_cgroup_throttle_describe names the window" "1m" "$desc"
+
+# --- memory_cgroup_headroom_verdict / _describe (agent-ops#2469) ------------
+
+assert_eq "headroom: within the floor of the parent's own high is near-ceiling" \
+  "near-ceiling" "$(memory_cgroup_headroom_verdict 1400000000 1500000000 200000000)"
+assert_eq "headroom: comfortably below the parent's own high is ok" \
+  "ok" "$(memory_cgroup_headroom_verdict 1000000000 1500000000 200000000)"
+assert_eq "headroom: exactly at the floor is ok" \
+  "ok" "$(memory_cgroup_headroom_verdict 1300000000 1500000000 200000000)"
+assert_eq "headroom: a floor of 0 turns the check off" \
+  "" "$(memory_cgroup_headroom_verdict 1490000000 1500000000 0)"
+assert_eq "headroom: an unreadable memory.current is not evidence" \
+  "" "$(memory_cgroup_headroom_verdict "" 1500000000 200000000)"
+assert_eq "headroom: an unreadable (or 'max') parent high is not evidence" \
+  "" "$(memory_cgroup_headroom_verdict 1400000000 max 200000000)"
+
+desc="$(memory_cgroup_headroom_describe 1400000000 1500000000 200000000)"
+assert_contains "memory_cgroup_headroom_describe names what is held" "1335 MiB" "$desc"
+assert_contains "memory_cgroup_headroom_describe names the parent's own high" "1430 MiB" "$desc"
+assert_contains "memory_cgroup_headroom_describe names the configured floor" "190 MiB" "$desc"
+
 # --- Result ------------------------------------------------------------------
 
 if (( failures > 0 )); then
