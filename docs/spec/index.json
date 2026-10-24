@@ -2998,7 +2998,7 @@
       "label": "33a",
       "anchor": "impl-33a",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 605,
+      "line": 614,
       "title": "Metering."
     },
     "IMPL 34": {
@@ -3006,7 +3006,7 @@
       "label": "34",
       "anchor": "impl-34",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 663,
+      "line": 672,
       "title": "Blocked semantics: an item is blocked iff the most recent"
     },
     "IMPL 34a": {
@@ -3014,7 +3014,7 @@
       "label": "34a",
       "anchor": "impl-34a",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 700,
+      "line": 709,
       "title": "Whatever computes requirement 34 must be the **only** definition of it."
     },
     "IMPL 34c": {
@@ -3022,7 +3022,7 @@
       "label": "34c",
       "anchor": "impl-34c",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 719,
+      "line": 728,
       "title": "Void semantics: an item is void iff the most recent `item-void` /"
     },
     "IMPL 34d": {
@@ -3030,7 +3030,7 @@
       "label": "34d",
       "anchor": "impl-34d",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 744,
+      "line": 753,
       "title": "Every `item-void` a stage writes is corroborated before it is made"
     },
     "IMPL 34e": {
@@ -3038,7 +3038,7 @@
       "label": "34e",
       "anchor": "impl-34e",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1015,
+      "line": 1024,
       "title": "Under-specification is a class of block, not a parallel state."
     },
     "IMPL 34f": {
@@ -3046,7 +3046,7 @@
       "label": "34f",
       "anchor": "impl-34f",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1149,
+      "line": 1158,
       "title": "The human's escape hatch reaches the human."
     },
     "IMPL 34g": {
@@ -3054,7 +3054,7 @@
       "label": "34g",
       "anchor": "impl-34g",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1219,
+      "line": 1228,
       "title": "A human's own hand-applied label is a report, not a state."
     },
     "IMPL 34h": {
@@ -3062,7 +3062,7 @@
       "label": "34h",
       "anchor": "impl-34h",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1287,
+      "line": 1296,
       "title": "Where the two states meet, void wins."
     },
     "IMPL 34i": {
@@ -3390,7 +3390,7 @@
       "label": "1b",
       "anchor": "impl-1b",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 179,
+      "line": 224,
       "title": "The configuration has a machine-readable schema, and it is the startup"
     },
     "IMPL 1c": {
@@ -3398,7 +3398,7 @@
       "label": "1c",
       "anchor": "impl-1c",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 364,
+      "line": 409,
       "title": "The model-tier floor (agent-ops#822)."
     },
     "IMPL 1d": {
@@ -3406,7 +3406,7 @@
       "label": "1d",
       "anchor": "impl-1d",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 595,
+      "line": 648,
       "title": "Every timing sized against a once-an-hour cycle derives from the"
     },
     "IMPL 52": {
@@ -3414,7 +3414,7 @@
       "label": "52",
       "anchor": "impl-52",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 846,
+      "line": 899,
       "title": "The table of contents is generated from headings, not hand-maintained,"
     },
     "IMPL 52a": {
@@ -3422,7 +3422,7 @@
       "label": "52a",
       "anchor": "impl-52a",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 881,
+      "line": 934,
       "title": "The documentation is measured against a fixed benchmark of real"
     },
     "IMPL 52b": {
@@ -3430,7 +3430,7 @@
       "label": "52b",
       "anchor": "impl-52b",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 907,
+      "line": 960,
       "title": "The documentation's links, map, size budget, section citations and"
     },
     "IMPL 52c": {
@@ -3438,7 +3438,7 @@
       "label": "52c",
       "anchor": "impl-52c",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 962,
+      "line": 1015,
       "title": "Every requirement, acceptance-check and component label across"
     },
     "IMPL 52d": {
@@ -3446,7 +3446,7 @@
       "label": "52d",
       "anchor": "impl-52d",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 999,
+      "line": 1052,
       "title": "The labels reference and the scripts index are generated from the"
     },
     "IMPL 2": {
@@ -3662,7 +3662,7 @@
       "label": "4e",
       "anchor": "impl-4e",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "line": 674,
+      "line": 703,
       "title": "Two caps on a stage, and they answer different questions."
     },
     "IMPL 4f": {
@@ -3670,7 +3670,7 @@
       "label": "4f",
       "anchor": "impl-4f",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "line": 789,
+      "line": 818,
       "title": "Both caps are derived, per (actor, repository, model), from the"
     },
     "IMPL 4g": {
@@ -3678,7 +3678,7 @@
       "label": "4g",
       "anchor": "impl-4g",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "line": 938,
+      "line": 967,
       "title": "Fleet-state JSON reaches `jq` on stdin, never in argv."
     },
     "IMPL 4h": {
@@ -3686,7 +3686,7 @@
       "label": "4h",
       "anchor": "impl-4h",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "line": 1099,
+      "line": 1128,
       "title": "A guard that answers with a literal says on the union log that it"
     },
     "IMPL 4l": {
@@ -3694,7 +3694,7 @@
       "label": "4l",
       "anchor": "impl-4l",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "line": 1182,
+      "line": 1211,
       "title": "Killing a stage never throws away uncommitted work it already did"
     },
     "IMPL 4i": {
@@ -4782,7 +4782,7 @@
       "label": "R1b",
       "anchor": "rev-r1b",
       "file": "docs/spec/review/requirements.md",
-      "line": 37,
+      "line": 57,
       "title": "Duplicate-slug refusal."
     },
     "REV R1c": {
@@ -4790,7 +4790,7 @@
       "label": "R1c",
       "anchor": "rev-r1c",
       "file": "docs/spec/review/requirements.md",
-      "line": 50,
+      "line": 70,
       "title": "Review-instructions/context path validation (issue #589, D7)."
     },
     "REV R2": {
@@ -4798,7 +4798,7 @@
       "label": "R2",
       "anchor": "rev-r2",
       "file": "docs/spec/review/requirements.md",
-      "line": 72,
+      "line": 92,
       "title": "Lock."
     },
     "REV R3": {
@@ -4806,7 +4806,7 @@
       "label": "R3",
       "anchor": "rev-r3",
       "file": "docs/spec/review/requirements.md",
-      "line": 97,
+      "line": 117,
       "title": "Stand-down checks."
     },
     "REV R2a": {
@@ -4814,7 +4814,7 @@
       "label": "R2a",
       "anchor": "rev-r2a",
       "file": "docs/spec/review/requirements.md",
-      "line": 148,
+      "line": 168,
       "title": "The switch."
     },
     "REV R2b": {
@@ -4822,7 +4822,7 @@
       "label": "R2b",
       "anchor": "rev-r2b",
       "file": "docs/spec/review/requirements.md",
-      "line": 190,
+      "line": 210,
       "title": "The role guard."
     },
     "REV R2c": {
@@ -4830,7 +4830,7 @@
       "label": "R2c",
       "anchor": "rev-r2c",
       "file": "docs/spec/review/requirements.md",
-      "line": 203,
+      "line": 223,
       "title": "The fleet's memory and state publication."
     },
     "REV R4": {
@@ -4838,7 +4838,7 @@
       "label": "R4",
       "anchor": "rev-r4",
       "file": "docs/spec/review/requirements.md",
-      "line": 246,
+      "line": 266,
       "title": "Per-repo skip-guard (idempotency; this is how \"once a week\" is"
     },
     "REV R4a": {
@@ -4846,7 +4846,7 @@
       "label": "R4a",
       "anchor": "rev-r4a",
       "file": "docs/spec/review/requirements.md",
-      "line": 279,
+      "line": 299,
       "title": "Report directory (issue #761)."
     },
     "REV R5": {
@@ -4854,7 +4854,7 @@
       "label": "R5",
       "anchor": "rev-r5",
       "file": "docs/spec/review/requirements.md",
-      "line": 350,
+      "line": 370,
       "title": "Per non-skipped repo"
     },
     "REV R6": {
@@ -4862,7 +4862,7 @@
       "label": "R6",
       "anchor": "rev-r6",
       "file": "docs/spec/review/requirements.md",
-      "line": 517,
+      "line": 537,
       "title": "Usage-limit detection."
     },
     "REV R7": {
@@ -4870,7 +4870,7 @@
       "label": "R7",
       "anchor": "rev-r7",
       "file": "docs/spec/review/requirements.md",
-      "line": 530,
+      "line": 550,
       "title": "Cleanup (always, via a trap)."
     },
     "REV R7a": {
@@ -4878,7 +4878,7 @@
       "label": "R7a",
       "anchor": "rev-r7a",
       "file": "docs/spec/review/requirements.md",
-      "line": 536,
+      "line": 556,
       "title": "A signal is a failure with a record."
     },
     "REV R7b": {
@@ -4886,7 +4886,7 @@
       "label": "R7b",
       "anchor": "rev-r7b",
       "file": "docs/spec/review/requirements.md",
-      "line": 551,
+      "line": 571,
       "title": "One stage launcher, shared, provider-neutral."
     },
     "REV R8": {
@@ -4894,7 +4894,7 @@
       "label": "R8",
       "anchor": "rev-r8",
       "file": "docs/spec/review/requirements.md",
-      "line": 596,
+      "line": 616,
       "title": "Flags."
     },
     "REV R9": {
@@ -4902,7 +4902,7 @@
       "label": "R9",
       "anchor": "rev-r9",
       "file": "docs/spec/review/requirements.md",
-      "line": 606,
+      "line": 626,
       "title": "One-shot constraint"
     },
     "REV R10": {
@@ -4910,7 +4910,7 @@
       "label": "R10",
       "anchor": "rev-r10",
       "file": "docs/spec/review/requirements.md",
-      "line": 614,
+      "line": 634,
       "title": "Obey the repo."
     },
     "REV R11": {
@@ -4918,7 +4918,7 @@
       "label": "R11",
       "anchor": "rev-r11",
       "file": "docs/spec/review/requirements.md",
-      "line": 620,
+      "line": 640,
       "title": "Run the skill end-to-end."
     },
     "REV R11a": {
@@ -4926,7 +4926,7 @@
       "label": "R11a",
       "anchor": "rev-r11a",
       "file": "docs/spec/review/requirements.md",
-      "line": 641,
+      "line": 661,
       "title": "State a recommendation's default fix."
     },
     "REV R12": {
@@ -4934,7 +4934,7 @@
       "label": "R12",
       "anchor": "rev-r12",
       "file": "docs/spec/review/requirements.md",
-      "line": 658,
+      "line": 678,
       "title": "File review-sourced debt as labelled issues."
     },
     "REV R12a": {
@@ -4942,7 +4942,7 @@
       "label": "R12a",
       "anchor": "rev-r12a",
       "file": "docs/spec/review/requirements.md",
-      "line": 685,
+      "line": 705,
       "title": "Cross-reference every mirrored recommendation."
     },
     "REV R13": {
@@ -4950,7 +4950,7 @@
       "label": "R13",
       "anchor": "rev-r13",
       "file": "docs/spec/review/requirements.md",
-      "line": 709,
+      "line": 729,
       "title": "Raise one pull request."
     },
     "REV R14": {
@@ -4958,7 +4958,7 @@
       "label": "R14",
       "anchor": "rev-r14",
       "file": "docs/spec/review/requirements.md",
-      "line": 726,
+      "line": 746,
       "title": "Prove it is landable."
     },
     "REV R15": {
@@ -4966,7 +4966,7 @@
       "label": "R15",
       "anchor": "rev-r15",
       "file": "docs/spec/review/requirements.md",
-      "line": 737,
+      "line": 757,
       "title": "Final message."
     },
     "REV R18": {
@@ -4974,7 +4974,7 @@
       "label": "R18",
       "anchor": "rev-r18",
       "file": "docs/spec/review/requirements.md",
-      "line": 741,
+      "line": 761,
       "title": "Untrusted external content."
     },
     "REV R16": {
@@ -4982,7 +4982,7 @@
       "label": "R16",
       "anchor": "rev-r16",
       "file": "docs/spec/review/requirements.md",
-      "line": 754,
+      "line": 774,
       "title": "Streams."
     },
     "REV R17": {
@@ -4990,7 +4990,7 @@
       "label": "R17",
       "anchor": "rev-r17",
       "file": "docs/spec/review/requirements.md",
-      "line": 814,
+      "line": 834,
       "title": "The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`"
     },
     "REV R19": {
@@ -4998,7 +4998,7 @@
       "label": "R19",
       "anchor": "rev-r19",
       "file": "docs/spec/review/requirements.md",
-      "line": 822,
+      "line": 842,
       "title": "Per-stage health, mirrored (agent-ops#996)."
     }
   }
