@@ -1127,6 +1127,20 @@ workspace_headroom_factor="$(cfg '.workspace_headroom_factor')"
 # file and stalls the whole machine. `0` turns the check off.
 min_free_memory_bytes="$(cfg '.min_free_memory_bytes')"
 [[ "$min_free_memory_bytes" =~ ^[0-9]+$ ]] || min_free_memory_bytes=0
+# Requirement 2.0i (agent-ops#2469): the parent-cgroup throttle thresholds
+# `memory_throttle_check` (lib/standdown.sh) reads twice — once in the 2.0
+# band beside 2.0f above, and again immediately before the Co-Ordinator
+# engages (below) — because a node whose *parent* cgroup is throttling it
+# under memory.high can wedge a model stage while this host's own
+# MemAvailable, which 2.0f already guards, still reads healthy. `0` turns
+# each half of the check off independently; `scripts/doctor.sh` reads the
+# same rate threshold for its own advisory warning.
+max_cgroup_throttle_per_minute="$(cfg '.max_cgroup_throttle_per_minute')"
+[[ "$max_cgroup_throttle_per_minute" =~ ^[0-9]+$ ]] || max_cgroup_throttle_per_minute=0
+min_cgroup_headroom_bytes="$(cfg '.min_cgroup_headroom_bytes')"
+[[ "$min_cgroup_headroom_bytes" =~ ^[0-9]+$ ]] || min_cgroup_headroom_bytes=0
+memory_throttle_escalate_after="$(cfg '.memory_throttle_escalate_after')"
+[[ "$memory_throttle_escalate_after" =~ ^[0-9]+$ ]] || memory_throttle_escalate_after=0
 # Requirement 2.0g (agent-ops#757): whether the sum of every running
 # container's own declared ceiling on this host — not only this project's
 # three services, every container the host-facts collector's Docker socket
@@ -2431,6 +2445,17 @@ require_git_identity agent-cycle
 #     through to the Co-Ordinator stage below only when there is a prompt
 #     worth sending.
 run_gather_phase
+
+# Requirement 2.0i's second checkpoint (agent-ops#2469): the same
+# parent-cgroup throttle check 2.0 already ran, re-read immediately before
+# the Co-Ordinator engages rather than trusted from whatever it measured
+# tens of minutes ago. On the measured fleet the Co-Ordinator starts a
+# median of 28 to 38 minutes after cycle-start — the gather phase above is
+# most of that gap — long enough for a throttle band to open after the first
+# reading and still wedge a model stage this checkpoint would otherwise miss.
+# Standing down here, like 2.0i's own slot, leaves no claim held: nothing
+# before this point in the cycle selects or claims an item.
+memory_throttle_check
 
 # --- 4. Co-Ordinator stage through end of cycle (lib/coordinator-phase.sh,
 #     issue #1958) --- one function: the Co-Ordinator stage itself (one

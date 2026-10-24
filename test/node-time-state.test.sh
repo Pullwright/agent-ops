@@ -102,6 +102,8 @@ assert_eq "disk-full maps to externally-blocked" \
   "externally-blocked	disk-full" "$(node_time_state_for_cause disk-full)"
 assert_eq "memory-low maps to externally-blocked" \
   "externally-blocked	memory-low" "$(node_time_state_for_cause memory-low)"
+assert_eq "memory-throttled maps to externally-blocked" \
+  "externally-blocked	memory-throttled" "$(node_time_state_for_cause memory-throttled)"
 assert_eq "host-overcommit maps to externally-blocked" \
   "externally-blocked	host-overcommit" "$(node_time_state_for_cause host-overcommit)"
 assert_eq "roll-pending maps to externally-blocked" \

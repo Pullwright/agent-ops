@@ -311,6 +311,27 @@ if (( min_free_memory_bytes > 0 )); then
   fi
 fi
 
+# 2.0i Parent-cgroup memory throttle (requirement 2.0i, agent-ops#2469). Free,
+# and for the same reason as 2.0c/2.0f immediately above: every value this
+# reads is already bind-mounted read-only (the three MEMORY_CGROUP_PARENT_*
+# windows 2.0f's own header documents) or sitting in this node's own
+# state_dir, no network call of its own. 2.0f protects against the *host's*
+# own exhaustion; this protects against the failure 2.0f cannot see at all —
+# a node whose *parent* cgroup is throttling it under memory.high while the
+# host itself has gigabytes free. `doctor.sh` has warned on this for a long
+# time ("it is throttling right now") and nothing ever acted on the warning;
+# meanwhile `kill_reason: inactivity` ends a disproportionate share of this
+# node's own stages whenever the parent is in this band (agent-ops#2382,
+# #1634 name what that kill costs).
+#
+# `memory_throttle_check` (below, defined at file scope so the function
+# exists whether or not this call is ever reached) is called a second time,
+# verbatim, immediately before the Co-Ordinator engages (agent-cycle.sh's own
+# spine) — this slot alone is stale by the time a model stage actually
+# starts, since the gather phase between here and there routinely takes
+# longer than the interval a throttle band can open and close in.
+memory_throttle_check
+
 # 2.0g Host budget (requirement 2.0g, agent-ops#757). Free, and for the same
 # reason as 2.0c/2.0f immediately above: this reads a file already sitting in
 # this node's own state_dir, no network and no docker socket of its own (the
@@ -1310,4 +1331,149 @@ if (( listing_truncated )); then
   open_composition="$open_composition — at least one repo's listing was truncated, so these are floors"
 fi
 
+}
+
+# memory_throttle_check — requirement 2.0i (agent-ops#2469). Defined at file
+# scope, unlike every check above, because it is called from two places:
+# once from 2.0i's own slot inside run_standdown_checks, in the cheap
+# pre-flight band every other check in this file runs in, and again from
+# agent-cycle.sh's own spine immediately before the Co-Ordinator engages — a
+# median of 28 to 38 minutes later on the measured fleet (the pre-stage
+# sweeps), long enough for a throttle band that opened after the first
+# reading to matter before a model stage ever starts. A nested function
+# inside run_standdown_checks would not exist yet if an earlier check in that
+# ladder exits first, so the second call site could not reach it; this one
+# is defined the moment lib/standdown.sh is sourced, before either call site
+# can run.
+#
+# Reads every value through lib/memory.sh's own cgroup functions, never its
+# own `/proc` or `/sys` paths, so this and `scripts/doctor.sh`'s advisory
+# warning can never silently disagree about what "throttling" means. The
+# previous reading lives in its own gate-owned file,
+# `$state_dir/.memory-cgroup-throttle-state`, deliberately separate from
+# doctor's own `.doctor-memory-events-high` (that file's own header) so
+# neither reader's sampling interval moves the other's baseline.
+#
+# Exits the whole process with 0 when either signal trips — the rate
+# (`max_cgroup_throttle_per_minute`) or, if configured on, the level
+# (`min_cgroup_headroom_bytes`) — exactly like every other check in this
+# ladder; returns normally (falls through to whatever the caller does next)
+# otherwise. Off entirely when both thresholds are `0`.
+memory_throttle_check() {
+  (( max_cgroup_throttle_per_minute > 0 || min_cgroup_headroom_bytes > 0 )) || return 0
+
+  local mt_state_file="$state_dir/.memory-cgroup-throttle-state"
+  local mt_prev_ts="" mt_prev_high="" mt_prev_consecutive=0
+  if [[ -s "$mt_state_file" ]]; then
+    IFS=$'\t' read -r mt_prev_ts mt_prev_high mt_prev_consecutive < "$mt_state_file" 2>/dev/null || true
+  fi
+  [[ "$mt_prev_consecutive" =~ ^[0-9]+$ ]] || mt_prev_consecutive=0
+
+  local mt_current_high mt_current_ts mt_current_mem mt_parent_high
+  mt_current_high="$(memory_cgroup_parent_events_high)"
+  mt_current_ts="$(date -u +%s)"
+  mt_current_mem="$(memory_cgroup_field memory.current)"
+  mt_parent_high="$(memory_cgroup_parent_high)"
+
+  local mt_rate="" mt_elapsed_min=0
+  if [[ "$mt_prev_ts" =~ ^[0-9]+$ ]]; then
+    mt_elapsed_min=$(( (mt_current_ts - mt_prev_ts) / 60 ))
+  fi
+  mt_rate="$(memory_cgroup_throttle_rate_per_min "$mt_current_high" "$mt_current_ts" "$mt_prev_high" "$mt_prev_ts")"
+
+  local mt_throttle_verdict="" mt_headroom_verdict=""
+  if (( max_cgroup_throttle_per_minute > 0 )); then
+    mt_throttle_verdict="$(memory_cgroup_throttle_verdict "$mt_current_high" "$mt_current_ts" \
+      "$mt_prev_high" "$mt_prev_ts" "$max_cgroup_throttle_per_minute")"
+  fi
+  if (( min_cgroup_headroom_bytes > 0 )); then
+    mt_headroom_verdict="$(memory_cgroup_headroom_verdict "$mt_current_mem" "$mt_parent_high" \
+      "$min_cgroup_headroom_bytes")"
+  fi
+
+  # The reading is persisted whenever there is one to persist, regardless of
+  # verdict — next cycle's delta needs it either way — but the consecutive
+  # count only ever moves on positive evidence (a real "throttling" or a real
+  # "ok"): a verdict of "" (no parent window, or this is the first reading)
+  # is not evidence either way, so the count is left exactly where it was,
+  # the same "silence must never retire an alarm" reasoning lib/crash-loop.sh
+  # already rests on for its own escalation retirement.
+  local mt_triggered=0 mt_new_consecutive="$mt_prev_consecutive" mt_reason=""
+  if [[ "$mt_throttle_verdict" == "throttling" || "$mt_headroom_verdict" == "near-ceiling" ]]; then
+    mt_triggered=1
+    mt_new_consecutive=$(( mt_prev_consecutive + 1 ))
+  elif [[ "$mt_throttle_verdict" == "ok" || "$mt_headroom_verdict" == "ok" ]]; then
+    mt_new_consecutive=0
+  fi
+
+  if [[ -n "$mt_current_high" ]]; then
+    local mt_state_tmp="$mt_state_file.tmp.$$"
+    if printf '%s\t%s\t%s\n' "$mt_current_ts" "$mt_current_high" "$mt_new_consecutive" \
+         > "$mt_state_tmp" 2>/dev/null; then
+      mv -f "$mt_state_tmp" "$mt_state_file" 2>/dev/null || rm -f "$mt_state_tmp" 2>/dev/null
+    else
+      rm -f "$mt_state_tmp" 2>/dev/null || true
+    fi
+  fi
+
+  if (( mt_triggered )); then
+    if [[ "$mt_throttle_verdict" == "throttling" ]]; then
+      mt_reason="$(memory_cgroup_throttle_describe "$mt_rate" "$max_cgroup_throttle_per_minute" "$mt_elapsed_min")"
+    else
+      mt_reason="$(memory_cgroup_headroom_describe "$mt_current_mem" "$mt_parent_high" "$min_cgroup_headroom_bytes")"
+    fi
+    log_event "stand-down" "$(jq -nc --arg r "$mt_reason" --arg cause "memory-throttled" \
+      --arg rate "$mt_rate" --argjson consecutive "$mt_new_consecutive" \
+      '{reason: $r, cause: $cause} + (if $rate == "" then {} else {rate_per_min: $rate} end) + {consecutive: $consecutive}')"
+    set_node_state_terminal externally-blocked memory-throttled
+    if (( memory_throttle_escalate_after > 0 )) && (( mt_new_consecutive >= memory_throttle_escalate_after )) \
+       && ! (( DRY_RUN )) && [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]]; then
+      _memory_throttle_escalate "$mt_new_consecutive" "$mt_reason"
+    fi
+    exit 0
+  elif (( memory_throttle_escalate_after > 0 )) && (( mt_prev_consecutive >= memory_throttle_escalate_after )) \
+       && ! (( DRY_RUN )) && [[ -n "$crash_loop_repo" ]]; then
+    # A clean reading after a run that had reached the escalation threshold —
+    # the one transition worth paying a `gh issue list` call to check for an
+    # open escalation to retire. A clean reading that never reached the
+    # threshold has nothing open to retire, so this is skipped on the
+    # overwhelmingly common healthy path.
+    memory_throttle_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id"
+  fi
+}
+
+# _memory_throttle_escalate CONSECUTIVE REASON
+# Files (or finds the already-open) `memory-throttled:<node>` escalation
+# issue once `memory_throttle_check` has stood this node down
+# `memory_throttle_escalate_after` consecutive times — a sustained band that,
+# unlike a transient resource dip, will not clear on its own: the remedy is
+# an operator re-running `scripts/cgroup-parent-setup.sh` with a wider
+# ceiling (agent-ops#1639), not waiting. `create_escalation_issue`'s own
+# open-issue search is what makes this safe to call every cycle the
+# threshold is still met — an open issue already naming this item ref is
+# found, not re-filed.
+_memory_throttle_escalate() {
+  local consecutive="$1" reason="$2"
+  local item_ref="memory-throttled:$node_name"
+  local body="$cycle_dir/memory-throttle-issue.md"
+  # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
+  {
+    printf '## Node %s'"'"'s parent cgroup has throttled it for %s consecutive cycles\n\n' \
+      "$node_name" "$consecutive"
+    printf -- '- node: `%s`\n- cycle: `%s`\n- reason: %s\n\n' "$node_name" "$cycle_id" "$reason"
+    printf 'This will not clear on its own — re-run `scripts/cgroup-parent-setup.sh` on this node with a `--max`/`--limit` above the container'"'"'s own ceiling (agent-ops#1639), and the next cycle proceeds normally.\n\n'
+    printf -- '---\nItem: `%s` · raised by the Script · cycle `%s` · node `%s`\n' \
+      "$item_ref" "$cycle_id" "$node_name"
+  } > "$body"
+  local created
+  if created="$(create_escalation_issue "$crash_loop_repo" "$item_ref" "$enabler_escalation_label" \
+       "Parent-cgroup memory throttle on node $node_name" "$body")" && [[ -n "$created" ]]; then
+    log_event "memory-throttle-escalated" "$(jq -nc \
+      --argjson n "${created%%$'\t'*}" --arg u "${created#*$'\t'}" --argjson c "$consecutive" \
+      '{issue_number: $n, issue_url: $u, consecutive: $c}')"
+  else
+    log_event "warning" "$(jq -nc \
+      --arg d "node $node_name has throttled for $consecutive consecutive cycles but the escalation issue could not be filed — will retry next cycle" \
+      '{detail: $d}')"
+  fi
 }
