@@ -1025,10 +1025,13 @@
       (`dependency_refusal_reason`, `lib/dependency-gate.sh`; requirement 16's
       dependency third; agent-ops#566) is logged as a `warning` and dropped.
       `issues_by_repo_json` — the same reshaped candidate map requirement 34j's
-      `dependency_clearances` already reads — is the proof: an item present in
-      it has, by `scripts/gather-issues.sh`'s own live check this cycle, no
-      unresolved reference left on its thread, so a report re-asserting one is
-      demonstrably false, never a second opinion worth recording. Reused
+      `dependency_clearances` already reads, both of its bands — is the proof:
+      an item present in it has, by `scripts/gather-issues.sh`'s own live
+      check this cycle (or `scripts/gather-tech-debt.sh`'s identical one,
+      reachable here only for an entry that omits `source` and so defaults to
+      `"issues"`), no unresolved reference left on its thread, so a report
+      re-asserting one is demonstrably false, never a second opinion worth
+      recording. Reused
       exactly as gathered — this refusal never issues a second `gh` read, and
       never re-derives what the gate already computed. Scoped to the
       dependency claim alone: the bar reads only whether the entry's own

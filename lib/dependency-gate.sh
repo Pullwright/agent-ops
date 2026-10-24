@@ -24,22 +24,27 @@
 # inert, not wrong, because nothing here ever trusts what the line asserted
 # happened; it only trusts what re-checking the number says now.
 #
-# Two call sites share this file's parsing:
+# Three call sites share this file's parsing:
 #
 #   - `scripts/gather-issues.sh` drops a candidate whose thread names an
 #     unresolved dependency, the same way it drops an assigned or
 #     `blocked`-labelled one — deterministically, before the Co-Ordinator
 #     ever sees it, so an item newly declaring a dependency never earns an
 #     `attempt-failed` at all.
+#   - `scripts/gather-tech-debt.sh` applies the identical drop to the
+#     `tech_debt` band, which carries exactly the issues the other band
+#     excludes — a `pw::type:tech-debt` label and nothing else distinguishes
+#     them (D15 as revised).
 #   - `agent-cycle.sh`'s pre-extract window (alongside requirement 34i's
 #     work-gone reconciliation) clears an *existing* block the moment its
 #     dependency resolves, reusing this cycle's own freshly gathered issue
-#     candidates rather than re-deriving anything: an already-blocked item
-#     reappearing in this cycle's `issues` array, with a `Blocked-by:` line
-#     still in its thread, is itself the proof that gather-issues.sh's own
-#     live check found every reference resolved — that is what
-#     `dependency_clearances` below reads, not a second opinion on the
-#     reference's state.
+#     candidates — both bands, merged (agent-ops#2604) — rather than
+#     re-deriving anything: an already-blocked item reappearing in this
+#     cycle's `issues` or `tech_debt` array, with a `Blocked-by:` line still
+#     in its thread, is itself the proof that gather-issues.sh's or
+#     gather-tech-debt.sh's own live check found every reference resolved —
+#     that is what `dependency_clearances` below reads, not a second opinion
+#     on the reference's state.
 #
 # Sourced, never executed: it sets no shell options, because both callers run
 # under `set -euo pipefail` (agent-cycle.sh) or `set -uo pipefail`
@@ -98,12 +103,15 @@ dependency_refs() {
 # BLOCKED_JSON is the open blocked set (requirement 34h): a void item needs
 # no unblocking, exactly as in `work_gone_clearances`.
 #
-# ISSUES_BY_REPO_JSON is this cycle's own freshly gathered issue candidates,
+# ISSUES_BY_REPO_JSON is this cycle's own freshly gathered issue candidates —
+# the `issues` and `tech_debt` bands merged (agent-ops#2604), since a
+# tech-debt item is simply the labelled issue the first band excludes —
 # reshaped to `{"owner/repo": {"196": {"body": "…", "comments": [{"body": "…"}]}}}`.
 # An item present here, whatever its `Blocked-by:` line still says, has
-# already passed `gather-issues.sh`'s own live check this same cycle — the
-# array excludes anything with an unresolved reference — so finding the item
-# here at all *is* the resolved verdict; this function never re-checks a
+# already passed `gather-issues.sh`'s or `gather-tech-debt.sh`'s own live
+# check this same cycle — neither band carries anything with an unresolved
+# reference — so finding the item here at all *is* the resolved verdict; this
+# function never re-checks a
 # reference's state itself; it only reads whether a `Blocked-by:` line is
 # there to explain the presence. An item this cycle's candidates do not
 # carry (excluded for any reason, including a dependency still open, or
@@ -113,7 +121,7 @@ dependency_refs() {
 # Only items shaped like a bare GitHub issue number are considered: the
 # convention is documented for issue threads only (like requirement 18a),
 # because that is the one blocked-item shape with a thread this cycle reads
-# whole.
+# whole — a tech-debt item among them, its own ref being the issue number.
 #
 # Always succeeds, printing `[]` for input it cannot read.
 dependency_clearances() {
@@ -161,7 +169,8 @@ dependency_clearances() {
 #     one `Blocked-by:` reference (`dependency_refs`, the same parser
 #     `dependency_clearances` reads — never re-derived here, on the fix's own
 #     "the gate is already computed" terms). The thread is reachable at all
-#     only when `scripts/gather-issues.sh`'s live check this same cycle found
+#     only when `scripts/gather-issues.sh`'s (or, for a tech-debt item,
+#     `scripts/gather-tech-debt.sh`'s) live check this same cycle found
 #     every one of its references already resolved (the same proof
 #     `dependency_clearances` above reads: an item with an unresolved
 #     reference is dropped before it ever reaches this map, so being in it at
@@ -181,9 +190,15 @@ dependency_clearances() {
 #
 # ISSUES_BY_REPO_JSON is `agent-cycle.sh`'s own `issues_by_repo_json`
 # (`{"owner/repo": {"196": {"body": …, "comments": […]}}}`), computed once
-# per cycle from this cycle's freshly gathered `issues` candidates — reused
-# here exactly as `dependency_clearances` reuses it, never a second `gh`
-# read.
+# per cycle from this cycle's freshly gathered `issues` and `tech_debt`
+# candidates — reused here exactly as `dependency_clearances` reuses it,
+# never a second `gh` read. The first refusal condition above keeps this
+# bar on `source: "issues"` either way, so a tech-debt candidate's own
+# entry (`source: "tech-debt"`, scripts/gather-tech-debt.sh) returns before
+# the map is read at all; the `tech_debt` half of it is reachable here only
+# for an entry that omits `source` and so defaults to `"issues"`
+# (requirement 16a), whose proof is then gather-tech-debt.sh's identical
+# live check rather than gather-issues.sh's.
 dependency_refusal_reason() {
   local entry="$1" issues_by_repo="${2:-{\}}" source repo item thread_text \
         thread_refs entry_text ref matched=""

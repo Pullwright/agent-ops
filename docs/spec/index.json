@@ -3038,7 +3038,7 @@
       "label": "34f",
       "anchor": "impl-34f",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1123,
+      "line": 1126,
       "title": "The human's escape hatch reaches the human."
     },
     "IMPL 34g": {
@@ -3046,7 +3046,7 @@
       "label": "34g",
       "anchor": "impl-34g",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1193,
+      "line": 1196,
       "title": "A human's own hand-applied label is a report, not a state."
     },
     "IMPL 34h": {
@@ -3054,7 +3054,7 @@
       "label": "34h",
       "anchor": "impl-34h",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1261,
+      "line": 1264,
       "title": "Where the two states meet, void wins."
     },
     "IMPL 34i": {
@@ -3078,7 +3078,7 @@
       "label": "34k",
       "anchor": "impl-34k",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 220,
+      "line": 230,
       "title": "Act on void: close the GitHub object a void names."
     },
     "IMPL 34m": {
@@ -3086,7 +3086,7 @@
       "label": "34m",
       "anchor": "impl-34m",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 367,
+      "line": 377,
       "title": "A freshly claimed item gets the same gone-work check, before the"
     },
     "IMPL 34n": {
@@ -3094,7 +3094,7 @@
       "label": "34n",
       "anchor": "impl-34n",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 487,
+      "line": 497,
       "title": "A void that is both actioned and old retires from the extract."
     },
     "IMPL 34o": {
@@ -3102,7 +3102,7 @@
       "label": "34o",
       "anchor": "impl-34o",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
-      "line": 811,
+      "line": 821,
       "title": "A refined specification is exactly what a `needs-refinement` block was"
     },
     "IMPL 39": {
