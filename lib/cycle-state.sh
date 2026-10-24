@@ -1194,6 +1194,145 @@ ENABLER_ELIGIBLE_JQ='
     ]
 '
 
+# ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER / _FALLBACK_HOURS —
+# `enabler_defer_open_dependency_items`'s own lapse bound (issue #2492,
+# filing bound (a)): past this many hours since a block's own `blocked_ts`,
+# the function stops deferring even an item whose thread still names an open
+# `Blocked-by:` reference, so a dependency that is itself stuck does not
+# suppress the item forever. Wired to RECHECK_HOURS — the multiplier times
+# it, when recheck is enabled — rather than a config key of its own: three
+# missed recheck windows is the same cadence the `recheck` reason already
+# uses as its own re-examination clock, so this bound never outlives the one
+# the rest of the rule already runs on. RECHECK_HOURS disabled (0) has no
+# cadence to multiply, so the fallback is a flat three days: long enough that
+# an ordinary dependency (the concrete instance this was filed from, #2440,
+# closed about two hours after #2480 was deferred) resolves comfortably
+# inside it, short enough that a dependency that is itself stuck still
+# reaches a human.
+#
+# The two branches are deliberately not the same length, and the multiplied
+# one is the longer: at the shipped `enabler_recheck_hours` of 72, three
+# missed windows is 216 hours — nine days — against the fallback's flat 72.
+# A fleet configured to re-examine less often should wait proportionally
+# longer before paying the engagement this suppresses, which is the whole
+# point of reading the cadence rather than fixing a span; the fallback is
+# what a fleet with no cadence to read falls back to, never a stand-in for
+# the multiplied value.
+ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER="${ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER:-3}"
+ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS="${ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS:-72}"
+
+# enabler_defer_open_dependency_items OUT_JSON NOW RECHECK_HOURS ALIASES_JSON
+# Post-filter OUT_JSON — an `enabler_eligible_items` result, before its own
+# `[]` fallback is applied — dropping a `threshold`-reason candidate whose
+# `item` is a bare GitHub issue number when its thread still names an open
+# `Blocked-by:` reference (issue #2492). `scripts/gather-issues.sh` already
+# runs this exact live check (`issue_blocked_by_ref`, lib/issue-prefetch.sh,
+# over a thread fetched by `item_live_entry`, lib/candidate-select.sh) before
+# ever offering such an item to the Co-Ordinator; without this, an item that
+# check is already holding out of the Co-Ordinator's own view still reaches a
+# full Enabler engagement once its block's own coordinator-cycle count
+# crosses the threshold, paying an Opus pass to re-derive a fact one `gh`
+# read already answered (the concrete instance: issue #2480, held by #2440,
+# reached the Enabler in cycle 20261017T120900Z-ockham-2-13286 this way).
+#
+# Scoped to `reason == "threshold"` only — never `recheck`, and never
+# `issue-closed`, which stays exempt by construction because this function
+# is simply never consulted for it (a human has just acted on the escalation
+# issue, and the thread needs re-reading regardless of what a `Blocked-by:`
+# line still says). Narrowing to `threshold` keeps the added `gh` cost paid
+# only by the candidates this was filed for, not by every eligible item
+# (never more than one thread fetch plus one reference-resolution call per
+# such candidate).
+#
+# The deferral lapses past `ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER` ×
+# RECHECK_HOURS hours (or the flat fallback above) since the block's own
+# `blocked_ts`: past that age the candidate is returned exactly as it was
+# found, open reference or not, so a dependency that is itself stuck still
+# reaches the Enabler, and from there a human, the same way any other
+# permanently-stuck item already does. Each deferral this function actually
+# applies is logged as `enabler-dependency-deferred`, naming the item and the
+# reference that held it, so the suppression is auditable on the fleet log
+# rather than silent.
+#
+# Always succeeds, printing OUT_JSON back unchanged on any failure along the
+# way — `issue_blocked_by_ref`/`item_live_entry` not being defined at all (a
+# harness testing this file without also sourcing
+# lib/issue-prefetch.sh/lib/dependency-gate.sh/lib/candidate-select.sh, the
+# same fallback `enabler_eligible_items` already takes for `log_event`), a
+# failed thread fetch, or malformed input, are all read the same way: this is
+# a cost saving, never the correctness gate, the same direction every other
+# live-state filter in this file already takes.
+#
+# One failure inside the check is the exception, and it defers rather than
+# engaging: a `gh` read that cannot resolve a *reference's* own state is read
+# by `issue_blocked_by_ref` as the reference being still open, which is its
+# own documented fail-safe and the right direction for its first caller
+# (`scripts/gather-issues.sh`, where the consequence is holding a candidate
+# back from work). Here the consequence is the opposite one — an Enabler
+# engagement suppressed for the cycle — bounded by the lapse above and by
+# the next cycle asking again.
+enabler_defer_open_dependency_items() {
+  local out="${1:-[]}" now="${2:-}" recheck_hours="${3:-0}" aliases="${4:-{\}}"
+  command -v issue_blocked_by_ref >/dev/null 2>&1 || { printf '%s' "$out"; return 0; }
+  command -v item_live_entry >/dev/null 2>&1 || { printf '%s' "$out"; return 0; }
+  [[ "$now" =~ ^[0-9]+$ ]] || now="$(date -u +%s)"
+  jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 || { printf '%s' "$out"; return 0; }
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
+  local lapse_hours
+  if [[ "$recheck_hours" =~ ^[0-9]+$ ]] && (( recheck_hours > 0 )); then
+    lapse_hours=$(( recheck_hours * ENABLER_DEPENDENCY_DEFER_LAPSE_MULTIPLIER ))
+  else
+    lapse_hours="$ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS"
+  fi
+  local candidates
+  candidates="$(jq -c '[.[] | select(.reason == "threshold"
+                                     and ((.item // "") | tostring | test("^[0-9]+$"))
+                                     and (.repo // "") != "")]' \
+    <<<"$out" 2>/dev/null || true)"
+  [[ -n "$candidates" && "$candidates" != "[]" ]] || { printf '%s' "$out"; return 0; }
+  local entry repo item blocked_ts canon_repo blocked_epoch age_hours entry_data thread_text ref_display
+  local deferred='[]'
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    repo="$(jq -r '.repo' <<<"$entry" 2>/dev/null || true)"
+    item="$(jq -r '.item' <<<"$entry" 2>/dev/null || true)"
+    blocked_ts="$(jq -r '.blocked_ts // ""' <<<"$entry" 2>/dev/null || true)"
+    [[ -n "$repo" && -n "$item" ]] || continue
+    # Tested for emptiness first, not left to `date` to reject: GNU `date -u
+    # -d "" +%s` succeeds, answering today's midnight, so a block whose own
+    # `ts` is missing would read as a few hours old and be deferred — the
+    # opposite of the direction the `else` branch below is here to take.
+    blocked_epoch=""
+    [[ -n "$blocked_ts" ]] && blocked_epoch="$(date -u -d "$blocked_ts" +%s 2>/dev/null || true)"
+    if [[ -n "$blocked_epoch" ]]; then
+      age_hours=$(( (now - blocked_epoch) / 3600 ))
+    else
+      age_hours="$lapse_hours"
+    fi
+    (( age_hours < lapse_hours )) || continue
+    canon_repo="$(jq -nr --argjson a "$aliases" --arg r "$repo" '$a[$r] // $r' 2>/dev/null || true)"
+    [[ -n "$canon_repo" ]] || canon_repo="$repo"
+    entry_data="$(item_live_entry "$canon_repo" "issues" "$item" 2>/dev/null || true)"
+    [[ -n "$entry_data" ]] || continue
+    thread_text="$(jq -r '(.body // "") as $b | ((.comments // []) | map(.body // "")) as $c
+                           | ([$b] + $c | join("\n"))' <<<"$entry_data" 2>/dev/null || true)"
+    [[ -n "$thread_text" ]] || continue
+    ref_display="$(issue_blocked_by_ref "$canon_repo" "$thread_text" 2>/dev/null || true)"
+    [[ -n "$ref_display" ]] || continue
+    command -v log_event >/dev/null 2>&1 && log_event "enabler-dependency-deferred" "$(jq -nc \
+      --arg repo "$repo" --arg item "$item" --arg ref "$ref_display" \
+      --arg d "enabler-eligibility: deferring threshold candidate $repo#$item — its thread still names an open Blocked-by reference ($ref_display) that scripts/gather-issues.sh's own live check already excludes it on (issue #2492)" \
+      '{detail: $d, repo: $repo, item: $item, ref: $ref}')"
+    deferred="$(jq -c --arg r "$repo" --arg i "$item" '. + [{repo: $r, item: $i}]' \
+      <<<"$deferred" 2>/dev/null || printf '%s' "$deferred")"
+  done < <(jq -c '.[]' <<<"$candidates" 2>/dev/null || true)
+  [[ "$deferred" != "[]" ]] || { printf '%s' "$out"; return 0; }
+  jq -c --argjson deferred "$deferred" '
+    ($deferred | map((.repo // "") + "#" + ((.item // "") | tostring))) as $defset
+    | [ .[] | select((((.repo // "") + "#" + ((.item // "") | tostring)) as $k | ($defset | index($k)) == null)) ]
+    ' <<<"$out" 2>/dev/null || printf '%s' "$out"
+}
+
 # enabler_eligible_items [LOG_FILE] [MIN_COORD_CYCLES] [RECHECK_HOURS] [OPEN_ISSUES_JSON] [NOW_EPOCH] [REFINEMENT_MIN_COORD_CYCLES] [ALIASES_JSON]
 # Print, as a JSON array, the blocked items the Enabler may examine this cycle
 # (requirement 35a), each carrying the `reason` it became eligible. Reads
@@ -1223,6 +1362,15 @@ ENABLER_ELIGIBLE_JQ='
 # read null for an item refined across a rename, disarming requirement 36b's
 # one-refinement-per-item thrash guard exactly when the rename made it most
 # likely to fire.
+#
+# Before returning, a `threshold`-reason candidate whose `item` is a bare
+# issue number is further post-filtered through
+# `enabler_defer_open_dependency_items` below (issue #2492): a candidate
+# whose thread still names an open `Blocked-by:` reference is deferred for
+# this cycle rather than handed to the Enabler, the same live exclusion
+# `scripts/gather-issues.sh` already applies before the Co-Ordinator ever
+# sees it. See that function's own header for the live check, the lapse
+# bound and the `issue-closed` exemption.
 #
 # Always succeeds, printing [] for a missing, empty or unreadable log, exactly
 # as `_latest_unresolved` does and for the same reason: the caller runs under
@@ -1296,6 +1444,9 @@ enabler_eligible_items() {
         --argjson now "$now" --argjson refinement_min_coord "$refinement_min_coord" \
         'input as $all | input as $open | input as $phantom | input as $aliases | ('"$ENABLER_ELIGIBLE_JQ"')' \
         <<<"$docs" 2>/dev/null || true)"
+  fi
+  if [[ -n "$out" && "$out" != "[]" ]]; then
+    out="$(enabler_defer_open_dependency_items "$out" "$now" "$recheck_hours" "$aliases")"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"

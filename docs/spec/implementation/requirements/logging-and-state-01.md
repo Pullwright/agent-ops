@@ -18,7 +18,7 @@
     `recheck-clean`, `item-void`, `unvoided`, `item-refined`,
     `enabler-examined`, `refiner-examined`, `own-label-action`,
     `label-remove-failed`, `escalated`,
-    `enabler-adjudication`,
+    `enabler-adjudication`, `enabler-dependency-deferred`,
     `crash-loop-escalated`, `provider-unreachable`,
     `labels-ensured`, `labels-minted`, `limit-hit`, `limit-cleared`,
     `orphan-branch-recovered`, `orphan-branch-released`,
