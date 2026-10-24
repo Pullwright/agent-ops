@@ -391,17 +391,18 @@ config_defaults() {
         (try deref($s0) catch null) as $s
         | if ($s == null) then $v
           # A node naming both `properties` and a string-only keyword
-          # (`pattern`/`minLength`) — issue 2247 modelIdOrSet/
+          # (`pattern`/`minLength`) — issue #2247 modelIdOrSet/
           # modelIdOrEmptyOrSet, the one shape in this schema a value can
           # legitimately take two different JSON types — must not have an
           # already-set scalar value coerced into `{}` just because the node
-          # also knows how to default an objects own fields: `has
+          # also knows how to default an object'\''s own fields: `has
           # ("properties")` alone cannot tell "absent, synthesize the whole
           # object" apart from "present, and not an object at all", so this
-          # checks the value own type first. A present, non-object, non-null
-          # `$v` is left exactly as the config wrote it, which is this
-          # function own contract for an already-set key, and never reaches
-          # the branch below that assumes an object to fill properties into.
+          # checks the value'\''s own type first. A present, non-object,
+          # non-null `$v` is left exactly as the config wrote it, which is
+          # this function'\''s own contract for an already-set key, and never
+          # reaches the branch below that assumes an object to fill
+          # properties into.
           elif ($s | has("properties")) and ($v != null) and (($v | type) != "object") then
             $v
           elif ($s | has("properties")) then
