@@ -378,6 +378,11 @@ log_node_state_transition() { :; }
 landing_open_question_latest() { printf '%s' '[{"question":"is CODEOWNERS in scope?"}]'; }
 stage_prompt_text() { printf '%s\n' "$3" >>"$T/prompt_actor_args"; printf 'THE PROMPT'; }
 stage_budget_apply() { :; }
+# Issue #2247: the launch draws a concrete member before the lane, through
+# lib/stage-run.sh — out of this file's own scope (test/stage-run.test.sh
+# covers the draw itself). Stubbed to the never-a-set pass-through, which is
+# what the real function does for the plain model id this harness configures.
+stage_model_resolve_into() { STAGE_MODEL_SET_EXTRA_JSON='{}'; printf -v "$1" '%s' "$2"; }
 metering_fields() { printf '{}'; }
 extract_json_result() { [[ -n "${1// /}" ]] || return 1; jq -c . <<<"$1"; }
 

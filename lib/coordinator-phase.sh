@@ -870,8 +870,12 @@ fi
 # reduces to one concrete member here, with the same seed `run_model_stage`'s
 # own lane draw below will reuse — so the model is chosen first, the budget
 # cell below keys on the member actually launched, and `stage-start` names
-# the set and the member drawn via STAGE_MODEL_SET_EXTRA_JSON.
-local impl_model_launch
+# the set and the member drawn via STAGE_MODEL_SET_EXTRA_JSON. Its own
+# variable rather than `impl_model` itself, which the trivial-tier comparison
+# further down still needs as the Co-Ordinator wrote it — and a plain one,
+# never `local`: this whole function's variables are plain, and several tests
+# lift a range of its lines out and `eval` them in a bare shell, where a
+# `local` is an error.
 stage_model_resolve_into impl_model_launch "$impl_model" "${cycle_id:-}:implementer"
 stage_budget_apply implementer "$selected_repo" "$impl_model_launch" "$STAGE_MODEL_SET_EXTRA_JSON" "$selected_item"
 if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model_launch" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
@@ -1364,7 +1368,6 @@ else
   fi
   # Drawn once, before the lane (issue #2247) — see the identical comment on
   # the Implementer's own launch above.
-  local rev_model_launch
   stage_model_resolve_into rev_model_launch "$rev_model" "${cycle_id:-}:reviewer"
   stage_budget_apply reviewer "$selected_repo" "$rev_model_launch" \
     "$(jq -nc --arg c "$rev_complexity" --argjson s "$STAGE_MODEL_SET_EXTRA_JSON" \
