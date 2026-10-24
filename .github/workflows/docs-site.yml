@@ -43,6 +43,17 @@ jobs:
         working-directory: site
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The whole history, because site/scripts/sync-docs.mjs reads each
+          # page's own last-updated date out of it. At the default depth of 1
+          # the only commit present is the one being built, and — having no
+          # parent in a shallow clone — it diffs against the empty tree, so
+          # `git log --name-only` names *every* file at that one timestamp and
+          # all 352 pages claim they were last updated on the day the site was
+          # deployed. The build stays green either way, which is the whole
+          # danger: `sync-docs.mjs` refuses a shallow clone outright rather
+          # than publishing dates nobody would know to disbelieve.
+          fetch-depth: 0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
