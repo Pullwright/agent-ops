@@ -621,17 +621,25 @@ revisable in this one place rather than scattered across every emission site:
   credential refused outright, the same permanent-fault shape as
   `unauthorized` but for `ANTHROPIC_API_KEY`/login rather than
   `GH_TOKEN`), and the host resource
-  guards `disk-low`/`disk-full`/`memory-low`/`host-overcommit`. These four
+  guards `disk-low`/`disk-full`/`memory-low`/`memory-throttled`/
+  `host-overcommit`. These five
   are not "external" in the strictest sense — they are a fact about this
   node's own host — but they are grouped here rather than under
   `idle-without-demand` because the fix is host capacity, not a change in
   demand, the same distinction the other members of this bucket already
-  turn on. `host-overcommit` (requirement 2.0g, agent-ops#757) differs from
-  the other three in what it measures: not this node's own live free
+  turn on. `memory-throttled` (requirement 2.0i, agent-ops#2469) differs
+  from `memory-low` in what it measures: not this node's own host-level
+  `MemAvailable`, which `/proc/meminfo` reports unnamespaced, but the
+  *parent* cgroup's own `memory.events` `high` throttle rate (or, if
+  configured on, how close this cgroup's own `memory.current` sits to the
+  parent's `memory.high`) — a node can be throttled under this cause while
+  the host itself has memory free, which `memory-low` cannot see at all.
+  `host-overcommit` (requirement 2.0g, agent-ops#757) differs from the
+  other four in what it measures: not this node's own live free
   disk/memory, but the *declared* sum of every running container's own
   ceiling on the host it shares with its siblings — a structural check, only
   ever raised when `host_budget_enforce` is configured on. `roll-pending`
-  (agent-ops#1102 option 2) is the fifth: a cycle that reacquired `lock.json`
+  (agent-ops#1102 option 2) is the sixth: a cycle that reacquired `lock.json`
   under a still-live `roll-pending.json` marker and found watchtower actually
   polling and being turned away (`chain_updater_should_standdown`,
   `lib/chain.sh`) idles rather than running its own stages underneath the
@@ -663,13 +671,13 @@ this document.
 
 ### The closed cause vocabulary
 
-Seventeen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
+Eighteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
 `node_time_state_for_cause` is the one function that knows the mapping:
 
 | Cause | State |
 | --- | --- |
 | `disabled-node`, `disabled-fleet` | `down` |
-| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `credential-refused`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit`, `roll-pending` | `externally-blocked` |
+| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `credential-refused`, `disk-low`, `disk-full`, `memory-low`, `memory-throttled`, `host-overcommit`, `roll-pending` | `externally-blocked` |
 | `back-pressure`, `awaiting-tick`, `peer-claimed`, `coordinator-declined` | `idle-with-demand` |
 | `no-demand` | `idle-without-demand` |
 
@@ -897,7 +905,7 @@ above — on the same terms:
   carries in a way an existing reader could misread as the old shape;
   changing an existing fate's own assignment rule; changing the fate
   priority order; renaming or removing one of the six states or one of the
-  seventeen causes; changing which state an existing cause maps to; changing
+  eighteen causes; changing which state an existing cause maps to; changing
   the definitional pin (which stages count as `producing`, what `down`
   covers).
 
@@ -1034,7 +1042,7 @@ and dedicated assertions folded into `test/landing-wiring.test.sh`,
 
 **The node time-state record:** `test/node-time-state.test.sh` drives
 `lib/node-time-state.sh` directly: `node_time_state_for_cause` against every
-one of the seventeen closed-vocabulary tokens (including the three translated
+one of the eighteen closed-vocabulary tokens (including the three translated
 rather than renamed — `raced`/`pre-claimed` to `peer-claimed`,
 `untraceable` to `coordinator-declined`) and an unrecognised
 one (maps to nothing); `node_time_state_idle_split` against a positive
