@@ -1020,6 +1020,7 @@ model_key_load_into mix_model_key mix_model_key \
 mix_sonnet_n=0
 mix_grok_n=0
 for ((i = 1; i <= 6; i++)); do
+  # shellcheck disable=SC2154  # mix_model_key: assigned by model_key_load_into above, the assigning form
   stage_model_resolve_into mix_drawn "$mix_model_key" "fixture-model-seed-$i"
   # shellcheck disable=SC2154  # mix_drawn: assigned by stage_model_resolve_into just above, the assigning form
   case "$mix_drawn" in
@@ -1051,6 +1052,7 @@ model_key_load_into mix_closed_key mix_closed_key \
   '{"models": [{"id": "claude-sonnet-5", "weight": 5}, {"id": "xai/grok-4.7", "weight": 1}]}'
 mix_closed_all_grok=1
 for ((i = 1; i <= 5; i++)); do
+  # shellcheck disable=SC2154  # mix_closed_key: assigned by model_key_load_into above, the assigning form
   stage_model_resolve_into mix_closed_drawn "$mix_closed_key" "closed-lane-seed-$i"
   # shellcheck disable=SC2154  # mix_closed_drawn: assigned by stage_model_resolve_into just above
   [[ "$mix_closed_drawn" == "grok-4.7" ]] || mix_closed_all_grok=0
