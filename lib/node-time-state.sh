@@ -355,9 +355,9 @@ NODE_TIME_STATE_FOLD_JQ='
 # Print the node time-state report — `window`, `totals` (the six states plus
 # `unaccounted`), `expected_total_seconds`/`balanced` (the invariant:
 # node-count x window seconds), `idle_with_demand_by_cause`,
-# `externally_blocked_by_cause` (the same per-cause split, over the ten
+# `externally_blocked_by_cause` (the same per-cause split, over the eleven
 # `externally-blocked` causes — issue #609 needs `usage-limit` isolated from
-# the other nine to attribute idleness to model capacity rather than to a
+# the other ten to attribute idleness to model capacity rather than to a
 # host or GitHub fault), and `by_node` — folded from LOG_FILE, or stdin if it
 # is "-". Always succeeds, printing the all-empty shape for a missing, empty
 # or unreadable log, on the same terms `lib/item-lifecycle.sh`'s

@@ -59,12 +59,13 @@ Read-only. Prints the node time-state report as JSON on stdout:
     `peer-claimed`, `coordinator-declined`), plus `unspecified` for one
     whose own `cause` this fold does not recognise.
   - `externally_blocked_by_cause`: `externally-blocked` seconds split by the
-    ten causes D21 names (`usage-limit`, `github-budget`, `unreachable`,
-    `unauthorized`, `disk-low`, `disk-full`, `memory-low`,
+    eleven `externally-blocked` causes of the closed vocabulary
+    (`usage-limit`, `github-budget`, `unreachable`, `unauthorized`,
+    `credential-refused`, `disk-low`, `disk-full`, `memory-low`,
     `memory-throttled`, `host-overcommit`, `roll-pending`), plus
     `unspecified` for one whose own `cause` this fold does not recognise —
     issue #609's constraint statement needs `usage-limit` isolated from the
-    other nine to attribute this bucket to model capacity rather than to a
+    other ten to attribute this bucket to model capacity rather than to a
     host or GitHub fault.
   - `by_node`: the same breakdown, per node.
   - `skipped_events`: `node-state` events missing `node` or `state`, or

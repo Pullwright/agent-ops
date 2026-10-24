@@ -1398,12 +1398,46 @@ memory_throttle_check() {
   # is not evidence either way, so the count is left exactly where it was,
   # the same "silence must never retire an alarm" reasoning lib/crash-loop.sh
   # already rests on for its own escalation retirement.
-  local mt_triggered=0 mt_new_consecutive="$mt_prev_consecutive" mt_reason=""
+  local mt_triggered=0 mt_cleared=0 mt_new_consecutive="$mt_prev_consecutive" mt_reason=""
   if [[ "$mt_throttle_verdict" == "throttling" || "$mt_headroom_verdict" == "near-ceiling" ]]; then
     mt_triggered=1
     mt_new_consecutive=$(( mt_prev_consecutive + 1 ))
   elif [[ "$mt_throttle_verdict" == "ok" || "$mt_headroom_verdict" == "ok" ]]; then
+    mt_cleared=1
     mt_new_consecutive=0
+  fi
+
+  # The retirement runs here, *before* the state write below, rather than
+  # after it: that write is what decides whether a failed close can ever be
+  # retried. The `mt_prev_consecutive >= memory_throttle_escalate_after`
+  # test is the only thing that ever brings this node back to the close, and
+  # a count already persisted as `0` can never satisfy it again — so a close
+  # that failed would be forfeited for the container's whole remaining
+  # lifetime, the exact regression agent-ops#2511 fixed for 0h. Keeping the
+  # previous count whenever a retirement that was *owed* was not confirmed
+  # *done* is what makes `memory_throttle_retire_resolved`'s own "will retry
+  # next cycle" true: the three windows it returns non-zero for (the lookup
+  # erroring, a payload jq cannot parse, the close itself failing) and the
+  # two paths that never attempt it at all (`--dry-run`, no
+  # `crash_loop_repo`) all leave the count where a later clean reading can
+  # still reach the close. 0h's own caller guards its `cred_prev_verdict`
+  # write the same way, for the same reason.
+  #
+  # Gated on `mt_cleared` — a real `ok` — and never on a merely empty
+  # verdict: an unreadable parent window is the very condition an open
+  # escalation here is about, not evidence that it has cleared, and retiring
+  # on silence is exactly what the consecutive count's own "silence must
+  # never retire an alarm" rule above already refuses to do. A clean reading
+  # that never reached the threshold has nothing open to retire, so the
+  # overwhelmingly common healthy path pays no `gh issue list` call at all.
+  if (( mt_cleared )) && (( memory_throttle_escalate_after > 0 )) \
+     && (( mt_prev_consecutive >= memory_throttle_escalate_after )); then
+    if ! (( DRY_RUN )) && [[ -n "$crash_loop_repo" ]]; then
+      memory_throttle_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" \
+        || mt_new_consecutive="$mt_prev_consecutive"
+    else
+      mt_new_consecutive="$mt_prev_consecutive"
+    fi
   fi
 
   if [[ -n "$mt_current_high" ]]; then
@@ -1431,14 +1465,6 @@ memory_throttle_check() {
       _memory_throttle_escalate "$mt_new_consecutive" "$mt_reason"
     fi
     exit 0
-  elif (( memory_throttle_escalate_after > 0 )) && (( mt_prev_consecutive >= memory_throttle_escalate_after )) \
-       && ! (( DRY_RUN )) && [[ -n "$crash_loop_repo" ]]; then
-    # A clean reading after a run that had reached the escalation threshold —
-    # the one transition worth paying a `gh issue list` call to check for an
-    # open escalation to retire. A clean reading that never reached the
-    # threshold has nothing open to retire, so this is skipped on the
-    # overwhelmingly common healthy path.
-    memory_throttle_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id"
   fi
 }
 

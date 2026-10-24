@@ -62,7 +62,7 @@ if ! grep -q '^memory_throttle_check()' "$STANDDOWN"; then
   exit 1
 fi
 
-# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN]
+# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC]
 # Sources the real lib/standdown.sh (which only defines functions; nothing in
 # it executes at source time) into a fresh subshell, stubs every dependency
 # memory_throttle_check and _memory_throttle_escalate reach for, seeds the
@@ -73,10 +73,19 @@ fi
 # tab-separated), followed by "FELL THROUGH" iff the function returned rather
 # than exiting the process — the same contract test/memory-wiring.test.sh's
 # own run_block already uses. Prints the function's own exit status.
+#
+# RETIRE_RC is the exit status the stubbed `memory_throttle_retire_resolved`
+# returns — `0` (the default) for a close that landed, non-zero for one of
+# the three windows the real function returns non-zero for and logs "will
+# retry next cycle" against. The gate-owned state file this call leaves
+# behind is readable at $mt_state_path afterwards, which is what the
+# retry-reachability assertions below read: the count persisted there is the
+# only thing that ever brings a later cycle back to a forfeited close.
 calls_file="$tmp_dir/calls"
+mt_state_path="$tmp_dir/state/.memory-cgroup-throttle-state"
 run_check() {
   local throttle_verdict="$1" headroom_verdict="$2" escalate_after="$3" \
-    prev_consecutive="$4" dry_run="${5:-0}"
+    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}"
   local state_dir="$tmp_dir/state"
   rm -rf "$state_dir"; mkdir -p "$state_dir"
   : > "$calls_file"
@@ -86,7 +95,7 @@ run_check() {
   (
     set -euo pipefail
     export THROTTLE_VERDICT="$throttle_verdict" HEADROOM_VERDICT="$headroom_verdict" \
-      CALLS_FILE="$calls_file"
+      CALLS_FILE="$calls_file" RETIRE_RC="$retire_rc"
     # shellcheck disable=SC1090
     . "$STANDDOWN"
 
@@ -143,7 +152,10 @@ run_check() {
       printf '42\thttps://github.com/x/y/issues/42'
     }
     # shellcheck disable=SC2317
-    memory_throttle_retire_resolved() { printf 'memory_throttle_retire_resolved\t%s\t%s\n' "$1" "$2" >> "$CALLS_FILE"; }
+    memory_throttle_retire_resolved() {
+      printf 'memory_throttle_retire_resolved\t%s\t%s\n' "$1" "$2" >> "$CALLS_FILE"
+      return "$RETIRE_RC"
+    }
 
     memory_throttle_check
     printf 'FELL THROUGH\n' >> "$CALLS_FILE"
@@ -237,6 +249,41 @@ assert_eq "a clean reading below the threshold never calls the retirement functi
 rc="$(run_check ok ok 3 3 1)"
 assert_eq "--dry-run suppresses the retirement lookup too" \
   "no" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
+
+# --- retirement: never on an empty verdict ------------------------------
+#
+# An unreadable parent window is the very condition an open escalation here
+# is about, not evidence that it has cleared. Retiring on silence would
+# close a live escalation on a node that is still throttling — and is
+# exactly what the consecutive count's own "silence must never retire an
+# alarm" rule already refuses to do for the count itself.
+rc="$(run_check "" "" 3 3)"
+assert_eq "an empty verdict above the threshold never retires the escalation" \
+  "no" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
+assert_eq "…and leaves the consecutive count exactly where it was" \
+  "3" "$(cut -f3 "$mt_state_path")"
+
+# --- retirement: a failed close stays reachable next cycle --------------
+#
+# The regression agent-ops#2511 fixed for 0h, in 0i's own shape: the
+# `mt_prev_consecutive >= memory_throttle_escalate_after` test is the only
+# thing that ever brings this node back to the close, so a count persisted
+# as `0` alongside a close that failed would forfeit the escalation for the
+# container's whole remaining lifetime — while
+# `memory_throttle_retire_resolved` logs "will retry next cycle" against it.
+rc="$(run_check ok ok 3 3 0 0)"
+assert_eq "a clean reading whose close succeeded clears the consecutive count" \
+  "0" "$(cut -f3 "$mt_state_path")"
+
+rc="$(run_check ok ok 3 3 0 1)"
+assert_eq "a clean reading whose close failed still attempted it" \
+  "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
+assert_eq "…and keeps the consecutive count, so the next cycle reaches the close again" \
+  "3" "$(cut -f3 "$mt_state_path")"
+
+rc="$(run_check ok ok 3 3 1)"
+assert_eq "--dry-run, which never attempts the close, keeps the count for a real cycle to retire" \
+  "3" "$(cut -f3 "$mt_state_path")"
 
 echo
 if (( failures == 0 )); then

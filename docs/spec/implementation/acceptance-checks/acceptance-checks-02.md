@@ -407,11 +407,17 @@
    own `memory-throttled:<node>` item ref, and a clean reading immediately
    afterward calls `lib/enabler.sh`'s `memory_throttle_retire_resolved`
    instead — a clean reading that never reached the threshold calls neither,
-   since there is nothing open yet to retire; a count of `0` for
+   since there is nothing open yet to retire, and nor does an *empty*
+   verdict above it, silence being the condition an open escalation is about
+   rather than evidence it cleared; a close that could not be made keeps the
+   consecutive count, so a later clean reading reaches it again instead of
+   forfeiting it for the container's remaining lifetime (agent-ops#2511's
+   own lesson, in 0i's shape); a count of `0` for
    `memory_throttle_escalate_after` never escalates regardless of how high
    the consecutive count climbs; `--dry-run` still stands the cycle down
    (standing down changes nothing a dry run needs to suppress) but suppresses
-   both the escalation and the retirement lookup.
+   both the escalation and the retirement lookup, keeping the count for a
+   real cycle to retire against.
    `test/doctor.test.sh` passes: the parent `memory.events` `high` rate,
    read against a manually-seeded, non-real elapsed window (sub-second real
    elapsed time between two subprocess runs cannot assert a reliable
