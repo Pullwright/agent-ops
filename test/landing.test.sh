@@ -1315,6 +1315,20 @@ for transient_class in human-veto-unreadable merge-queue-unreadable \
     "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
 done
 
+# Issue #2098: _landing_notice_body's catalogue link is `declare -F`-guarded
+# on reason_code_url, never an unconditional call — a caller that has not
+# sourced lib/reason-url.sh (every call above in this file) gets the notice
+# exactly as before.
+unlinked_body="$(_landing_notice_body "autonomy-level" "merge_autonomy effective level is human" "test-node" "")"
+assert_eq "without lib/reason-url.sh sourced, the body carries no catalogue link" \
+  "no" "$([[ "$unlinked_body" == *"catalogue entry"* ]] && echo yes || echo no)"
+# shellcheck source=lib/reason-url.sh
+. "$SCRIPT_DIR/lib/reason-url.sh"
+linked_body="$(_landing_notice_body "autonomy-level" "merge_autonomy effective level is human" "test-node" "")"
+assert_contains "  ... and once it is sourced, the body links the refusal class" \
+  "$(reason_code_url autonomy-level)" "$linked_body"
+unset -f reason_code_url reason_docs_base_url
+
 echo
 if (( failures == 0 )); then
   echo "All landing assertions passed."
