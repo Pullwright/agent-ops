@@ -281,6 +281,12 @@ stage_lane_json='null'
 ONCE=0
 log_event() { printf '%s\t%s\n' "\$1" "\$2" >>"$tmp_dir/events"; }
 stage_budget_apply() { printf 'stage_budget_apply\n' >>"$tmp_dir/calls"; }
+# Issue #2247: the engagement draws a concrete member before the lane,
+# through lib/stage-run.sh — out of this file's own scope
+# (test/stage-run.test.sh covers the draw itself). Stubbed to the
+# never-a-set pass-through, which is what the real function does for the
+# plain \`rev_model\` this harness configures.
+stage_model_resolve_into() { STAGE_MODEL_SET_EXTRA_JSON='{}'; printf -v "\$1" '%s' "\$2"; }
 run_model_stage() { printf 'run_model_stage\n' >>"$tmp_dir/calls"; return 0; }
 metering_fields() { printf '{}'; }
 rework_stage_rerun_maybe() { :; }

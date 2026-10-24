@@ -448,7 +448,9 @@ approver_post_or_warn() {
 log_event() { printf '%s\t%s\n' "$1" "$2" >>"$T/events"; }
 
 run_tail() {
-  local pr_url="$1" slug="$2" approver_model_critical="$3" item="$4" token="$5" evidence="$6"
+  # `approver_model_critical_launch`, not the configured key itself: the tail
+  # logs whichever member the model draw settled on (issue #2247).
+  local pr_url="$1" slug="$2" approver_model_critical_launch="$3" item="$4" token="$5" evidence="$6"
 HARNESS
 {
   printf '%s\n' "$reapproval_tail_block"
