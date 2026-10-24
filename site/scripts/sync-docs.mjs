@@ -50,6 +50,33 @@ function toRepoRel(absPath) {
 
 // --- last-updated dates, read once from git history for every path at once ---
 
+// A shallow clone is refused rather than worked around. Its one commit has no
+// parent, so `git log --name-only` diffs it against the empty tree and names
+// every file in the repository at that single timestamp — every page would
+// then carry the build's own date as its "last updated", a wrong answer shaped
+// exactly like a right one (the build stays green and warns about nothing).
+// CI asks for the whole history (`fetch-depth: 0`, .github/workflows/docs-site.yml);
+// a local shallow checkout wants `git fetch --unshallow`.
+function assertFullHistory() {
+  let shallow;
+  try {
+    shallow = execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+      cwd: REPO_ROOT,
+    })
+      .toString('utf8')
+      .trim();
+  } catch {
+    return; // no git at all — buildLastUpdatedMap's own fallback covers it
+  }
+  if (shallow === 'true') {
+    throw new Error(
+      'sync-docs: this is a shallow clone, so per-page last-updated dates ' +
+        'cannot be read from git history. Run `git fetch --unshallow` (CI ' +
+        'uses actions/checkout with fetch-depth: 0).'
+    );
+  }
+}
+
 function buildLastUpdatedMap() {
   const map = new Map();
   let log;
@@ -265,6 +292,7 @@ function rewriteLinks(srcRepoRel, body) {
 
 // --- per-file transform ---
 
+assertFullHistory();
 const lastUpdated = buildLastUpdatedMap();
 const RECOGNIZED_FRONTMATTER = new Set(['title', 'description']);
 
