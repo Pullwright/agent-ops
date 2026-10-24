@@ -515,6 +515,40 @@ assert_eq "the retry removes exactly the stale labels, nothing else" \
   "$(printf 'remove o/other 90 blocked\nremove o/r 90 blocked\nremove o/r 90 blocked:needs-refinement')" \
   "$(label_calls)"
 
+# agent-ops#2548's finding 1: lib/candidate-gather.sh's own call site threads
+# the alias map into both `blocked_items` (BLOCKED_JSON) and
+# `refinement_blocked_label_stale` (its 3rd argument) — the stale-retry's own
+# open-block exclusion (`$open`, canonicalizing `$b.repo`) is pointless if
+# the *item* it is excluding from was never canonicalized to begin with. A
+# still-open block and its own-label-action `add` logged under the *same*
+# slug (whichever one) must never be offered for removal, whether that slug
+# is the repo's current one or a `previous_slugs` entry, and the two must
+# agree even when the two events are logged under *different* slugs either
+# side of the rename — the mirror case a caller that only threads the alias
+# into one of the two functions gets wrong.
+rename_stale_log="$tmp_dir/rename-stale.jsonl"
+rename_stale_aliases='{"o/old":"o/r"}'
+cat > "$rename_stale_log" <<'EOF'
+{"ts":"2026-10-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/old","item":"400","kind":"needs-refinement","detail":"gated","unblock_condition":"x"}
+{"ts":"2026-10-01T09:00:01Z","cycle":"c0","event":"own-label-action","repo":"o/old","item":"400","label":"blocked","action":"add"}
+{"ts":"2026-10-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/old","item":"401","kind":"needs-refinement","detail":"gated","unblock_condition":"y"}
+{"ts":"2026-10-01T09:00:01Z","cycle":"c0","event":"own-label-action","repo":"o/r","item":"401","label":"blocked","action":"add"}
+EOF
+rename_stale_blocked="$(blocked_items "$rename_stale_log" "$rename_stale_aliases")"
+assert_eq "both items still read as open once the alias map is threaded into blocked_items" \
+  "400 401" "$(jq -r '[.[].item] | sort | join(" ")' <<<"$rename_stale_blocked")"
+assert_eq "still-open item 400, block and label-action both under the old slug, is not offered for removal" \
+  "0" \
+  "$(refinement_blocked_label_stale "$rename_stale_blocked" "$rename_stale_log" "$rename_stale_aliases" \
+       | grep -c $'\t400\t')"
+assert_eq "the mirror case — block under the old slug, label-action under the new one — is not offered either" \
+  "0" \
+  "$(refinement_blocked_label_stale "$rename_stale_blocked" "$rename_stale_log" "$rename_stale_aliases" \
+       | grep -c $'\t401\t')"
+assert_eq "...with no aliases map threaded into either function, the mirror case (401) reads as stale instead — the bug this closes" \
+  "$(printf 'o/r\t401\tblocked')" \
+  "$(refinement_blocked_label_stale "$(blocked_items "$rename_stale_log")" "$rename_stale_log")"
+
 # --- Requirement 38b's live reconciliation (agent-ops#816, TD-PPagop-26082602) --
 # `refinement_blocked_label_stale` above can only offer a removal its own
 # history proves is ours — a logged `own-label-action add` with no later
@@ -1104,6 +1138,27 @@ assert_eq "with no aliases map, a re-block under the old slug does not shadow th
 assert_eq "resolved through the alias map, the re-block does shadow it — restoring the thrash guard across the rename" \
   "null" \
   "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1199" // "null"')"
+
+# agent-ops#2548: the map's own outer key must itself be the current slug,
+# not the raw slug the item-refined event was logged under — the two tests
+# above only prove the void/shadow *match* resolves the rename; this proves
+# the entry a caller later looks up is actually reachable at the canonical
+# key. `refiner_candidate_items`'s `refinement_for` (lib/refinement.sh)
+# indexes this map on exactly the repo it is handed, `$repos[].slug`, which
+# is always the current, canonical slug — never the raw one an event may
+# have been logged under before a rename.
+cat > "$rename_log" <<'EOF'
+{"ts":"2026-09-06T09:00:00Z","cycle":"c1","event":"item-refined","repo":"o/old","item":"1200","spec":"the refined spec"}
+EOF
+assert_eq "with no aliases map, the entry is keyed under the raw repo the event was logged under" \
+  "the refined spec" \
+  "$(refinements_map "$rename_log" | jq -r '."o/old"."1200".spec // "null"')"
+assert_eq "resolved through the alias map, the entry is keyed under the repo's current slug instead" \
+  "the refined spec" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1200".spec // "null"')"
+assert_eq "...and is no longer reachable under the raw slug it was logged under" \
+  "null" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/old"."1200" // "null"')"
 rm -f "$rename_log"
 
 # --- TD-PPagop-26082819, the refinements_map seam: a phantom is not a refinement --
@@ -1206,6 +1261,23 @@ printf '%s' '{"ts":"2026-08-14T10:00:00Z","event":"decision-tak' >> "$dec_log"
 assert_eq "a malformed trailing line does not lose the map" "a later decision still" \
   "$(decisions_map "$dec_log" | jq -r '."o/r"."310".decision')"
 rm -f "$dec_log"
+
+# agent-ops#2548: decisions_map's own outer key must be the current slug too,
+# the same reason refinements_map's is above — `decision_for`
+# (lib/refinement.sh's `refiner_candidate_items`) indexes this map on the
+# repo's canonical configured slug, never the raw one a decision-taken event
+# may have been logged under before a rename.
+rename_dec_log="$(mktemp)"
+cat > "$rename_dec_log" <<'EOF'
+{"ts":"2026-08-10T10:00:00Z","cycle":"c1","event":"decision-taken","repo":"o/old","item":"TD26081099","decision":"the renamed repo's decision","rationale":"because"}
+EOF
+assert_eq "with no aliases map, the decision is keyed under the raw repo it was logged under" \
+  "the renamed repo's decision" \
+  "$(decisions_map "$rename_dec_log" | jq -r '."o/old".TD26081099.decision // "null"')"
+assert_eq "resolved through the alias map, the decision is keyed under the repo's current slug instead" \
+  "the renamed repo's decision" \
+  "$(decisions_map "$rename_dec_log" "$aliases" | jq -r '."o/r".TD26081099.decision // "null"')"
+rm -f "$rename_dec_log"
 
 # --- Requirement 35d: the per-engagement cap -------------------------------------
 # The asymmetry is the point: the backlog of items silently skipped before this
@@ -1455,6 +1527,29 @@ assert_eq "and the unblocked the call site writes takes it out of the extract" \
 assert_eq "  ... leaving nothing for the next cycle's own sweep to clear" "[]" \
   "$(refinement_block_refined_cleared "$(open_blocked_items "$refined_clear_log")" \
        "$(refinements_map "$refined_clear_log")")"
+
+# agent-ops#2548's acceptance criterion (d): once the block's own `.repo` and
+# the refinements map's own key are both canonicalized (lib/cycle-state.sh),
+# `refinement_block_refined_cleared` clears a block logged under a repo's old
+# slug by a refinement logged under its current slug, with no change of its
+# own — it joins `open_blocked_items`' entries directly against
+# `refinements_map`'s keys, both already canonical once aliases are given.
+rename_refine_log="$tmp_dir/refine-renamed.jsonl"
+cat > "$rename_refine_log" <<'EOF'
+{"ts":"2026-10-17T10:00:00Z","cycle":"c0","event":"attempt-failed","stage":"refiner","repo":"o/old","item":"57","kind":"needs-refinement","detail":"gated on a decision","unblock_condition":"which packaging approach","needs_refinement_label":"needs-refinement","blocked_label":"blocked","blocked_reason_label":"blocked:needs-refinement"}
+{"ts":"2026-10-17T12:00:00Z","cycle":"c1","event":"item-refined","repo":"o/r","item":"57","spec":"the specification the block was waiting for"}
+EOF
+assert_eq "resolved through the alias map, the old-slug block and the new-slug refinement meet and clear" \
+  '["57"]' \
+  "$(jq -c '[.[].item]' <<<"$(refinement_block_refined_cleared \
+       "$(open_blocked_items "$rename_refine_log" "$aliases")" \
+       "$(refinements_map "$rename_refine_log" "$aliases")")")"
+assert_eq "  ... with no aliases map, the mismatched raw slugs never meet, so the block survives" \
+  '[]' \
+  "$(jq -c '[.[].item]' <<<"$(refinement_block_refined_cleared \
+       "$(open_blocked_items "$rename_refine_log")" \
+       "$(refinements_map "$rename_refine_log")")")"
+rm -f "$rename_refine_log"
 
 # The real `release_refinement_label` (`lib/candidate-select.sh`), called the
 # way `lib/candidate-gather.sh`'s own pre-extract-window call site calls it:

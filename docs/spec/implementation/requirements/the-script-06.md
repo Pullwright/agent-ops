@@ -784,6 +784,17 @@
    36d) — void, superseded-by-refinement and vetoed — each of which matches
    on `repo` the same way.
 
+   The map's own outer key — the `repo` this structure is built `repo → item
+   → payload` under — is resolved through the same map too, before being
+   used as a key (agent-ops#2548), never the raw repo the `item-refined`
+   event was logged under: without it, a caller joining this map against a
+   repo's current configured slug (`refiner_candidate_items`'s
+   `refinement_for`, `lib/refinement.sh`) could never reach a refinement
+   logged under a slug in that repo's `previous_slugs`, even though the
+   void/superseded exclusions just above already resolve through the same
+   map to decide whether the event belongs in the map at all. `decisions_
+   map`'s own outer key is canonicalized the same way.
+
    **A phantom `item-refined` event is skipped here on requirement 35a's own
    terms (TD-PPagop-26082819):** an event whose `comment_url` names no comment
    — no `#issuecomment-` anchor or REST API comment form

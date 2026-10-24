@@ -97,10 +97,15 @@
       *current* configured `slug` — without this, a block recorded under a
       slug the repository no longer has would read exactly like "a repo
       missing from the digest" above, forever rather than merely until the
-      recheck window. The register/review/plan status maps are looked up by
-      the block's own `repo` unresolved, since each is already keyed by
-      whatever repo its own blocked-id grouping was given, not by this
-      digest.
+      recheck window. BLOCKED_JSON's own `.repo` already arrives canonical by
+      the time it reaches this function — `open_blocked_items` resolves it
+      through the same map before emitting it (agent-ops#2548) — so this is
+      a second, harmless application to an already-canonical value, not the
+      one that does the work of surviving the rename; the aggregate's own
+      canonicalization is. The register/review/plan status maps are
+      looked up by the block's own `repo` unresolved, since each is already
+      keyed by whatever repo its own blocked-id grouping was given, not by
+      this digest.
     - **The findings sources are excluded, and that is not an oversight.**
       `gather-findings.sh` degrades to `[]` on an API error by design
       (requirement 3), because a Co-Ordinator that sees no findings declines and

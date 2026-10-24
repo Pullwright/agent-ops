@@ -233,6 +233,81 @@ EOF
 assert_eq "a malformed aliases argument degrades to no resolution, not a crash" \
   "46" "$(blocked_items "$log" 'not json' | jq -r '.[].item')"
 
+# --- blocked_items/void_items: the emitted entry's own .repo is canonicalized
+# --- too, not just the set/clear match (agent-ops#2548) ---
+#
+# #2359 resolved both sides of the set/clear match through the alias map, but
+# left the emitted entry carrying the *raw* repo the originating event was
+# logged under. A cross-extract join — `refiner_candidate_items`'s
+# `is_blocked`/`is_void`, `exclude_blocked_or_void_items` — compares that
+# field directly against a repo's current configured slug with no
+# `canon_repo` of its own, so an entry still carrying the old slug could
+# never be found that way, even though `blocked_items`/`void_items`
+# themselves already resolved the rename correctly for their own set/clear
+# match.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"54","detail":"needs repo secrets"}
+EOF
+assert_eq "with no aliases map, the block's own repo is carried verbatim" \
+  "o/old" "$(blocked_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the block's own repo reads as the current slug" \
+  "o/r" "$(blocked_items "$log" "$aliases" | jq -r '.[0].repo')"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"item-void","stage":"enabler","repo":"o/old","item":"55","detail":"already done"}
+EOF
+assert_eq "with no aliases map, the void's own repo is carried verbatim" \
+  "o/old" "$(void_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the void's own repo reads as the current slug" \
+  "o/r" "$(void_items "$log" "$aliases" | jq -r '.[0].repo')"
+
+# An entry with no `repo` at all (the hand-appended form requirement 34/34c
+# allows) must keep no `repo` key rather than gain one of `""` once
+# canonicalization is conditional on it — `coordinator_blocked_view`'s own
+# `has("repo")` projection (lib/candidate-select.sh) must see the same
+# absence it always has, aliases map or not.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","item":"56","detail":"hand-appended, no repo"}
+EOF
+assert_eq "a repo-less block keeps no repo key at all, with no aliases map" \
+  "false" "$(blocked_items "$log" | jq -r '.[0] | has("repo")')"
+assert_eq "  ... nor with one" \
+  "false" "$(blocked_items "$log" "$aliases" | jq -r '.[0] | has("repo")')"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"item-void","stage":"enabler","item":"57","detail":"hand-appended, no repo"}
+EOF
+assert_eq "a repo-less void keeps no repo key at all, with no aliases map" \
+  "false" "$(void_items "$log" | jq -r '.[0] | has("repo")')"
+assert_eq "  ... nor with one" \
+  "false" "$(void_items "$log" "$aliases" | jq -r '.[0] | has("repo")')"
+
+# --- void_object_closed_items/decision_vetoes_processed_items: the emitted
+# --- entry's own .repo is canonicalized too (agent-ops#2548) ---
+#
+# Both consumers in lib/candidate-gather.sh/lib/decision-veto.sh intersect
+# this output's `repo` against another already-canonical set (`void_json`,
+# a configured repo's own `slug`) on a plain string match, so an entry still
+# carrying the raw, pre-rename slug would never be recognized as the same
+# pair, and the sweep it backs would re-act on it forever.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"void-object-closed","stage":"enabler","repo":"o/old","item":"58"}
+EOF
+assert_eq "with no aliases map, the closed-void entry's own repo is carried verbatim" \
+  "o/old" "$(void_object_closed_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the closed-void entry's own repo reads as the current slug" \
+  "o/r" "$(void_object_closed_items "$log" "$aliases" | jq -r '.[0].repo')"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"decision-vetoed","stage":"enabler","repo":"o/old","issue_number":59}
+EOF
+assert_eq "with no aliases map, the vetoed-decision entry's own repo is carried verbatim" \
+  "o/old" "$(decision_vetoes_processed_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the vetoed-decision entry's own repo reads as the current slug" \
+  "o/r" "$(decision_vetoes_processed_items "$log" "$aliases" | jq -r '.[0].repo')"
+assert_eq "  ... and its item is still the log issue's own number, not the original item's ref" \
+  "59" "$(decision_vetoes_processed_items "$log" "$aliases" | jq -r '.[0].item')"
+
 # --- blocked_items: recheck_clean_ts (requirement 18a, TD-PPagop-26072801) ---
 
 cat > "$log" <<'EOF'
