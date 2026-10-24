@@ -198,6 +198,11 @@ printf '{"until":"2026-08-30T10:00:00Z"}\n' > "$state/roll-pending.json"
 printf 'server noise\n' > "$state/dashboard.log"
 printf '{}\n' > "$state/.dashboard-github.json"
 printf '{"ok":false}\n' > "$state/.image-drift-cache.json"
+# This node's own read-back of the lock_stale_after_sec its last cycle derived
+# (agent-cycle.sh, requirement 1, agent-ops#2321) — local on the identical
+# reasoning as the image-drift cache above: a memoisation of this node's own
+# computation, which every peer derives for itself.
+printf '14400\n' > "$state/.lock-stale-after-sec-cache"
 # This node's own read-back of what the shared state holds for its own branch
 # (agent-ops#602) — local to this node on the identical reasoning as the
 # image-drift cache above; no peer ever needs this node's own answer to "am I
@@ -311,6 +316,8 @@ assert_eq "the roll-pending marker does not replicate" "0" "$(test -e "$pushed/r
 assert_eq "the dashboard log does not replicate" "0" "$(test -e "$pushed/dashboard.log" && echo 1 || echo 0)"
 assert_eq "the GitHub cache does not replicate" "0" "$(test -e "$pushed/.dashboard-github.json" && echo 1 || echo 0)"
 assert_eq "the image-drift cache does not replicate" "0" "$(test -e "$pushed/.image-drift-cache.json" && echo 1 || echo 0)"
+assert_eq "the derived lock-staleness cache does not replicate" "0" \
+  "$(test -e "$pushed/.lock-stale-after-sec-cache" && echo 1 || echo 0)"
 assert_eq "the publication cache does not replicate" "0" "$(test -e "$pushed/.state-sync-published.json" && echo 1 || echo 0)"
 assert_eq "the expensive-gather cache does not replicate" "0" "$(test -e "$pushed/expensive-gather" && echo 1 || echo 0)"
 assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-poll" && echo 1 || echo 0)"

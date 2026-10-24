@@ -390,6 +390,15 @@ EXCLUDES=(
   # when the last report was written, so it must travel, the same as
   # `review-log.jsonl`.
   --exclude=monitor-lock.json
+  # .lock-stale-after-sec-cache (agent-cycle.sh, requirement 1,
+  # agent-ops#2321): this node's own read-back of the `lock_stale_after_sec`
+  # its last cycle derived, so the pre-lock freshness check can see the real
+  # threshold before the derivation that produces it has run again. A
+  # memoisation of this node's own computation, read by nobody else — local
+  # on the same reasoning as .image-drift-cache.json below, and unlike the
+  # verdicts there, it has nothing to fold into the heartbeat either: a peer
+  # derives the same number for itself every cycle it runs.
+  --exclude=.lock-stale-after-sec-cache
   --exclude=roll-pending.json
   --exclude=dashboard.lck
   --exclude=dashboard.log
