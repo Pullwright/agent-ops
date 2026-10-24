@@ -69,7 +69,8 @@ run_block() {  # <slug> <model> <provider>
     # shellcheck disable=SC2034
     entry='{"timeout_review": null, "inactivity_review": null}' \
       slug="$1" model="$2" review_context_sources='[]' \
-      stage_budget_json='{}' STAGE_BUDGET_PRIORS='{"project-reviewer": {"backstop": 150, "inactivity": 10}}'
+      stage_budget_json='{}' STAGE_BUDGET_PRIORS='{"project-reviewer": {"backstop": 150, "inactivity": 10}}' \
+      STAGE_MODEL_SET_EXTRA_JSON='{}'
     eval "$start_block"
   )
 }
