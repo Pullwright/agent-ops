@@ -529,16 +529,46 @@ _pager_footer_item_kind() {
   [[ "$kind" == "pr" ]] && printf 'pr' || printf 'issue'
 }
 
+# _pager_page_key BODY -> the pager invariant key an open `pw::pager` page's
+# own `ref: pager:<key>` footer line names (pager_file's own format, lib/
+# pager.sh), or empty for a page that carries no such line — an Enabler
+# escalation page's own footer (`Item: `<ref>` · repo `<slug>``) names an
+# item, not an invariant key, and has none.
+_pager_page_key() {
+  local body="$1"
+  [[ "$body" =~ ref:\ pager:([A-Za-z0-9-]+) ]] && printf '%s' "${BASH_REMATCH[1]}"
+  return 0
+}
+
 # pager_eval_page_outlived_item FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when any open enabler-escalation/pw::pager page's own item — the PR
-# or issue its body links — has already gone terminal (merged, closed).
-# Deliberately not a pure union-log reader: an issue's live GitHub state is
-# the fact in question, so this reads PAGER_EVAL_REPO/PAGER_EVAL_ESCALATION_
-# LABEL/PAGER_GH directly (lib/pager.sh's documented exception).
+# Fires when any open enabler-escalation/pw::pager page is outlived for
+# either of two reasons:
+#
+#   - the page's own item — the PR or issue its body links — has already
+#     gone terminal (merged, closed). Deliberately not a pure union-log
+#     reader: an issue's live GitHub state is the fact in question, so this
+#     reads PAGER_EVAL_REPO/PAGER_EVAL_ESCALATION_LABEL/PAGER_GH directly
+#     (lib/pager.sh's documented exception).
+#   - the page's own `ref: pager:<key>` footer names a key that no longer
+#     exists in the current invariant registry (`pager_registered_keys`,
+#     lib/pager.sh) — a key renamed or retired out from under an open page,
+#     which `lib/pager.sh`'s key-equality clear logic can never match with a
+#     `pager-cleared` event again (agent-ops#2575: `fit-ladder-pinned` was
+#     renamed to `coordinator-fit-ladder-pinned`, leaving #2372 permanently
+#     un-clearable). Checked first and exclusively — a page filed under a
+#     dead key is retired on that basis alone, without also running the
+#     item-concluded check below, since the two are independent reasons and
+#     an orphaned-key page is outlived regardless of what its own item did.
 pager_eval_page_outlived_item() {
-  local n _url body kind ref state outlived=()
+  local n _url body kind ref state key registered_keys outlived=() orphaned=()
+  registered_keys="$(pager_registered_keys)"
   while IFS=$'\t' read -r n _url body; do
     [[ -n "$n" ]] || continue
+    key="$(_pager_page_key "$body")"
+    if [[ -n "$key" ]] && ! grep -qxF "$key" <<<"$registered_keys"; then
+      orphaned+=("#$n")
+      continue
+    fi
     IFS=$'\t' read -r kind ref <<<"$(_pager_outlived_ref "$body")"
     [[ -n "$ref" ]] || continue
     if [[ "$kind" == "pr" ]]; then
@@ -549,14 +579,21 @@ pager_eval_page_outlived_item() {
       [[ "$state" == "CLOSED" ]] && outlived+=("#$n")
     fi
   done < <(_pager_open_page_issues)
-  if (( ${#outlived[@]} > 0 )); then
-    local joined
-    joined="$(IFS=', '; printf '%s' "${outlived[*]}")"
-    jq -c -n --arg ev "${#outlived[@]} page(s) whose own item already concluded: $joined" \
-      '{firing: true, evidence: $ev}'
-  else
+  if (( ${#outlived[@]} == 0 && ${#orphaned[@]} == 0 )); then
     printf '{"firing":false}'
+    return 0
   fi
+  local evidence="" joined
+  if (( ${#outlived[@]} > 0 )); then
+    joined="$(IFS=', '; printf '%s' "${outlived[*]}")"
+    evidence="${#outlived[@]} page(s) whose own item already concluded: $joined"
+  fi
+  if (( ${#orphaned[@]} > 0 )); then
+    joined="$(IFS=', '; printf '%s' "${orphaned[*]}")"
+    [[ -n "$evidence" ]] && evidence+="; "
+    evidence+="${#orphaned[@]} page(s) filed under a key no longer registered: $joined"
+  fi
+  jq -c -n --arg ev "$evidence" '{firing: true, evidence: $ev}'
 }
 
 # pager_remedy_page_outlived_item KEY EVIDENCE
@@ -564,12 +601,27 @@ pager_eval_page_outlived_item() {
 # #1215's approver_escalation_retire from the adjudication page to every
 # page this framework or the Enabler files. Re-walks the listing (one more
 # `gh issue list`) rather than parsing EVIDENCE's own prose, so a wording
-# change to the evidence string can never desync the two.
+# change to the evidence string can never desync the two. A page whose own
+# `ref: pager:<key>` footer names a key no longer in `pager_registered_keys`
+# is closed on that basis alone (agent-ops#2575), with a comment naming the
+# dead key rather than an item state; every other page is checked the
+# original way, against its own item's live GitHub state.
 pager_remedy_page_outlived_item() {
-  local n _url body kind ref state closed=0 comment gh
+  local n _url body kind ref state key registered_keys closed=0 comment gh
   gh="${PAGER_GH:-gh}"
+  registered_keys="$(pager_registered_keys)"
   while IFS=$'\t' read -r n _url body; do
     [[ -n "$n" ]] || continue
+    key="$(_pager_page_key "$body")"
+    if [[ -n "$key" ]] && ! grep -qxF "$key" <<<"$registered_keys"; then
+      comment="This page was filed under the invariant key \`$key\`, which no longer exists in the current invariant registry. Retiring — a renamed or retired invariant can never fire this page's own clearing event.
+
+---
+Retired automatically by lib/pager.sh (issue #1278)."
+      "$gh" issue close "$n" -R "${PAGER_EVAL_REPO:-}" --comment "$comment" >/dev/null 2>&1 \
+        && closed=$(( closed + 1 ))
+      continue
+    fi
     IFS=$'\t' read -r kind ref <<<"$(_pager_outlived_ref "$body")"
     [[ -n "$ref" ]] || continue
     if [[ "$kind" == "pr" ]]; then

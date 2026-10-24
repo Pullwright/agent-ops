@@ -1086,7 +1086,7 @@
       "label": "73",
       "anchor": "impl-ac-73",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 217,
+      "line": 224,
       "title": "An open question the Reviewer could not settle holds unattended landing,"
     },
     "IMPL AC 63": {
@@ -1094,7 +1094,7 @@
       "label": "63",
       "anchor": "impl-ac-63",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 315,
+      "line": 322,
       "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
     },
     "IMPL AC 74": {
@@ -1102,7 +1102,7 @@
       "label": "74",
       "anchor": "impl-ac-74",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 391,
+      "line": 398,
       "title": "The egress fence holds its shape (D24)."
     },
     "IMPL AC 75": {
@@ -1110,7 +1110,7 @@
       "label": "75",
       "anchor": "impl-ac-75",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 405,
+      "line": 412,
       "title": "Overrun-slot skips are computed and logged correctly (requirement 11a,"
     },
     "IMPL AC 52": {
@@ -1118,7 +1118,7 @@
       "label": "52",
       "anchor": "impl-ac-52",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 444,
+      "line": 451,
       "title": "The table of contents is generated from headings, and regenerating it"
     },
     "IMPL AC 52a": {
@@ -1126,7 +1126,7 @@
       "label": "52a",
       "anchor": "impl-ac-52a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 469,
+      "line": 476,
       "title": "The documentation benchmark's questions hold, and its runner"
     },
     "IMPL AC 57": {
@@ -1134,7 +1134,7 @@
       "label": "57",
       "anchor": "impl-ac-57",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 529,
+      "line": 536,
       "title": "Node health, readiness and liveness (requirements 57-60, issue #608)."
     },
     "IMPL AC 55": {
@@ -1142,7 +1142,7 @@
       "label": "55",
       "anchor": "impl-ac-55",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 579,
+      "line": 586,
       "title": "Resource usage is self-measured, both cgroup layouts are handled, and"
     },
     "IMPL AC 52b": {
@@ -1150,7 +1150,7 @@
       "label": "52b",
       "anchor": "impl-ac-52b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 636,
+      "line": 643,
       "title": "The documentation's links, map, size, citations and phrasing are"
     },
     "IMPL AC 52c": {
@@ -1158,7 +1158,7 @@
       "label": "52c",
       "anchor": "impl-ac-52c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 670,
+      "line": 677,
       "title": "Every requirement, acceptance-check and component label is unique,"
     },
     "IMPL AC 52d": {
@@ -2342,7 +2342,7 @@
       "label": "53",
       "anchor": "impl-53",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 802,
+      "line": 821,
       "title": "Landing-refusal pre-fetch (issue #979)."
     },
     "IMPL 55": {
@@ -2350,7 +2350,7 @@
       "label": "55",
       "anchor": "impl-55",
       "file": "docs/spec/implementation/requirements/approver-02.md",
-      "line": 927,
+      "line": 946,
       "title": "Resource usage and budgets, self-measured (D14, issue #606)."
     },
     "IMPL 14": {
@@ -4342,7 +4342,7 @@
       "label": "M16",
       "anchor": "mon-m16",
       "file": "docs/spec/monitor.md",
-      "line": 630,
+      "line": 632,
       "title": "A dated report in the state store."
     },
     "MON M17": {
@@ -4350,7 +4350,7 @@
       "label": "M17",
       "anchor": "mon-m17",
       "file": "docs/spec/monitor.md",
-      "line": 654,
+      "line": 656,
       "title": "A stage-health verdict, from day one."
     },
     "MON M18": {
@@ -4358,7 +4358,7 @@
       "label": "M18",
       "anchor": "mon-m18",
       "file": "docs/spec/monitor.md",
-      "line": 683,
+      "line": 685,
       "title": "Streams."
     },
     "MON M18a": {
@@ -4366,7 +4366,7 @@
       "label": "M18a",
       "anchor": "mon-m18a",
       "file": "docs/spec/monitor.md",
-      "line": 709,
+      "line": 711,
       "title": "`monitor-log.jsonl` is never rotated."
     },
     "MON M19": {
@@ -4374,7 +4374,7 @@
       "label": "M19",
       "anchor": "mon-m19",
       "file": "docs/spec/monitor.md",
-      "line": 717,
+      "line": 719,
       "title": "No `node-state` transition."
     },
     "MON C 1": {
@@ -4382,7 +4382,7 @@
       "label": "1",
       "anchor": "mon-c-1",
       "file": "docs/spec/monitor.md",
-      "line": 728,
+      "line": 730,
       "title": "`monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both"
     },
     "MON C 2": {
@@ -4390,7 +4390,7 @@
       "label": "2",
       "anchor": "mon-c-2",
       "file": "docs/spec/monitor.md",
-      "line": 739,
+      "line": 741,
       "title": "`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the"
     },
     "MON C 3": {
@@ -4398,7 +4398,7 @@
       "label": "3",
       "anchor": "mon-c-3",
       "file": "docs/spec/monitor.md",
-      "line": 743,
+      "line": 745,
       "title": "`prompts/monitor.md` implementing M10, M10a and M15."
     },
     "MON C 4": {
@@ -4406,7 +4406,7 @@
       "label": "4",
       "anchor": "mon-c-4",
       "file": "docs/spec/monitor.md",
-      "line": 744,
+      "line": 746,
       "title": "`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,"
     },
     "MON C 5": {
@@ -4414,7 +4414,7 @@
       "label": "5",
       "anchor": "mon-c-5",
       "file": "docs/spec/monitor.md",
-      "line": 746,
+      "line": 748,
       "title": "`lib/stage-budget.sh`'s `monitor` prior, implementing M9a."
     },
     "MON C 6": {
@@ -4422,7 +4422,7 @@
       "label": "6",
       "anchor": "mon-c-6",
       "file": "docs/spec/monitor.md",
-      "line": 747,
+      "line": 749,
       "title": "`lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s"
     },
     "MON C 7": {
@@ -4430,7 +4430,7 @@
       "label": "7",
       "anchor": "mon-c-7",
       "file": "docs/spec/monitor.md",
-      "line": 749,
+      "line": 751,
       "title": "`deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s"
     },
     "MON C 8": {
@@ -4438,7 +4438,7 @@
       "label": "8",
       "anchor": "mon-c-8",
       "file": "docs/spec/monitor.md",
-      "line": 751,
+      "line": 753,
       "title": "`config.schema.json`'s `monitor_*`, `schedule.monitor_*` and"
     },
     "MON AC 1": {
@@ -4446,7 +4446,7 @@
       "label": "1",
       "anchor": "mon-ac-1",
       "file": "docs/spec/monitor.md",
-      "line": 764,
+      "line": 766,
       "title": "`shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are"
     },
     "MON AC 2": {
@@ -4454,7 +4454,7 @@
       "label": "2",
       "anchor": "mon-ac-2",
       "file": "docs/spec/monitor.md",
-      "line": 766,
+      "line": 768,
       "title": "The digest is what it says it is (M6, M6a)."
     },
     "MON AC 3": {
@@ -4462,7 +4462,7 @@
       "label": "3",
       "anchor": "mon-ac-3",
       "file": "docs/spec/monitor.md",
-      "line": 778,
+      "line": 780,
       "title": "The bound holds exactly (M7)."
     },
     "MON AC 4": {
@@ -4470,7 +4470,7 @@
       "label": "4",
       "anchor": "mon-ac-4",
       "file": "docs/spec/monitor.md",
-      "line": 782,
+      "line": 784,
       "title": "Four findings file three and defer the fourth by key (M12)."
     },
     "MON AC 5": {
@@ -4478,7 +4478,7 @@
       "label": "5",
       "anchor": "mon-ac-5",
       "file": "docs/spec/monitor.md",
-      "line": 788,
+      "line": 790,
       "title": "Dedup (M13)."
     },
     "MON AC 5a": {
@@ -4486,7 +4486,7 @@
       "label": "5a",
       "anchor": "mon-ac-5a",
       "file": "docs/spec/monitor.md",
-      "line": 791,
+      "line": 793,
       "title": "Promotion (M13a)."
     },
     "MON AC 5b": {
@@ -4494,7 +4494,7 @@
       "label": "5b",
       "anchor": "mon-ac-5b",
       "file": "docs/spec/monitor.md",
-      "line": 797,
+      "line": 799,
       "title": "Retirement (M13b)."
     },
     "MON AC 5c": {
@@ -4502,7 +4502,7 @@
       "label": "5c",
       "anchor": "mon-ac-5c",
       "file": "docs/spec/monitor.md",
-      "line": 802,
+      "line": 804,
       "title": "Promotion spends the M12 budget (M12/M13a)."
     },
     "MON AC 6": {
@@ -4510,7 +4510,7 @@
       "label": "6",
       "anchor": "mon-ac-6",
       "file": "docs/spec/monitor.md",
-      "line": 808,
+      "line": 810,
       "title": "The tactical gate is closed by default (M14b)."
     },
     "MON AC 6a": {
@@ -4518,7 +4518,7 @@
       "label": "6a",
       "anchor": "mon-ac-6a",
       "file": "docs/spec/monitor.md",
-      "line": 812,
+      "line": 814,
       "title": "The pages read targets the repository the pager writes to (M6/M15)."
     },
     "MON AC 7": {
@@ -4526,7 +4526,7 @@
       "label": "7",
       "anchor": "mon-ac-7",
       "file": "docs/spec/monitor.md",
-      "line": 820,
+      "line": 822,
       "title": "The stage-health verdict exists (M17)."
     },
     "MON AC 8": {
@@ -4534,7 +4534,7 @@
       "label": "8",
       "anchor": "mon-ac-8",
       "file": "docs/spec/monitor.md",
-      "line": 824,
+      "line": 826,
       "title": "The untrusted framing is byte-identical (M10a)."
     },
     "MON AC 9": {
@@ -4542,7 +4542,7 @@
       "label": "9",
       "anchor": "mon-ac-9",
       "file": "docs/spec/monitor.md",
-      "line": 827,
+      "line": 829,
       "title": "The cadence gate (M4)."
     },
     "MON AC 10": {
@@ -4550,7 +4550,7 @@
       "label": "10",
       "anchor": "mon-ac-10",
       "file": "docs/spec/monitor.md",
-      "line": 831,
+      "line": 833,
       "title": "The role guard and the switch stand this pipeline down too (M2a/M2b)."
     },
     "MON AC 11": {
@@ -4558,7 +4558,7 @@
       "label": "11",
       "anchor": "mon-ac-11",
       "file": "docs/spec/monitor.md",
-      "line": 835,
+      "line": 837,
       "title": "The config tables regenerate clean."
     },
     "REV AC 1": {
