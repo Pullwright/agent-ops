@@ -251,37 +251,6 @@ function resolveLinkTarget(srcRepoRel, target) {
   return GITHUB_BLOB(normalized) + hashPart;
 }
 
-// Some pages illustrate link/citation syntax inside inline code, e.g.
-// `` `[continued below](#extended-notes-<slug>)` ``. The `<slug>` placeholder
-// can be misread as the start of an HTML tag by the Markdown pipeline, which
-// in turn can make the bracketed text before it look like a real link rather
-// than literal code. Escaping `<`/`>` inside inline (single-backtick, not
-// fenced) code spans keeps the rendered text identical while removing that
-// ambiguity — docs/ itself is never touched, only this generated copy.
-function escapeAnglesInInlineCode(body) {
-  const lines = body.split('\n');
-  let fence = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence.char && fenceMatch[1].length >= fence.len) {
-        fence = null;
-      }
-      continue;
-    }
-    if (fenceMatch) {
-      fence = { char: fenceMatch[1][0], len: fenceMatch[1].length };
-      continue;
-    }
-    lines[i] = line.replace(/`([^`\n]+)`/g, (m, inner) => {
-      if (!inner.includes('<') && !inner.includes('>')) return m;
-      return '`' + inner.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '`';
-    });
-  }
-  return lines.join('\n');
-}
-
 function rewriteLinks(srcRepoRel, body) {
   return body.replace(/\]\(([^)\s]+)\)/g, (full, target) => {
     const resolved = resolveLinkTarget(srcRepoRel, target);
@@ -309,7 +278,6 @@ function buildPage(entry) {
   }
   let body = stripLeadingH1(rawBody);
   body = rewriteLinks(entry.repoRel, body);
-  body = escapeAnglesInInlineCode(body);
 
   const usedAsDescription = fm.description ? 'description' : fm.summary ? 'summary' : null;
   const extras = Object.keys(fm).filter(
@@ -350,7 +318,7 @@ function buildLanding() {
   const abs = path.join(REPO_ROOT, 'README.md');
   const raw = readFileSync(abs, 'utf8');
   const { body: rawBody } = splitFrontmatter(raw);
-  const body = escapeAnglesInInlineCode(rewriteLinks('README.md', stripLeadingH1(rawBody)));
+  const body = rewriteLinks('README.md', stripLeadingH1(rawBody));
   const lu = lastUpdated.get('README.md');
 
   const fmLines = [
