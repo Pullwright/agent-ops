@@ -256,7 +256,7 @@ check_links_in_file() {
     [[ -n "$link" ]] || continue
     target="$(link_target "$link")"
     check_link_target "$file" "$target" || ok=0
-  done < <(markdown_unfenced "$file" | extract_md_links)
+  done < <(markdown_unfenced "$file" | flatten_paragraphs | extract_md_links)
   return $(( ! ok ))
 }
 

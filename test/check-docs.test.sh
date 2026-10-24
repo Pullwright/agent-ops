@@ -259,6 +259,21 @@ assert_eq "H1-fragment fixture: --check exits 0" "0" "$h1_rc"
 assert_contains "H1-fragment fixture: links and anchors ok" "$h1_out" "links and anchors: ok"
 rm -rf "$h1_repo"
 
+# --- Check 1, wrapped link text: a markdown link whose visible text wraps
+#     across two lines, and whose fragment does not match any heading/anchor in
+#     the target file, is reported as a failure by check 1. This proves the
+#     gap fixed by piping through flatten_paragraphs before extracting links
+#     is closed (#2638). ---
+wrapped_repo="$(new_repo)"
+cat >> "$wrapped_repo/README.md" <<'MD'
+
+See [Making a change when every instance is a
+nonexistent](docs/spec/implementation/README.md#no-such-heading-here).
+MD
+wrapped_out="$(run_script "$wrapped_repo" 2>&1)"
+assert_fails "wrapped link text fixture" "$wrapped_out" $? "has no matching heading"
+rm -rf "$wrapped_repo"
+
 # --- Check 2: the map — an in-scope document that exists on disk but is
 #     never listed. ---
 map_repo="$(new_repo)"

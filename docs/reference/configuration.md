@@ -23,8 +23,7 @@ there is no command that sets a key, and the pipeline never writes to
 stays exactly what you left it. On a fleet already running, the edit is a
 change to a file the container reads, and reaches the nodes like any other:
 merge it, and each node restarts into the new image between cycles, per
-[Making a change when every instance is a
-container](../guides/contributing/README.md#making-a-change-when-every-instance-is-a-container).
+[Know how a change propagates](../guides/contributing/README.md#know-how-a-change-propagates).
 
 Keys:
 
