@@ -246,20 +246,20 @@
     off.
 
     **Releasing is not symmetric with holding.** This requirement's own
-    release mechanism reshapes a cycle's freshly gathered `issues` candidates
-    into a `repo → item → thread` map and reads a `Blocked-by:` *line* out of
-    that thread, so an item whose dependency was declared natively only — no
-    text line anywhere in its thread — yields no clearance, and therefore no
-    `unblocked` event. The gatherer-level hold is unaffected either way: an
-    item merely dropped by the holding check above, never recorded blocked,
-    reappears as a candidate the moment the native dependency closes, because
-    nothing persisted that drop. A block that did reach the log stays there
-    until an Enabler engagement clears it, since nothing re-fetches native
-    dependencies for an already-blocked item outside the gatherer's own live
-    check. Recorded as tech debt in agent-ops#2459 rather than fixed here;
-    the Implementer is instructed to record a dependency both ways
-    (`prompts/implementer.md`), so an item this pipeline blocks itself
-    carries the text line the release reads.
+    release mechanism reshapes a cycle's freshly gathered `issues` and
+    `tech_debt` candidates into a `repo → item → thread` map and reads a
+    `Blocked-by:` *line* out of that thread, so an item whose dependency was
+    declared natively only — no text line anywhere in its thread — yields no
+    clearance, and therefore no `unblocked` event. The gatherer-level hold is
+    unaffected either way: an item merely dropped by the holding check above,
+    never recorded blocked, reappears as a candidate the moment the native
+    dependency closes, because nothing persisted that drop. A block that did
+    reach the log stays there until an Enabler engagement clears it, since
+    nothing re-fetches native dependencies for an already-blocked item
+    outside the gatherer's own live check. Recorded as tech debt in
+    agent-ops#2459 rather than fixed here; the Implementer is instructed to
+    record a dependency both ways (`prompts/implementer.md`), so an item this
+    pipeline blocks itself carries the text line the release reads.
 
     This binds to GitHub issues only, for the same reason requirement 18a
     does: they are the one blocked-item shape with a thread the cycle
