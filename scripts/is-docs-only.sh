@@ -98,6 +98,7 @@ is_inert() {
     TECH-DEBT.md) return 0 ;;             # likewise
     LICENCE) return 0 ;;
     deploy/docker/README.md) return 0 ;;  # the node runbook
+    site/*) return 0 ;;                   # the public documentation site's own toolchain (#2100) — .dockerignore keeps it out of the image, and .github/workflows/docs-site.yml builds and deploys it on its own, independent of build-image.yml
     *) return 1 ;;
   esac
 }
