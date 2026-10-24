@@ -1094,7 +1094,7 @@
       "label": "63",
       "anchor": "impl-ac-63",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 315,
+      "line": 324,
       "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
     },
     "IMPL AC 74": {
@@ -1102,7 +1102,7 @@
       "label": "74",
       "anchor": "impl-ac-74",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 391,
+      "line": 400,
       "title": "The egress fence holds its shape (D24)."
     },
     "IMPL AC 75": {
@@ -1110,7 +1110,7 @@
       "label": "75",
       "anchor": "impl-ac-75",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 405,
+      "line": 414,
       "title": "Overrun-slot skips are computed and logged correctly (requirement 11a,"
     },
     "IMPL AC 52": {
@@ -1118,7 +1118,7 @@
       "label": "52",
       "anchor": "impl-ac-52",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 444,
+      "line": 453,
       "title": "The table of contents is generated from headings, and regenerating it"
     },
     "IMPL AC 52a": {
@@ -1126,7 +1126,7 @@
       "label": "52a",
       "anchor": "impl-ac-52a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 469,
+      "line": 478,
       "title": "The documentation benchmark's questions hold, and its runner"
     },
     "IMPL AC 57": {
@@ -1134,7 +1134,7 @@
       "label": "57",
       "anchor": "impl-ac-57",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 529,
+      "line": 538,
       "title": "Node health, readiness and liveness (requirements 57-60, issue #608)."
     },
     "IMPL AC 55": {
@@ -1142,7 +1142,7 @@
       "label": "55",
       "anchor": "impl-ac-55",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 579,
+      "line": 588,
       "title": "Resource usage is self-measured, both cgroup layouts are handled, and"
     },
     "IMPL AC 52b": {
@@ -1150,7 +1150,7 @@
       "label": "52b",
       "anchor": "impl-ac-52b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 636,
+      "line": 645,
       "title": "The documentation's links, map, size, citations and phrasing are"
     },
     "IMPL AC 52c": {
@@ -1158,7 +1158,7 @@
       "label": "52c",
       "anchor": "impl-ac-52c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 670,
+      "line": 679,
       "title": "Every requirement, acceptance-check and component label is unique,"
     },
     "IMPL AC 52d": {
@@ -1166,7 +1166,7 @@
       "label": "52d",
       "anchor": "impl-ac-52d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
-      "line": 690,
+      "line": 699,
       "title": "The labels reference and the scripts index regenerate from the"
     },
     "IMPL AC 1h": {
@@ -2990,7 +2990,7 @@
       "label": "33a",
       "anchor": "impl-33a",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 591,
+      "line": 605,
       "title": "Metering."
     },
     "IMPL 34": {
@@ -2998,7 +2998,7 @@
       "label": "34",
       "anchor": "impl-34",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 649,
+      "line": 663,
       "title": "Blocked semantics: an item is blocked iff the most recent"
     },
     "IMPL 34a": {
@@ -3006,7 +3006,7 @@
       "label": "34a",
       "anchor": "impl-34a",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 686,
+      "line": 700,
       "title": "Whatever computes requirement 34 must be the **only** definition of it."
     },
     "IMPL 34c": {
@@ -3014,7 +3014,7 @@
       "label": "34c",
       "anchor": "impl-34c",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 705,
+      "line": 719,
       "title": "Void semantics: an item is void iff the most recent `item-void` /"
     },
     "IMPL 34d": {
@@ -3022,7 +3022,7 @@
       "label": "34d",
       "anchor": "impl-34d",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 730,
+      "line": 744,
       "title": "Every `item-void` a stage writes is corroborated before it is made"
     },
     "IMPL 34e": {
@@ -3030,7 +3030,7 @@
       "label": "34e",
       "anchor": "impl-34e",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1001,
+      "line": 1015,
       "title": "Under-specification is a class of block, not a parallel state."
     },
     "IMPL 34f": {
@@ -3038,7 +3038,7 @@
       "label": "34f",
       "anchor": "impl-34f",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1135,
+      "line": 1149,
       "title": "The human's escape hatch reaches the human."
     },
     "IMPL 34g": {
@@ -3046,7 +3046,7 @@
       "label": "34g",
       "anchor": "impl-34g",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1205,
+      "line": 1219,
       "title": "A human's own hand-applied label is a report, not a state."
     },
     "IMPL 34h": {
@@ -3054,7 +3054,7 @@
       "label": "34h",
       "anchor": "impl-34h",
       "file": "docs/spec/implementation/requirements/logging-and-state-01.md",
-      "line": 1273,
+      "line": 1287,
       "title": "Where the two states meet, void wins."
     },
     "IMPL 34i": {
@@ -3814,7 +3814,7 @@
       "label": "8w",
       "anchor": "impl-8w",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 299,
+      "line": 301,
       "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
     },
     "IMPL 62": {
@@ -3822,7 +3822,7 @@
       "label": "62",
       "anchor": "impl-62",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 392,
+      "line": 394,
       "title": "A persistent landing refusal says why, on the pull request itself, not"
     },
     "IMPL 9": {
@@ -3830,7 +3830,7 @@
       "label": "9",
       "anchor": "impl-9",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 514,
+      "line": 516,
       "title": "Failure handling."
     },
     "IMPL 9a": {
@@ -3838,7 +3838,7 @@
       "label": "9a",
       "anchor": "impl-9a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 544,
+      "line": 546,
       "title": "A reported verdict is not a failure."
     },
     "IMPL 9b": {
@@ -3846,7 +3846,7 @@
       "label": "9b",
       "anchor": "impl-9b",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 552,
+      "line": 554,
       "title": "`blocked` and `void` are different states and must not share one."
     },
     "IMPL 9c": {
@@ -3854,7 +3854,7 @@
       "label": "9c",
       "anchor": "impl-9c",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 578,
+      "line": 580,
       "title": "A signal is a failure with a record."
     },
     "IMPL 9d": {
@@ -3862,7 +3862,7 @@
       "label": "9d",
       "anchor": "impl-9d",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 608,
+      "line": 610,
       "title": "Visible attribution."
     },
     "IMPL 9e": {
@@ -3870,7 +3870,7 @@
       "label": "9e",
       "anchor": "impl-9e",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 641,
+      "line": 643,
       "title": "Salvage before discard."
     },
     "IMPL 9f": {
@@ -3878,7 +3878,7 @@
       "label": "9f",
       "anchor": "impl-9f",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 696,
+      "line": 698,
       "title": "`needs-refinement` is the Implementer's own escape hatch, and a third"
     },
     "IMPL 9g": {
@@ -3886,7 +3886,7 @@
       "label": "9g",
       "anchor": "impl-9g",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 733,
+      "line": 735,
       "title": "A stage killed abruptly states, in its own comment, whether it"
     },
     "IMPL 10": {
@@ -3894,7 +3894,7 @@
       "label": "10",
       "anchor": "impl-10",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 785,
+      "line": 787,
       "title": "Usage-limit detection."
     },
     "IMPL 11": {
@@ -3902,7 +3902,7 @@
       "label": "11",
       "anchor": "impl-11",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 834,
+      "line": 836,
       "title": "Cleanup."
     },
     "IMPL 11a": {
@@ -3910,7 +3910,7 @@
       "label": "11a",
       "anchor": "impl-11a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 839,
+      "line": 841,
       "title": "Overrun-slot skips"
     },
     "IMPL 12": {
@@ -3918,7 +3918,7 @@
       "label": "12",
       "anchor": "impl-12",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 950,
+      "line": 952,
       "title": "Flags."
     },
     "IMPL 13": {
@@ -3926,7 +3926,7 @@
       "label": "13",
       "anchor": "impl-13",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 985,
+      "line": 987,
       "title": "The Script must pass `shellcheck` and must set its own `PATH` explicitly"
     },
     "IMPL 67": {
@@ -3934,7 +3934,7 @@
       "label": "67",
       "anchor": "impl-67",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 990,
+      "line": 992,
       "title": "Finish-then-continue"
     },
     "IMPL 68": {
@@ -3942,7 +3942,7 @@
       "label": "68",
       "anchor": "impl-68",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1056,
+      "line": 1058,
       "title": "A pending image roll overrides the chain, and widens the gap at every"
     },
     "IMPL 17d": {
@@ -3950,7 +3950,7 @@
       "label": "17d",
       "anchor": "impl-17d",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1145,
+      "line": 1147,
       "title": "Race-loss observability"
     },
     "IMPL 54": {
@@ -3958,7 +3958,7 @@
       "label": "54",
       "anchor": "impl-54",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1171,
+      "line": 1173,
       "title": "Wake-poll: an event-driven wake between cron firings (D14, issue"
     },
     "IMPL 57": {
@@ -3966,7 +3966,7 @@
       "label": "57",
       "anchor": "impl-57",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1322,
+      "line": 1324,
       "title": "Liveness: is supercronic still firing this node's jobs at all (issue"
     },
     "IMPL 58": {
@@ -3974,7 +3974,7 @@
       "label": "58",
       "anchor": "impl-58",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1340,
+      "line": 1342,
       "title": "Readiness: could a cycle start now."
     },
     "IMPL 58a": {
@@ -3982,7 +3982,7 @@
       "label": "58a",
       "anchor": "impl-58a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1372,
+      "line": 1374,
       "title": "No network call beyond the one exempt read, and no live fetch of"
     },
     "IMPL 59": {
@@ -3990,7 +3990,7 @@
       "label": "59",
       "anchor": "impl-59",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1428,
+      "line": 1430,
       "title": "Health: is this node doing its job over time, composed from named"
     },
     "IMPL 59a": {
@@ -3998,7 +3998,7 @@
       "label": "59a",
       "anchor": "impl-59a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1450,
+      "line": 1452,
       "title": "`updater` and `image` component mappings."
     },
     "IMPL 60": {
