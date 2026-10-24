@@ -415,6 +415,7 @@ providers_load '{"xai": {"substrate": "grok-build"}}'
 
 assert_true "model_key_load_into resolves every member of a set, each through resolve_model_id_into" \
   model_key_load_into mk1_var mk1_key '{"models": [{"id": "claude-sonnet-5", "weight": 2}, {"id": "xai/grok-4.7", "weight": 1}]}'
+# shellcheck disable=SC2154  # mk1_var: assigned by model_key_load_into above, the assigning form
 assert_eq "…and sets VAR to the key itself, the set's own handle" \
   "mk1_key" "$mk1_var"
 assert_true "model_key_is_set recognizes the handle" \
@@ -426,6 +427,7 @@ assert_eq "…and recording each member's provider in MODEL_PROVIDER, as an ordi
   "xai" "${MODEL_PROVIDER[grok-4.7]}"
 
 model_key_load_into mk_bare mk_bare_key claude-sonnet-5
+# shellcheck disable=SC2154  # mk_bare: assigned by model_key_load_into above, the assigning form
 assert_eq "a bare id is still unaffected: model_key_load_into delegates to resolve_model_id_into" \
   "claude-sonnet-5" "$mk_bare"
 assert_false "…and is never mistaken for a set" \

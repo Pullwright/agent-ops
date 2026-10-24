@@ -130,6 +130,7 @@ eval "$coordinator_corroborate_and_fallback_fn"
 # lane; test/stage-run.test.sh covers that draw directly, so this stub is
 # a plain never-a-set pass-through, matching lib/stage-run.sh's own
 # never-a-set behaviour for coordinator_model as this file configures it.
+# shellcheck disable=SC2034  # read by the extracted run_coordinator_stage_attempt_fn above
 stage_model_resolve_into() { STAGE_MODEL_SET_EXTRA_JSON='{}'; printf -v "$1" '%s' "$2"; }
 calls_log=""
 record() { printf '%s\n' "$*" >> "$calls_log"; }
