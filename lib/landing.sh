@@ -884,14 +884,28 @@ _landing_arm_failure_reason() {
 # request's tier is fixed by that round's engagement and never mutates
 # afterwards, so the log's record is exactly as current as a fresh read
 # would be. Several `approver-verdict` events for the same pull request keep
-# only the most recent. Empty on no match, an unreadable log, or nothing to
+# only the most recent, and an event whose own review write failed —
+# `posted` explicitly `false` — is excluded before that "most recent" pick is
+# made (issue #2534): `run_approver_stage` (lib/approver.sh) logs this event
+# even when the review never reached GitHub, and a tier from one of those
+# events must never outrank an older tier backed by a review that did —
+# filtering here, rather than at each writer, closes every current and
+# future writer of this event in the one place that reads it. A
+# missing `posted` field reads as posted — matching the precedent
+# `verdict_fate_latest_per_pr` (lib/verdict-fate.sh) already sets for an event
+# logged before agent-ops#573 introduced the field. This is why the filter
+# uses `if .posted == null then true else .posted end` rather than jq's `//`
+# operator: `//` treats `false` the same as `null`, so `.posted // true` would
+# silently turn an explicit `false` back into `true` and defeat the filter.
+# Empty on no match, an unreadable log, or nothing to
 # read — `landing_protected_path_controls_ok` must never guess a tier a
 # protected-path pull request never actually got.
 landing_retry_tier() {
   local pr_url="$1" src="${2:--}" out=""
   # shellcheck disable=SC2016  # $pr_url is jq's own --arg variable, not the shell's.
   local jq_prog='
-    [ .[] | select(.event == "approver-verdict" and (.pr_url // "") == $u) ]
+    [ .[] | select(.event == "approver-verdict" and (.pr_url // "") == $u
+        and (if .posted == null then true else .posted end)) ]
     | sort_by(.ts) | last | .tier // empty'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
@@ -938,11 +952,16 @@ landing_latest_refusal_reason() {
 # (acceptance check 8x, agent-ops#578): a pull request a refuse streak sent
 # through more than one Approver engagement carries every one of them here,
 # not only the round that finally approved it. The record's own `approver`
-# object is this array's *last* entry, exactly as `landing_retry_tier` reads
-# the newest matching event's `tier` alone — never a separate in-process
-# fact, so the same read serves both the round that first approves a pull
-# request and a later 2.1e landing-retry re-arm without the two ever risking
-# disagreement.
+# object is this array's *last* entry — read from the log, never from a
+# separate in-process fact, so the same read serves both the round that
+# first approves a pull request and a later 2.1e landing-retry re-arm. This
+# array deliberately carries *every* event, a `posted: false` one included
+# (that is what `posted` is in each row for), where `landing_retry_tier`
+# excludes them: the audit record is a full diagnostic history of what the
+# Approver decided, while the gate-4.5 tier control is a trust decision that
+# may rest only on a review GitHub actually accepted (issue #2534). So the
+# two reads can name different engagements for the same pull request, and
+# the record's own `posted` field is what tells a reader which it has.
 #
 # Reads the union of SRC1 and SRC2, deduplicated — never either alone. On the
 # round that first approves a pull request, `$log_file` (this process's own

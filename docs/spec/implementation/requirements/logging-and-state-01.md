@@ -285,7 +285,16 @@
     agent-ops#573's divergence record (component 22a) reads to exclude a
     verdict a human never saw a review for: it cannot have diverged from, or
     agreed with, an action taken in response to a review that was never
-    actually posted. A `critical_reason` field (`protected-path` or
+    actually posted. It is also what requirement 8d's own gate 4.5 reads,
+    through `landing_retry_tier` (`lib/landing.sh`), to exclude such an
+    event before picking the most recent one — the tier a landing-retry
+    re-arm trusts must come from an engagement whose review actually
+    reached GitHub, since the gate's other two controls are measured
+    against the review that is standing there (issue #2534). The landing
+    audit record's own adjudication history (requirement 8x) is the
+    deliberate exception: it carries every event, `posted: false` ones
+    included, because it is a diagnostic record of what the Approver
+    decided rather than a trust decision. A `critical_reason` field (`protected-path` or
     `refuse-streak`; absent when `tier` is not `critical`) distinguishes D18
     WI-12's two causes of the critical tier — a protected-path hit and a
     two-refusal streak can both route here, and requirement 8d's own gate
@@ -298,8 +307,9 @@
     request has the write's own failure logged beside it rather than having
     to infer it, and `posted: false` says the same thing to a machine
     reader. An `approver-verdict` event logged before agent-ops#573 carries
-    none of `repo`/`model`/`posted` — every reader of them (component 22a)
-    treats an absent `posted` as `true` (the best available assumption for
+    none of `repo`/`model`/`posted` — every reader of them (component 22a
+    and gate 4.5's own `landing_retry_tier` alike) treats an absent
+    `posted` as `true` (the best available assumption for
     history it cannot re-observe) and derives `repo` from `pr_url` rather
     than trusting the field, so old and new events read the same way. An
     `approver-escalated` (requirement 8c) carries the same `pr_url` plus the

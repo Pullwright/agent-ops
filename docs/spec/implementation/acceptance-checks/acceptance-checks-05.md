@@ -200,7 +200,14 @@
     `landing_retry_tier` reads the most recent matching `approver-verdict`
     event's own `tier` from the fleet log, the same "several events, keep
     the latest, skip malformed lines, stdin works like a named file" shape
-    `landing_retry_source_map` already has pinned. `test/landing-wiring.test.sh`
+    `landing_retry_source_map` already has pinned, excluding an event whose
+    own `posted` field is explicitly `false` — its review never reached
+    GitHub — *before* that "keep the latest" pick is made, so a later
+    unposted event can never outrank an earlier posted one for the same
+    pull request (issue #2534); an event with no `posted` field at all
+    still reads as posted, the same default `verdict_fate_latest_per_pr`
+    (`lib/verdict-fate.sh`) already applies for history logged before
+    agent-ops#573 introduced the field. `test/landing-wiring.test.sh`
     lifts the new gate 4.5 in place, stubbed as its own function: never
     consulted at all below `agent-merges-all` (confirmed by an empty call
     log) with the pull request still arming normally; at `agent-merges-all`
