@@ -471,6 +471,16 @@ mkdir -p "$cycle_dir"
 
 log_event() { printf '%s\t%s\n' "$1" "$2" >>"$T/events"; }
 
+# escalation_open_existing (lib/enabler.sh) is a live GitHub read — stubbed
+# here as a black box, the same relationship this harness already has with
+# create_escalation_issue. OPEN_EXISTING, when set, is "<number>\t<url>";
+# unset/empty means no open issue already carries this escalation.
+escalation_open_existing() {
+  printf '%s\n' "$*" >>"$T/open_existing_args"
+  [[ -n "${OPEN_EXISTING:-}" ]] && printf '%s' "$OPEN_EXISTING"
+  return 0
+}
+
 # escalation_recent_close (lib/enabler.sh) is a live GitHub read — stubbed
 # here as a black box, the same relationship this harness already has with
 # create_escalation_issue. RECENT_CLOSE, when set, is
@@ -498,7 +508,8 @@ HARNESS
 } >>"$tmp_dir/harness_d.sh"
 
 run_case_d() {
-  : >"$tmp_dir/events"; : >"$tmp_dir/create_args"; : >"$tmp_dir/recent_close_args"; rm -f "$tmp_dir/body.md"
+  : >"$tmp_dir/events"; : >"$tmp_dir/create_args"; : >"$tmp_dir/recent_close_args"
+  : >"$tmp_dir/open_existing_args"; rm -f "$tmp_dir/body.md"
   env -i PATH="$PATH" HOME="$HOME" T="$tmp_dir" \
     CREATE_RC="0" \
     "$@" \
@@ -535,6 +546,34 @@ assert_eq "a failed filing logs a warning, never open-question-escalated" \
 assert_contains "... naming the pull request" \
   "the escalation issue could not be filed" \
   "$(awk -F'\t' '$1=="warning"{print $2}' "$tmp_dir/events")"
+
+# --- the open-escalation short-circuit (agent-ops#2620) --------------------
+
+OPEN_ISSUE=$'43\thttps://github.com/Poetic-Poems/agent-ops/issues/43'
+
+run_case_d QUESTIONS_JSON="$QUESTIONS" OPEN_EXISTING="$OPEN_ISSUE"
+assert_eq "an already-open escalation issue short-circuits before any recent-close read" \
+  "" "$(cat "$tmp_dir/recent_close_args")"
+assert_eq "... files nothing" "" "$(cat "$tmp_dir/create_args")"
+assert_eq "... logs no open-question-escalated" "" \
+  "$(awk -F'\t' '$1=="open-question-escalated"{print $2}' "$tmp_dir/events")"
+assert_contains "... logs the lightweight skip event naming the existing issue" \
+  '"issue_url":"https://github.com/Poetic-Poems/agent-ops/issues/43"' \
+  "$(awk -F'\t' '$1=="open-question-escalation-skipped-open"{print $2}' "$tmp_dir/events")"
+assert_contains "... and the pull request" \
+  '"pr_url":"https://github.com/Poetic-Poems/agent-ops/pull/512"' \
+  "$(awk -F'\t' '$1=="open-question-escalation-skipped-open"{print $2}' "$tmp_dir/events")"
+assert_contains "... and the item ref" \
+  '"item":"pr-512-open-question"' \
+  "$(awk -F'\t' '$1=="open-question-escalation-skipped-open"{print $2}' "$tmp_dir/events")"
+
+run_case_d QUESTIONS_JSON="$QUESTIONS"
+assert_contains "no open issue: the open-existing check still ran, against the item's own repo and ref" \
+  "Poetic-Poems/agent-ops pr-512-open-question" "$(cat "$tmp_dir/open_existing_args")"
+assert_contains "... and filing proceeds exactly as before this short-circuit existed" \
+  $'Poetic-Poems/agent-ops\tpr-512-open-question\tagent-escalation' "$(cat "$tmp_dir/create_args")"
+assert_contains "... logging open-question-escalated" \
+  '"issue_number":42' "$(awk -F'\t' '$1=="open-question-escalated"{print $2}' "$tmp_dir/events")"
 
 # --- the requirement 8f re-filing guard (agent-ops#779, decided on #784) ----
 
