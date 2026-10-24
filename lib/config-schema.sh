@@ -1154,11 +1154,19 @@ config_documented_value_mismatches() {
     # Every leaf under `.properties`, one level of `properties` at a time —
     # `schedule` and `repository_review` (and its own `defaults`) recurse the
     # same way render-config-table.sh'\''s `flatten_region` does; anything
-    # without its own `properties` (after `$ref` resolution) is a leaf.
+    # without its own `properties` (after `$ref` resolution) is a leaf. A
+    # node naming both `properties` and its own `default` (issue #2247
+    # modelIdOrSet/modelIdOrEmptyOrSet, the one shape in this schema a value
+    # can legitimately take two different JSON types) is a leaf too, never a
+    # container to recurse into: a genuine container documents no scalar
+    # default of its own, only its children do, so `has("default")` is what
+    # tells "a set of models with a scalar-or-object default" apart from "an
+    # object whose own fields each default separately" — the same signal
+    # `fill`'\''s own fix for this schema shape (above) keys on.
     def leaf_paths($node0; $path):
         (try deref($node0) catch null) as $node
         | if ($node == null) then empty
-          elif ($node | type) == "object" and ($node | has("properties")) then
+          elif ($node | type) == "object" and ($node | has("properties")) and (($node | has("default")) | not) then
             ($node.properties | keys_unsorted[] as $k | leaf_paths($node.properties[$k]; $path + [$k]))
           else {path: $path, node: $node} end;
 
