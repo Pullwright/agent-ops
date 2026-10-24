@@ -407,6 +407,58 @@ assert_eq "an absent model_tiers leaves the shipped table exactly as it ships" \
 assert_false "…and an earlier call's override does not survive a later one" \
   model_tier_known xai/grok-5
 
+# --- Weighted model sets (issue #2247): a *_model-shaped key may name an
+#     object {"models": [...]} instead of one bare/qualified id, resolved
+#     through model_key_load_into — the set-aware form of
+#     resolve_model_id_into every call site switches to. ---
+providers_load '{"xai": {"substrate": "grok-build"}}'
+
+assert_true "model_key_load_into resolves every member of a set, each through resolve_model_id_into" \
+  model_key_load_into mk1_var mk1_key '{"models": [{"id": "claude-sonnet-5", "weight": 2}, {"id": "xai/grok-4.7", "weight": 1}]}'
+assert_eq "…and sets VAR to the key itself, the set's own handle" \
+  "mk1_key" "$mk1_var"
+assert_true "model_key_is_set recognizes the handle" \
+  model_key_is_set "$mk1_var"
+assert_eq "…normalizing every member to its qualified id, weight defaulted where omitted" \
+  '[{"id":"anthropic/claude-sonnet-5","weight":2},{"id":"xai/grok-4.7","weight":1}]' \
+  "${MODEL_SET_JSON[$mk1_var]}"
+assert_eq "…and recording each member's provider in MODEL_PROVIDER, as an ordinary key would" \
+  "xai" "${MODEL_PROVIDER[grok-4.7]}"
+
+model_key_load_into mk_bare mk_bare_key claude-sonnet-5
+assert_eq "a bare id is still unaffected: model_key_load_into delegates to resolve_model_id_into" \
+  "claude-sonnet-5" "$mk_bare"
+assert_false "…and is never mistaken for a set" \
+  model_key_is_set "$mk_bare"
+
+# An unresolvable member fails fast, naming the key and the offending
+# member — the identical message an ordinary key's own bad value already
+# prints — and the set is never half-recorded in MODEL_SET_JSON.
+assert_false "an unresolvable member fails fast" \
+  model_key_load_into mk2_var mk2_key '{"models": [{"id": "bogus/doesnotexist"}]}'
+err="$(model_key_load_into mk2_var mk2_key '{"models": [{"id": "bogus/doesnotexist"}]}' 2>&1 >/dev/null)"
+case "$err" in
+  *"mk2_key"*"bogus/doesnotexist"*) printf 'ok   - %s\n' "…naming the key and the member" ;;
+  *)
+    printf 'FAIL - …naming the key and the member\n     actual: %s\n' "$err"
+    failures=$(( failures + 1 ))
+    ;;
+esac
+assert_false "…and the set is never half-recorded" \
+  model_key_is_set mk2_key
+
+# model_key_qualified_ids is requirement 1c's own reader: every member for a
+# set, the one qualified id wrapped in an array for an ordinary key, and []
+# for empty (disabled).
+assert_eq "model_key_qualified_ids expands a set to every member's qualified id" \
+  '["anthropic/claude-sonnet-5","xai/grok-4.7"]' \
+  "$(model_key_qualified_ids mk1_key "$mk1_var")"
+assert_eq "…one qualified id, wrapped in an array, for an ordinary key" \
+  '["anthropic/claude-sonnet-5"]' \
+  "$(model_key_qualified_ids implementer_model_default claude-sonnet-5)"
+assert_eq "…and [] for empty (disabled)" \
+  '[]' "$(model_key_qualified_ids enabler_model "")"
+
 # Leave providers_load back at the default state (no providers configured)
 # before any remaining assertion below, in case one is ever added that
 # relies on the no-op default.

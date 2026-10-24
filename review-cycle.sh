@@ -295,11 +295,13 @@ while IFS=$'\t' read -r configured_model_key configured_model; do
   [[ -n "$configured_model" ]] || continue
   # The assigning form into a throwaway, not the printing one: this sweep is
   # here to validate, but it is also the parent-shell call that records each
-  # repository's provider in MODEL_PROVIDER for requirement 4d's substrate
-  # dispatch to read back — a command substitution would discard it (see
-  # lib/model-id.sh's `resolve_model_id_into`).
-  resolve_model_id_into _validated_model "$configured_model_key" "$configured_model"
-done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$repository_review_repos_json")
+  # repository's provider (and, for a weighted set, every member's — issue
+  # #2247) in MODEL_PROVIDER for requirement 4d's substrate dispatch to read
+  # back — a command substitution would discard it (see lib/model-id.sh's
+  # `model_key_load_into`, the set-aware form of `resolve_model_id_into`).
+  model_key_load_into _validated_model "$configured_model_key" "$configured_model"
+done < <(jq -r '[.[] | [.model_key, (.model | if type == "object" then tojson else . end)]]
+                | unique | .[] | @tsv' <<<"$repository_review_repos_json")
 # Every configured review_instructions/review_context path is validated up
 # front too, at the same fail-fast position and for the same reason as the
 # model sweep above (R1c, issue #589/D7): unlike a `prompt_overrides` path,
@@ -1185,7 +1187,7 @@ review_one() {
   # in repository_review.repos, or repository_review.defaults otherwise. Already
   # validated (the model-id sweep before the lock, above), so this is a
   # straight re-derivation rather than a fresh check.
-  resolve_model_id_into model "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")"
+  model_key_load_into model "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")"
   pr_label="$(jq -r '.pr_label' <<<"$entry")"
   branch_prefix="$(jq -r '.branch_prefix' <<<"$entry")"
   # `entry.report_directory` is already fallback-applied (the pre-loop
@@ -1334,6 +1336,16 @@ $(jq . <<<"$reviewer_input")
 "
   out_file="$review_dir/reviewer-$safe.out"
 
+  # Drawn once, before the lane (issue #2247), and before the budget
+  # resolution and `review-stage-start` event below so both read the
+  # concrete member actually launching rather than the set's own handle.
+  # `"$review_id:$slug:reviewer"` rather than `"${cycle_id:-}:reviewer"`:
+  # `cycle_id` is not assigned this launch's own value until immediately
+  # ahead of `run_model_stage` below (the fix on review round PR #2385,
+  # comment there), but its value at that point is already known to be
+  # exactly this.
+  stage_model_resolve_into model "$model" "$review_id:$slug:reviewer"
+
   # This repository's own timeout_review/inactivity_review override (its own,
   # or repository_review.defaults' — already folded into $entry) — distinct from
   # lock_budget_overrides above, which took the widest across every configured
@@ -1359,12 +1371,12 @@ $(jq . <<<"$reviewer_input")
   # it for this `model`, so this is a lookup, never a fresh resolution.
   log_event "review-stage-start" "$(jq -nc --arg r "$slug" --arg m "$model" \
     --arg p "${MODEL_PROVIDER[$model]:-anthropic}" \
-    --argjson b "$review_budget" \
+    --argjson b "$review_budget" --argjson s "$STAGE_MODEL_SET_EXTRA_JSON" \
     --argjson bs "$review_backstop_min" --argjson is "$review_inactivity_min" \
     --argjson rcs "$review_context_sources" --arg lane "$(metering_intended_lane)" \
     '{repo: $r, model: $m, provider: $p, lane: $lane}
      + (if ($b | type) == "object" then $b else {} end)
-     + {backstop_min: $bs, inactivity_min: $is, review_context_sources: $rcs}')"
+     + {backstop_min: $bs, inactivity_min: $is, review_context_sources: $rcs} + $s')"
   # Requirement 45e: the stage runs as the stage user, which can write the
   # clone only once it is shared, and from then on the clone is the stage's.
   if ! stage_workspace_share "$clone_dir"; then

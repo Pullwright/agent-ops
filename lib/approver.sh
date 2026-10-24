@@ -71,6 +71,21 @@
 # already earned one level up (`reviewer_complexity`'s own raise-never-lower
 # resolution): this function trusts its caller handed it an already-resolved
 # grade, and only degrades gracefully if it did not.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 approver_tier_for() {
   case "${1:-}" in
     low) printf 'trivial' ;;
@@ -891,13 +906,17 @@ $cycle_id
 $node_name
 "
     out="$cycle_dir/approver.out"
-    stage_budget_apply approver "$selected_repo" "$model" \
-      "$(jq -nc --arg t "$tier" --arg m "$mode" '{complexity: $t, mode: $m}')" "$selected_item"
     # Issue #2436: the pull request this engagement is reviewing is also the
     # lane draw's own seed suffix, so the per-pull-request loop's several
     # Approver launches within one cycle draw independently rather than
     # sharing the one cycle-and-stage seed every one of them would otherwise
-    # reuse.
+    # reuse. The model draw (issue #2247) reuses that exact seed too, drawn
+    # before the lane, so a weighted `approver_model_*` tier draws
+    # independently per pull request the same way the lane already does.
+    stage_model_resolve_into model "$model" "${cycle_id:-}:approver:$pr_url"
+    stage_budget_apply approver "$selected_repo" "$model" \
+      "$(jq -nc --arg t "$tier" --arg m "$mode" --argjson s "$STAGE_MODEL_SET_EXTRA_JSON" \
+        '{complexity: $t, mode: $m} + $s')" "$selected_item"
     if run_model_stage approver "$(( stage_backstop_min * 60 ))" "$model" "$prompt" "$out" "$clone_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
       rc=0
     else
