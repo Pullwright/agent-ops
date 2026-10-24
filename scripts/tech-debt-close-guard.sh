@@ -7,7 +7,8 @@
 #
 # Since D15's revision, tech debt is a GitHub issue and its permanent record
 # is the resolving pull request's `td-record` body block (requirement 25),
-# written the moment the issue closes with a real closing keyword. That path
+# written the moment the issue closes with a real closing keyword. That
+# path — the closing keyword and its td-record block alike (issue #2645) —
 # is enforced deterministically by `.github/workflows/closing-keyword.yml`.
 # This is the other path: an issue closed some other way — by hand, or
 # `not_planned` — has no pull request to carry a record, so the only trace
