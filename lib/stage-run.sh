@@ -817,9 +817,14 @@ stage_model_draw_into() {
 # `stage_model_draw_into`'s own STAGE_MODEL_DRAWN_QUALIFIED already uses.
 stage_model_resolve_into() {
   local __smr_var="$1" __smr_value="$2" __smr_seed="$3" __smr_drawn
+  # Read by every one of this PR's launch call sites across lib/*.sh,
+  # review-cycle.sh and monitor-cycle.sh, which shellcheck cannot see from
+  # here.
+  # shellcheck disable=SC2034
   STAGE_MODEL_SET_EXTRA_JSON='{}'
   if model_key_is_set "$__smr_value"; then
     stage_model_draw_into __smr_drawn "$__smr_value" "$__smr_seed"
+    # shellcheck disable=SC2034
     STAGE_MODEL_SET_EXTRA_JSON="$(jq -nc --arg k "$__smr_value" \
       --arg m "${STAGE_MODEL_DRAWN_QUALIFIED:-}" '{model_set: $k, model_set_member: $m}')"
     printf -v "$__smr_var" '%s' "$__smr_drawn"
