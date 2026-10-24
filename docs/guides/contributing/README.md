@@ -228,6 +228,22 @@ exemptions) — there is no line count and no per-category tier.
 
 Run `scripts/check-docs.sh` before pushing. CI runs the same check on every PR.
 
+`docs/` is also published as a static site — `site/` (Astro + Starlight) holds
+the whole toolchain, and `site/scripts/sync-docs.mjs` regenerates its content
+collection from the real files on every build, so the repository's own
+Markdown stays the single source and nothing under `site/src/content/docs/` is
+committed. `.github/workflows/docs-site.yml` builds the site on every pull
+request, failing it on a broken internal link, and deploys it to
+`https://pullwright.github.io/agent-ops/` from `main`. To reproduce that build:
+
+```bash
+cd site && npm ci && npm run build
+```
+
+It needs the clone's full history, because each page's last-updated date is
+read from it — `sync-docs.mjs` refuses a shallow clone rather than stamping
+every page with the build's own date.
+
 If a file grows past the budget, split it at the next unused number in its directory — e.g. if `01`–`06` exist, create `07`. Never rename or renumber existing files when splitting.
 
 ### Running the documentation benchmark
