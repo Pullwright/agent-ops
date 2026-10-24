@@ -2014,9 +2014,14 @@ acquire_lock() {
 # reclaim a hung holder; and the very first cycle after a derivation whose
 # result was never cached — no prior cycle reached 1a1 on this node, or its
 # write failed — has only the pre-derivation default to compare against,
-# same as before this function read a cache at all. Both are a delay in
-# reclaiming a hung lock, never an incorrect takeover — this function
-# performs no takeover branch at all.
+# same as before this function read a cache at all. A third follows from the
+# first: only a cycle that reaches 1a1 refreshes the cache, so while a holder
+# is hung every tick takes this path and nothing rewrites it. A threshold
+# that has since *shrunk* (stage backstops configured or controlled down)
+# therefore keeps being judged against the larger value the last completed
+# derivation left behind, until a cycle gets far enough to overwrite it. All
+# three are a delay in reclaiming a hung lock, never an incorrect takeover —
+# this function performs no takeover branch at all.
 skip_cycle_if_lock_fresh() {
   [[ -f "$lock_file" ]] || return 0
   local pid host started_at started_epoch age_sec cached_stale_after_sec effective_stale_after_sec
@@ -2029,8 +2034,12 @@ skip_cycle_if_lock_fresh() {
   age_sec=$(( $(date +%s) - started_epoch ))
   cached_stale_after_sec="$(cat "$state_dir/.lock-stale-after-sec-cache" 2>/dev/null || true)"
   [[ "$cached_stale_after_sec" =~ ^[0-9]+$ ]] || cached_stale_after_sec=0
-  effective_stale_after_sec=$(( cached_stale_after_sec > lock_stale_after_sec \
-    ? cached_stale_after_sec : lock_stale_after_sec ))
+  # `10#` because digits alone are not yet a base-10 integer to `(( ))`: a
+  # leading zero makes it octal, and an octal literal containing an 8 or a 9
+  # is a fatal arithmetic error under `set -e` — which here would abort the
+  # cycle in the one function whose whole job is to be cheap and harmless.
+  effective_stale_after_sec=$(( 10#$cached_stale_after_sec > lock_stale_after_sec \
+    ? 10#$cached_stale_after_sec : lock_stale_after_sec ))
   kill -0 "$pid" 2>/dev/null && (( age_sec < effective_stale_after_sec )) || return 0
   log_event "cycle-skipped" "$(jq -nc --arg d "lock held by pid $pid, age ${age_sec}s" '{detail: $d}')"
   # Same reasoning as the identical branch in `acquire_lock` above: not a
