@@ -579,7 +579,7 @@
     that changed no net content leaves it as true as it was. The Approver's
     verdict is a GitHub artefact, and every repository this pipeline may act
     on is required to set `dismiss_stale_reviews_on_push: true` (D18 Stage 3
-    below, `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a) — a rule that keys on
+    below, `docs/records/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a) — a rule that keys on
     the head SHA moving and knows nothing of patch-id identity, so a
     `merge-conflicts` push, necessarily a force-push, dismisses the standing
     approval whether or not the diff changed. `run_approver_stage` is the

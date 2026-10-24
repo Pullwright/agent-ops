@@ -1,11 +1,6 @@
 # Re-homing agent-ops in the Pullwright organisation — runbook
 
-**Status: preparation.** The transfer has not happened. This document is the
-plan of record for it, tracked by #912 (owner acts, `blocked` so the pipeline
-never selects it). It is a planning document, not an as-built specification:
-it describes what will be done and in what order; the as-built specs remain
-the authority on what *is*. When a step lands, tick it in #912 and amend
-this document where the evidence overtook it.
+**Status: completed on 2026-09-07 (#912); kept as the record of the cutover.** The transfer has concluded. This document is the record of the plan that guided it and the order in which steps were executed. It is a historical record, not a planning document, and describes what was done and in what order.
 
 Assessment this runbook condenses (2026-08-28, with its GitHub-documentation
 sources): <https://claude.ai/code/artifact/e6519e84-d138-4ea4-8b6e-483e84d98e4b>.

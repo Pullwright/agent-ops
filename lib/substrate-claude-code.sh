@@ -28,7 +28,7 @@
 #                                                #2241, D30)
 #
 # This file is the extraction of what `lib/stage-run.sh` always did for
-# Claude Code, unchanged in behaviour (docs/PROVIDER-SEAM-AUDIT.md §1): the
+# Claude Code, unchanged in behaviour (docs/records/PROVIDER-SEAM-AUDIT.md §1): the
 # same `-p --model … --dangerously-skip-permissions --output-format
 # stream-json --verbose`, the prompt on stdin via a here-string, `--resume`,
 # and the same `rate_limit_event`/`rate_limit_info.status` reading. It is
@@ -68,7 +68,7 @@ substrate_claude_code_version() {
 # is what lets a different provider's adapter choose a different delivery
 # method without `run_model_stage` itself knowing or caring which: stdin
 # versus a provider's own `--prompt-file`-shaped flag is exactly what
-# docs/PROVIDER-SEAM-AUDIT.md §2 found differs by provider. An adapter for a
+# docs/records/PROVIDER-SEAM-AUDIT.md §2 found differs by provider. An adapter for a
 # CLI that does not read stdin at all would instead write the inherited
 # stdin to a temp file itself and pass `--prompt-file <path>` — a different
 # function body, never a different caller.

@@ -1,11 +1,6 @@
 # Pullwright day-one autonomy — provisioning checklist
 
-**Status: preparation.** The Pullwright product repository does not exist yet
-— `docs/ROADMAP.md`'s Phase 1 checklist still carries "Create the product
-repository in the Pullwright organisation" unchecked. This checklist is
-written ahead of that step so the repository starts at the level below
-records rather than at the product default (`human`) and climbing the D18
-ladder a second time. Written for issue #581.
+**Status: filed 2026-08-26 for #581; still in force.** The Pullwright product repository reached agent-ops's autonomy level by transfer (`docs/records/PULLWRIGHT-REHOMING.md`, #912), not by executing this checklist. This checklist remains the live provisioning instruction for the consumer repository that Phase 2's extraction step will create (`docs/ROADMAP.md`'s unticked extraction bullet; `docs/CONSUMER-EXTRACTION-PLAN.md` §Provisioning).
 
 Design material this checklist draws on rather than re-derives:
 `docs/reviews/2026-08-14-autonomy-investigation.md` §5.2 ("The Approver

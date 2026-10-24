@@ -37,7 +37,7 @@ README](../../README.md), the guides under `docs/guides/`, and `docs/*-SPEC.md`.
   `read:org`/`write:org`/`admin:org` on a classic one, so without it
   `gh auth status` and every `scripts/doctor.sh` GitHub check fail on a token
   that is in fact working. The trade-off and the end state are recorded in
-  `docs/PULLWRIGHT-REHOMING.md`.
+  `docs/records/PULLWRIGHT-REHOMING.md`.
 - A **git identity** — a name and an email — for the commits this node's
   cycles make. There is no default; an active node's cycles refuse to run
   without both.

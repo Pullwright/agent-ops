@@ -11,7 +11,7 @@
 # the only form of that promise a reviewer does not have to check by eye.
 #
 # `run_model_stage` is provider-neutral: everything in this file is what
-# docs/PROVIDER-SEAM-AUDIT.md §1 calls the substrate contract — the process
+# docs/records/PROVIDER-SEAM-AUDIT.md §1 calls the substrate contract — the process
 # group and the two caps, the stream/`.out`/`.out.stderr` files, the gap
 # clock, the metering hand-off — identical whichever provider a stage's model
 # resolves to. What is *not* neutral (the binary, its argv, its prompt
