@@ -2403,6 +2403,24 @@ open_question_escalate() {
   local repo="$1" pr_url="$2" item_ref="$3" questions_json="$4" adjudication_json="${5:-}"
   local body_file questions_text adj_section reopen_section created
   local recent_close prev_number prev_url prev_closed_at pass_ran_this_round=0 owed=0
+  local open_existing open_number open_url
+
+  # The re-escalation short-circuit (agent-ops#2620): `create_escalation_
+  # issue`'s own dedup already finds an open issue rather than filing a
+  # second one, but every call still built a fresh body and logged `open-
+  # question-escalated` regardless — re-querying GitHub and re-touching the
+  # same issue on every refusing round for zero effect. Read whether an open
+  # issue already carries this item's escalation *before* doing any of that
+  # work, or even reaching the recent-close guard below (which only matters
+  # once there is no open issue left to find).
+  open_existing="$(escalation_open_existing "$repo" "$item_ref")"
+  if [[ -n "$open_existing" ]]; then
+    IFS=$'\t' read -r open_number open_url <<<"$open_existing"
+    log_event "open-question-escalation-skipped-open" "$(jq -nc --arg r "$repo" --arg u "$pr_url" \
+      --arg i "$item_ref" --arg iu "$open_url" \
+      '{repo: $r, pr_url: $u, item: $i, issue_url: $iu}')"
+    return 0
+  fi
 
   # The requirement 8f re-filing guard (agent-ops#779, decided on #784): a
   # human closing the escalation issue without releasing the gate must not

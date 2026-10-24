@@ -32,6 +32,7 @@
     `approver-verdict`, `approver-escalated`, `approver-escalation-retired`,
     `landing-armed`, `landing-refused`, `classifier-escape`, `landing-audit`,
     `open-question-raised`, `open-question-adjudication`, `open-question-escalated`,
+    `open-question-escalation-skipped-open`,
     `review-gate-checks-read`, `review-gate-checks-degraded`, `first-seen`,
     `issues-excluded`, `rework`, `node-state`,
     `warning`, `cycle-end`. `rework` is requirement 47's own record, one
@@ -119,6 +120,19 @@
     `pr_url`, `issue_number`, `issue_url` — logged by `open_question_
     escalate` whether reached directly (`escalation_autonomy:
     "always-escalate"`) or after an `escalate`/failed adjudication pass.
+    `open-question-escalation-skipped-open` (agent-ops#2620) is the
+    lightweight record logged instead, on the same terms `landing-retry-
+    sweep-skipped-claimed` already logs for a fleet-wide claim: `open_
+    question_escalate` reads live from GitHub, before building an issue body
+    or calling `create_escalation_issue` at all, whether an open issue
+    already carries this item's escalation (`escalation_open_existing`,
+    `lib/enabler.sh`) — `create_escalation_issue`'s own dedup would have
+    found the same issue and reused it, but only after the body was built
+    and the call made, so this read short-circuits that work rather than
+    merely its outcome. Carries `repo`, `pr_url`, `item` and the existing
+    issue's own `issue_url`; no `open-question-escalated` is logged on this
+    path, and the requirement 8f re-filing guard below is never reached —
+    there is nothing for it to decide while an open issue already stands.
     `review-gate-checks-read` (requirement 31c,
     TD-PPagop-26081404) is bookkeeping, one per ready-gate evaluation, carrying
     `ok: true|false` — machine-read by the streak verdict, and kept out of
