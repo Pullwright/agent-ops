@@ -102,8 +102,7 @@ so they sit beside `compose.yaml` from the start.
 
 At minimum set `NODE_NAME`, `GH_TOKEN`, `GIT_USER_NAME`, `GIT_USER_EMAIL` and —
 for the `tailnet` profile — `TS_AUTHKEY`. Leave `ROLE=standby` unless this node
-is meant to be the one that spends; see [Which node runs the
-cycles](../../docs/guides/operating/README.md#which-node-runs-the-cycles).
+is meant to be the one that spends; see [Node roles](../../docs/guides/operating/README.md#node-roles).
 
 Two more, for the `auto-update` profile's reconciler — the service that keeps
 *this file* current on this node the way watchtower keeps the image current
