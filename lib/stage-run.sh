@@ -736,7 +736,13 @@ stage_lane_draw() {
 # `stage_model_resolve_into` below to report which member a set's handle
 # drew.
 stage_model_draw_into() {
-  local __smd_var="$1" set_key="$2" seed="$3" hash members_json
+  # `id`/`weight` are declared here, not left to the read loop below to
+  # create: both are names a caller could plausibly be holding (this runs in
+  # its caller's own shell, by design — see the assigning-form note above),
+  # and a launch helper every stage passes through must not reach back out
+  # and empty two of the most generically named variables in the codebase.
+  # The same reason `stage_lane_draw` above declares every one of its own.
+  local __smd_var="$1" set_key="$2" seed="$3" hash members_json id weight
   STAGE_MODEL_DRAWN_QUALIFIED=""
   members_json="${MODEL_SET_JSON[$set_key]:-[]}"
 
