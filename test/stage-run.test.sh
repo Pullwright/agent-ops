@@ -1008,6 +1008,7 @@ PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"w
 # claude-code manages lanes at all — run_model_stage's own "Presence"
 # paragraph).
 providers_load "$(jq -nc '{xai: {substrate: "grok-build"}}')"
+# shellcheck disable=SC2154  # mix_model_key: assigned by model_key_load_into below, the assigning form
 model_key_load_into mix_model_key mix_model_key \
   '{"models": [{"id": "claude-sonnet-5", "weight": 2}, {"id": "xai/grok-4.7", "weight": 1}]}'
 
@@ -1020,6 +1021,7 @@ mix_sonnet_n=0
 mix_grok_n=0
 for ((i = 1; i <= 6; i++)); do
   stage_model_resolve_into mix_drawn "$mix_model_key" "fixture-model-seed-$i"
+  # shellcheck disable=SC2154  # mix_drawn: assigned by stage_model_resolve_into just above, the assigning form
   case "$mix_drawn" in
     claude-sonnet-5) mix_sonnet_n=$(( mix_sonnet_n + 1 )) ;;
     grok-4.7) mix_grok_n=$(( mix_grok_n + 1 )) ;;
@@ -1031,7 +1033,9 @@ assert_eq "...each draw recorded its own qualified member on STAGE_MODEL_SET_EXT
   "mix_model_key" "$(jq -r '.model_set' <<<"$STAGE_MODEL_SET_EXTRA_JSON")"
 assert_eq "...and an ordinary (non-set) value resolves unchanged, with no extra fields" \
   "claude-sonnet-5 {}" \
-  "$(stage_model_resolve_into plain_drawn claude-sonnet-5 'irrelevant-seed'; printf '%s %s' "$plain_drawn" "$STAGE_MODEL_SET_EXTRA_JSON")"
+  "$(stage_model_resolve_into plain_drawn claude-sonnet-5 'irrelevant-seed'
+     # shellcheck disable=SC2154  # plain_drawn: assigned by stage_model_resolve_into just above
+     printf '%s %s' "$plain_drawn" "$STAGE_MODEL_SET_EXTRA_JSON")"
 
 # --- 6j1. A member whose only lane is closed is skipped for the next -------
 # anthropic's only credential, the subscription one (CLAUDE_CONFIG_DIR
@@ -1042,11 +1046,13 @@ assert_eq "...and an ordinary (non-set) value resolves unchanged, with no extra 
 # regardless of seed.
 export CLAUDE_CONFIG_DIR="$sub_absent_dir"
 unset ANTHROPIC_API_KEY
+# shellcheck disable=SC2154  # mix_closed_key: assigned by model_key_load_into below, the assigning form
 model_key_load_into mix_closed_key mix_closed_key \
   '{"models": [{"id": "claude-sonnet-5", "weight": 5}, {"id": "xai/grok-4.7", "weight": 1}]}'
 mix_closed_all_grok=1
 for ((i = 1; i <= 5; i++)); do
   stage_model_resolve_into mix_closed_drawn "$mix_closed_key" "closed-lane-seed-$i"
+  # shellcheck disable=SC2154  # mix_closed_drawn: assigned by stage_model_resolve_into just above
   [[ "$mix_closed_drawn" == "grok-4.7" ]] || mix_closed_all_grok=0
 done
 assert_eq "a member whose only lane is closed is skipped for the next, every time" \
