@@ -1265,7 +1265,14 @@ if [[ -n "$impl_pr_url" ]]; then
     --jq '.labels[].name | select(startswith("complexity:")) | sub("^complexity:"; "")' 2>/dev/null || true)
 fi
 impl_trivial=0
-[[ "$impl_model_launch" == "$implementer_model_trivial" ]] && impl_trivial=1
+# The work order's own `model` value, never the drawn member (issue #2247):
+# this asks "which of the two configured keys did the Co-Ordinator pick",
+# and `implementer_model_trivial` holds the set's own handle, not a model id,
+# for a key configured as a weighted set — so comparing the drawn member
+# against it would read every trivial-tier work order as non-trivial and
+# escalate its review a tier. Identical to comparing `impl_model_launch` for
+# a key that is not a set, since the draw passes an ordinary value through.
+[[ "$impl_model" == "$implementer_model_trivial" ]] && impl_trivial=1
 rev_complexity="$(reviewer_complexity "$impl_complexity" "$impl_trivial" ${label_grades[@]+"${label_grades[@]}"})"
 rev_model="$reviewer_model_default"
 [[ "$rev_complexity" == "high" ]] && rev_model="$reviewer_model_complex"
