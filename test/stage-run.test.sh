@@ -999,7 +999,63 @@ assert_contains "...which earns a warning naming the provider with no open lane"
 export CLAUDE_CONFIG_DIR="$sub_present_dir"
 PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
 
-# --- 6j. The fleet union is never read, through every scenario above --------
+# --- 6j. A weighted model set (issue #2247): the model is drawn before the
+#         lane, by the same seeded rule stage_lane_draw already uses --------
+# Both credentials present throughout (module-level ANTHROPIC_API_KEY/
+# CLAUDE_CONFIG_DIR=$sub_present_dir above 6a); xai is configured with the
+# grok-build substrate, which has no lane_present function of its own, so a
+# grok-4.7 member is never screened or excluded for a lane reason (today only
+# claude-code manages lanes at all — run_model_stage's own "Presence"
+# paragraph).
+providers_load "$(jq -nc '{xai: {substrate: "grok-build"}}')"
+model_key_load_into mix_model_key mix_model_key \
+  '{"models": [{"id": "claude-sonnet-5", "weight": 2}, {"id": "xai/grok-4.7", "weight": 1}]}'
+
+# Six seeds chosen (by brute-force search over the same cksum-mod-total-
+# weight-then-bucket draw, never adjusted after the fact) to land exactly
+# 4:2 — a 2:1 weighted set drawn six times splits in that ratio, the same
+# way "fixture-seed-$i" above exercises stage_lane_draw's own weights rather
+# than merely asserting a statistical tolerance.
+mix_sonnet_n=0
+mix_grok_n=0
+for ((i = 1; i <= 6; i++)); do
+  stage_model_resolve_into mix_drawn "$mix_model_key" "fixture-model-seed-$i"
+  case "$mix_drawn" in
+    claude-sonnet-5) mix_sonnet_n=$(( mix_sonnet_n + 1 )) ;;
+    grok-4.7) mix_grok_n=$(( mix_grok_n + 1 )) ;;
+  esac
+done
+assert_eq "a 2:1 set over an empty window splits six stages 4:2" \
+  "4 2" "$mix_sonnet_n $mix_grok_n"
+assert_eq "...each draw recorded its own qualified member on STAGE_MODEL_SET_EXTRA_JSON" \
+  "mix_model_key" "$(jq -r '.model_set' <<<"$STAGE_MODEL_SET_EXTRA_JSON")"
+assert_eq "...and an ordinary (non-set) value resolves unchanged, with no extra fields" \
+  "claude-sonnet-5 {}" \
+  "$(stage_model_resolve_into plain_drawn claude-sonnet-5 'irrelevant-seed'; printf '%s %s' "$plain_drawn" "$STAGE_MODEL_SET_EXTRA_JSON")"
+
+# --- 6j1. A member whose only lane is closed is skipped for the next -------
+# anthropic's only credential, the subscription one (CLAUDE_CONFIG_DIR
+# below points at an empty directory — 6e's own "absent" fixture, reused
+# read-only), is absent; grok-4.7 is still always available (no lane
+# management for grok-build at all), so every draw of this 5:1 set — heavily
+# weighted toward the now-closed sonnet member — settles on grok-4.7
+# regardless of seed.
+export CLAUDE_CONFIG_DIR="$sub_absent_dir"
+unset ANTHROPIC_API_KEY
+model_key_load_into mix_closed_key mix_closed_key \
+  '{"models": [{"id": "claude-sonnet-5", "weight": 5}, {"id": "xai/grok-4.7", "weight": 1}]}'
+mix_closed_all_grok=1
+for ((i = 1; i <= 5; i++)); do
+  stage_model_resolve_into mix_closed_drawn "$mix_closed_key" "closed-lane-seed-$i"
+  [[ "$mix_closed_drawn" == "grok-4.7" ]] || mix_closed_all_grok=0
+done
+assert_eq "a member whose only lane is closed is skipped for the next, every time" \
+  "1" "$mix_closed_all_grok"
+export ANTHROPIC_API_KEY="sk-ant-test-placeholder"
+export CLAUDE_CONFIG_DIR="$sub_present_dir"
+providers_load "null"
+
+# --- 6k. The fleet union is never read, through every scenario above --------
 assert_eq "run_model_stage/stage_lane_draw read the union stream zero times" \
   "0" "$union_stream_calls"
 assert_eq "...and the fleet's own per-node logs zero times" \

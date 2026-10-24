@@ -126,6 +126,21 @@
 # `attempt-failed` (requirement 33's event vocabulary). One constant, because
 # the Script writes it, the eligibility rule carries it, and the engagement cap
 # selects on it.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 REFINEMENT_BLOCK_KIND="needs-refinement"
 
 # The generic hold marker (requirement 38b, agent-ops#639): fixed and
@@ -1560,10 +1575,16 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/refiner.out"
+  # Drawn once, before the lane (issue #2247) — see the identical comment on
+  # the Implementer's own launch in lib/coordinator-phase.sh. Safe to
+  # overwrite `refiner_model` itself: nothing above this point in this
+  # function reads it again, unlike lib/enabler.sh's own equivalent.
+  local refiner_model_launch
+  stage_model_resolve_into refiner_model_launch "$refiner_model" "${cycle_id:-}:refiner"
   # The Refiner spans repositories by construction, so its cell is keyed `*`
   # (requirement 4f), the same as the Enabler's.
-  stage_budget_apply refiner "*" "$refiner_model"
-  if run_model_stage refiner "$(( stage_backstop_min * 60 ))" "$refiner_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  stage_budget_apply refiner "*" "$refiner_model_launch" "$STAGE_MODEL_SET_EXTRA_JSON"
+  if run_model_stage refiner "$(( stage_backstop_min * 60 ))" "$refiner_model_launch" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?
@@ -1581,7 +1602,7 @@ $(jq . <<<"$input")
   fi
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --arg r "$refiner_refusal" --arg m "$refiner_refusal_msg" --arg c "$refiner_refusal_class" \
-    --argjson metered "$(metering_fields "$refiner_model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    --argjson metered "$(metering_fields "$refiner_model_launch" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     '{stage: "refiner", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end)
      + (if $r == "" then {} else {api_refusal: $r} end)
      + (if $m == "" then {} else {api_message: $m} end)
@@ -1600,7 +1621,7 @@ $(jq . <<<"$input")
   result="$(jq -r '.result // empty' "$out" 2>/dev/null || true)"
   refiner_parsed="$(extract_json_result "$result" 2>/dev/null || true)"
   if (( rc == 0 )) && [[ -z "$refiner_parsed" ]]; then
-    refiner_parsed="$(stage_salvage_result refiner "$out" "$refiner_model" "$cycle_dir" || true)"
+    refiner_parsed="$(stage_salvage_result refiner "$out" "$refiner_model_launch" "$cycle_dir" || true)"
   fi
   if (( rc != 0 )) || [[ -z "$refiner_parsed" ]]; then
     if (( rc == 124 )); then

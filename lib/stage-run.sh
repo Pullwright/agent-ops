@@ -700,6 +700,134 @@ stage_lane_draw() {
   return 1
 }
 
+# stage_model_draw_into VAR SET_KEY SEED
+# Draws one member of `lib/model-id.sh`'s MODEL_SET_JSON[SET_KEY] by weight
+# (issue #2247) — the same seeded `cksum`-mod-total-weight-then-bucket draw
+# `stage_lane_draw` above already uses for lanes, reused here rather than
+# duplicated with a different rule, since "drawn by the same weighted rule"
+# is the set's own contract. Sets VAR to the chosen member's bare model id.
+#
+# The assigning form, never a printing one: this function's own
+# STAGE_MODEL_DRAWN_QUALIFIED side effect below needs a caller that invokes
+# it directly, not through a command substitution — a subshell would take
+# that recording with it when it exits, the identical trap
+# `resolve_model_id_into`'s own header warns about for MODEL_PROVIDER.
+#
+# A member whose provider has no credential lane open right now is skipped
+# in favour of a sibling's draw — the identical `stage_lane_any_present`-then-
+# `stage_lane_draw` check `run_model_stage`'s own launch repeats for
+# whichever model this settles on, so a model is never handed to it only to
+# fail there for a lane reason this draw could have avoided. SEED is reused
+# unchanged across every skip: the live candidate pool shrinks (and its
+# total weight is recomputed over just what remains) rather than the hash
+# being redrawn, so a set with one closed-lane member still draws its
+# siblings deterministically from the one seed, the same way the lane draw
+# itself is deterministic from one seed over whichever lanes are open.
+#
+# If every member's provider turns out shut, this gives up skipping and
+# settles on the very first (unscreened) draw: `run_model_stage`'s own
+# "no open lane" refusal, naming that provider, is the correct outcome for
+# a set with nothing open anywhere, not a special case this draw needs to
+# pre-empt.
+#
+# Side effect: STAGE_MODEL_DRAWN_QUALIFIED, the chosen member's own
+# qualified id — reset on every call, the same convention `stage_lane`
+# (set by `run_model_stage` itself) already uses for its own draw — read by
+# `stage_model_resolve_into` below to report which member a set's handle
+# drew.
+stage_model_draw_into() {
+  local __smd_var="$1" set_key="$2" seed="$3" hash members_json
+  STAGE_MODEL_DRAWN_QUALIFIED=""
+  members_json="${MODEL_SET_JSON[$set_key]:-[]}"
+
+  local -a ids=() weights=()
+  while IFS=$'\t' read -r id weight; do
+    [[ -n "$id" ]] || continue
+    ids+=("$id")
+    weights+=("$weight")
+  done < <(jq -r '.[] | [.id, .weight] | @tsv' <<<"$members_json" 2>/dev/null)
+  local n=${#ids[@]}
+  (( n > 0 )) || { printf -v "$__smd_var" '%s' ""; return 1; }
+
+  hash="$(cksum <<<"$seed" | cut -d' ' -f1)"
+  [[ "$hash" =~ ^[0-9]+$ ]] || hash=0
+
+  local -a live=()
+  local i
+  for ((i = 0; i < n; i++)); do live+=("$i"); done
+
+  local chosen="" first=""
+  while true; do
+    if (( ${#live[@]} == 0 )); then
+      chosen="$first"
+      break
+    fi
+    local total=0
+    for i in "${live[@]}"; do total=$(( total + weights[i] )); done
+    (( total > 0 )) || total=1
+    local pick=$(( hash % total )) cum=0
+    chosen=""
+    for i in "${live[@]}"; do
+      cum=$(( cum + weights[i] ))
+      if (( pick < cum )); then
+        chosen="$i"
+        break
+      fi
+    done
+    [[ -n "$chosen" ]] || chosen="${live[-1]}"
+    [[ -n "$first" ]] || first="$chosen"
+
+    local cand_bare cand_substrate cand_provider
+    cand_bare="${ids[$chosen]#*/}"
+    cand_substrate="$(stage_model_substrate "$cand_bare")"
+    if ! declare -F "substrate_${cand_substrate//-/_}_lane_present" >/dev/null 2>&1; then
+      break
+    fi
+    cand_provider="${MODEL_PROVIDER[$cand_bare]:-anthropic}"
+    if stage_lane_any_present "$cand_substrate" \
+        && stage_lane_draw "$cand_provider" "$cand_substrate" "$seed" >/dev/null 2>&1; then
+      break
+    fi
+    local -a next_live=()
+    for i in "${live[@]}"; do
+      (( i == chosen )) || next_live+=("$i")
+    done
+    live=("${next_live[@]}")
+  done
+
+  STAGE_MODEL_DRAWN_QUALIFIED="${ids[$chosen]}"
+  printf -v "$__smd_var" '%s' "${ids[$chosen]#*/}"
+}
+
+# stage_model_resolve_into VAR MODEL_VALUE SEED
+# Sets VAR to the concrete bare model id to launch: MODEL_VALUE unchanged
+# when it is not a weighted set (`lib/model-id.sh`'s `model_key_is_set`), or
+# the member `stage_model_draw_into` settles on when it is. Every call site
+# that launches a stage calls this once, with the exact seed its own
+# `run_model_stage` call below will reuse for the lane draw
+# (`"${cycle_id:-}:$stage${seed_suffix:+:$seed_suffix}"`) — so the model is
+# chosen before the lane, as the set's own contract requires, and the two
+# draws agree on what "this launch" means.
+#
+# Side effect: STAGE_MODEL_SET_EXTRA_JSON, a compact JSON object ready to
+# fold into `stage_budget_apply`'s own EXTRA parameter (`lib/stage-budget.sh`)
+# so the `stage-start` event names the set key and the member drawn —
+# `{"model_set": KEY, "model_set_member": QUALIFIED_ID}` when MODEL_VALUE
+# named a set, `{}` otherwise. Reset on every call, the same convention
+# `stage_model_draw_into`'s own STAGE_MODEL_DRAWN_QUALIFIED already uses.
+stage_model_resolve_into() {
+  local __smr_var="$1" __smr_value="$2" __smr_seed="$3" __smr_drawn
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  if model_key_is_set "$__smr_value"; then
+    stage_model_draw_into __smr_drawn "$__smr_value" "$__smr_seed"
+    STAGE_MODEL_SET_EXTRA_JSON="$(jq -nc --arg k "$__smr_value" \
+      --arg m "${STAGE_MODEL_DRAWN_QUALIFIED:-}" '{model_set: $k, model_set_member: $m}')"
+    printf -v "$__smr_var" '%s' "$__smr_drawn"
+  else
+    printf -v "$__smr_var" '%s' "$__smr_value"
+  fi
+}
+
 # stage_watchdog_warning STAGE
 # The body of the `warning` event a watchdog kill, a lane mismatch, or an
 # exhausted lane set earns, or nothing (returning 1) when the last run ended

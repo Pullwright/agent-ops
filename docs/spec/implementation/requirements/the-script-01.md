@@ -121,6 +121,51 @@
    implemented, is requirement 4d's own scope, not this one's — this
    requirement stops at naming the provider a model key resolves to.
 
+   Every model key above may instead name a weighted set of models (issue
+   #2247), splitting that actor's work across providers the way `lanes`
+   below already splits one provider's own work across its two credentials:
+   `{"models": [{"id": "anthropic/claude-sonnet-5", "weight": 2},
+   {"id": "xai/grok-4.7", "weight": 1}]}`, each member's own `id` in the
+   same bare-or-qualified `modelId` shape as an ordinary key's single value,
+   `weight` an integer >= 0 defaulting to 1. `lib/model-id.sh`'s
+   `model_key_load_into` is the set-aware form of `resolve_model_id_into`
+   every one of the keys above now resolves through: a bare or qualified
+   string resolves exactly as it always did, delegating outright, so nothing
+   changes for a key no installation has turned into a set; an object
+   resolves every member through that same resolution — an unresolvable
+   member is the identical fail-fast config error an ordinary key's bad
+   value already is, naming the key and the offending member — and
+   normalizes the set into `MODEL_SET_JSON`, keyed by the config key's own
+   name, which becomes the "handle" value the key's own variable holds in
+   place of a single bare id. A member is drawn from the set once per
+   launch, by weight, *before* the lane requirement 4d's own draw chooses
+   (`lib/stage-run.sh`'s `stage_model_resolve_into`/`stage_model_draw_into`):
+   the same seeded `cksum`-mod-total-weight-then-bucket rule D30's lane
+   weights already use, reused rather than duplicated with a rule of its
+   own, so "drawn by the same weighted rule" is the set's own contract, not
+   a second one to learn. A member whose provider has no credential lane
+   open right now is skipped in favour of a sibling's draw — screened by the
+   identical `stage_lane_any_present`-then-`stage_lane_draw` check the
+   eventual launch repeats for whichever model the set settles on — so a
+   model is never handed to the launcher only to fail there for a lane
+   reason the draw could have avoided; if every member's provider is shut,
+   the draw gives up skipping and the launcher's own "no open lane" refusal
+   (requirement 4d) is the correct outcome, not a special case here. Which
+   set key was drawn from, and which member it settled on, are named on the
+   `stage-start` event (requirement 33) a launch that drew from a set
+   carries, alongside the drawn member's own bare id wherever the stage's
+   model is otherwise named (`stage_budget_apply`'s own per-(actor,
+   repository, model) cache cell among them, so a set's distinct members
+   warm-start their own cells rather than sharing one for the handle).
+   Requirement 1c's floor check reads every member a set can draw — never
+   just whichever one a single draw happened to pick — through
+   `lib/model-id.sh`'s `model_key_qualified_ids`, which expands a set's
+   handle to every member's qualified id (or wraps a single ordinary id in
+   a one-element array), reading each member's provider back out of
+   `MODEL_PROVIDER` rather than re-deriving it from the already-qualifier-
+   stripped bare id, which would wrongly assume `anthropic` for any member
+   whose provider was not the implicit one.
+
    A provider's entry may also carry `lanes` (the credit mix, D30, issue
    #2240): an object naming at most the two credential paths `api` and
    `subscription`, each carrying `weight` (an integer >= 0; a lane's share of
@@ -464,7 +509,15 @@
     pair is skipped (that stage, or that implementer tier, is simply not in
     play), and so is a pair naming a model the table cannot rank — reported
     instead as `scripts/doctor.sh`'s unranked-model warning above, never
-    silently treated as clearing the floor. `coordinator_model` is
+    silently treated as clearing the floor. Each of the four arguments is
+    now a compact JSON array of qualified ids (`lib/model-id.sh`'s
+    `model_key_qualified_ids`, issue #2247) rather than one each — a single-
+    element array for a key no installation has turned into a weighted set,
+    every member's own qualified id for one that has — so the check runs
+    over every pair a set's members can produce with every pair on the
+    other side, not just whichever member a single draw happened to pick:
+    this runs once, at config-load time, well before any launch draws from
+    either side. `coordinator_model` is
     deliberately outside this comparison: requirement 39a (The Refiner)'s
     "Per-source refinement policy" is what keeps it from authoring a
     specification for a source it must not — see the next paragraph —

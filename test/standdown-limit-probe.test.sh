@@ -49,6 +49,13 @@ if [[ -z "$probe_block" || "$probe_block" != *'metering_fields'* ]]; then
   exit 1
 fi
 
+# lib/stage-attempt.sh (issue #2247) for stage_model_resolve_into's own
+# never-a-set defensive fallback — the extracted block now draws the probe's
+# model through it before launching, the same way
+# test/standdown-credential-preflight.test.sh already sources this file for
+# its own sibling probe.
+# shellcheck source=lib/stage-attempt.sh
+. "$SCRIPT_DIR/lib/stage-attempt.sh"
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
 

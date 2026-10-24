@@ -468,9 +468,10 @@ fi
 # The assigning form, never the printing one: a command substitution would
 # discard the MODEL_PROVIDER recording requirement 4d's substrate dispatch
 # reads back, leaving this stage launching on `claude-code` whatever
-# `monitor_model` resolved to — see lib/model-id.sh's `resolve_model_id_into`.
+# `monitor_model` resolved to — see lib/model-id.sh's `model_key_load_into`
+# (issue #2247's set-aware form of `resolve_model_id_into`).
 monitor_model="$monitor_model_raw"
-resolve_model_id_into monitor_model monitor_model "$monitor_model"
+model_key_load_into monitor_model monitor_model "$monitor_model"
 
 # --- The fleet's memory ---
 # The union of every node's shared log, snapshotted once here: the usage-limit
@@ -515,7 +516,17 @@ stage_budget_settings_json="$(stage_budget_settings "$(cat "$CONFIG_FILE" 2>/dev
 stage_budget_json="$(stage_budget_table \
   "$(cat "$union_log" "$monitor_union_log" 2>/dev/null | stage_budget_observations)" \
   "$stage_budget_settings_json")"
-monitor_budget="$(stage_budget_resolve "$stage_budget_json" monitor '*' "$monitor_model" '{}')"
+# Drawn once, before the lane (issue #2247), and before the budget
+# resolution and `monitor-stage-start` event below so both read the
+# concrete member actually launching rather than the set's own handle.
+# `"$monitor_id:monitor"` rather than `"${cycle_id:-}:monitor"`: `cycle_id`
+# is not assigned this run's own value until immediately ahead of
+# `run_model_stage` below, but its value at that point is already known to
+# be exactly this.
+monitor_model_launch="$monitor_model"
+stage_model_resolve_into monitor_model_launch "$monitor_model" "$monitor_id:monitor"
+monitor_model_set_extra_json="$STAGE_MODEL_SET_EXTRA_JSON"
+monitor_budget="$(stage_budget_resolve "$stage_budget_json" monitor '*' "$monitor_model_launch" '{}')"
 monitor_backstop_min="$(jq -r '.backstop_min' <<<"$monitor_budget" 2>/dev/null || printf '')"
 monitor_inactivity_min="$(jq -r '.inactivity_min' <<<"$monitor_budget" 2>/dev/null || printf '')"
 [[ "$monitor_backstop_min" =~ ^[0-9]+$ ]] \
@@ -926,12 +937,12 @@ $(cat "$digest_file")
 
 out_file="$run_dir/monitor.out"
 assert_in_workspace "$run_dir"
-log_event "monitor-stage-start" "$(jq -nc --arg m "$monitor_model" \
-  --argjson b "$monitor_budget" \
+log_event "monitor-stage-start" "$(jq -nc --arg m "$monitor_model_launch" \
+  --argjson b "$monitor_budget" --argjson s "$monitor_model_set_extra_json" \
   --argjson bs "$monitor_backstop_min" --argjson is "$monitor_inactivity_min" \
   --argjson digest_bytes "$digest_bytes" --argjson digest_rung "$digest_rung" \
   '{model: $m} + (if ($b | type) == "object" then $b else {} end)
-   + {backstop_min: $bs, inactivity_min: $is, digest_bytes: $digest_bytes, digest_rung: $digest_rung}')"
+   + {backstop_min: $bs, inactivity_min: $is, digest_bytes: $digest_bytes, digest_rung: $digest_rung} + $s')"
 # `run_model_stage`'s own credential-lane draw (issue #2241, D30) seeds on
 # the global `cycle_id`, which agent-cycle.sh sets once per cycle but this
 # script never did — leaving every monitor launch on this node seeded on the
@@ -939,7 +950,7 @@ log_event "monitor-stage-start" "$(jq -nc --arg m "$monitor_model" \
 # realised here (review round on PR #2385). `$monitor_id` is this launch's
 # own identifier, already unique per run (date, node and pid).
 cycle_id="$monitor_id"
-if run_model_stage monitor "$(( monitor_backstop_min * 60 ))" "$monitor_model" \
+if run_model_stage monitor "$(( monitor_backstop_min * 60 ))" "$monitor_model_launch" \
      "$monitor_prompt" "$out_file" "$run_dir" "$(( monitor_inactivity_min * 60 ))"; then
   monitor_rc=0
 else
@@ -949,7 +960,7 @@ fi
 # `lib/stage-health.sh` already reads, so this pipeline's verdict needs no
 # second reader (M17).
 log_event "stage-end" "$(jq -nc --argjson rc "$monitor_rc" --arg kr "$stage_kill_reason" \
-  --argjson m "$(metering_fields "$monitor_model" "$out_file" "$stage_gaps_json" "$stage_lane_json")" \
+  --argjson m "$(metering_fields "$monitor_model_launch" "$out_file" "$stage_gaps_json" "$stage_lane_json")" \
   '{stage: "monitor", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
 stage_health_recorded=1
 watchdog_warning="$(stage_watchdog_warning monitor || true)"

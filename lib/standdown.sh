@@ -19,6 +19,21 @@
 # indistinguishable, to the rest of the cycle, from the inline block it
 # replaces. `exit 0` inside it ends the cycle exactly as it did inline: nothing
 # here runs inside a subshell.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 run_standdown_checks() {
 # --- 1.9 Forge authoring identity (D18 decision 1, agent-ops#607; the
 # on-demand credential seam, agent-ops#1021). Nothing here resolves or
@@ -465,12 +480,19 @@ if ! (( DRY_RUN )); then
         || "$cred_prev_verdict" == "refused" ]]; then
     cred_probe_out="$cycle_dir/credential-probe.out"
     cred_probe_rc=0
+    # Drawn once, before the lane (issue #2247), into its own local rather
+    # than overwriting `implementer_model_trivial` itself: that global is
+    # read by several other files across this same cycle, which want the
+    # configured value (or set handle), not whichever member this one probe
+    # happened to draw.
+    local cred_probe_model
+    stage_model_resolve_into cred_probe_model "$implementer_model_trivial" "${cycle_id:-}:credential-probe"
     # 30 s, not 1b's 180 s: a single-word trivial-model reply needs nowhere
     # near that long, and since #2567 this probe can re-run every cycle of a
     # boot that keeps coming back inconclusive — unlike 1b's, which runs at
     # most once per freeze — so its timeout is also the worst-case per-cycle
     # latency a crashed or hung launch costs (agent-ops#2573).
-    run_model_stage credential-probe 30 "$implementer_model_trivial" \
+    run_model_stage credential-probe 30 "$cred_probe_model" \
       "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || cred_probe_rc=$?
     cred_probe_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     # The probe's own spend, joined into the fleet-wide ledger like every
@@ -482,7 +504,7 @@ if ! (( DRY_RUN )); then
     # `lib/stage-health.sh`'s own stage list does not name
     # "credential-probe", so this carries no verdict risk for it.
     log_event "stage-end" "$(jq -nc --argjson rc "$cred_probe_rc" --arg kr "$stage_kill_reason" \
-      --argjson m "$(metering_fields "$implementer_model_trivial" "$cred_probe_out" "$stage_gaps_json" "$stage_lane_json")" \
+      --argjson m "$(metering_fields "$cred_probe_model" "$cred_probe_out" "$stage_gaps_json" "$stage_lane_json")" \
       '{stage: "credential-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
     cred_class="$(stage_api_refusal_class "$cred_probe_out")"
     cred_token="$(stage_api_refusal "$cred_probe_out")"
@@ -676,7 +698,11 @@ if (( resume_epoch > now_epoch )); then
   if [[ "$governing_kind" != "manual" && "$governing_known" != "true" ]] && ! (( DRY_RUN )); then
     probe_out="$cycle_dir/limit-probe.out"
     probe_rc=0
-    run_model_stage limit-probe 180 "$implementer_model_trivial" \
+    # Drawn once, before the lane (issue #2247) — see the identical comment
+    # on the credential probe above.
+    local limit_probe_model
+    stage_model_resolve_into limit_probe_model "$implementer_model_trivial" "${cycle_id:-}:limit-probe"
+    run_model_stage limit-probe 180 "$limit_probe_model" \
       "Reply with the single word: ok" "$probe_out" "$cycle_dir" || probe_rc=$?
     # The probe's own spend, joined into the fleet-wide ledger like every
     # other launch through run_model_stage (issue #2239, D30) — it never had
@@ -687,7 +713,7 @@ if (( resume_epoch > now_epoch )); then
     # itself. `lib/stage-health.sh`'s own stage list does not name
     # "limit-probe", so this carries no verdict risk for it.
     log_event "stage-end" "$(jq -nc --argjson rc "$probe_rc" --arg kr "$stage_kill_reason" \
-      --argjson m "$(metering_fields "$implementer_model_trivial" "$probe_out" "$stage_gaps_json" "$stage_lane_json")" \
+      --argjson m "$(metering_fields "$limit_probe_model" "$probe_out" "$stage_gaps_json" "$stage_lane_json")" \
       '{stage: "limit-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
     probe_verdict="$(limit_probe_verdict "$(cat "$probe_out" 2>/dev/null || true)" \
       "$(cat "$probe_out.stderr" 2>/dev/null || true)")"
