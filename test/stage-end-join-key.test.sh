@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# impl_rc/rev_rc/impl_model/impl_out/stage_kill_reason/stage_gaps_json/
+# impl_rc/rev_rc/impl_model_launch/impl_out/stage_kill_reason/stage_gaps_json/
 # selected_repo/selected_item are read only by the extracted blocks below,
 # `eval`-defined rather than sourced, so shellcheck cannot see the use — the
 # same false positive test/pr-raised-join-key.test.sh disables for the same
@@ -79,7 +79,7 @@ run_it() {  # <block> <rc-variable-name> <selected_repo> <selected_item>
   : > "$events_file"
   ( selected_repo="$3" selected_item="$4" stage_kill_reason="" stage_gaps_json='[]' \
     stage_lane_json='null' \
-    impl_model="m" impl_out="/dev/null" rev_model="m" rev_out="/dev/null"
+    impl_model_launch="m" impl_out="/dev/null" rev_model_launch="m" rev_out="/dev/null"
     printf -v "$2" '%s' 0
     eval "$1" )
 }
