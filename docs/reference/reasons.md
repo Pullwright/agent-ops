@@ -91,6 +91,19 @@ The host's available memory is low.
 - **Is a fault?** Maybe. Check system memory usage.
 - **What to do:** Free up memory or increase available memory on the host.
 
+### `memory-throttled`
+
+The node's parent cgroup has throttled it, or its headroom beneath the
+parent's memory ceiling has worn too thin — distinct from `memory-low`,
+which is about the host's own memory rather than a cgroup limit above this
+node.
+
+- **Is a fault?** Maybe. A transient dip clears on its own; a sustained run
+  (`memory_throttle_escalate_after` consecutive cycles) files a
+  `memory-throttled:<node>` escalation issue.
+- **What to do:** Re-run `scripts/cgroup-parent-setup.sh` with a wider
+  ceiling for this node's parent cgroup.
+
 ### `host-overcommit`
 
 The host is overcommitted (CPU, memory, or I/O contention detected).

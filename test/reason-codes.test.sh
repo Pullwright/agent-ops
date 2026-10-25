@@ -64,7 +64,7 @@ assert "$(extract_standdown_causes)" "extract_standdown_causes returned nothing"
 assert "$(extract_item_fates)" "extract_item_fates returned nothing"
 assert "$(extract_pager_kinds)" "extract_pager_kinds returned nothing"
 assert "$(extract_landing_refusal_classes)" "extract_landing_refusal_classes returned nothing"
-assert_eq "$(extract_standdown_causes | grep -c .)" "17" \
+assert_eq "$(extract_standdown_causes | grep -c .)" "18" \
   "the canonical stand-down cause count changed — update docs/reference/reasons.md if a code was added or removed"
 assert_eq "$(extract_item_fates | grep -c .)" "7" \
   "the item fate count changed — update docs/reference/reasons.md if a fate was added or removed"
