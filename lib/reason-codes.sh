@@ -24,7 +24,7 @@
 # other lib/*.sh — the caller owns those.
 
 # extract_standdown_causes
-# The seventeen-token closed cause vocabulary `lib/node-time-state.sh`'s
+# The eighteen-token closed cause vocabulary `lib/node-time-state.sh`'s
 # `node_time_state_for_cause` maps to a state: the canonical cause each case
 # arm echoes back after its own tab, which for an arm with aliases (e.g.
 # `peer-claimed|raced|pre-claimed`) is the one name downstream events ever
