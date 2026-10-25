@@ -111,7 +111,10 @@
 # checks each marker independently. This needs no `gh` call at all — the
 # block lives in the PR body already in hand — so it carries none of the
 # surrounding network-outage caveats the other two checks in this `if` block
-# do.
+# do. It does still sit behind the one `gh issue view` that reads the
+# labels, since nothing can tell a tech-debt issue from any other without
+# them; an unreadable issue skips this check for exactly the reason it skips
+# the record-flip one, and that warning says so.
 #
 # Usage: check-closing-keyword.sh <pr-body-text> [<head-branch>] [<repo-slug>] [<pr-number>]
 # Exit 0: nothing claims an issue, or every claim has its closing keyword and
@@ -250,6 +253,21 @@ strip_markdown_noise() {
 # stand in for `{4}`/`{2}` interval repetition in `filed:`'s date pattern —
 # `strip_markdown_noise` above avoids `{n,}` for the same reason: an ERE
 # interval combined with an alternation panics this image's mawk.
+#
+# The three quoted fields match `".+"`, not `"[^"]+"`: anchored at both ends
+# the two differ on exactly one thing, a `"` *inside* the value, and real
+# records carry those routinely — an escaped quote around a shell snippet, a
+# path, a label. `"[^"]+"` would call 24 of the 154 `td-record` blocks in
+# `main`'s own history malformed, `63ffc5a`'s among them, whose
+# `resolution:` quotes `assert_eq \"$1\" \"\" \"$2\"`; since
+# `closing-keyword` is a required check, each would have been a merge
+# blocked over a well-formed record, told it was malformed. `".+"` still
+# demands an opening and a closing quote with at least one character
+# between, so an empty `title: ""` stays malformed — the emptiness this
+# half is actually asked to catch — while a quote within the prose does
+# not. Nothing in requirement 25, `prompts/implementer.md`'s template or
+# the contributing guide's asks for an escape-free value, so nothing here
+# should demand one.
 td_record_rows() {
   awk '
     BEGIN { in_block = 0; n = 0 }
@@ -266,10 +284,10 @@ td_record_rows() {
       wf = 0
       if (n >= 5 \
         && lines[1] ~ /^issue:[[:space:]]*[0-9]+[[:space:]]*$/ \
-        && lines[2] ~ /^title:[[:space:]]*"[^"]+"[[:space:]]*$/ \
+        && lines[2] ~ /^title:[[:space:]]*".+"[[:space:]]*$/ \
         && lines[3] ~ /^filed:[[:space:]]*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]*$/ \
-        && lines[4] ~ /^summary:[[:space:]]*"[^"]+"[[:space:]]*$/ \
-        && lines[5] ~ /^resolution:[[:space:]]*"[^"]+"[[:space:]]*$/) {
+        && lines[4] ~ /^summary:[[:space:]]*".+"[[:space:]]*$/ \
+        && lines[5] ~ /^resolution:[[:space:]]*".+"[[:space:]]*$/) {
         wf = 1
       }
       printf "%s\t%s\n", issue, wf
@@ -327,7 +345,12 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
 
     issue_json="$("$GH" issue view "$item" -R "$repo_slug" --json body,labels 2>/dev/null)" || issue_json=""
     if [[ -z "$issue_json" ]]; then
-      echo "::warning::could not read issue #${item} to check for a tech-debt \"Filed as\" record — skipping the record-flip check for it" >&2
+      # Both label-gated checks below are skipped, not just the record-flip
+      # one: neither can tell a tech-debt issue from any other without the
+      # labels this call was to fetch. Naming only one of them was accurate
+      # before the td-record check existed (issue #2645) and would now
+      # understate what the warning is telling its reader.
+      echo "::warning::could not read issue #${item} to check whether it is pw::type:tech-debt — skipping both its td-record block check and its \"Filed as\" record-flip check" >&2
       continue
     fi
 

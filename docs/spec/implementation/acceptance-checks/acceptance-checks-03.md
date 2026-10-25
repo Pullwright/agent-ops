@@ -962,9 +962,13 @@
    non-`pw::type:tech-debt` issue is asked for no block at all; and two
    tech-debt issues closed by one PR are checked independently — one
    carrying a well-formed block and the other none still fails, naming only
-   the one missing it. None of these fixtures supplies `files.json`,
-   `pr.json`, or `contents.json`, proving the check makes no `gh` call of its
-   own.
+   the one missing it. A block whose `title:`, `summary:` and `resolution:`
+   values carry escaped quotes of their own — `63ffc5a`'s own block
+   verbatim, whose `resolution:` quotes a shell snippet — passes, pinning
+   the one thing the empty-value case above must not also reject: a quote
+   *inside* a value is prose, not malformedness. None of these fixtures
+   supplies `files.json`, `pr.json`, or `contents.json`, proving the check
+   makes no `gh` call of its own.
    `test/sweep-closed-issues.test.sh` passes against a stubbed
    `gh`: a merged, marker-carrying pull request whose issue is still open is
    closed with the merge cited as evidence; a merged, markerless pull

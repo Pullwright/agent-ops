@@ -861,6 +861,28 @@ resolution: "What this PR did about it"
   "fix/multi" "acme/widgets" "9" "two-issues-one-missing" \
   "issue #7"
 
+# A quote *inside* a value is not malformedness. Real records escape one
+# routinely — around a shell snippet, a path, a label — so the three quoted
+# fields match `".+"` rather than `"[^"]+"`, which would have called 24 of
+# the 154 td-record blocks in main's own history malformed. The body below
+# is `63ffc5a`'s own block verbatim, one of those 24: its `resolution:`
+# quotes `assert_eq \"$1\" \"\" \"$2\"`. The `assert_fail_tdr` case above
+# pins the other side of the same line — `title: ""` is still malformed,
+# because `".+"` demands a character between the quotes.
+# shellcheck disable=SC2016  # the `$1`/`$2` are part of the quoted record text, not meant to expand
+assert_pass_tdr "a td-record value carrying escaped quotes is well-formed" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+title: "test/needs-refinement.test.sh calls assert_empty, a helper it never defines, so that assertion silently never runs"
+filed: 2026-10-22
+summary: "assert_empty was called but never defined in needs-refinement.test.sh, so the assertion it guarded silently never ran under set -uo pipefail."
+resolution: "Added the local assert_empty() { assert_eq \"$1\" \"\" \"$2\"; } wrapper, matching the other test files, so the assertion actually runs."
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

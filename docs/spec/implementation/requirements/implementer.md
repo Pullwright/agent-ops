@@ -413,7 +413,13 @@
     fenced ```` ```td-record ```` block whose first five non-blank lines are,
     in order, `issue: <N>` (`<N>` equal to this issue's own number), a
     non-empty quoted `title:`, a `filed: YYYY-MM-DD`, a non-empty quoted
-    `summary:`, and a non-empty quoted `resolution:`. A missing block, a
+    `summary:`, and a non-empty quoted `resolution:`. "Non-empty quoted"
+    means an opening and a closing quote with at least one character
+    between them, and nothing more: a quote *within* the value — the
+    escaped quote a record routinely puts around a shell snippet, a path or
+    a label — is part of the prose, not a malformation, so this check asks
+    for an escape-free value no more than requirement 25's own template
+    above does. A missing block, a
     block with a field out of order, missing, or empty, or a block naming a
     different issue number, each fail, naming the issue — independent of
     whether that issue's own body carries a "Filed as" line, which only the

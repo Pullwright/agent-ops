@@ -1220,7 +1220,10 @@
     reads) must carry a fenced ```` ```td-record ```` block whose first five
     non-blank lines are, in order, `issue: <N>` naming that same issue, a
     non-empty quoted `title:`, a `filed: YYYY-MM-DD`, a non-empty quoted
-    `summary:`, and a non-empty quoted `resolution:`. A missing block, one
+    `summary:`, and a non-empty quoted `resolution:` — "non-empty quoted"
+    being an opening and a closing quote with at least one character
+    between them and nothing more, so an escaped quote inside the value is
+    prose rather than a malformation. A missing block, one
     with a field out of order, missing, or empty, or one naming a different
     issue number, each exit non-zero naming the issue — independent of
     whether that issue's body carries a "Filed as" line, which only the
