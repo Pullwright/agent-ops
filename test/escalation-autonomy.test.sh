@@ -368,6 +368,105 @@ assert_logged_since "...nor for a different pull request" 1 "approver-escalated"
 assert_logged_since "an open-question-escalated event does not count toward approver-escalated" 1 \
   "open-question-escalated" "2026-08-29T00:00:00Z" "$tmp_dir/escalated.jsonl"
 
+# --- create_escalation_issue / escalation_open_existing: the label-less
+# fallback excludes an open decision-log veto (agent-ops#2657, review round
+# on agent-ops#2666). `gh` dispatches "issue list" on whether the call
+# carries `--label`, since the two reads in each function behave differently
+# live: the labelled read only ever sees issues actually carrying the
+# escalation label, while the label-less fallback sees every open issue the
+# search term matches, decision-log issues (labelled `pw::decision`, never
+# the escalation label) included. ---
+escalation_cycle_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir" "$cycle_dir" "$escalation_cycle_dir"' EXIT
+cycle_dir="$escalation_cycle_dir"
+escalation_gh_calls="$escalation_cycle_dir/gh-calls.log"
+enabler_escalation_label="enabler-escalation"
+enabler_assignee="warwickallen"
+CONFIG_FILE=""
+SCHEMA_FILE=""
+# shellcheck disable=SC2317  # invoked only by create_escalation_issue / escalation_open_existing
+labels_reconcile_role() { :; }
+# shellcheck disable=SC2317  # invoked only on a successful fresh create
+notify_post_cycle() { :; }
+# shellcheck disable=SC2317  # invoked only on a failed create
+escalation_webhook_notify() { :; }
+# shellcheck disable=SC2317  # invoked only by create_escalation_issue / escalation_open_existing
+gh() {
+  printf '%s\n' "$*" >> "$escalation_gh_calls"
+  case "$1 $2" in
+    "issue list")
+      if [[ " $* " == *" --label "* ]]; then
+        printf '%s' "${GH_LIST_LABELLED:-[]}"
+      else
+        printf '%s' "${GH_LIST_UNLABELLED:-[]}"
+      fi
+      ;;
+    "issue create")
+      printf '%s' "${GH_CREATE_RESULT:-}"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+escalation_body_file="$escalation_cycle_dir/escalation-body.md"
+printf '## What the autonomous pipeline needs from you\n' > "$escalation_body_file"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+decision_log_body='<!-- agent-ops:decision-log item=77 repo=acme/widgets reason_key=k -->
+
+## Decision taken by the pipeline
+
+Keep the claim-excluded bands as the live set.
+
+---
+Item: `77` . repo `acme/widgets`
+Decided by the pipeline (decide-tactical) . cycle `c1`'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+escalation_body='## What the autonomous pipeline needs from you
+
+---
+Item: `77` . repo `acme/widgets` . blocked since `2026-01-01T00:00:00Z`
+Raised by the Enabler . cycle `c1` . node `n1`'
+
+# An open decision-log veto for this same item is not an escalation: its
+# footer matches the backtick guard exactly like a real escalation's would,
+# but it must never be returned as one.
+: > "$escalation_gh_calls"
+GH_LIST_LABELLED='[]'
+GH_LIST_UNLABELLED="$(jq -nc --arg b "$decision_log_body" '[{number:900,url:"https://github.com/acme/widgets/issues/900",body:$b}]')"
+GH_CREATE_RESULT='https://github.com/acme/widgets/issues/901'
+result="$(create_escalation_issue "acme/widgets" "77" "enabler-escalation" "widgets: help" "$escalation_body_file")"
+assert_eq "an open decision-log veto is not reused as the escalation: files a fresh one" \
+  $'901\thttps://github.com/acme/widgets/issues/901' "$result"
+result="$(escalation_open_existing "acme/widgets" "77")"
+assert_eq "...nor does escalation_open_existing report it as a standing escalation" "" "$result"
+
+# A genuine label-less escalation (agent-ops#2657's own scenario — filed via
+# the retry path because the label did not exist) is still found by the
+# fallback: the fix narrows the predicate, it does not remove it.
+: > "$escalation_gh_calls"
+GH_LIST_LABELLED='[]'
+GH_LIST_UNLABELLED="$(jq -nc --arg b "$escalation_body" '[{number:902,url:"https://github.com/acme/widgets/issues/902",body:$b}]')"
+result="$(create_escalation_issue "acme/widgets" "77" "enabler-escalation" "widgets: help" "$escalation_body_file")"
+assert_eq "a label-less escalation from the retry path is still found (agent-ops#2657)" \
+  $'902\thttps://github.com/acme/widgets/issues/902' "$result"
+result="$(escalation_open_existing "acme/widgets" "77")"
+assert_eq "...and escalation_open_existing reports it too" \
+  $'902\thttps://github.com/acme/widgets/issues/902' "$result"
+
+# A labelled match is still reused directly, without ever reaching the
+# label-less fallback.
+: > "$escalation_gh_calls"
+GH_LIST_LABELLED="$(jq -nc --arg b "$escalation_body" '[{number:903,url:"https://github.com/acme/widgets/issues/903",body:$b}]')"
+GH_LIST_UNLABELLED='[]'
+result="$(create_escalation_issue "acme/widgets" "77" "enabler-escalation" "widgets: help" "$escalation_body_file")"
+assert_eq "a labelled match is reused directly" \
+  $'903\thttps://github.com/acme/widgets/issues/903' "$result"
+assert_eq "...without a second, label-less read" "1" \
+  "$(grep -c '^issue list' "$escalation_gh_calls")"
+rm -rf "$escalation_cycle_dir"
+unset -f labels_reconcile_role notify_post_cycle escalation_webhook_notify
+
 # --- create_decision_log_issue (agent-ops#937): filing, dedup, and — unlike
 # create_escalation_issue — no retry without the label on a failed create
 # (agent-ops#1198). `gh` is stubbed to a small case dispatch over its own

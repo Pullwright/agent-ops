@@ -435,15 +435,21 @@
     **The issue contract.** Before filing, a duplicate guard: an open issue
     whose body already quotes the item's reference **backtick-delimited** —
     the literal token `` `<item>` ``, never the bare reference — *is* the
-    escalation and is reused. The query carries no `--label` filter
-    (agent-ops#2657): `gh issue create`'s own retry below can file an
-    escalation without the label when the label does not exist and
-    `labels_reconcile_role` could not create it, and the backtick body match
-    is already the sole load-bearing predicate even when the label is
-    present, so a label-less escalation from that retry path is still found
-    on a later round rather than silently duplicated. The delimiters are
-    what make the match unambiguous where one item reference is a string
-    prefix of another, which `crash-loop:coordinator` is of every
+    escalation and is reused. The query tries `--label` first; only when that
+    finds nothing does it fall back to a label-less read (agent-ops#2657):
+    `gh issue create`'s own retry below can file an escalation without the
+    label when the label does not exist and `labels_reconcile_role` could not
+    create it, so a label-less escalation from that retry path must still be
+    found on a later round rather than silently duplicated. The backtick body
+    match alone is not a safe stand-in for the label on that label-less read,
+    though (agent-ops#2666): a `pw::decision` decision-log issue
+    (`enabler_decision_log_body`) carries the identical `` Item: `<item>` ``
+    footer for the same repo/item pair, and an open one is a standing human
+    veto of a *decision*, never an escalation — so the label-less fallback
+    additionally excludes any body carrying the `<!-- agent-ops:decision-log`
+    marker that body embeds, rather than matching on the footer alone. The
+    delimiters are what make the match unambiguous where one item reference is
+    a string prefix of another, which `crash-loop:coordinator` is of every
     `crash-loop:coordinator:<owner>/<name>` (agent-ops#1694): no item
     reference this system mints contains a backtick, so the closing delimiter
     can only fall at the reference's own end. Every body filed through this
