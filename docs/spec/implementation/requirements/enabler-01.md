@@ -433,9 +433,15 @@
     what `enabler_recheck_hours` is measured from.
 
     **The issue contract.** Before filing, a duplicate guard: an open issue
-    carrying `enabler_escalation_label` whose body already quotes the item's
-    reference **backtick-delimited** — the literal token `` `<item>` ``, never
-    the bare reference — *is* the escalation and is reused. The delimiters are
+    whose body already quotes the item's reference **backtick-delimited** —
+    the literal token `` `<item>` ``, never the bare reference — *is* the
+    escalation and is reused. The query carries no `--label` filter
+    (agent-ops#2657): `gh issue create`'s own retry below can file an
+    escalation without the label when the label does not exist and
+    `labels_reconcile_role` could not create it, and the backtick body match
+    is already the sole load-bearing predicate even when the label is
+    present, so a label-less escalation from that retry path is still found
+    on a later round rather than silently duplicated. The delimiters are
     what make the match unambiguous where one item reference is a string
     prefix of another, which `crash-loop:coordinator` is of every
     `crash-loop:coordinator:<owner>/<name>` (agent-ops#1694): no item
@@ -459,9 +465,9 @@
     label has not been created still gets its issue. The assignment is the
     load-bearing half: requirement 16.4
     excludes assigned issues from the `issues` source, so the pipeline can never
-    select its own request for help as work. The label is for the human's filter
-    and the guard above, and must not be `blocked` — that is a separate
-    exclusion criterion and would blur two different meanings into one.
+    select its own request for help as work. The label is for the human's
+    filter, and must not be `blocked` — that is a separate exclusion
+    criterion and would blur two different meanings into one.
 
     **Closure is the whole protocol**, and the issue body says so: the human
     does the thing and closes the issue. Nothing else is required of them — no

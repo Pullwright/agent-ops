@@ -83,11 +83,17 @@ escalation_webhook_notify() {
 # has already made one best-effort attempt at the credential-independent
 # fallback, so a caller need not repeat it. Three behaviours, in order:
 #
-#   - A duplicate guard. An open issue carrying the escalation label whose body
-#     already quotes this item's reference *is* the escalation — return it
-#     rather than filing a second one at the same human. The item ref in the
-#     issue footer (prompts/enabler.md) is what makes this findable, and the
-#     body check is what stops a bare number matching an unrelated escalation.
+#   - A duplicate guard. An open issue whose body already quotes this item's
+#     reference *is* the escalation — return it rather than filing a second
+#     one at the same human. The item ref in the issue footer
+#     (prompts/enabler.md) is what makes this findable, and the body check is
+#     what stops a bare number matching an unrelated escalation. The query
+#     carries no `--label` filter (agent-ops#2657): the retry below can file
+#     an escalation without the label when the label does not exist and
+#     `labels_reconcile_role` could not create it, and the backtick body
+#     match is already the sole load-bearing predicate even when the label is
+#     present, so dropping the filter cannot widen what counts as a
+#     duplicate.
 #   - The create carries the label *and* the assignee. The assignee is the
 #     load-bearing half: assignment is what excludes an issue from the `issues`
 #     work source (requirement 16.4), so the pipeline can never select its own
@@ -104,7 +110,7 @@ escalation_webhook_notify() {
 create_escalation_issue() {
   local repo="$1" item="$2" label="$3" title="$4" body_file="$5"
   local existing raw url number
-  existing="$(gh issue list -R "$repo" --label "$label" --state open --search "$item" \
+  existing="$(gh issue list -R "$repo" --state open --search "$item" \
                 --json number,url,body 2>/dev/null \
               | jq -r --arg it "$item" \
                   'map(select(((.body // "") | contains("`" + $it + "`")))) | first
@@ -164,16 +170,19 @@ escalation_recent_close() {
 
 # escalation_open_existing REPO ITEM_REF
 # The live-read half of the open-question re-escalation short-circuit
-# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO
-# carrying `enabler_escalation_label` whose body contains ITEM_REF, and
-# prints nothing (never a bare error) when there is none or the read fails —
-# mirrors `escalation_recent_close` above, but for `--state open` instead of
-# `--state closed`, and the same backtick-delimited-body match `create_
-# escalation_issue`'s own duplicate guard already uses, since the caller
-# only needs to know whether one still stands, not when it closed.
+# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO whose
+# body contains ITEM_REF, and prints nothing (never a bare error) when there
+# is none or the read fails — mirrors `escalation_recent_close` above, but
+# for `--state open` instead of `--state closed`, and the same
+# backtick-delimited-body match `create_escalation_issue`'s own duplicate
+# guard already uses, since the caller only needs to know whether one still
+# stands, not when it closed. Carries no `--label` filter, for the same
+# degraded-label reason `create_escalation_issue`'s own query does not
+# (agent-ops#2657): an escalation filed via the retry path without the label
+# must still be found here.
 escalation_open_existing() {
   local repo="$1" item_ref="$2"
-  gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
+  gh issue list -R "$repo" --state open --search "$item_ref" \
       --json number,url,body 2>/dev/null \
     | jq -r --arg it "$item_ref" \
         'map(select(((.body // "") | contains("`" + $it + "`")))) | first
