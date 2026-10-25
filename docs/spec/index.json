@@ -190,7 +190,7 @@
       "label": "2c",
       "anchor": "impl-ac-2c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 433,
+      "line": 437,
       "title": "`scripts/gather-merge-conflicts.sh Poetic-Poems/does-not-exist autonomous-agent agent/`"
     },
     "IMPL AC 2z": {
@@ -198,7 +198,7 @@
       "label": "2z",
       "anchor": "impl-ac-2z",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 442,
+      "line": 446,
       "title": "`scripts/gather-dequeued.sh Poetic-Poems/does-not-exist autonomous-agent"
     },
     "IMPL AC 53": {
@@ -206,7 +206,7 @@
       "label": "53",
       "anchor": "impl-ac-53",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 454,
+      "line": 458,
       "title": "`scripts/gather-landing-refusals.sh o/r autonomous-agent agent/"
     },
     "IMPL AC 62": {
@@ -214,7 +214,7 @@
       "label": "62",
       "anchor": "impl-ac-62",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 491,
+      "line": 495,
       "title": "A persistent landing refusal posts, and a cleared one edits, the one"
     },
     "IMPL AC 2h": {
@@ -222,7 +222,7 @@
       "label": "2h",
       "anchor": "impl-ac-2h",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 541,
+      "line": 545,
       "title": "Dependabot's own conflicted PRs are nudged, then — only after a full"
     },
     "IMPL AC 2d": {
@@ -230,7 +230,7 @@
       "label": "2d",
       "anchor": "impl-ac-2d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 554,
+      "line": 558,
       "title": "Issue priority is read, defaulted and fingerprinted."
     },
     "IMPL AC 2e": {
@@ -238,7 +238,7 @@
       "label": "2e",
       "anchor": "impl-ac-2e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 565,
+      "line": 569,
       "title": "Issues arrive pre-fetched, filtered, whole-thread and fingerprinted."
     },
     "IMPL AC 2j": {
@@ -246,7 +246,7 @@
       "label": "2j",
       "anchor": "impl-ac-2j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 590,
+      "line": 594,
       "title": "Tech-debt arrives pre-fetched, pre-excluded, and its verdict is"
     },
     "IMPL AC 2k": {
@@ -254,7 +254,7 @@
       "label": "2k",
       "anchor": "impl-ac-2k",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 638,
+      "line": 642,
       "title": "Blocked/void exclusion reaches every pre-fetched band, `issues`"
     },
     "IMPL AC 2j-i": {
@@ -262,7 +262,7 @@
       "label": "2j-i",
       "anchor": "impl-ac-2j-i",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 694,
+      "line": 698,
       "title": "The merge reconciles repositories correctly, and a rejected verdict"
     },
     "IMPL AC 2j-ii": {
@@ -270,7 +270,7 @@
       "label": "2j-ii",
       "anchor": "impl-ac-2j-ii",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 793,
+      "line": 797,
       "title": "The corroboration covers every pre-fetched band (requirement 3x,"
     },
     "IMPL AC 2j-iii": {
@@ -278,7 +278,7 @@
       "label": "2j-iii",
       "anchor": "impl-ac-2j-iii",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 831,
+      "line": 835,
       "title": "A `needs_refinement` block against an entry the fit ladder trimmed"
     },
     "IMPL AC 2f": {
@@ -286,7 +286,7 @@
       "label": "2f",
       "anchor": "impl-ac-2f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 880,
+      "line": 884,
       "title": "A preview nobody can reach is never reported as a healthy one"
     },
     "IMPL AC 2g": {
@@ -294,7 +294,7 @@
       "label": "2g",
       "anchor": "impl-ac-2g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 928,
+      "line": 932,
       "title": "Every pipeline comment is visibly attributed (requirement 9d)."
     },
     "IMPL AC 3": {
@@ -302,7 +302,7 @@
       "label": "3",
       "anchor": "impl-ac-3",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 947,
+      "line": 951,
       "title": "A second invocation while one holds the lock exits without acting."
     },
     "IMPL AC 3a": {
@@ -310,7 +310,7 @@
       "label": "3a",
       "anchor": "impl-ac-3a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 948,
+      "line": 952,
       "title": "The lock-held case above costs a `stat`, a cache read and a `kill -0`,"
     },
     "IMPL AC 4": {
@@ -318,7 +318,7 @@
       "label": "4",
       "anchor": "impl-ac-4",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 967,
+      "line": 971,
       "title": "A simulated stale lock (fake lock file, old timestamp, dead PID) is taken"
     },
     "IMPL AC 4a": {
@@ -326,7 +326,7 @@
       "label": "4a",
       "anchor": "impl-ac-4a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 973,
+      "line": 977,
       "title": "A signal leaves a record, a released claim, and no orphaned model"
     },
     "IMPL AC 5": {
@@ -334,7 +334,7 @@
       "label": "5",
       "anchor": "impl-ac-5",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 984,
+      "line": 988,
       "title": "An injected `limit-hit` event with a future `resume_at` and"
     },
     "IMPL AC 5a": {
@@ -342,7 +342,7 @@
       "label": "5a",
       "anchor": "impl-ac-5a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 994,
+      "line": 998,
       "title": "A crash loop, of either class and in each configured repository"
     },
     "IMPL AC 5b": {
@@ -350,7 +350,7 @@
       "label": "5b",
       "anchor": "impl-ac-5b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1110,
+      "line": 1114,
       "title": "A personal access token's own expiry is read, recorded, and escalated"
     },
     "IMPL AC 6a": {
@@ -358,7 +358,7 @@
       "label": "6a",
       "anchor": "impl-ac-6a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1135,
+      "line": 1139,
       "title": "The switch stops both pipelines and lets go by itself."
     },
     "IMPL AC 6c": {
@@ -366,7 +366,7 @@
       "label": "6c",
       "anchor": "impl-ac-6c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1145,
+      "line": 1149,
       "title": "A review round is answered exactly once."
     },
     "IMPL AC 6d": {
@@ -374,7 +374,7 @@
       "label": "6d",
       "anchor": "impl-ac-6d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1160,
+      "line": 1164,
       "title": "Back-pressure cannot deadlock the pipeline (requirement 2.2a)."
     },
     "IMPL AC 6e": {
@@ -382,7 +382,7 @@
       "label": "6e",
       "anchor": "impl-ac-6e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1172,
+      "line": 1176,
       "title": "An abandoned draft is finished, not restarted (requirements 3e, 15c)."
     },
     "IMPL AC 6f": {
@@ -390,7 +390,7 @@
       "label": "6f",
       "anchor": "impl-ac-6f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1184,
+      "line": 1188,
       "title": "A conflicted PR is rebased, not restarted (requirements 3g, 15d)."
     },
     "IMPL AC 6i": {
@@ -398,7 +398,7 @@
       "label": "6i",
       "anchor": "impl-ac-6i",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1197,
+      "line": 1201,
       "title": "A merge-group-checks-failure dequeue is fixed, not restarted"
     },
     "IMPL AC 6g": {
@@ -406,7 +406,7 @@
       "label": "6g",
       "anchor": "impl-ac-6g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1222,
+      "line": 1226,
       "title": "The review runs at the tier the work graded itself (requirements 26a,"
     },
     "IMPL AC 6b": {
@@ -414,7 +414,7 @@
       "label": "6b",
       "anchor": "impl-ac-6b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1233,
+      "line": 1237,
       "title": "The no-op short-circuit skips only what it can prove, and stops skipping"
     },
     "IMPL AC 7": {
@@ -422,7 +422,7 @@
       "label": "7",
       "anchor": "impl-ac-7",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1258,
+      "line": 1262,
       "title": "A blocked verdict round-trips."
     },
     "IMPL AC 7a": {
@@ -430,7 +430,7 @@
       "label": "7a",
       "anchor": "impl-ac-7a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1265,
+      "line": 1269,
       "title": "The mandatory re-check round-trips too (requirement 18a)."
     },
     "IMPL AC 7b": {
@@ -438,7 +438,7 @@
       "label": "7b",
       "anchor": "impl-ac-7b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1285,
+      "line": 1289,
       "title": "An orphaned claim branch is put back in front of the pipeline"
     },
     "IMPL AC 7c": {
@@ -446,7 +446,7 @@
       "label": "7c",
       "anchor": "impl-ac-7c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1324,
+      "line": 1328,
       "title": "Claim visibility is deterministic, both shapes and both directions"
     },
     "IMPL AC 7d": {
@@ -454,7 +454,7 @@
       "label": "7d",
       "anchor": "impl-ac-7d",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1337,
+      "line": 1341,
       "title": "The PR-keyed claim outlives the PR's own raising (requirement 17a,"
     },
     "IMPL AC 7e": {
@@ -462,7 +462,7 @@
       "label": "7e",
       "anchor": "impl-ac-7e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1356,
+      "line": 1360,
       "title": "The back-pressure block hands its parts to each other correctly"
     },
     "IMPL AC 7f": {
@@ -470,7 +470,7 @@
       "label": "7f",
       "anchor": "impl-ac-7f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-02.md",
-      "line": 1375,
+      "line": 1379,
       "title": "The decision site folds in what requirement 2.2's count could not see"
     },
     "IMPL AC 7g": {
