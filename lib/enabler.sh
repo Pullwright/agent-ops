@@ -83,11 +83,36 @@ escalation_webhook_notify() {
 # has already made one best-effort attempt at the credential-independent
 # fallback, so a caller need not repeat it. Three behaviours, in order:
 #
-#   - A duplicate guard. An open issue carrying the escalation label whose body
-#     already quotes this item's reference *is* the escalation — return it
-#     rather than filing a second one at the same human. The item ref in the
-#     issue footer (prompts/enabler.md) is what makes this findable, and the
-#     body check is what stops a bare number matching an unrelated escalation.
+#   - A duplicate guard. An open issue whose body already quotes this item's
+#     reference *is* the escalation — return it rather than filing a second
+#     one at the same human. The item ref in the issue footer
+#     (prompts/enabler.md) is what makes this findable, and the body check is
+#     what stops a bare number matching an unrelated escalation. The query
+#     tries `--label` first; only when that finds nothing does it fall back
+#     to a label-less read (agent-ops#2657): the retry below can file an
+#     escalation without the label when the label does not exist and
+#     `labels_reconcile_role` could not create it, so a label-less escalation
+#     from that retry path must still be found on a later round. The bare
+#     backtick token is not a safe stand-in for the label on that label-less
+#     read, though (agent-ops#2666), because the label was excluding two
+#     other classes of open issue that quote the same token for the same
+#     repo/item pair, and returning either as "the escalation" files none and
+#     asks no human:
+#       * a `pw::decision` decision-log issue (`enabler_decision_log_body`),
+#         which carries the identical `` Item: `<item>` `` footer and, while
+#         open, is a standing human veto of a *decision*;
+#       * a plain question issue from `techdebt_file_issue`, filed open,
+#         unlabelled and by design left open, whose body quotes the item ref
+#         backtick-delimited too ("while examining `<item>`", lib/enabler.sh's
+#         own `file_issue` handling).
+#     So the label-less read keys on the escalation footer's `` Item: `<item>` ``
+#     form rather than the bare token — every escalation body this system
+#     files carries it (prompts/enabler.md's mandated footer, and each Script-
+#     built body), while a question issue's does not — *and* excludes any body
+#     carrying the `<!-- agent-ops:decision-log` marker, since the decision
+#     log carries that footer as well. An escalation body that deviated from
+#     the mandated footer would be missed and duplicated, which is
+#     agent-ops#2657's own visible noise rather than a swallowed escalation.
 #   - The create carries the label *and* the assignee. The assignee is the
 #     load-bearing half: assignment is what excludes an issue from the `issues`
 #     work source (requirement 16.4), so the pipeline can never select its own
@@ -109,6 +134,15 @@ create_escalation_issue() {
               | jq -r --arg it "$item" \
                   'map(select(((.body // "") | contains("`" + $it + "`")))) | first
                    | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  if [[ -z "$existing" ]]; then
+    existing="$(gh issue list -R "$repo" --state open --search "$item" \
+                  --json number,url,body 2>/dev/null \
+                | jq -r --arg it "$item" \
+                    'map(select(((.body // "") | contains("Item: `" + $it + "`"))
+                                 and ((.body // "") | contains("<!-- agent-ops:decision-log") | not)))
+                     | first
+                     | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  fi
   if [[ -n "$existing" ]]; then
     printf '%s' "$existing"
     return 0
@@ -164,19 +198,38 @@ escalation_recent_close() {
 
 # escalation_open_existing REPO ITEM_REF
 # The live-read half of the open-question re-escalation short-circuit
-# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO
-# carrying `enabler_escalation_label` whose body contains ITEM_REF, and
-# prints nothing (never a bare error) when there is none or the read fails —
-# mirrors `escalation_recent_close` above, but for `--state open` instead of
-# `--state closed`, and the same backtick-delimited-body match `create_
-# escalation_issue`'s own duplicate guard already uses, since the caller
-# only needs to know whether one still stands, not when it closed.
+# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO whose
+# body contains ITEM_REF, and prints nothing (never a bare error) when there
+# is none or the read fails — mirrors `escalation_recent_close` above, but
+# for `--state open` instead of `--state closed`, and the same
+# backtick-delimited-body match `create_escalation_issue`'s own duplicate
+# guard already uses, since the caller only needs to know whether one still
+# stands, not when it closed. Tries `--label` first, then falls back
+# label-less on exactly the terms `create_escalation_issue`'s own duplicate
+# guard states above (agent-ops#2657, agent-ops#2666): an escalation filed
+# via the retry path without the label must still be found here, so the
+# label-less read keys on the escalation footer's `` Item: `<ref>` `` form and
+# excludes any body carrying the `<!-- agent-ops:decision-log` marker —
+# neither an open `pw::decision` veto nor an open `techdebt_file_issue`
+# question issue for the same item can be mistaken for a standing escalation.
 escalation_open_existing() {
   local repo="$1" item_ref="$2"
-  gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
-      --json number,url,body 2>/dev/null \
+  local existing
+  existing="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open \
+      --search "$item_ref" --json number,url,body 2>/dev/null \
     | jq -r --arg it "$item_ref" \
         'map(select(((.body // "") | contains("`" + $it + "`")))) | first
+         | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    printf '%s' "$existing"
+    return 0
+  fi
+  gh issue list -R "$repo" --state open --search "$item_ref" \
+      --json number,url,body 2>/dev/null \
+    | jq -r --arg it "$item_ref" \
+        'map(select(((.body // "") | contains("Item: `" + $it + "`"))
+                     and ((.body // "") | contains("<!-- agent-ops:decision-log") | not)))
+         | first
          | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true
 }
 
