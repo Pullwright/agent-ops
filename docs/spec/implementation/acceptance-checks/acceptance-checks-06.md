@@ -284,7 +284,16 @@
    composes an issue body naming the question text from a synthetic log's
    `open-question-raised` event and keys `create_escalation_issue`'s dedup
    on a `pr-<n>-open-question` reference, distinct from `pr-<n>-approver-
-   adjudication` (requirement 8c) sharing the same pull request number.
+   adjudication` (requirement 8c) sharing the same pull request number. The
+   same file pins the open-escalation short-circuit (agent-ops#2620): with
+   `escalation_open_existing` stubbed to return an open issue, `open_
+   question_escalate` builds no body file, calls neither `create_escalation_
+   issue` nor `escalation_recent_close`, logs no `open-question-escalated`,
+   and logs `open-question-escalation-skipped-open` instead, naming the
+   repo, the pull request, the item ref and the existing issue's own URL;
+   with no open issue, the check still runs (confirmed by its own recorded
+   arguments) and filing proceeds exactly as it did before the short-circuit
+   existed.
    `test/prompt-untrusted-framing.test.sh` (acceptance check 8z) covers
    `prompts/approver-adjudicate-open-question.md` alongside every other
    shipped stage prompt. `test/dashboard-render.test.sh` (acceptance check 8x)

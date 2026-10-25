@@ -231,9 +231,11 @@
       pass is the first since they did) — a question already carrying an
       `open-question-adjudication` event escalates without a second pass.
 
-    **Both rungs' own filing is rate-limited per close (agent-ops#779,
-    decided on #784 as behaviour (b)), the identical guard requirement 8c
-    applies to `approver_escalate`.** `create_escalation_issue`'s own dedup
+    **Both rungs' filing checks for a standing open issue
+    (`escalation_open_existing`), skipping the guard below if found;
+    otherwise it is rate-limited per close (agent-ops#779, decided on #784),
+    requirement 8c's same guard for
+    `approver_escalate`.** `create_escalation_issue`'s own dedup
     matches *open* issues only, so a human who closes the escalation issue
     without also removing the `open-question` label — closing is not the
     releasing act — would otherwise get a fresh issue on every subsequent
