@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 2 of 11; 2–2.3: Stand-down checks…)
+### The Script — requirements, continued (part 2 of 13; 2–2.3: Stand-down checks…)
 
 2. <a id="impl-2"></a>**Stand-down checks.** Each check logs its reason and exits cleanly:
 

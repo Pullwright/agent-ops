@@ -1,0 +1,190 @@
+## Requirements
+
+### The Script — requirements, continued (part 12 of 13; 60–69: The CLI surface: `scripts/node-health.sh`…)
+
+60. <a id="impl-60"></a>**The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
+    --metrics] [--json] [--config FILE] [--state-dir DIR] [--peers-dir DIR]`
+    (the last three test-only overrides, on the same convention
+    `scripts/pickup-metrics.sh` already carries). Exactly one compact JSON
+    object on stdout per call, always — `--json` is accepted but changes
+    nothing, since there is no other rendering to select. Exit code matches
+    the verdict: `--live`/`--ready` exit `0` when the verdict is good, `1`
+    otherwise; `--health` exits `0` (`ok`), `1` (`fail`) or `2` (`unknown`)
+    — a third code, distinct from both, since "the endpoint could not tell"
+    is not the same fact as "the endpoint tells you it is broken"; `--metrics`
+    always exits `0`, since it reports data, never a verdict. No argument
+    prints `--health`.
+
+    60a. <a id="impl-60a"></a>**Read-only throughout.** Touches no lock, writes no event,
+    publishes nothing, and triggers no state-sync push, gather, dashboard
+    publish or `claude` invocation: every verdict computes on demand from
+    what cron already wrote. Exactly two forge reads exist across the whole
+    CLI, each confined to the one mode that reports it: 58a's own cached
+    `/rate_limit` read, which `--ready` needs for the GitHub budget, and —
+    where `state_repo` is configured at all — the single `fleet/mix.json`
+    contents read `--metrics` makes through `providers_apply_mix` for its
+    own `mix` field (60e, requirement 2.3e). That second read is uncached
+    across processes, unlike 58a's: `fleet_flag_fetch`'s own memo is keyed
+    by pid, so one CLI invocation is one read, and a collector polling
+    `/metrics` (60d) spends one contents call per scrape — the cost #2495
+    weighs against routing it through 58a's TTL cache instead.
+    `test/node-health-cli.test.sh` asserts the rest of this directly — a
+    fixture `state_dir`/`workspace_root` are byte-identical, file for file,
+    before and after every mode runs, excepting only the one cache file
+    58a's own header documents. That fixture configures no `state_repo`, so
+    the assertion holds over a CLI whose mix read short-circuits before it
+    fetches (`fleet_flag_fetch_status`' own empty-slug no-op); where one is
+    configured, `--metrics` also writes the family's own
+    `state_dir/fleet-cache/mix.json` (or its `.err` sibling on a failed
+    read), the same cache every other fleet-flag reader shares.
+
+    60b. <a id="impl-60b"></a>**The three verdicts genuinely diverge, from one CLI, in one
+    process.** `test/node-health-cli.test.sh` builds a fixture that is live
+    (a fresh marker), not ready (the node switch set) and unhealthy (a
+    `stuck` updater verdict and a stale publication) all at once, and
+    asserts all three answers from the same three calls — the acceptance
+    criterion this whole item exists to satisfy, proven end to end through
+    the CLI rather than only through `lib/node-health.sh`'s own pure
+    functions (`test/node-health.test.sh`).
+
+    60c. <a id="impl-60c"></a>**The container-runtime healthcheck runs the identical CLI.**
+    `deploy/docker/compose.yaml`'s `scheduler` service carries a
+    `healthcheck:` running `scripts/node-health.sh --live` *inside* the
+    container — the same command a Kubernetes `exec` probe would run, so
+    the two can never disagree about what "live" means. Deliberately the
+    liveness verdict alone, never readiness or health: a sidecar answering
+    for a wedged scheduler beside it would be the identical
+    self-certification the 2026-08-08 incident exposed, arriving by a new
+    route. `docker compose config` renders it cleanly.
+
+    60d. <a id="impl-60d"></a>**The HTTP surface is a second front over the identical
+    computation, never a second answer.** `scripts/node-health-server.py`
+    answers `/livez`, `/readyz`, `/healthz`, `/metrics` by shelling out to
+    the same `scripts/node-health.sh` the container healthcheck runs
+    in-container — `200` when the underlying call exits `0`, `503`
+    otherwise (`/metrics`: always `200`, since it reports data, not a
+    verdict), the CLI's own JSON body either way; any other path answers
+    `404` — including a path that merely resembles one of the four (a
+    trailing slash, a query string), which is matched literally rather than
+    normalised. Holds no cache and no state of its own — a request while
+    `state_dir` is unreadable still returns valid JSON, reading `unknown`
+    rather than hanging or stack-tracing, because the underlying CLI itself
+    never crashes on that input (`lib/node-health.sh`'s own contract).
+    Served by the `node-health` compose service, which is in that one
+    profile and no other, so it is off unless a node opts in — bound
+    `0.0.0.0` *inside* the
+    container, published to the host's own loopback alone
+    (`127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`), the
+    identical loopback-only pattern `scripts/serve-dashboard.sh`'s own
+    header documents for `dashboard-local`. This service is never what
+    makes the scheduler's own liveness honest (60c already is, in-process);
+    it exists solely for a reader — a collector, an orchestrator's own
+    URL-level probe — that can only speak HTTP. It also carries the
+    scheduler's own `HTTPS_PROXY`/`HTTP_PROXY` variables (both spellings)
+    and sits on `default` and `egress` both, alongside its loopback
+    publishing — never `egress` alone, since that network is
+    `internal: true` and a published port into it is not the reachable
+    mapping this paragraph already requires — so the one forge read 58a
+    describes leaves through the same D24 egress path the scheduler uses
+    (issue #1587).
+
+    60e. <a id="impl-60e"></a>**`--metrics`' field list is the node metrics shape
+    `docs/reference/metering-schema.md` documents under its own stability policy.**
+    Node identity (`node`, `role`, `ts`, `version`), all three other
+    verdicts and their components in full (`live`, `ready`, `health`),
+    cycle counters over this node's own retained `log.jsonl`
+    (`cycles.log_selections`, `cycles.log_attempts_failed` — this node's
+    own log only, deliberately never the fleet union, so nothing here
+    double-counts against whatever else unions each peer), and per-
+    container resource actuals-against-budget where issue #606's collector
+    has produced them (`host-facts/<node>.json`'s own `budget` section,
+    `containers`, `null` when absent — reported where it exists, never
+    fabricated: issue #606 itself, not this item, produces those figures),
+    and the credit mix's effective lanes per provider (`mix`, requirement
+    2.3e — `mix_fleet_status_json`'s own object verbatim, the identical one
+    `agent-cycle.sh --status` renders from, so the two surfaces cannot
+    disagree about what is open right now, requirement 34a).
+    Explicitly not Prometheus/OpenMetrics, not OTLP, and no adapter to
+    either — the wire-format question issue #614 owns, deliberately parked
+    by this item's own scope. `test/node-health-cli.test.sh` asserts every
+    top-level field's presence against this documented shape.
+
+    60f. <a id="impl-60f"></a>**New config keys, documented and rendered.**
+    `node_health_live_stale_after_minutes` (57) and
+    `node_health_forge_check_cache_seconds` (58a) — both flat top-level
+    keys, `config.schema.json`'s existing convention, never nested: this
+    feature is fleet-wide like `node_stale_after_minutes` and
+    `updater_stuck_after_minutes` beside it, not per-repository like
+    `repos[].preview`. Neither the HTTP bind address nor its port is a
+    `config.json` key — `NODE_HEALTH_PORT` is a compose/`.env` variable on
+    the identical convention `DASHBOARD_PORT` already carries for the
+    dashboard's own `local` profile, since a listening port is a deployment
+    topology choice, not pipeline behaviour. `scripts/render-config-table.sh
+    --check` passes against both new keys.
+
+69. <a id="impl-69"></a>**A missed CI trigger is detected and retried at the push itself, not
+    only hours later at a Reviewer handoff (issue #2560).**
+    `lib/review-gate.sh`'s own backstops — `_review_gate_missing_required_
+    contexts` (issue #1543) and `_review_gate_repair_duplicate_runs` (issue
+    #1978) — both run only at the Reviewer's `ready` handoff, and neither
+    has a run id to act on when a pull request's head carries zero check
+    runs at all: agent-ops#2506 sat roughly seven hours in that state,
+    looking exactly like "CI still queued", while its head actually failed
+    `scripts/spec.sh check` — the same branch having already needed one
+    manual nudge (`6c379e10a9`, "chore(ci): nudge a missed synchronize event
+    for the previous push"). `lib/ci-trigger.sh`'s `ci_trigger_ensure` closes
+    this immediately after the Implementer stage's own push instead
+    (`lib/coordinator-phase.sh`, right after the pull request it raised or
+    confirmed is labelled and gated, ahead of the Reviewer stage): it polls
+    `gh pr checks <n> -R <slug> --json name,bucket` — unfiltered, "did
+    anything run at all" rather than `--required`'s narrower subset — up to
+    `CI_TRIGGER_POLL_ATTEMPTS` x `CI_TRIGGER_POLL_INTERVAL` seconds (default
+    10 x 30s = 5 minutes, the conservative end of a threshold the issue left
+    open), and where that whole window closes on a confirmed-empty list —
+    never on an unreadable one, which stays `unknown` and is never treated
+    as "confirmed empty" — pushes one empty commit
+    (`chore(ci): nudge a missed CI trigger for <sha>`) onto the pull
+    request's own branch, naming the head commit it nudged. Never `gh run
+    rerun`/`workflow_dispatch`: there is no run id to rerun when the count is
+    genuinely zero, and `workflow_dispatch` is not a trigger every relevant
+    workflow declares.
+
+    69a. <a id="impl-69a"></a>**At most one retrigger per head commit, and advisory throughout.**
+    A nudge that itself produces zero check runs is left for the
+    #1543/#1978 backstops at the next Reviewer handoff to find, rather than
+    looped on here. The nudge never runs against a pull request currently
+    queued in a merge group (`lib/merge-queue.sh`'s `merge_queue_probe`,
+    D17) — a push would evict it with no further signal — nor when either
+    the check-runs read or the queue probe itself could not be confirmed: an
+    unreadable `gh` call reads `unknown`, never "confirmed empty" or "not
+    queued", the same fail-closed convention `review_gate_required_checks`
+    and `merge_queue_probe` already apply to their own unreadable reads.
+    Telling those two apart is a stderr test, not a stdout one: a head with
+    no check runs at all does not make `gh pr checks --json` print `[]`, it
+    makes it *fail* — nothing on stdout, `no checks reported on the
+    '<branch>' branch` on stderr — the identical shape a 502 or a rate limit
+    arrives in, so the diagnosis is the only thing that separates the state
+    this requirement exists to detect from a read that could not be made.
+    This is the same two-shapes-one-reason test
+    `review_gate_required_checks` already applies to its own `--required`
+    read.
+    None of this blocks the handoff — `ci_trigger_ensure`'s `unknown`/
+    `queued`/`nudge-failed` outcomes only log a warning, `nudged` logs its
+    own `ci-trigger-nudged` event, and the Reviewer stage runs regardless.
+
+    69b. <a id="impl-69b"></a>**Never computed in the Implementer's own clone.** The nudge
+    commit is authored in a disposable repository fetched fresh from the
+    forge by branch name alone and discarded afterward — the same shape
+    `lib/rebase-only.sh`'s `rebase_only_forge_capture` already uses, and for
+    the identical reason (requirement 45e): that clone is the Implementer's
+    to rewrite, so a commit authored there would run the stage's own
+    `.git/config` — hooks, filters, an fsmonitor — as the Script. The fetch
+    confirms the branch's current tip still matches the head commit the
+    poll window observed before committing anything, refusing rather than
+    overwriting a peer's or a human's own push landing in the gap between
+    the poll and this call. Unit-tested against a stubbed `gh`
+    (`test/ci-trigger.test.sh`), with the real nudge push itself stubbed as
+    a recorder — the same technique test/rebase-only-wiring.test.sh already
+    uses for `rebase_only_forge_capture`/`rebase_only_forge_check` — since a
+    real push needs a real forge. Must pass `shellcheck`.
+
