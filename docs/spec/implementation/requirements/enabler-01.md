@@ -440,14 +440,24 @@
     `gh issue create`'s own retry below can file an escalation without the
     label when the label does not exist and `labels_reconcile_role` could not
     create it, so a label-less escalation from that retry path must still be
-    found on a later round rather than silently duplicated. The backtick body
-    match alone is not a safe stand-in for the label on that label-less read,
-    though (agent-ops#2666): a `pw::decision` decision-log issue
-    (`enabler_decision_log_body`) carries the identical `` Item: `<item>` ``
-    footer for the same repo/item pair, and an open one is a standing human
-    veto of a *decision*, never an escalation — so the label-less fallback
-    additionally excludes any body carrying the `<!-- agent-ops:decision-log`
-    marker that body embeds, rather than matching on the footer alone. The
+    found on a later round rather than silently duplicated. The bare
+    backtick-delimited token is not a safe stand-in for the label on that
+    label-less read, though (agent-ops#2666): the label was excluding two
+    other classes of open issue that quote the same token for the same
+    repo/item pair, and returning either as "the escalation" files none and
+    asks no human — a `pw::decision` decision-log issue
+    (`enabler_decision_log_body`), which carries the identical
+    `` Item: `<item>` `` footer and, while open, is a standing human veto of a
+    *decision*; and a plain question issue from `techdebt_file_issue`
+    (component 23d), filed unlabelled and by design left open, whose body
+    quotes the item ref backtick-delimited too. So the label-less read keys on
+    the escalation footer's `` Item: `<item>` `` form rather than the bare
+    token — every escalation body this system files carries that form, while a
+    question issue's does not — **and** excludes any body carrying the
+    `<!-- agent-ops:decision-log` marker, since the decision log carries the
+    footer as well. An escalation body that deviated from the mandated footer
+    would be missed by the fallback and duplicated, which is agent-ops#2657's
+    own visible per-round noise rather than a swallowed escalation. The
     delimiters are what make the match unambiguous where one item reference is
     a string prefix of another, which `crash-loop:coordinator` is of every
     `crash-loop:coordinator:<owner>/<name>` (agent-ops#1694): no item
@@ -471,9 +481,9 @@
     label has not been created still gets its issue. The assignment is the
     load-bearing half: requirement 16.4
     excludes assigned issues from the `issues` source, so the pipeline can never
-    select its own request for help as work. The label is for the human's
-    filter, and must not be `blocked` — that is a separate exclusion
-    criterion and would blur two different meanings into one.
+    select its own request for help as work. The label is for the human's filter
+    and the guard above, and must not be `blocked` — that is a separate
+    exclusion criterion and would blur two different meanings into one.
 
     **Closure is the whole protocol**, and the issue body says so: the human
     does the thing and closes the issue. Nothing else is required of them — no

@@ -369,13 +369,15 @@ assert_logged_since "an open-question-escalated event does not count toward appr
   "open-question-escalated" "2026-08-29T00:00:00Z" "$tmp_dir/escalated.jsonl"
 
 # --- create_escalation_issue / escalation_open_existing: the label-less
-# fallback excludes an open decision-log veto (agent-ops#2657, review round
-# on agent-ops#2666). `gh` dispatches "issue list" on whether the call
-# carries `--label`, since the two reads in each function behave differently
-# live: the labelled read only ever sees issues actually carrying the
-# escalation label, while the label-less fallback sees every open issue the
-# search term matches, decision-log issues (labelled `pw::decision`, never
-# the escalation label) included. ---
+# fallback finds a label-less escalation without mistaking either of the two
+# other open-issue classes that quote the same item ref for one — a
+# decision-log veto, or a `techdebt_file_issue` question issue (agent-ops#2657,
+# review rounds on agent-ops#2666). `gh` dispatches "issue list" on whether
+# the call carries `--label`, since the two reads in each function behave
+# differently live: the labelled read only ever sees issues actually carrying
+# the escalation label, while the label-less fallback sees every open issue
+# the search term matches — decision-log issues (labelled `pw::decision`,
+# never the escalation label) and unlabelled question issues included. ---
 escalation_cycle_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir" "$cycle_dir" "$escalation_cycle_dir"' EXIT
 cycle_dir="$escalation_cycle_dir"
@@ -427,6 +429,14 @@ escalation_body='## What the autonomous pipeline needs from you
 ---
 Item: `77` . repo `acme/widgets` . blocked since `2026-01-01T00:00:00Z`
 Raised by the Enabler . cycle `c1` . node `n1`'
+# The body lib/enabler.sh's own `file_issue` handling builds for
+# techdebt_file_issue: the item ref backtick-delimited, but no escalation
+# footer.
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+question_issue_body='Should the claim-excluded bands count as live?
+
+---
+Noticed by the autonomous pipeline while examining `77` in acme/widgets.'
 
 # An open decision-log veto for this same item is not an escalation: its
 # footer matches the backtick guard exactly like a real escalation's would,
@@ -438,6 +448,20 @@ GH_CREATE_RESULT='https://github.com/acme/widgets/issues/901'
 result="$(create_escalation_issue "acme/widgets" "77" "enabler-escalation" "widgets: help" "$escalation_body_file")"
 assert_eq "an open decision-log veto is not reused as the escalation: files a fresh one" \
   $'901\thttps://github.com/acme/widgets/issues/901' "$result"
+result="$(escalation_open_existing "acme/widgets" "77")"
+assert_eq "...nor does escalation_open_existing report it as a standing escalation" "" "$result"
+
+# Nor is an open `techdebt_file_issue` question issue for the same item: it is
+# unlabelled and left open by design, and its body quotes the item ref
+# backtick-delimited too — but without the escalation footer's `Item: ` prefix,
+# which is what the label-less read keys on (agent-ops#2666, review round 2).
+: > "$escalation_gh_calls"
+GH_LIST_LABELLED='[]'
+GH_LIST_UNLABELLED="$(jq -nc --arg b "$question_issue_body" '[{number:904,url:"https://github.com/acme/widgets/issues/904",body:$b}]')"
+GH_CREATE_RESULT='https://github.com/acme/widgets/issues/905'
+result="$(create_escalation_issue "acme/widgets" "77" "enabler-escalation" "widgets: help" "$escalation_body_file")"
+assert_eq "an open question issue is not reused as the escalation: files a fresh one" \
+  $'905\thttps://github.com/acme/widgets/issues/905' "$result"
 result="$(escalation_open_existing "acme/widgets" "77")"
 assert_eq "...nor does escalation_open_existing report it as a standing escalation" "" "$result"
 
