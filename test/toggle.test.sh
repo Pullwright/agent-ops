@@ -1569,6 +1569,35 @@ assert_not_contains "and the cycle no longer stands down for the usage limit" \
   'usage-limit cooldown' "$(tail -n +$(( b_log_before + 1 )) "$b_log" 2>/dev/null)"
 rm -f "$gh_backing/fleet/limit.json"
 
+# --- --clear-limit <provider>: the two faults a scoped clear can hide ------
+# Two bare tokens are provider-then-reason, so the first must actually name
+# a configured provider: there is no second reading to fall back on, and
+# silently scoping the clear to a provider that does not exist would log a
+# `limit-cleared` nothing reads and report a stand-down lifted that never
+# was. A single token naming no provider is still the reason, as it always
+# has been (asserted by the `cap raised` call above).
+clear_bad_out="$(run_node "$b_home" agent-cycle.sh --clear-limit "the cap" "was raised" 2>&1)"
+assert_eq "--clear-limit rejects a two-token form whose first token names no provider" \
+  "64" "$?"
+assert_contains "...saying which token it objected to" 'is not a configured provider' "$clear_bad_out"
+
+# A wildcard flag record — no `provider` field at all, as every record
+# written before #2133 is — governs every provider (limit_flag_record_for),
+# so a scoped clear that leaves it in place has NOT lifted that provider's
+# stand-down. The flag holds one record and cannot express "every provider
+# but this one", so it is deliberately left alone; the operator must be told
+# so rather than reading "stand-down lifted" and walking away.
+printf '%s\n' '{"resume_at":"2030-01-01T00:00:00Z","class":"monthly-spend","reset_known":true,"kind":"auto","actor":"node-a"}' \
+  > "$gh_backing/fleet/limit.json"
+clear_wild_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
+assert_contains "a scoped --clear-limit warns that a wildcard flag record still governs the provider" \
+  'carries a fleet-wide record' "$clear_wild_out"
+assert_contains "...and says plainly the stand-down was not fully lifted" \
+  'NOT fully lifted' "$clear_wild_out"
+assert_eq "...leaving fleet/limit.json in place rather than clearing another provider's too" "1" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+rm -f "$gh_backing/fleet/limit.json"
+
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing
 # merge autonomy must publish its own file under its own name and must not

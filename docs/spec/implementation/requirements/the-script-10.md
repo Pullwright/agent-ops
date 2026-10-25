@@ -460,7 +460,14 @@
     stand-down lifts, as before issue #2135; naming one (matched against
     `PROVIDER_SUBSTRATE`'s configured keys, plus the always-valid
     `anthropic`) lifts only that provider's, leaving a different provider's
-    own freeze untouched. It is deliberately not `--enable`: the switch and
+    own freeze untouched. Which of up to two bare tokens is the provider and
+    which the reason is resolved against that same set, after
+    `providers_load`: one token is the provider only if it names one and the
+    reason otherwise, exactly as before the issue; two tokens are provider
+    then reason, and a first token naming no configured provider is rejected
+    (exit 64) rather than scoped to a provider that does not exist — there is
+    no second reading of two bare tokens, and a silent mis-scope would log a
+    `limit-cleared` nothing reads. It is deliberately not `--enable`: the switch and
     the stand-down are separate states with separate causes, and one command
     for both would let an operator clearing a spend cap silently re-enable a
     pipeline another agent had disabled to edit these files. It clears both
@@ -469,7 +476,12 @@
     every node down after the operator believes they have resumed; naming a
     provider deletes the flag only when the flag's own current record already
     names that provider, leaving a different or wildcard record untouched.
-    The reason is
+    A wildcard record left that way is reported rather than passed over,
+    because requirement 2.1's "a record without a provider applies to every
+    provider" rule means it still holds the named provider down: the command
+    warns that the stand-down was *not* fully lifted and names the bare
+    `--clear-limit` that can delete it, the flag having no way to express
+    "every provider but this one". The reason is
     optional, unlike `--disable`'s: a stand-down being lifted is
     self-explanatory in a way one being imposed is not.
 

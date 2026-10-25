@@ -435,9 +435,12 @@ stops cycles from starting (shared with review-cycle.sh).
                      any, is untouched. Use it once the limit is actually
                      gone — you raised the cap, or the plan rolled over.
                      Unlike --enable this touches no switch: it clears
-                     fleet/limit.json (the named provider's own record, or the
-                     whole flag with no provider named) and logs a
-                     `limit-cleared` event that supersedes the cooldown.
+                     fleet/limit.json (the whole flag with no provider named;
+                     with one, only when the flag's own record already names
+                     that same provider) and logs a `limit-cleared` event
+                     that supersedes the cooldown. A fleet-wide flag record
+                     left standing by a named clear is warned about, since it
+                     still holds that provider down.
   --kill-merge-autonomy [reason]
                      Force every repo's effective `merge_autonomy` to `human`
                      fleet-wide, immediately, regardless of config.json or any

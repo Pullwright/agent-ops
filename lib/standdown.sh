@@ -680,9 +680,10 @@ _standdown_usage_limit_cooldown() {
 # every node shares one account per provider, so a limit any node hit stands
 # every node down for *that provider's own stages* — never for a different
 # provider's. This check gates the Co-Ordinator, the very next stage, so it
-# is scoped to the Co-Ordinator's own resolved provider; the Implementer and
-# Reviewer launches (lib/coordinator-phase.sh), which can run on a different
-# provider per item, carry their own scoped checks beside their own launch.
+# is scoped to the Co-Ordinator's own resolved provider; the Implementer
+# launch (lib/coordinator-phase.sh 5d), whose provider is chosen per item,
+# carries its own scoped check beside it. The Reviewer launch carries none
+# yet — agent-ops#2661.
 # Two carriers of the same signal, and the later resume wins: the log union
 # is as fresh as the last state-sync fetch, while fleet/limit.json is read
 # live — it is what lets a limit one node hit a minute ago stop this cycle

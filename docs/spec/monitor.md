@@ -187,7 +187,7 @@ M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check
    `monitor_model`'s own provider (issue #2135) — this pipeline runs one
    stage against one model, resolved before this check, so there is nothing
    else here to scope separately the way the implementation pipeline's
-   Implementer and Reviewer launches are: the log union (as fresh as the
+   Implementer launch is: the log union (as fresh as the
    last fetch), narrowed to that provider, and `fleet/limit.json` (read
    live, narrowed the same way), later resume wins. A cooldown in force
    stands the run down before the digest is built. The union is read with

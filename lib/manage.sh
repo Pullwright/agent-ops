@@ -654,19 +654,25 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # #2135): providers_load runs well before run_manage_command, so
       # PROVIDER_SUBSTRATE's keys — every provider config.json names, plus the
       # always-implicit `anthropic` (lib/model-id.sh) — are what decide it.
-      # Two tokens are unambiguous (provider, then reason); one token is the
+      # Two tokens are unambiguous in *shape* (provider, then reason), but the
+      # first still has to name a real provider — there is no second reading
+      # of two bare tokens to fall back on, and silently scoping the clear to
+      # a provider that does not exist would log a `limit-cleared` nothing
+      # reads and report a stand-down lifted that never was. One token is the
       # provider only if it names one, exactly as before this issue otherwise
       # (a single token is the reason).
-      if [[ -n "$CLEAR_LIMIT_ARG2" ]]; then
+      if [[ -n "$CLEAR_LIMIT_ARG1" ]] \
+         && { [[ "$CLEAR_LIMIT_ARG1" == "anthropic" ]] \
+              || [[ -n "${PROVIDER_SUBSTRATE[$CLEAR_LIMIT_ARG1]:-}" ]]; }; then
         CLEAR_LIMIT_PROVIDER="$CLEAR_LIMIT_ARG1"
         CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG2"
+      elif [[ -n "$CLEAR_LIMIT_ARG2" ]]; then
+        printf 'agent-cycle: --clear-limit: "%s" is not a configured provider (known: %s) — with two arguments the first must name one\n' \
+          "$CLEAR_LIMIT_ARG1" \
+          "$(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" anthropic | sort -u | paste -sd, -)" >&2
+        exit 64
       elif [[ -n "$CLEAR_LIMIT_ARG1" ]]; then
-        if [[ "$CLEAR_LIMIT_ARG1" == "anthropic" ]] \
-           || [[ -n "${PROVIDER_SUBSTRATE[$CLEAR_LIMIT_ARG1]:-}" ]]; then
-          CLEAR_LIMIT_PROVIDER="$CLEAR_LIMIT_ARG1"
-        else
-          CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG1"
-        fi
+        CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG1"
       fi
 
       # Both carriers of requirement 2.1, because the stand-down lifts only
@@ -705,11 +711,23 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # the flag holds exactly one record and clearing one provider must not
       # silently clear whichever other provider the flag happened to be
       # carrying (limit_flag_record_for's own header).
+      #
+      # A *wildcard* record — one carrying no `provider` at all, from before
+      # issue #2133 — is the one case worth telling the operator about rather
+      # than passing over in silence: `limit_flag_record_for` makes it govern
+      # every provider, so leaving it in place leaves this provider standing
+      # down after a clear that reported success. The flag cannot express
+      # "every provider but this one", so the clear stays conservative and
+      # the operator is pointed at the bare `--clear-limit` that can.
       clear_flag=1
+      flag_wildcard=0
       if [[ -n "$CLEAR_LIMIT_PROVIDER" && -n "$state_repo" ]]; then
-        flag_provider="$(jq -r '.provider // empty' \
-          <<<"$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" 2>/dev/null || true)"
-        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" ]] || clear_flag=0
+        flag_raw="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
+        flag_provider="$(jq -r '.provider // empty' <<<"$flag_raw" 2>/dev/null || true)"
+        if [[ "$flag_provider" != "$CLEAR_LIMIT_PROVIDER" ]]; then
+          clear_flag=0
+          [[ -n "$flag_raw" && -z "$flag_provider" ]] && flag_wildcard=1
+        fi
       fi
       if [[ -n "$state_repo" ]]; then
         if (( clear_flag )); then
@@ -722,12 +740,18 @@ if [[ -n "$MANAGE_ACTION" ]]; then
           else
             printf 'agent-cycle: WARNING — could not clear fleet/limit.json; peers reading it live still stand down. Re-run --clear-limit, or delete fleet/limit.json in %s by hand.\n' "$state_repo" >&2
           fi
+        elif (( flag_wildcard )); then
+          printf 'agent-cycle: WARNING — fleet/limit.json carries a fleet-wide record (no provider named), which still stands %s down and cannot be narrowed to spare the other providers. It is left in place: re-run "agent-cycle.sh --clear-limit" with no provider to delete it, or delete fleet/limit.json in %s by hand.\n' \
+            "$CLEAR_LIMIT_PROVIDER" "$state_repo" >&2
         elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
           printf 'agent-cycle: fleet/limit.json does not currently govern %s — nothing to clear there; the log union carries the clear regardless\n' "$CLEAR_LIMIT_PROVIDER"
         fi
       fi
 
-      if [[ -n "$was" ]]; then
+      if (( flag_wildcard )); then
+        printf 'agent-cycle: usage-limit stand-down for %s NOT fully lifted — the log union is cleared, but the fleet-wide fleet/limit.json record above still holds it down\n' \
+          "$CLEAR_LIMIT_PROVIDER" >&2
+      elif [[ -n "$was" ]]; then
         printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)%s\n' "$was" \
           "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
       else
