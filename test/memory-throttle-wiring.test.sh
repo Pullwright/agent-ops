@@ -62,7 +62,7 @@ if ! grep -q '^memory_throttle_check()' "$STANDDOWN"; then
   exit 1
 fi
 
-# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC]
+# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC] [EVENTS_HIGH] [SEED_FILE]
 # Sources the real lib/standdown.sh (which only defines functions; nothing in
 # it executes at source time) into a fresh subshell, stubs every dependency
 # memory_throttle_check and _memory_throttle_escalate reach for, seeds the
@@ -81,21 +81,36 @@ fi
 # behind is readable at $mt_state_path afterwards, which is what the
 # retry-reachability assertions below read: the count persisted there is the
 # only thing that ever brings a later cycle back to a forfeited close.
+#
+# EVENTS_HIGH stands in for the parent's own memory.events `high` reading
+# (default "600", a readable window); passing "" simulates the window being
+# unreadable while memory.current/memory.high (headroom) still resolve —
+# the agent-ops#2655 shape.
+#
+# SEED_FILE, when given, is copied in as the pre-existing state file
+# verbatim instead of the synthesized "1000\t500\t<PREV_CONSECUTIVE>" line —
+# the actual bytes an earlier run_check call left at $mt_state_path, so a
+# round-trip test can feed one real call's own write into the next real
+# call's own read, exactly as two consecutive cycles would, rather than
+# bypassing the write/read boundary the way a synthesized line does.
 calls_file="$tmp_dir/calls"
 mt_state_path="$tmp_dir/state/.memory-cgroup-throttle-state"
 run_check() {
   local throttle_verdict="$1" headroom_verdict="$2" escalate_after="$3" \
-    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}"
+    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}" events_high="${7-600}" \
+    seed_file="${8:-}"
   local state_dir="$tmp_dir/state"
   rm -rf "$state_dir"; mkdir -p "$state_dir"
   : > "$calls_file"
-  if (( prev_consecutive > 0 )); then
+  if [[ -n "$seed_file" ]]; then
+    cp "$seed_file" "$state_dir/.memory-cgroup-throttle-state"
+  elif (( prev_consecutive > 0 )); then
     printf '1000\t500\t%s\n' "$prev_consecutive" > "$state_dir/.memory-cgroup-throttle-state"
   fi
   (
     set -euo pipefail
     export THROTTLE_VERDICT="$throttle_verdict" HEADROOM_VERDICT="$headroom_verdict" \
-      CALLS_FILE="$calls_file" RETIRE_RC="$retire_rc"
+      CALLS_FILE="$calls_file" RETIRE_RC="$retire_rc" EVENTS_HIGH="$events_high"
     # shellcheck disable=SC1090
     . "$STANDDOWN"
 
@@ -126,7 +141,7 @@ run_check() {
     DRY_RUN="$dry_run"
 
     # shellcheck disable=SC2317  # called from the real memory_throttle_check, invisible to a static reader
-    memory_cgroup_parent_events_high() { printf '600'; }
+    memory_cgroup_parent_events_high() { printf '%s' "$EVENTS_HIGH"; }
     # shellcheck disable=SC2317
     memory_cgroup_field() { printf '100'; }
     # shellcheck disable=SC2317
@@ -284,6 +299,61 @@ assert_eq "…and keeps the consecutive count, so the next cycle reaches the clo
 rc="$(run_check ok ok 3 3 1)"
 assert_eq "--dry-run, which never attempts the close, keeps the count for a real cycle to retire" \
   "3" "$(cut -f3 "$mt_state_path")"
+
+# --- persistence: a headroom-only verdict persists even when the parent's
+#     events window is unreadable (agent-ops#2655) -----------------------
+#
+# min_cgroup_headroom_bytes > 0 can reach a real headroom verdict from
+# memory.current/memory.high alone, with memory.events unreadable. Before
+# this fix, the state write was keyed on the events reading alone, so a
+# clean "ok" here reset (or retired) the consecutive count in memory only —
+# the persisted count never moved, leaving a node already at the escalate
+# threshold re-attempting retirement every clean cycle, and a later
+# re-entry escalating on its first firing rather than after the configured
+# run.
+
+rc="$(run_check ok ok 3 3 0 0 "")"
+assert_eq "a clean headroom-only reading (events unreadable) still persists the reset count" \
+  "0" "$(cut -f3 "$mt_state_path")"
+assert_eq "…and still calls the retirement function despite the unreadable events window" \
+  "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
+assert_eq "…writing a non-numeric sentinel rate-baseline field rather than skipping the write entirely" \
+  "-" "$(cut -f2 "$mt_state_path")"
+
+rc="$(run_check ok near-ceiling 0 0 0 0 "")"
+assert_eq "a fresh near-ceiling verdict (events unreadable) still persists the incremented count" \
+  "1" "$(cut -f3 "$mt_state_path")"
+
+# --- round trip: a persisted sentinel field survives the next cycle's own
+#     read (agent-ops#2667 review) ---------------------------------------
+#
+# `IFS=$'\t' read` treats tab as IFS whitespace, so two adjacent tabs around
+# an *empty* middle field collapse: the count shifts left into the
+# rate-baseline variable and the consecutive count falls back to 0. The
+# assertions above only inspect the written file with `cut`, which preserves
+# empty fields and so never exercises this — the bug is entirely in the
+# read, not the write. This feeds one call's own state-file write straight
+# into a second real call's own read, the way two consecutive cycles would,
+# to prove the consecutive count a sustained near-ceiling run persists is
+# the same count the next cycle actually reads back, not a value reset by
+# the collapse.
+rc="$(run_check ok near-ceiling 5 0 0 0 "")"
+assert_eq "first near-ceiling firing (events unreadable) persists consecutive=1" \
+  "1" "$(cut -f3 "$mt_state_path")"
+seed_copy="$tmp_dir/seed-from-cycle-1"
+cp "$mt_state_path" "$seed_copy"
+
+rc="$(run_check ok near-ceiling 5 0 0 0 "" "$seed_copy")"
+assert_eq "a second near-ceiling firing reads cycle 1's own persisted count back, not 0" \
+  "2" "$(cut -f3 "$mt_state_path")"
+seed_copy="$tmp_dir/seed-from-cycle-2"
+cp "$mt_state_path" "$seed_copy"
+
+rc="$(run_check ok ok 2 0 0 0 "" "$seed_copy")"
+assert_eq "…so a clean reading on cycle 3 still clears the correctly round-tripped count" \
+  "0" "$(cut -f3 "$mt_state_path")"
+assert_eq "…and still reaches retirement, since cycle 2's own count (2) met escalate_after (2)" \
+  "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
 
 echo
 if (( failures == 0 )); then
