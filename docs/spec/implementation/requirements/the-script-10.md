@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 10 of 13; 9–68: Failure handling and execution control…)
+### The Script — requirements, continued (part 10 of 13; 9–17d: Failure handling and execution control…)
 
 9. <a id="impl-9"></a>**Failure handling.** If any stage times out, exits non-zero, or returns
    an unparseable summary: kill that stage's process group, log

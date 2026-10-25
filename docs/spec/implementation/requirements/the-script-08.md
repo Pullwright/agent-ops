@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 8 of 11; 4i–8c: The assembled Co-Ordinator prompt is bounded by its model'…)
+### The Script — requirements, continued (part 8 of 13; 4i–8c: The assembled Co-Ordinator prompt is bounded by its model'…)
 
 4i. <a id="impl-4i"></a>**The assembled Co-Ordinator prompt is bounded by its model's context
    window.** Requirement 4g's own text records that moving the fleet-state
