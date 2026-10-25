@@ -1486,7 +1486,7 @@
       "label": "2a",
       "anchor": "impl-c-2a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 28,
+      "line": 36,
       "title": "`lib/standdown.sh` implementing requirement 2, the stand-down reason"
     },
     "IMPL C 2b": {
@@ -1494,7 +1494,7 @@
       "label": "2b",
       "anchor": "impl-c-2b",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 45,
+      "line": 53,
       "title": "`lib/candidate-select.sh` implementing the claim loop and candidate"
     },
     "IMPL C 2c": {
@@ -1502,7 +1502,7 @@
       "label": "2c",
       "anchor": "impl-c-2c",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 72,
+      "line": 80,
       "title": "`lib/stage-attempt.sh` implementing the Co-Ordinator stage-attempt"
     },
     "IMPL C 2d": {
@@ -1510,7 +1510,7 @@
       "label": "2d",
       "anchor": "impl-c-2d",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 85,
+      "line": 93,
       "title": "`lib/candidate-gather.sh` implementing the repo-ordering/candidate-"
     },
     "IMPL C 2e": {
@@ -1518,7 +1518,7 @@
       "label": "2e",
       "anchor": "impl-c-2e",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 108,
+      "line": 116,
       "title": "`lib/manage.sh` implementing requirement 2.3's management commands in"
     },
     "IMPL C 2f": {
@@ -1526,7 +1526,7 @@
       "label": "2f",
       "anchor": "impl-c-2f",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 125,
+      "line": 133,
       "title": "`lib/eligibility.sh` implementing requirements 3t/3u, 35a/35b, 3y and 39a"
     },
     "IMPL C 2g": {
@@ -1534,7 +1534,7 @@
       "label": "2g",
       "anchor": "impl-c-2g",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 183,
+      "line": 191,
       "title": "`lib/expensive-gather-cache.sh` implementing requirement 48"
     },
     "IMPL C 2h": {
@@ -1542,7 +1542,7 @@
       "label": "2h",
       "anchor": "impl-c-2h",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 205,
+      "line": 213,
       "title": "`lib/gather-phase.sh` implementing the phase between the repo-ordering/"
     },
     "IMPL C 2i": {
@@ -1550,7 +1550,7 @@
       "label": "2i",
       "anchor": "impl-c-2i",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 229,
+      "line": 237,
       "title": "`lib/coordinator-phase.sh` implementing the Co-Ordinator-through-"
     },
     "IMPL C 3": {
@@ -1558,7 +1558,7 @@
       "label": "3",
       "anchor": "impl-c-3",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 256,
+      "line": 264,
       "title": "`scripts/gather-findings.sh` implementing requirement 3a: given a repo"
     },
     "IMPL C 3c": {
@@ -1566,7 +1566,7 @@
       "label": "3c",
       "anchor": "impl-c-3c",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 260,
+      "line": 268,
       "title": "`scripts/gather-review-feedback.sh` implementing requirement 3c: given a"
     },
     "IMPL C 3f": {
@@ -1574,7 +1574,7 @@
       "label": "3f",
       "anchor": "impl-c-3f",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 265,
+      "line": 273,
       "title": "`scripts/gather-abandoned-drafts.sh` implementing requirement 3e: given a"
     },
     "IMPL C 3g": {
@@ -1582,7 +1582,7 @@
       "label": "3g",
       "anchor": "impl-c-3g",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 304,
+      "line": 312,
       "title": "`scripts/gather-merge-conflicts.sh` implementing requirement 3g (extended by"
     },
     "IMPL C 3s": {
@@ -1590,7 +1590,7 @@
       "label": "3s",
       "anchor": "impl-c-3s",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 313,
+      "line": 321,
       "title": "`lib/dependabot-bump.sh` and `scripts/nudge-dependabot-rebase.sh`"
     },
     "IMPL C 3z": {
@@ -1598,7 +1598,7 @@
       "label": "3z",
       "anchor": "impl-c-3z",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 344,
+      "line": 352,
       "title": "`scripts/gather-dequeued.sh` implementing requirement 3z: given a repo"
     },
     "IMPL C 53": {
@@ -1606,7 +1606,7 @@
       "label": "53",
       "anchor": "impl-c-53",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 356,
+      "line": 364,
       "title": "`scripts/gather-landing-refusals.sh` implementing requirement 53: given a"
     },
     "IMPL C 25": {
@@ -1614,7 +1614,7 @@
       "label": "25",
       "anchor": "impl-c-25",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 410,
+      "line": 418,
       "title": "`scripts/gather-human-visibility-hygiene.sh` implementing requirement 38e:"
     },
     "IMPL C 3j": {
@@ -1622,7 +1622,7 @@
       "label": "3j",
       "anchor": "impl-c-3j",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 477,
+      "line": 485,
       "title": "`scripts/gather-issues.sh` implementing requirement 3j: given a repo slug,"
     },
     "IMPL C 3t": {
@@ -1630,7 +1630,7 @@
       "label": "3t",
       "anchor": "impl-c-3t",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 503,
+      "line": 511,
       "title": "`scripts/gather-tech-debt.sh` implementing requirement 3t: given a repo"
     },
     "IMPL C 3y": {
@@ -1638,7 +1638,7 @@
       "label": "3y",
       "anchor": "impl-c-3y",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 539,
+      "line": 547,
       "title": "`scripts/gather-project-review.sh` implementing requirement 3y's"
     },
     "IMPL C 3y-ii": {
@@ -1646,7 +1646,7 @@
       "label": "3y-ii",
       "anchor": "impl-c-3y-ii",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 602,
+      "line": 610,
       "title": "`scripts/gather-implementation-plan.sh` implementing requirement 3y's"
     },
     "IMPL C 3q": {
@@ -1654,7 +1654,7 @@
       "label": "3q",
       "anchor": "impl-c-3q",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 617,
+      "line": 625,
       "title": "`lib/dependency-gate.sh` implementing requirement 34j: `dependency_refs`,"
     },
     "IMPL C 3r": {
@@ -1662,7 +1662,7 @@
       "label": "3r",
       "anchor": "impl-c-3r",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 627,
+      "line": 635,
       "title": "`lib/issue-prefetch.sh` implementing the issue-walking half requirements 3j"
     },
     "IMPL C 3k": {
@@ -1670,7 +1670,7 @@
       "label": "3k",
       "anchor": "impl-c-3k",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 657,
+      "line": 665,
       "title": "`scripts/gather-register-status.sh` implementing requirement 34i's register"
     },
     "IMPL C 3o": {
@@ -1678,7 +1678,7 @@
       "label": "3o",
       "anchor": "impl-c-3o",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 668,
+      "line": 676,
       "title": "`scripts/gather-review-status.sh` implementing requirement 34i's"
     },
     "IMPL C 3p": {
@@ -1686,7 +1686,7 @@
       "label": "3p",
       "anchor": "impl-c-3p",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 683,
+      "line": 691,
       "title": "`scripts/gather-plan-status.sh` implementing requirement 34i's"
     },
     "IMPL C 3v": {
@@ -1694,7 +1694,7 @@
       "label": "3v",
       "anchor": "impl-c-3v",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 693,
+      "line": 701,
       "title": "`scripts/gather-workflow-basenames.sh` implementing the one read"
     },
     "IMPL C 3b": {
@@ -1702,7 +1702,7 @@
       "label": "3b",
       "anchor": "impl-c-3b",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 705,
+      "line": 713,
       "title": "`scripts/gather-source-state.sh` implementing requirement 3b's sampling:"
     },
     "IMPL C 3d": {
@@ -1710,7 +1710,7 @@
       "label": "3d",
       "anchor": "impl-c-3d",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 716,
+      "line": 724,
       "title": "`scripts/state-sync.sh` implementing requirement 2.5: `push` and `fetch`."
     },
     "IMPL C 3i": {
@@ -1718,7 +1718,7 @@
       "label": "3i",
       "anchor": "impl-c-3i",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 724,
+      "line": 732,
       "title": "`scripts/rotate-logs.sh` implementing requirement 2.6: rotates"
     },
     "IMPL C 3e": {
@@ -1726,7 +1726,7 @@
       "label": "3e",
       "anchor": "impl-c-3e",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 733,
+      "line": 741,
       "title": "`lib/claim.sh` implementing requirement 17a: `claim` (kinds `branch` and"
     },
     "IMPL C 3h": {
@@ -1734,7 +1734,7 @@
       "label": "3h",
       "anchor": "impl-c-3h",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 751,
+      "line": 759,
       "title": "`lib/refinement.sh` implementing the refinement class: requirement 16a's"
     },
     "IMPL C 26": {
@@ -1742,7 +1742,7 @@
       "label": "26",
       "anchor": "impl-c-26",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 774,
+      "line": 782,
       "title": "`lib/label-marker.sh` implementing requirement 39f's own-label-action"
     },
     "IMPL C 3m": {
@@ -1750,7 +1750,7 @@
       "label": "3m",
       "anchor": "impl-c-3m",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 789,
+      "line": 797,
       "title": "`lib/work-gone.sh` implementing requirement 34i's decision:"
     },
     "IMPL C 3w": {
@@ -1758,7 +1758,7 @@
       "label": "3w",
       "anchor": "impl-c-3w",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 798,
+      "line": 806,
       "title": "`lib/void-liveness.sh` implementing requirement 34n's third, fourth,"
     },
     "IMPL C 27": {
@@ -1766,7 +1766,7 @@
       "label": "27",
       "anchor": "impl-c-27",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 828,
+      "line": 836,
       "title": "`lib/preflight.sh` implementing requirement 34m's decision:"
     },
     "IMPL C 3n": {
@@ -1774,7 +1774,7 @@
       "label": "3n",
       "anchor": "impl-c-3n",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 857,
+      "line": 865,
       "title": "`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:"
     },
     "IMPL C 28": {
@@ -1782,7 +1782,7 @@
       "label": "28",
       "anchor": "impl-c-28",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 871,
+      "line": 879,
       "title": "`scripts/sweep-human-visibility.sh` implementing requirement 38c's sweep:"
     },
     "IMPL C 3a": {
@@ -1790,7 +1790,7 @@
       "label": "3a",
       "anchor": "impl-c-3a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 887,
+      "line": 895,
       "title": "The shared library (`lib/cycle-state.sh`, `lib/limit-detect.sh`,"
     },
     "IMPL C 3l": {
@@ -1798,7 +1798,7 @@
       "label": "3l",
       "anchor": "impl-c-3l",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1034,
+      "line": 1042,
       "title": "`lib/repo-order.sh` implementing requirement 3's two pure functions:"
     },
     "IMPL C 4": {
@@ -1806,7 +1806,7 @@
       "label": "4",
       "anchor": "impl-c-4",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1047,
+      "line": 1055,
       "title": "`prompts/coordinator.md`, `prompts/implementer.md`, `prompts/reviewer.md`,"
     },
     "IMPL C 4e": {
@@ -1814,7 +1814,7 @@
       "label": "4e",
       "anchor": "impl-c-4e",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1055,
+      "line": 1063,
       "title": "`prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge"
     },
     "IMPL C 4f": {
@@ -1822,7 +1822,7 @@
       "label": "4f",
       "anchor": "impl-c-4f",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1062,
+      "line": 1070,
       "title": "`prompts/enabler-adjudicate.md` implementing requirement 36b's"
     },
     "IMPL C 4a": {
@@ -1830,7 +1830,7 @@
       "label": "4a",
       "anchor": "impl-c-4a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1072,
+      "line": 1080,
       "title": "`lib/prompt-overrides.sh` implementing requirement 4a: `stage_prompt_text`"
     },
     "IMPL C 4b": {
@@ -1838,7 +1838,7 @@
       "label": "4b",
       "anchor": "impl-c-4b",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1091,
+      "line": 1099,
       "title": "`lib/coordinator-brief.sh` implementing requirement 4b:"
     },
     "IMPL C 4i": {
@@ -1846,7 +1846,7 @@
       "label": "4i",
       "anchor": "impl-c-4i",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1100,
+      "line": 1108,
       "title": "`lib/coordinator-input.sh` implementing requirement 4i:"
     },
     "IMPL C 5": {
@@ -1854,7 +1854,7 @@
       "label": "5",
       "anchor": "impl-c-5",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1139,
+      "line": 1147,
       "title": "`README.md`: a landing page naming what the system does and pointing at"
     },
     "IMPL C 6": {
@@ -1862,7 +1862,7 @@
       "label": "6",
       "anchor": "impl-c-6",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1149,
+      "line": 1157,
       "title": "The crontab line: never installed by hand on a containerized node — it is"
     },
     "IMPL C 7": {
@@ -1870,7 +1870,7 @@
       "label": "7",
       "anchor": "impl-c-7",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1154,
+      "line": 1162,
       "title": "`deploy/docker/` — the node image and the node stack (see \"The node image\""
     },
     "IMPL C 8": {
@@ -1878,7 +1878,7 @@
       "label": "8",
       "anchor": "impl-c-8",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1165,
+      "line": 1173,
       "title": "`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy"
     },
     "IMPL C 9": {
@@ -1886,7 +1886,7 @@
       "label": "9",
       "anchor": "impl-c-9",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1167,
+      "line": 1175,
       "title": "`.github/workflows/build-image.yml` — the build-and-publish path for"
     },
     "IMPL C 10": {
@@ -1894,7 +1894,7 @@
       "label": "10",
       "anchor": "impl-c-10",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1191,
+      "line": 1199,
       "title": "`scripts/lint-shell.sh` and `.github/workflows/shellcheck.yml` — the"
     },
     "IMPL C 10a": {
@@ -1902,7 +1902,7 @@
       "label": "10a",
       "anchor": "impl-c-10a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1207,
+      "line": 1215,
       "title": "`scripts/check-graphql-drift.sh` and"
     },
     "IMPL C 11": {
@@ -1910,7 +1910,7 @@
       "label": "11",
       "anchor": "impl-c-11",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1290,
+      "line": 1298,
       "title": "`scripts/watch-node.sh` — a read-only wrapper around"
     },
     "IMPL C 12": {
@@ -1918,7 +1918,7 @@
       "label": "12",
       "anchor": "impl-c-12",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1299,
+      "line": 1307,
       "title": "`scripts/check-node-compose.sh` — the host-side half of the compose-drift"
     },
     "IMPL C 12a": {
@@ -1926,7 +1926,7 @@
       "label": "12a",
       "anchor": "impl-c-12a",
       "file": "docs/spec/implementation/components/components-01.md",
-      "line": 1334,
+      "line": 1342,
       "title": "`scripts/check-node-image.sh` — asks whether this node is running the"
     },
     "IMPL C 12b": {
@@ -3822,7 +3822,7 @@
       "label": "8w",
       "anchor": "impl-8w",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 301,
+      "line": 304,
       "title": "Gate 4.5's protected-path-tier sub-case re-engages the Approver at the"
     },
     "IMPL 62": {
@@ -3830,7 +3830,7 @@
       "label": "62",
       "anchor": "impl-62",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 394,
+      "line": 397,
       "title": "A persistent landing refusal says why, on the pull request itself, not"
     },
     "IMPL 9": {

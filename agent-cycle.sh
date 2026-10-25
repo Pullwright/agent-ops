@@ -197,6 +197,10 @@ scratch_enter agent-cycle || exit 1
 # Ahead of approver.sh, whose restale sweep (requirement 46a) calls
 # rebase_only_push to sharpen its own genuine-progress test.
 . "$SCRIPT_DIR/lib/rebase-only.sh"
+# shellcheck source=lib/escalation-lookup.sh
+# Ahead of approver.sh, landing.sh and enabler.sh, each of whose own
+# escalation readers call escalation_issue_lookup (agent-ops#2670).
+. "$SCRIPT_DIR/lib/escalation-lookup.sh"
 # shellcheck source=lib/approver.sh
 . "$SCRIPT_DIR/lib/approver.sh"
 # shellcheck source=lib/author-token.sh

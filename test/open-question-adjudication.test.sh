@@ -38,6 +38,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CYCLE="$SCRIPT_DIR/lib/landing.sh"
 ESCALATION_AUTONOMY="$SCRIPT_DIR/lib/escalation-autonomy.sh"
+ESCALATION_LOOKUP="$SCRIPT_DIR/lib/escalation-lookup.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -97,6 +98,12 @@ adjudicate_block="$(extract run_open_question_adjudication)"
 # reimplementing the window/owed logic here.
 refile_suppressed_block="$(extract escalation_refile_suppressed "$ESCALATION_AUTONOMY")"
 event_logged_since_block="$(extract escalation_event_logged_since "$ESCALATION_AUTONOMY")"
+# `open_question_pass_available` now reads through `escalation_issue_lookup`
+# (lib/escalation-lookup.sh, agent-ops#2670) rather than its own inlined
+# `gh issue list`/`jq` pair — lifted verbatim into harness_b below, the same
+# "real implementation, never restated" discipline the two comparators above
+# already follow.
+escalation_lookup_block="$(extract escalation_issue_lookup "$ESCALATION_LOOKUP")"
 
 for pair in "resolve_block:_landing_open_question_resolve" "refuse_block:_landing_refuse" \
             "refusal_classes_line:_LANDING_REFUSAL_CLASSES" \
@@ -118,6 +125,10 @@ for pair in "refile_suppressed_block:escalation_refile_suppressed" \
     exit 1
   fi
 done
+if [[ -z "$escalation_lookup_block" ]]; then
+  echo "FAIL - could not extract escalation_issue_lookup from lib/escalation-lookup.sh — has it moved?" >&2
+  exit 1
+fi
 
 # ============================================================================
 # Part A: `_landing_open_question_resolve`, `open_question_pass_available`,
@@ -303,6 +314,7 @@ HARNESS
 
 {
   printf '%s\n' "$adjudicated_before_block"
+  printf '%s\n' "$escalation_lookup_block"
   printf '%s\n' "$pass_available_block"
   printf 'open_question_pass_available "%s" "%s" "%s"\n' \
     'Poetic-Poems/agent-ops' "$URL" 'pr-512-open-question'

@@ -46,6 +46,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # below is an undefined command, not the no-op an unset notify_webhook_url
 # is meant to be.
 . "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/escalation-lookup.sh
+# agent-cycle.sh always sources this ahead of lib/enabler.sh too
+# (agent-ops#2670); without it here, the real escalation_recent_close this
+# file exercises below has an undefined command.
+. "$SCRIPT_DIR/lib/escalation-lookup.sh"
 # shellcheck source=lib/enabler.sh
 . "$SCRIPT_DIR/lib/enabler.sh"
 # shellcheck source=lib/stage-budget.sh

@@ -59,10 +59,16 @@
 #
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller (agent-cycle.sh runs under `set -euo pipefail`;
-# a test, `set -uo pipefail`) owns those.
+# a test, `set -uo pipefail`) owns those. Depends on `escalation_issue_
+# lookup` (lib/escalation-lookup.sh, agent-ops#2670 —
+# `approver_escalation_retire`'s own labelled-first/label-less-fallback
+# escalation read), already sourced ahead of this file by every caller.
 #
 # Environment:
 #   APPROVER_GH  override `gh` (tests stub it).
+
+# shellcheck source=lib/escalation-lookup.sh
+# (Sourced by every caller of this file already — see the header above.)
 
 # approver_tier_for COMPLEXITY
 # Print `trivial`, `standard` or `high` for `low`, `medium` or `high`. Any
@@ -543,24 +549,27 @@ APPROVER_ESC_BODY
 # "land", "<login> at <ts>" for "merged". Mirrors approver_escalate's own
 # dedup lookup (create_escalation_issue's, requirement 8c) rather than
 # reusing that function directly: this finds and closes, never creates, so
-# there is no shared call to make. A no-op, logging nothing, when no open
-# issue matches — the common case, since most pull requests never escalate
-# at all — and equally when the only match is one somebody *reopened* after a
-# retirement (`stateReason`, read on the same listing): a human's re-open must
-# win, the same answer requirement 34k's own one-shot rule and
-# `scripts/sweep-closed-issues.sh`'s `state_reason: "reopened"` check give on
-# every other close this system performs.
+# there is no shared call to make. Reads through `escalation_issue_lookup`
+# (lib/escalation-lookup.sh) — the same labelled-first/label-less-fallback
+# two-step read `create_escalation_issue`'s own duplicate guard and
+# `escalation_open_existing` already apply (agent-ops#2657, agent-ops#2666,
+# agent-ops#2670), so an escalation filed without the label (the retry-
+# without-label path) is retired here too. A no-op, logging nothing, when
+# no open issue matches — the common case, since most pull requests never
+# escalate at all — and equally when the only match is one somebody
+# *reopened* after a retirement (`stateReason`, read on the same listing): a
+# human's re-open must win, the same answer requirement 34k's own one-shot
+# rule and `scripts/sweep-closed-issues.sh`'s `state_reason: "reopened"`
+# check give on every other close this system performs.
 approver_escalation_retire() {
   local pr_url="$1" cause="$2" detail="$3" gh_bin="${APPROVER_GH:-gh}"
   local number item_ref existing issue_number issue_url comment
   number="${pr_url##*/}"
   item_ref="pr-${number}-approver-adjudication"
-  existing="$("$gh_bin" issue list -R "$selected_repo" --label "$enabler_escalation_label" \
-                --state open --search "$item_ref" --json number,url,body,stateReason 2>/dev/null \
-              | jq -r --arg it "$item_ref" \
-                  'map(select(((.body // "") | contains($it))
-                              and ((.stateReason // "" | ascii_downcase) != "reopened"))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  existing="$(escalation_issue_lookup "$selected_repo" open "$item_ref" \
+                number,url,body,stateReason "$gh_bin" 2>/dev/null \
+              | jq -r 'map(select((.stateReason // "" | ascii_downcase) != "reopened")) | first
+                       | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
   [[ -n "$existing" ]] || return 0
   IFS=$'\t' read -r issue_number issue_url <<<"$existing"
   case "$cause" in

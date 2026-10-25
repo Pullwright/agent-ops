@@ -24,7 +24,15 @@ What exists, and the requirements each part answers to:
    (the single call site in the cleanup, every guard, and the per-verdict
    actions), `enabler_claim_key` and `create_escalation_issue` — is
    `lib/enabler.sh` (#771), sourced and called from the cleanup trap exactly
-   as it was inline.
+   as it was inline. `escalation_recent_close`, `credential_refused_retire_
+   resolved` and `memory_throttle_retire_resolved`, also in this file, read
+   back through `escalation_issue_lookup` (`lib/escalation-lookup.sh`,
+   agent-ops#2670) — the labelled-first/label-less-fallback two-step read
+   `create_escalation_issue`'s own duplicate guard and `escalation_open_
+   existing` apply inline, factored out once rather than copied per reader
+   (agent-ops#2657, agent-ops#2666); `open_question_pass_available`
+   (`lib/landing.sh`) and `approver_escalation_retire` (`lib/approver.sh`,
+   component 14c) read through the same helper.
 2a. <a id="impl-c-2a"></a>`lib/standdown.sh` implementing requirement 2, the stand-down reason
    ladder in full: `run_standdown_checks`, called once from `agent-cycle.sh`
    in place of the inline block it replaces (#771) — the GitHub API budget,

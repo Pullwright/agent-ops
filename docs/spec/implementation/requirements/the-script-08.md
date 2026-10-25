@@ -1081,11 +1081,15 @@
    also reviewing and merging the pull request — closing is not the
    releasing act — would otherwise get a fresh issue on every subsequent
    adjudication round. Before filing, `approver_escalate` reads the most
-   recently closed `enabler_escalation_label` issue for this pull request's
-   own `pr-<n>-approver-adjudication` reference live from GitHub
-   (`escalation_recent_close`, `lib/enabler.sh`, never a log join — the same
-   "ask the thing that actually changed" reasoning `approver_refuse_streak`
-   already applies). Filing is suppressed — logged as a `warning` naming the
+   recently closed issue matching this pull request's own `pr-<n>-approver-
+   adjudication` reference live from GitHub (`escalation_recent_close`,
+   `lib/enabler.sh`, never a log join — the same "ask the thing that
+   actually changed" reasoning `approver_refuse_streak` already applies) —
+   labelled `enabler_escalation_label` first, falling back, when that finds
+   nothing, to a label-less read keyed on the escalation footer
+   (agent-ops#2657, agent-ops#2666, agent-ops#2670), so a human closing a
+   label-less escalation still throttles re-filing here. Filing is
+   suppressed — logged as a `warning` naming the
    prior issue and the UTC instant the window lapses, with no GitHub write —
    while `now − closedAt` is less than `escalation_refile_after_hours`
    (`escalation_refile_suppressed`, `lib/escalation-autonomy.sh`, a pure
@@ -1119,12 +1123,20 @@
    `scripts/sweep-closed-issues.sh`'s fleet-wide merged-pull-request listing
    (requirement 17c) finds the pull request merged some other way — a
    human's own click, a later automatic landing, or a merge queue resolving
-   well after this round. Both read back the same dedup lookup
-   `create_escalation_issue` performs on the way in — an open issue carrying
-   `enabler_escalation_label` whose body quotes this `pr-<n>-approver-
-   adjudication` reference — and both are a no-op, logging nothing, when no
-   such issue is open, which is the common case: most pull requests never
-   escalate at all. Both close it inside the same
+   well after this round. Both read back through `escalation_issue_lookup`'s
+   own two-step read (lib/escalation-lookup.sh, agent-ops#2670) — an open
+   issue labelled `enabler_escalation_label` whose body quotes this
+   `pr-<n>-approver-adjudication` reference, backtick-delimited; falling
+   back, when that finds nothing, to a label-less read keyed on the
+   escalation footer's `` Item: `pr-<n>-approver-adjudication` `` form and
+   excluding any decision-log issue, the same two-step guard
+   `create_escalation_issue`'s own duplicate check and `escalation_open_
+   existing` already apply (agent-ops#2657, agent-ops#2666) — so an
+   escalation filed without the label (the retry-without-label path) is
+   retired here too, not left to survive its own disagreement because the
+   label never made it onto the issue. Both are a no-op, logging nothing,
+   when no such issue is open, which is the common case: most pull requests
+   never escalate at all. Both close it inside the same
    `pipeline_comment_header`/`pipeline_comment_marker` envelope every other
    comment this system posts carries (component 3f), and both skip an issue
    GitHub reports reopened (`stateReason`, read on the same listing): a
