@@ -1269,7 +1269,7 @@ case "$(memory_cgroup_verdict)" in
   *)           ok "container memory: no cgroup v2 memory files to read (not a cgroup v2 container)" ;;
 esac
 
-# A rising memory.events `high` delta on the *parent* is a cheap, decisive
+# A rising memory.events `high` rate on the *parent* is a cheap, decisive
 # throttling signal that needs no ceiling to be correctly configured first:
 # even a `livelocked` node announces itself here before the wedge, and a node
 # that is merely `unconfirmed` still shows whether it is actively throttling
@@ -1277,20 +1277,41 @@ esac
 # above read `[ ok ]`; a healthy node reads zero. The child's own copy cannot
 # substitute (lib/memory.sh, `memory_cgroup_parent_high`'s own header), so this
 # reads the parent's window and persists one sample across doctor runs to turn
-# the cumulative counter into a delta.
+# the cumulative counter into a rate.
+#
+# `max_cgroup_throttle_per_minute` (requirement 2.0i, agent-ops#2469) is the
+# same threshold `lib/standdown.sh`'s own `memory_throttle_check` judges the
+# rate against, read here too so this warning and that gate can never
+# disagree about what "throttling" means. `0` (the gate off) falls back to
+# the plain "any rise at all" rule this warning used before requirement 2.0i
+# existed, since there is then no configured rate to compare against. The
+# previous reading is kept in its own state file, deliberately separate from
+# `memory_throttle_check`'s own gate-owned one, so neither reader's sampling
+# interval moves the other's baseline.
 events_state_file="$state_dir/.doctor-memory-events-high"
 events_high="$(memory_cgroup_parent_events_high)"
+max_cgroup_throttle_per_minute="$(cfg '.max_cgroup_throttle_per_minute')"
+[[ "$max_cgroup_throttle_per_minute" =~ ^[0-9]+$ ]] || max_cgroup_throttle_per_minute=10000
 if [[ -n "$events_high" ]]; then
   prev_ts="" prev_high=""
   [[ -r "$events_state_file" ]] && read -r prev_ts prev_high _ < "$events_state_file" 2>/dev/null
   now_ts="$(date -u +%s)"
   if [[ "$prev_ts" =~ ^[0-9]+$ && "$prev_high" =~ ^[0-9]+$ ]]; then
     elapsed_min=$(( (now_ts - prev_ts) / 60 ))
-    delta=$(( events_high - prev_high ))
-    if (( delta > 0 )); then
-      warn "container memory: the parent cgroup's memory.events high rose by $delta over the last ${elapsed_min}m — it is throttling right now, whatever the verdict above says"
+    if (( max_cgroup_throttle_per_minute > 0 )); then
+      rate="$(memory_cgroup_throttle_rate_per_min "$events_high" "$now_ts" "$prev_high" "$prev_ts")"
+      if [[ "$(memory_cgroup_throttle_verdict "$events_high" "$now_ts" "$prev_high" "$prev_ts" "$max_cgroup_throttle_per_minute")" == "throttling" ]]; then
+        warn "container memory: $(memory_cgroup_throttle_describe "$rate" "$max_cgroup_throttle_per_minute" "$elapsed_min") — it is throttling right now, whatever the verdict above says"
+      else
+        ok "container memory: the parent cgroup's memory.events high rate is ${rate:-0}/min over the last ${elapsed_min}m, at or below the requirement 2.0i floor of ${max_cgroup_throttle_per_minute}/min (no throttling)"
+      fi
     else
-      ok "container memory: the parent cgroup's memory.events high has not moved in the last ${elapsed_min}m (no throttling)"
+      delta=$(( events_high - prev_high ))
+      if (( delta > 0 )); then
+        warn "container memory: the parent cgroup's memory.events high rose by $delta over the last ${elapsed_min}m — it is throttling right now, whatever the verdict above says"
+      else
+        ok "container memory: the parent cgroup's memory.events high has not moved in the last ${elapsed_min}m (no throttling)"
+      fi
     fi
   fi
   events_tmp="$state_dir/.doctor-memory-events-high.$$"

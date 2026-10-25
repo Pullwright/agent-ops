@@ -2938,10 +2938,17 @@ assert_eq "the container-memory line always reports one of its verdicts" \
 # points doctor.sh's own read (lib/memory.sh's `memory_cgroup_parent_events_high`)
 # at a fixture rather than a real cgroup, and each run persists one sample to
 # state_dir so the next run can take a delta.
+# max_cgroup_throttle_per_minute: 0 keeps this block on the plain "any rise
+# at all" rule it has always asserted — a real elapsed time between two
+# subprocess runs is sub-second here, far too fast to assert a reliable
+# rate against a real per-minute threshold; the rate-threshold path
+# (requirement 2.0i) is asserted separately below, against a
+# manually-seeded state file rather than a real elapsed window, for exactly
+# that reason.
 events_state_dir="$tmp/events-state-dir"
 mkdir -p "$events_state_dir"
 events_config="$tmp/events-config.json"
-jq --arg sd "$events_state_dir" '.state_dir = $sd' "$base_config" > "$events_config"
+jq --arg sd "$events_state_dir" '.state_dir = $sd | .max_cgroup_throttle_per_minute = 0' "$base_config" > "$events_config"
 events_fixture="$tmp/parent-memory.events"
 
 run_doctor_events() {
@@ -2968,6 +2975,49 @@ printf 'low 0\nhigh 1500\nmax 0\noom 0\noom_kill 0\n' > "$events_fixture"
 out="$(run_doctor_events)"
 assert_contains "a flat delta is reported ok, not warned" \
   "[ ok ] container memory: the parent cgroup's memory.events high has not moved" "$out"
+
+# --- Memory: the parent-cgroup throttle rate agrees with the configured
+#     threshold (requirement 2.0i, agent-ops#2469) -------------------------
+#
+# A manually-seeded state file, 600s in the past, stands in for a real
+# elapsed window — approximately a 500-event rise over 600s, roughly 50/min
+# — asserted against two different thresholds rather than against two real
+# subprocess runs whose own real elapsed time is too fast (sub-second) to
+# assert a reliable per-minute rate against. The exact rate is deliberately
+# not asserted: the wall-clock time between seeding this file and doctor.sh's
+# own `date -u +%s` read is a few real seconds on a fast host and enough on a
+# loaded CI runner to floor the computed rate a notch below the nominal
+# value — the behaviour under test is the threshold comparison and wording,
+# not the precise arithmetic (test/memory.test.sh's own
+# memory_cgroup_throttle_rate_per_min assertions already pin that exactly,
+# against synthetic readings with no real clock involved).
+rate_state_dir="$tmp/rate-state-dir"
+mkdir -p "$rate_state_dir"
+rate_fixture="$tmp/rate-parent-memory.events"
+printf 'low 0\nhigh 1500\nmax 0\noom 0\noom_kill 0\n' > "$rate_fixture"
+rate_state_file="$rate_state_dir/.doctor-memory-events-high"
+printf '%s %s\n' "$(( $(date -u +%s) - 600 ))" "1000" > "$rate_state_file"
+
+run_doctor_rate() {
+  local threshold="$1" config="$2"
+  jq --arg sd "$rate_state_dir" --argjson t "$threshold" \
+    '.state_dir = $sd | .max_cgroup_throttle_per_minute = $t' "$base_config" > "$config"
+  env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH \
+    PATH="$stub_bin:$PATH" MEMORY_CGROUP_PARENT_EVENTS="$rate_fixture" \
+    bash "$DOCTOR" --config "$config" 2>&1
+}
+
+out="$(run_doctor_rate 10 "$tmp/rate-config-low.json")"
+assert_contains "a rate (~50/min) above a low threshold (10/min) warns, naming the rate" \
+  "the parent cgroup's memory.events high rose at" "$out"
+assert_contains "…and names the configured threshold" "above the 10/min this node allows" "$out"
+
+printf '%s %s\n' "$(( $(date -u +%s) - 600 ))" "1000" > "$rate_state_file"
+out="$(run_doctor_rate 10000 "$tmp/rate-config-high.json")"
+assert_contains "the same rate (~50/min) at or below a high threshold (10000/min) is reported ok" \
+  "[ ok ] container memory: the parent cgroup's memory.events high rate is" "$out"
+assert_contains "…naming the requirement 2.0i floor it stayed under" \
+  "requirement 2.0i floor of 10000/min" "$out"
 
 # --- shellcheck ---
 

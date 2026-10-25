@@ -1711,6 +1711,45 @@
         }
       }
     },
+    "max_cgroup_throttle_per_minute": {
+      "description": "The parent-cgroup throttle rate, in `memory.events` `high` events per minute, above which a node is standing in requirement 2.0i's sense (agent-ops#2469): the host-level `min_free_memory_bytes` floor (requirement 2.0f) cannot see a node whose *parent* cgroup is throttling it under `memory.high` while the host itself has memory free, because `/proc/meminfo` and the parent's own throttle counter measure two different things. Read via `lib/memory.sh`'s `memory_cgroup_throttle_rate_per_min`/`_verdict` against two samples of the parent's own `memory.events` `high` counter (`MEMORY_CGROUP_PARENT_EVENTS`), one kept in a gate-owned state file separate from `scripts/doctor.sh`'s own baseline. `scripts/doctor.sh` reads the same threshold for its own advisory warning, so the two cannot silently disagree about what \"throttling\" means. `0` turns the check off; a node with no parent window (the VM nodes' own `/dev/null` default), an unreadable window, or no previous reading never stands down on this check regardless of the threshold.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 10000,
+      "x-docs": {
+        "readme": "Events/minute. The parent cgroup's `memory.events` `high` throttle rate above which a cycle stands down (requirement 2.0i) — `0` turns the check off. `scripts/doctor.sh` warns on the same threshold.",
+        "spec": "The parent-cgroup throttle-rate floor of the pre-cycle stand-down (requirement 2.0i, agent-ops#2469): above this many `memory.events` `high` events per minute on the parent cgroup, the cycle stands down with cause `memory-throttled` before any model stage runs, the companion requirement 2.0f (the host's own `MemAvailable`) cannot see at all. `lib/memory.sh`'s `memory_cgroup_throttle_rate_per_min`/`_verdict` are the one place this rate is computed and judged; `scripts/doctor.sh` reads the same threshold for its own advisory warning, so the two cannot disagree about what \"throttling\" means. `0` disables the check.",
+        "value": {
+          "spec": "10,000 events/min"
+        }
+      }
+    },
+    "min_cgroup_headroom_bytes": {
+      "description": "The headroom this container's own `memory.current` must keep below the parent cgroup's `memory.high` before requirement 2.0i's stand-down also trips on level rather than rate — a secondary signal, off by default, for an installation whose workload does not separate a throttling wedge from ordinary noise as cleanly on the rate alone as the 2026-10-16 incident this requirement is built from did. `0` (the default) turns this half of the check off; `max_cgroup_throttle_per_minute`'s own rate check still runs regardless.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "x-docs": {
+        "readme": "Bytes. Secondary floor for requirement 2.0i: also stands the cycle down when this container's own `memory.current` sits within this many bytes of the parent's `memory.high`. `0` (the default) turns this half of the check off.",
+        "spec": "The near-ceiling floor of requirement 2.0i's stand-down (agent-ops#2469): below this many bytes of headroom between this container's own `memory.current` and the parent cgroup's `memory.high`, the cycle also stands down with cause `memory-throttled`, independently of `max_cgroup_throttle_per_minute`'s own rate check. `lib/memory.sh`'s `memory_cgroup_headroom_verdict` is the one place this is judged. `0`, the default, turns this half of the check off — the rate check alone governed the incident this requirement is built from, since `memory.current` kept falling back under the line between samples even while the node was throttling.",
+        "value": {
+          "spec": "0 (off)"
+        }
+      }
+    },
+    "memory_throttle_escalate_after": {
+      "description": "Consecutive cadence firings requirement 2.0i's stand-down may run — each one this node's own parent cgroup still throttling it — before the Script files an escalation issue (label `enabler_escalation_label`, assignee `enabler_assignee`, in `crash_loop_repo`), naming the `scripts/cgroup-parent-setup.sh` remedy: a sustained throttle band will not clear on its own, unlike the host-level floors this requirement sits beside. `0` turns the escalation off; the stand-down itself still runs regardless. Per node, not fleet-wide, since the throttle itself is a fact about one node's own host.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 3,
+      "x-docs": {
+        "readme": "Consecutive stand-downs on requirement 2.0i's own check before an escalation issue is filed, naming the `cgroup-parent-setup.sh` remedy; `0` turns the escalation off. Per node.",
+        "spec": "The escalation threshold of requirement 2.0i (agent-ops#2469), counted per node rather than fleet-wide, since the parent-cgroup throttle this check reads is a fact about one node's own host: once a node's own consecutive `memory-throttled` stand-down count reaches this, the Script files one escalation issue (`enabler_escalation_label`/`enabler_assignee`/`crash_loop_repo`) naming the `scripts/cgroup-parent-setup.sh` remedy — waiting will not clear a node that throttles while idle, unlike a transient resource dip. Retired automatically the next time this node's own check reads clean. `0` disables the escalation; the stand-down itself is governed by `max_cgroup_throttle_per_minute`/`min_cgroup_headroom_bytes` instead.",
+        "value": {
+          "spec": "3 consecutive firings"
+        }
+      }
+    },
     "host_budget_enforce": {
       "description": "Whether requirement 2.0g's host-budget check refuses to start a cycle when the declared container ceilings on this host overcommit it (issue #757), or only reports the figures. `false` (the default): the check always runs and the sum is always published in the host-facts record, but nothing stands down on it — an operator who knowingly overcommits a development box need not fight this key to keep working. `true`: an overcommit stands the cycle down with cause `host-overcommit`, the same as `min_free_workspace_bytes`/`min_free_memory_bytes` already do for disk and memory.",
       "type": "boolean",

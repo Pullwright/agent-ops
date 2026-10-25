@@ -7,6 +7,17 @@
 # can no longer silently disagree about what "low" means. It is the memory
 # counterpart of `lib/disk-space.sh`, deliberately the same shape.
 #
+# Requirement 2.0f reads the **host's** `MemAvailable` on purpose (see "Why
+# this exists" below) — which is exactly why it cannot see a node whose
+# *parent* cgroup is throttling it under `memory.high` while the host itself
+# has gigabytes free (agent-ops#2469): `lib/standdown.sh`'s own `_memory_
+# throttle_check` is the sibling stand-down this file also feeds,
+# `memory_cgroup_throttle_rate_per_min`/`_verdict`/`_describe` and
+# `memory_cgroup_headroom_verdict`/`_describe` below are its arithmetic, and
+# `scripts/doctor.sh`'s "throttling right now" warning reads the same rate
+# function against the same `max_cgroup_throttle_per_minute` threshold, so
+# the two cannot silently disagree about what "throttling" means either.
+#
 # ## Why this exists
 #
 # Requirement 2.0c stands a cycle down when `workspace_root` is short of
@@ -421,4 +432,129 @@ memory_cgroup_livelock_describe() {
 # cgroup-parent-setup.sh and picks up the new compose.yaml mounts.
 memory_cgroup_unconfirmed_describe() {
   printf 'this container'"'"'s parent cgroup has a memory.high ceiling, but its memory.max cannot be read from in here, so whether a hard ceiling would ever reclaim it is unmeasured, not confirmed ok — mount the parent'"'"'s memory.max (see deploy/docker/compose.yaml) and re-run scripts/cgroup-parent-setup.sh'
+}
+
+# --- The parent-cgroup throttle rate (agent-ops#2469) -----------------------
+#
+# `memory_cgroup_verdict` above answers "is anything bounded, and will it
+# ever disengage" from the shape of the ceilings alone — it says nothing
+# about whether the parent is throttling *right now*. A node can sit
+# `parented`, with every ceiling correctly shaped, and still spend minutes at
+# a stretch parked under `memory.high`'s reclaim if the workload simply asks
+# for more than the ceiling allows: `doctor.sh` has warned on a bare
+# `memory.events` `high` delta since before this file's own stand-down
+# existed, but nothing stood a cycle down on it, and nothing distinguished a
+# brief, harmless reclaim pass from the sustained band that stalls a model
+# stage until the inactivity watchdog kills it (one measured firing,
+# `ockham-2`, 2026-09-15T18:45Z; `kill_reason: inactivity` is itself the
+# downstream cost, agent-ops#2382/#1634).
+#
+# The counter is cumulative since the parent cgroup was created (the same
+# property `memory_cgroup_parent_events_high`'s own header already states),
+# so every reader here compares two samples rather than one absolute value.
+
+# memory_cgroup_throttle_rate_per_min CURRENT_HIGH CURRENT_TS PREV_HIGH PREV_TS
+# The parent's own `memory.events` `high` counter's rise, in events per
+# minute, between two readings (CURRENT_TS/PREV_TS are Unix epoch seconds) —
+# or empty, never `0`, when there is no evidence to compute a rate from:
+# CURRENT_HIGH unreadable (no parent window at all — the VM nodes' own
+# `/dev/null` default), PREV_HIGH/PREV_TS unreadable (no previous reading —
+# a fresh node, or a gate-owned state file not yet written), or an elapsed
+# time that is not strictly positive (clock skew, or two readings taken in
+# the same second). A counter that reads *lower* than the previous sample —
+# the parent cgroup was recreated under it, which resets `memory.events` to
+# zero — is floored to a delta of `0` rather than read as a negative rate:
+# the recreation itself is not evidence of throttling, and nothing here
+# tries to make it one.
+memory_cgroup_throttle_rate_per_min() {
+  local current_high="${1:-}" current_ts="${2:-}" prev_high="${3:-}" prev_ts="${4:-}"
+  [[ "$current_high" =~ ^[0-9]+$ ]] || { printf ''; return 0; }
+  [[ "$prev_high" =~ ^[0-9]+$ && "$prev_ts" =~ ^[0-9]+$ && "$current_ts" =~ ^[0-9]+$ ]] \
+    || { printf ''; return 0; }
+  local elapsed=$(( current_ts - prev_ts ))
+  (( elapsed > 0 )) || { printf ''; return 0; }
+  local delta=$(( current_high - prev_high ))
+  (( delta < 0 )) && delta=0
+  printf '%d' $(( delta * 60 / elapsed ))
+}
+
+# memory_cgroup_throttle_verdict CURRENT_HIGH CURRENT_TS PREV_HIGH PREV_TS MAX_PER_MIN
+# "throttling" when the rate `memory_cgroup_throttle_rate_per_min` computes
+# over the same four readings exceeds MAX_PER_MIN; "ok" when it does not.
+# Empty — never a verdict standing anything down on a guess, the same "no
+# evidence is not evidence" reasoning `memory_verdict` and `disk_space_
+# verdict` already rest on — whenever the rate itself is empty, or MAX_PER_MIN
+# is `0`/unset/non-numeric (the off switch).
+memory_cgroup_throttle_verdict() {
+  local current_high="${1:-}" current_ts="${2:-}" prev_high="${3:-}" prev_ts="${4:-}" \
+    max_per_min="${5:-0}" rate
+  [[ "$max_per_min" =~ ^[0-9]+$ ]] || max_per_min=0
+  (( max_per_min > 0 )) || { printf ''; return 0; }
+  rate="$(memory_cgroup_throttle_rate_per_min "$current_high" "$current_ts" "$prev_high" "$prev_ts")"
+  [[ "$rate" =~ ^[0-9]+$ ]] || { printf ''; return 0; }
+  if (( rate > max_per_min )); then
+    printf 'throttling'
+  else
+    printf 'ok'
+  fi
+}
+
+# memory_cgroup_throttle_describe RATE MAX_PER_MIN ELAPSED_MIN
+# The one-line reason both the `memory-throttled` stand-down event and
+# `doctor.sh`'s own warning use, naming the measured rate against the
+# configured threshold and the window it was measured over, plus this
+# cgroup's own `memory.current` against the parent's `memory.high` — the two
+# figures that answer "how close is this to the band that wedged
+# ockham-container for 75 minutes" (agent-ops#1305) without a reader having
+# to go compute them by hand.
+memory_cgroup_throttle_describe() {
+  local rate="${1:-0}" max_per_min="${2:-0}" elapsed_min="${3:-0}" current parent_high
+  [[ "$rate" =~ ^[0-9]+$ ]] || rate=0
+  [[ "$max_per_min" =~ ^[0-9]+$ ]] || max_per_min=0
+  [[ "$elapsed_min" =~ ^[0-9]+$ ]] || elapsed_min=0
+  current="$(memory_cgroup_field memory.current)"
+  parent_high="$(memory_cgroup_parent_high)"
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  [[ "$parent_high" =~ ^[0-9]+$ ]] || parent_high=0
+  printf 'the parent cgroup'"'"'s memory.events high rose at %d/min over the last %dm, above the %d/min this node allows (max_cgroup_throttle_per_minute) — holding %d MiB against the parent'"'"'s %d MiB memory.high' \
+    "$rate" "$elapsed_min" "$max_per_min" $(( current / 1048576 )) $(( parent_high / 1048576 ))
+}
+
+# memory_cgroup_headroom_verdict CURRENT_BYTES PARENT_HIGH_BYTES MIN_HEADROOM_BYTES
+# "near-ceiling" when the gap between the parent's own `memory.high` and this
+# cgroup's own `memory.current` is below MIN_HEADROOM_BYTES; "ok" when it is
+# not. Empty under the same "no evidence" rule `memory_cgroup_throttle_
+# verdict` follows: MIN_HEADROOM_BYTES `0`/unset/non-numeric (the off
+# switch, and this check's own default), or either reading unavailable —
+# PARENT_HIGH_BYTES empty or `max` (no parent ceiling to measure a gap
+# against) or CURRENT_BYTES unreadable. Measured on 2026-10-16: the rate
+# above separated a genuine wedge from ordinary noise more cleanly than the
+# level did, because `memory.current` keeps falling back under the line
+# between samples even while the node is throttling — this is the secondary
+# signal for an installation where that is not true of its own workload.
+memory_cgroup_headroom_verdict() {
+  local current="${1:-}" parent_high="${2:-}" min_headroom="${3:-0}" headroom
+  [[ "$min_headroom" =~ ^[0-9]+$ ]] || min_headroom=0
+  (( min_headroom > 0 )) || { printf ''; return 0; }
+  [[ "$current" =~ ^[0-9]+$ && "$parent_high" =~ ^[0-9]+$ ]] || { printf ''; return 0; }
+  headroom=$(( parent_high - current ))
+  if (( headroom < min_headroom )); then
+    printf 'near-ceiling'
+  else
+    printf 'ok'
+  fi
+}
+
+# memory_cgroup_headroom_describe CURRENT_BYTES PARENT_HIGH_BYTES MIN_HEADROOM_BYTES
+# The one-line reason the `memory-throttled` stand-down event uses when it is
+# `memory_cgroup_headroom_verdict`, rather than the rate, that tripped —
+# naming what is held, the parent's own ceiling, and the configured floor so
+# a reader never has to subtract the three by hand.
+memory_cgroup_headroom_describe() {
+  local current="${1:-0}" parent_high="${2:-0}" min_headroom="${3:-0}"
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  [[ "$parent_high" =~ ^[0-9]+$ ]] || parent_high=0
+  [[ "$min_headroom" =~ ^[0-9]+$ ]] || min_headroom=0
+  printf 'this container holds %d MiB, within %d MiB of the parent cgroup'"'"'s %d MiB memory.high (the %d MiB min_cgroup_headroom_bytes floor)' \
+    $(( current / 1048576 )) $(( (parent_high - current) / 1048576 )) $(( parent_high / 1048576 )) $(( min_headroom / 1048576 ))
 }
