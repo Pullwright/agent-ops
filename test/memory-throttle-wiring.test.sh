@@ -62,7 +62,7 @@ if ! grep -q '^memory_throttle_check()' "$STANDDOWN"; then
   exit 1
 fi
 
-# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC] [EVENTS_HIGH]
+# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC] [EVENTS_HIGH] [SEED_FILE]
 # Sources the real lib/standdown.sh (which only defines functions; nothing in
 # it executes at source time) into a fresh subshell, stubs every dependency
 # memory_throttle_check and _memory_throttle_escalate reach for, seeds the
@@ -86,15 +86,25 @@ fi
 # (default "600", a readable window); passing "" simulates the window being
 # unreadable while memory.current/memory.high (headroom) still resolve —
 # the agent-ops#2655 shape.
+#
+# SEED_FILE, when given, is copied in as the pre-existing state file
+# verbatim instead of the synthesized "1000\t500\t<PREV_CONSECUTIVE>" line —
+# the actual bytes an earlier run_check call left at $mt_state_path, so a
+# round-trip test can feed one real call's own write into the next real
+# call's own read, exactly as two consecutive cycles would, rather than
+# bypassing the write/read boundary the way a synthesized line does.
 calls_file="$tmp_dir/calls"
 mt_state_path="$tmp_dir/state/.memory-cgroup-throttle-state"
 run_check() {
   local throttle_verdict="$1" headroom_verdict="$2" escalate_after="$3" \
-    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}" events_high="${7-600}"
+    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}" events_high="${7-600}" \
+    seed_file="${8:-}"
   local state_dir="$tmp_dir/state"
   rm -rf "$state_dir"; mkdir -p "$state_dir"
   : > "$calls_file"
-  if (( prev_consecutive > 0 )); then
+  if [[ -n "$seed_file" ]]; then
+    cp "$seed_file" "$state_dir/.memory-cgroup-throttle-state"
+  elif (( prev_consecutive > 0 )); then
     printf '1000\t500\t%s\n' "$prev_consecutive" > "$state_dir/.memory-cgroup-throttle-state"
   fi
   (
@@ -307,12 +317,43 @@ assert_eq "a clean headroom-only reading (events unreadable) still persists the 
   "0" "$(cut -f3 "$mt_state_path")"
 assert_eq "…and still calls the retirement function despite the unreadable events window" \
   "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
-assert_eq "…writing an empty rate-baseline field rather than skipping the write entirely" \
-  "" "$(cut -f2 "$mt_state_path")"
+assert_eq "…writing a non-numeric sentinel rate-baseline field rather than skipping the write entirely" \
+  "-" "$(cut -f2 "$mt_state_path")"
 
 rc="$(run_check ok near-ceiling 0 0 0 0 "")"
 assert_eq "a fresh near-ceiling verdict (events unreadable) still persists the incremented count" \
   "1" "$(cut -f3 "$mt_state_path")"
+
+# --- round trip: a persisted sentinel field survives the next cycle's own
+#     read (agent-ops#2667 review) ---------------------------------------
+#
+# `IFS=$'\t' read` treats tab as IFS whitespace, so two adjacent tabs around
+# an *empty* middle field collapse: the count shifts left into the
+# rate-baseline variable and the consecutive count falls back to 0. The
+# assertions above only inspect the written file with `cut`, which preserves
+# empty fields and so never exercises this — the bug is entirely in the
+# read, not the write. This feeds one call's own state-file write straight
+# into a second real call's own read, the way two consecutive cycles would,
+# to prove the consecutive count a sustained near-ceiling run persists is
+# the same count the next cycle actually reads back, not a value reset by
+# the collapse.
+rc="$(run_check ok near-ceiling 5 0 0 0 "")"
+assert_eq "first near-ceiling firing (events unreadable) persists consecutive=1" \
+  "1" "$(cut -f3 "$mt_state_path")"
+seed_copy="$tmp_dir/seed-from-cycle-1"
+cp "$mt_state_path" "$seed_copy"
+
+rc="$(run_check ok near-ceiling 5 0 0 0 "" "$seed_copy")"
+assert_eq "a second near-ceiling firing reads cycle 1's own persisted count back, not 0" \
+  "2" "$(cut -f3 "$mt_state_path")"
+seed_copy="$tmp_dir/seed-from-cycle-2"
+cp "$mt_state_path" "$seed_copy"
+
+rc="$(run_check ok ok 2 0 0 0 "" "$seed_copy")"
+assert_eq "…so a clean reading on cycle 3 still clears the correctly round-tripped count" \
+  "0" "$(cut -f3 "$mt_state_path")"
+assert_eq "…and still reaches retirement, since cycle 2's own count (2) met escalate_after (2)" \
+  "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
 
 echo
 if (( failures == 0 )); then
