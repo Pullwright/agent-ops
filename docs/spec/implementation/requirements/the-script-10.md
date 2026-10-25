@@ -476,12 +476,18 @@
     every node down after the operator believes they have resumed; naming a
     provider deletes the flag only when the flag's own current record already
     names that provider, leaving a different or wildcard record untouched.
-    A wildcard record left that way is reported rather than passed over,
-    because requirement 2.1's "a record without a provider applies to every
-    provider" rule means it still holds the named provider down: the command
-    warns that the stand-down was *not* fully lifted and names the bare
-    `--clear-limit` that can delete it, the flag having no way to express
-    "every provider but this one". The reason is
+    A scoped clear then re-reads both carriers for that provider rather than
+    inferring success from what it wrote, and warns that the stand-down is
+    *not* lifted when one still holds it down, naming the bare
+    `--clear-limit` that can clear it. That is not a defensive extra: a
+    wildcard record — carrying no `provider`, as every record before issue
+    #2133 does — governs every provider by requirement 2.1's "a record
+    without one applies to every provider" rule, and *neither* carrier can
+    express "every provider but this one", so a scoped clear genuinely
+    cannot lift one. The union's `limit-cleared` resets only the named
+    provider's own bucket and leaves the wildcard bucket standing; the flag
+    is left in place by the rule just above. Reporting that as lifted is the
+    failure this command exists to end. The reason is
     optional, unlike `--disable`'s: a stand-down being lifted is
     self-explanatory in a way one being imposed is not.
 

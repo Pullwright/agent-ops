@@ -1581,22 +1581,41 @@ assert_eq "--clear-limit rejects a two-token form whose first token names no pro
   "64" "$?"
 assert_contains "...saying which token it objected to" 'is not a configured provider' "$clear_bad_out"
 
-# A wildcard flag record — no `provider` field at all, as every record
-# written before #2133 is — governs every provider (limit_flag_record_for),
-# so a scoped clear that leaves it in place has NOT lifted that provider's
-# stand-down. The flag holds one record and cannot express "every provider
-# but this one", so it is deliberately left alone; the operator must be told
-# so rather than reading "stand-down lifted" and walking away.
+# A wildcard record — no `provider` field at all, as every record written
+# before #2133 is — governs every provider, and NEITHER carrier can express
+# "every provider but this one": the union's scoped `limit-cleared` resets
+# only that provider's own bucket and leaves the wildcard bucket standing,
+# and the flag is left alone rather than deleted out from under whichever
+# other provider it covers. So a scoped clear genuinely does not lift it,
+# and the operator must be told that rather than reading "stand-down lifted"
+# and walking away. Asserted on each carrier separately, because the check
+# re-reads the carriers rather than inferring from what it wrote — a check
+# keyed on the flag alone would miss the union-only case entirely.
 printf '%s\n' '{"resume_at":"2030-01-01T00:00:00Z","class":"monthly-spend","reset_known":true,"kind":"auto","actor":"node-a"}' \
   > "$gh_backing/fleet/limit.json"
 clear_wild_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
-assert_contains "a scoped --clear-limit warns that a wildcard flag record still governs the provider" \
-  'carries a fleet-wide record' "$clear_wild_out"
-assert_contains "...and says plainly the stand-down was not fully lifted" \
-  'NOT fully lifted' "$clear_wild_out"
+assert_contains "a scoped --clear-limit reports a wildcard flag record as NOT lifted" \
+  'is NOT lifted' "$clear_wild_out"
+assert_contains "...naming the bare --clear-limit that can remove it" \
+  'with no provider' "$clear_wild_out"
 assert_eq "...leaving fleet/limit.json in place rather than clearing another provider's too" "1" \
   "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
 rm -f "$gh_backing/fleet/limit.json"
+
+# The same refusal, carried by the log union alone with no flag at all: a
+# pre-#2133 limit-hit still sitting in the log. The flag-only form of this
+# check reported success here, which is why it is re-read from the carriers.
+printf '%s\n' \
+  '{"ts":"2026-01-02T00:00:00Z","cycle":"seed","node":"node-b","event":"limit-hit","resume_at":"2031-01-01T00:00:00Z","class":"monthly","reset_known":true}' \
+  >> "$b_log"
+clear_union_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
+assert_contains "a scoped --clear-limit reports a wildcard *union* record as NOT lifted too" \
+  'is NOT lifted' "$clear_union_out"
+assert_contains "...naming the resume time still in force" '2031-01-01T00:00:00Z' "$clear_union_out"
+# And the bare form, which writes a wildcard limit-cleared, does lift it.
+clear_all_out="$(run_node "$b_home" agent-cycle.sh --clear-limit 2>&1)"
+assert_contains "while the bare --clear-limit lifts that same wildcard record" \
+  'stand-down lifted' "$clear_all_out"
 
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing

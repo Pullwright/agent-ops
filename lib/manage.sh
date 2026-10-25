@@ -711,23 +711,11 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # the flag holds exactly one record and clearing one provider must not
       # silently clear whichever other provider the flag happened to be
       # carrying (limit_flag_record_for's own header).
-      #
-      # A *wildcard* record — one carrying no `provider` at all, from before
-      # issue #2133 — is the one case worth telling the operator about rather
-      # than passing over in silence: `limit_flag_record_for` makes it govern
-      # every provider, so leaving it in place leaves this provider standing
-      # down after a clear that reported success. The flag cannot express
-      # "every provider but this one", so the clear stays conservative and
-      # the operator is pointed at the bare `--clear-limit` that can.
       clear_flag=1
-      flag_wildcard=0
       if [[ -n "$CLEAR_LIMIT_PROVIDER" && -n "$state_repo" ]]; then
-        flag_raw="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
-        flag_provider="$(jq -r '.provider // empty' <<<"$flag_raw" 2>/dev/null || true)"
-        if [[ "$flag_provider" != "$CLEAR_LIMIT_PROVIDER" ]]; then
-          clear_flag=0
-          [[ -n "$flag_raw" && -z "$flag_provider" ]] && flag_wildcard=1
-        fi
+        flag_provider="$(jq -r '.provider // empty' \
+          <<<"$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" 2>/dev/null || true)"
+        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" ]] || clear_flag=0
       fi
       if [[ -n "$state_repo" ]]; then
         if (( clear_flag )); then
@@ -740,17 +728,41 @@ if [[ -n "$MANAGE_ACTION" ]]; then
           else
             printf 'agent-cycle: WARNING — could not clear fleet/limit.json; peers reading it live still stand down. Re-run --clear-limit, or delete fleet/limit.json in %s by hand.\n' "$state_repo" >&2
           fi
-        elif (( flag_wildcard )); then
-          printf 'agent-cycle: WARNING — fleet/limit.json carries a fleet-wide record (no provider named), which still stands %s down and cannot be narrowed to spare the other providers. It is left in place: re-run "agent-cycle.sh --clear-limit" with no provider to delete it, or delete fleet/limit.json in %s by hand.\n' \
-            "$CLEAR_LIMIT_PROVIDER" "$state_repo" >&2
         elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
-          printf 'agent-cycle: fleet/limit.json does not currently govern %s — nothing to clear there; the log union carries the clear regardless\n' "$CLEAR_LIMIT_PROVIDER"
+          printf 'agent-cycle: fleet/limit.json does not name %s — it is left in place; whether %s is still held down is reported below\n' \
+            "$CLEAR_LIMIT_PROVIDER" "$CLEAR_LIMIT_PROVIDER"
         fi
       fi
 
-      if (( flag_wildcard )); then
-        printf 'agent-cycle: usage-limit stand-down for %s NOT fully lifted — the log union is cleared, but the fleet-wide fleet/limit.json record above still holds it down\n' \
-          "$CLEAR_LIMIT_PROVIDER" >&2
+      # Did the clear actually work? Asked of the carriers themselves rather
+      # than inferred from what was written to them, because a *scoped* clear
+      # has one case where both carriers legitimately refuse it: a wildcard
+      # record — no `provider` field at all, as every record written before
+      # issue #2133 is — governs every provider by the "a record without one
+      # applies to every provider" rule, and neither carrier can express
+      # "every provider but this one". The union's `limit-cleared` resets only
+      # this provider's own bucket, leaving the wildcard bucket standing; the
+      # flag is left alone by the guard above. So the stand-down survives a
+      # clear that otherwise reports success — which is the exact failure this
+      # command exists to end, and the reason it is re-read here instead of
+      # trusted. Only the scoped form can hit it: a bare `--clear-limit`
+      # writes a wildcard `limit-cleared` and deletes the flag outright.
+      if [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+        still="$(current_limit_record_for "$CLEAR_LIMIT_PROVIDER")"
+        still_at="$(jq -r '.resume_at // empty' <<<"${still:-{\}}" 2>/dev/null || true)"
+        still_epoch=0
+        if [[ -n "$still_at" ]]; then
+          still_epoch="$(date -d "$still_at" +%s 2>&1)" \
+            || { guard_warn "clear_limit:still_epoch" "$still_epoch"; still_epoch=0; }
+        fi
+      else
+        still_at=""
+        still_epoch=0
+      fi
+
+      if (( still_epoch > $(date +%s) )); then
+        printf 'agent-cycle: WARNING — the usage-limit stand-down for %s is NOT lifted: a fleet-wide record naming no provider still holds it down until %s, and a clear scoped to one provider cannot remove it. Re-run "agent-cycle.sh --clear-limit" with no provider to clear every provider at once.\n' \
+          "$CLEAR_LIMIT_PROVIDER" "$still_at" >&2
       elif [[ -n "$was" ]]; then
         printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)%s\n' "$was" \
           "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
