@@ -472,9 +472,17 @@
     dedup against nothing, re-filing on every later round.
     `lib/merge-budget.sh`'s freeze escalation (requirement 2.3c) carries the
     same footer but is not filed through this route: it cannot reach this
-    function from where it lives, so it inlines its own copy of the guard and
-    calls `gh issue create` itself, and that copy matches on the bare
-    reference rather than the delimited token. Otherwise
+    function from where it lives (`create_escalation_issue` reads cycle-scoped
+    globals — `cycle_dir`, `enabler_assignee` — that `lib/merge-budget.sh`'s
+    non-cycle callers, `scripts/doctor.sh` and `scripts/publish-dashboard.sh`,
+    have no cycle to supply), so it calls `gh issue create` itself rather than
+    this function. Its duplicate guard, though, is the same
+    `escalation_dedup_match` (`lib/escalation-dedup.sh`) this function's own
+    guard above calls — a shared predicate with no cycle-scoped globals of its
+    own, so both files can source it — rather than a second, independently
+    drifting copy (agent-ops#2669): the same delimited-token match, the same
+    label-then-label-less fallback, the same `pw::decision`/question-issue
+    exclusions. Otherwise
     `gh issue create` in
     the item's own repo with that label **and** `--assignee` set to
     `enabler_assignee`, retried once without the label so a repo where the
