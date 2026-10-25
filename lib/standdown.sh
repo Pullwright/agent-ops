@@ -651,11 +651,14 @@ fi
 # by bare model ids, never by a config key's own name, so a handle can only
 # ever miss or coincidentally hit here; picking a member on PROVIDER out of a
 # mixed-provider set is tracked separately (agent-ops#2683) rather than
-# guessed at in this conflict resolution. Prints nothing, and returns
-# non-zero, when no configured model resolves to PROVIDER at all — which
-# cannot happen for a provider this system itself just froze (some model's
-# own launch is what proved it frozen), but a caller still checks rather than
-# assuming.
+# guessed at in this conflict resolution. Always prints something: no
+# configured model resolving to PROVIDER cannot happen for a provider this
+# system itself just froze (some model's own launch is what proved it
+# frozen), so rather than give the 2.1b call site below a third "could not
+# even try" outcome to handle, the one truly impossible case falls back to
+# `implementer_model_trivial` itself — the same model every install before
+# this issue always probed with, which answers nothing new about PROVIDER but
+# costs no more than the probe this replaces ever did.
 limit_probe_model_for() {
   local provider="$1" m
   for m in "$implementer_model_trivial" "$implementer_model_default" \
@@ -669,7 +672,7 @@ limit_probe_model_for() {
       return 0
     fi
   done
-  return 1
+  printf '%s' "$implementer_model_trivial"
 }
 
 _standdown_usage_limit_cooldown() {
@@ -774,12 +777,10 @@ if (( resume_epoch > now_epoch )); then
     # if that model itself resolves to anthropic. limit_probe_model_for scans
     # every model this cycle resolved for the first on $check_provider,
     # $implementer_model_trivial itself first — so a single-provider install
-    # probes exactly the model it always has. No configured model resolving
-    # to $check_provider cannot happen for a provider this cycle just proved
-    # frozen (some model's own launch is what proved it), but the probe is
-    # skipped rather than guessed at if it ever does.
-    probe_model="$(limit_probe_model_for "${check_provider:-anthropic}")" || probe_model=""
-    if [[ -n "$probe_model" ]]; then
+    # probes exactly the model it always has (its own header explains why it
+    # always prints something rather than ever requiring a "no model to
+    # probe with" branch here).
+    probe_model="$(limit_probe_model_for "${check_provider:-anthropic}")"
     # Drawn once, before the lane (issue #2247) — see the identical comment
     # on the credential probe above. limit_probe_model_for above never
     # returns a weighted-set handle (its own header explains why), so this
@@ -853,9 +854,6 @@ if (( resume_epoch > now_epoch )); then
         probe_note=" (probe: inconclusive)"
         ;;
     esac
-    else
-      probe_note=" (probe: no configured model resolves to ${check_provider:-anthropic}, so none ran)"
-    fi
   fi
   if (( standing )); then
     if [[ "$governing_kind" == "manual" ]]; then

@@ -63,6 +63,18 @@ call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
 log_event() { printf '%s\t%s\n' "$1" "$2" >> "$call_log"; }
 
+# The extracted block's own first line now resolves the probe model through
+# `limit_probe_model_for` (issue #2135, lib/standdown.sh) rather than always
+# reading `implementer_model_trivial` directly; this stub stands in for it
+# the same way `run_model_stage` below stands in for a real launch — this
+# test is about the stage-end block's own shape, not about which provider's
+# model that resolver picks (test/limit-detect.test.sh and
+# test/guard-degradation.test.sh cover provider scoping directly), so it
+# always returns the same `implementer_model_trivial` every install before
+# that issue probed with.
+# shellcheck disable=SC2154  # set by run_probe's own env-prefixed eval, below
+limit_probe_model_for() { printf '%s' "$implementer_model_trivial"; }
+
 # The stub stands in for a real run_model_stage launch: it writes a stage
 # envelope and sets the two caller-visible globals a real run leaves (gaps,
 # lane), exactly as lib/stage-run.sh's own run_model_stage does — this test

@@ -1532,7 +1532,7 @@ rm -f "$b_log"
 run_node "$b_home" agent-cycle.sh >/dev/null 2>&1
 assert_eq "a cycle under a fleet limit flag exits cleanly" "0" "$?"
 assert_contains "and stands down until the flag's resume_at" \
-  'usage-limit cooldown until 2030-01-01T00:00:00Z' "$(cat "$b_log" 2>/dev/null)"
+  'usage-limit cooldown (anthropic) until 2030-01-01T00:00:00Z' "$(cat "$b_log" 2>/dev/null)"
 
 # --- --clear-limit (2.1a) -------------------------------------------------
 # The stand-down must have a supported exit. It arrives on two carriers and
@@ -1692,7 +1692,7 @@ rm -f "$b_log"
 run_node "$b_home" agent-cycle.sh >/dev/null 2>&1
 assert_eq "a cycle under a manual limit flag exits cleanly" "0" "$?"
 assert_contains "a manual stand-down names its actor and kind" \
-  'manual stand-down until 2030-03-01T00:00:00Z, set by warwick@laptop' \
+  'manual stand-down (anthropic) until 2030-03-01T00:00:00Z, set by warwick@laptop' \
   "$(cat "$b_log" 2>/dev/null)"
 assert_not_contains "a manual stand-down is never probed" \
   '(probe:' "$(cat "$b_log" 2>/dev/null)"
