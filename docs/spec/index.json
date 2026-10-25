@@ -3837,183 +3837,183 @@
       "kind": "impl",
       "label": "9",
       "anchor": "impl-9",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 516,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 5,
       "title": "Failure handling."
     },
     "IMPL 9a": {
       "kind": "impl",
       "label": "9a",
       "anchor": "impl-9a",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 546,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 35,
       "title": "A reported verdict is not a failure."
     },
     "IMPL 9b": {
       "kind": "impl",
       "label": "9b",
       "anchor": "impl-9b",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 554,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 43,
       "title": "`blocked` and `void` are different states and must not share one."
     },
     "IMPL 9c": {
       "kind": "impl",
       "label": "9c",
       "anchor": "impl-9c",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 580,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 69,
       "title": "A signal is a failure with a record."
     },
     "IMPL 9d": {
       "kind": "impl",
       "label": "9d",
       "anchor": "impl-9d",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 610,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 99,
       "title": "Visible attribution."
     },
     "IMPL 9e": {
       "kind": "impl",
       "label": "9e",
       "anchor": "impl-9e",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 643,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 132,
       "title": "Salvage before discard."
     },
     "IMPL 9f": {
       "kind": "impl",
       "label": "9f",
       "anchor": "impl-9f",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 698,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 187,
       "title": "`needs-refinement` is the Implementer's own escape hatch, and a third"
     },
     "IMPL 9g": {
       "kind": "impl",
       "label": "9g",
       "anchor": "impl-9g",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 735,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 224,
       "title": "A stage killed abruptly states, in its own comment, whether it"
     },
     "IMPL 10": {
       "kind": "impl",
       "label": "10",
       "anchor": "impl-10",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 787,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 276,
       "title": "Usage-limit detection."
     },
     "IMPL 11": {
       "kind": "impl",
       "label": "11",
       "anchor": "impl-11",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 836,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 325,
       "title": "Cleanup."
     },
     "IMPL 11a": {
       "kind": "impl",
       "label": "11a",
       "anchor": "impl-11a",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 841,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 330,
       "title": "Overrun-slot skips"
     },
     "IMPL 12": {
       "kind": "impl",
       "label": "12",
       "anchor": "impl-12",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 952,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 441,
       "title": "Flags."
     },
     "IMPL 13": {
       "kind": "impl",
       "label": "13",
       "anchor": "impl-13",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 987,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 476,
       "title": "The Script must pass `shellcheck` and must set its own `PATH` explicitly"
     },
     "IMPL 67": {
       "kind": "impl",
       "label": "67",
       "anchor": "impl-67",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 992,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 481,
       "title": "Finish-then-continue"
     },
     "IMPL 68": {
       "kind": "impl",
       "label": "68",
       "anchor": "impl-68",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1058,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 547,
       "title": "A pending image roll overrides the chain, and widens the gap at every"
     },
     "IMPL 17d": {
       "kind": "impl",
       "label": "17d",
       "anchor": "impl-17d",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1147,
+      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "line": 636,
       "title": "Race-loss observability"
     },
     "IMPL 54": {
       "kind": "impl",
       "label": "54",
       "anchor": "impl-54",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1173,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 5,
       "title": "Wake-poll: an event-driven wake between cron firings (D14, issue"
     },
     "IMPL 57": {
       "kind": "impl",
       "label": "57",
       "anchor": "impl-57",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1324,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 156,
       "title": "Liveness: is supercronic still firing this node's jobs at all (issue"
     },
     "IMPL 58": {
       "kind": "impl",
       "label": "58",
       "anchor": "impl-58",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1342,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 174,
       "title": "Readiness: could a cycle start now."
     },
     "IMPL 58a": {
       "kind": "impl",
       "label": "58a",
       "anchor": "impl-58a",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1374,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 206,
       "title": "No network call beyond the one exempt read, and no live fetch of"
     },
     "IMPL 59": {
       "kind": "impl",
       "label": "59",
       "anchor": "impl-59",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1430,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 262,
       "title": "Health: is this node doing its job over time, composed from named"
     },
     "IMPL 59a": {
       "kind": "impl",
       "label": "59a",
       "anchor": "impl-59a",
-      "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1452,
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 284,
       "title": "`updater` and `image` component mappings."
     },
     "IMPL 60": {
       "kind": "impl",
       "label": "60",
       "anchor": "impl-60",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 5,
       "title": "The CLI surface: `scripts/node-health.sh`."
     },
@@ -4021,7 +4021,7 @@
       "kind": "impl",
       "label": "60a",
       "anchor": "impl-60a",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 18,
       "title": "Read-only throughout."
     },
@@ -4029,7 +4029,7 @@
       "kind": "impl",
       "label": "60b",
       "anchor": "impl-60b",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 41,
       "title": "The three verdicts genuinely diverge, from one CLI, in one"
     },
@@ -4037,7 +4037,7 @@
       "kind": "impl",
       "label": "60c",
       "anchor": "impl-60c",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 50,
       "title": "The container-runtime healthcheck runs the identical CLI."
     },
@@ -4045,7 +4045,7 @@
       "kind": "impl",
       "label": "60d",
       "anchor": "impl-60d",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 60,
       "title": "The HTTP surface is a second front over the identical"
     },
@@ -4053,7 +4053,7 @@
       "kind": "impl",
       "label": "60e",
       "anchor": "impl-60e",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 91,
       "title": "`--metrics`' field list is the node metrics shape"
     },
@@ -4061,7 +4061,7 @@
       "kind": "impl",
       "label": "60f",
       "anchor": "impl-60f",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 112,
       "title": "New config keys, documented and rendered."
     },
@@ -4069,7 +4069,7 @@
       "kind": "impl",
       "label": "69",
       "anchor": "impl-69",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 125,
       "title": "A missed CI trigger is detected and retried at the push itself, not"
     },
@@ -4077,7 +4077,7 @@
       "kind": "impl",
       "label": "69a",
       "anchor": "impl-69a",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 152,
       "title": "At most one retrigger per head commit, and advisory throughout."
     },
@@ -4085,7 +4085,7 @@
       "kind": "impl",
       "label": "69b",
       "anchor": "impl-69b",
-      "file": "docs/spec/implementation/requirements/the-script-10.md",
+      "file": "docs/spec/implementation/requirements/the-script-12.md",
       "line": 175,
       "title": "Never computed in the Implementer's own clone."
     },
@@ -4093,7 +4093,7 @@
       "kind": "impl",
       "label": "8d",
       "anchor": "impl-8d",
-      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "file": "docs/spec/implementation/requirements/the-script-13.md",
       "line": 5,
       "title": "The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410)."
     },
