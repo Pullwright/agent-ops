@@ -62,7 +62,7 @@ if ! grep -q '^memory_throttle_check()' "$STANDDOWN"; then
   exit 1
 fi
 
-# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC]
+# run_check THROTTLE_VERDICT HEADROOM_VERDICT ESCALATE_AFTER PREV_CONSECUTIVE [DRY_RUN] [RETIRE_RC] [EVENTS_HIGH]
 # Sources the real lib/standdown.sh (which only defines functions; nothing in
 # it executes at source time) into a fresh subshell, stubs every dependency
 # memory_throttle_check and _memory_throttle_escalate reach for, seeds the
@@ -81,11 +81,16 @@ fi
 # behind is readable at $mt_state_path afterwards, which is what the
 # retry-reachability assertions below read: the count persisted there is the
 # only thing that ever brings a later cycle back to a forfeited close.
+#
+# EVENTS_HIGH stands in for the parent's own memory.events `high` reading
+# (default "600", a readable window); passing "" simulates the window being
+# unreadable while memory.current/memory.high (headroom) still resolve —
+# the agent-ops#2655 shape.
 calls_file="$tmp_dir/calls"
 mt_state_path="$tmp_dir/state/.memory-cgroup-throttle-state"
 run_check() {
   local throttle_verdict="$1" headroom_verdict="$2" escalate_after="$3" \
-    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}"
+    prev_consecutive="$4" dry_run="${5:-0}" retire_rc="${6:-0}" events_high="${7-600}"
   local state_dir="$tmp_dir/state"
   rm -rf "$state_dir"; mkdir -p "$state_dir"
   : > "$calls_file"
@@ -95,7 +100,7 @@ run_check() {
   (
     set -euo pipefail
     export THROTTLE_VERDICT="$throttle_verdict" HEADROOM_VERDICT="$headroom_verdict" \
-      CALLS_FILE="$calls_file" RETIRE_RC="$retire_rc"
+      CALLS_FILE="$calls_file" RETIRE_RC="$retire_rc" EVENTS_HIGH="$events_high"
     # shellcheck disable=SC1090
     . "$STANDDOWN"
 
@@ -126,7 +131,7 @@ run_check() {
     DRY_RUN="$dry_run"
 
     # shellcheck disable=SC2317  # called from the real memory_throttle_check, invisible to a static reader
-    memory_cgroup_parent_events_high() { printf '600'; }
+    memory_cgroup_parent_events_high() { printf '%s' "$EVENTS_HIGH"; }
     # shellcheck disable=SC2317
     memory_cgroup_field() { printf '100'; }
     # shellcheck disable=SC2317
@@ -284,6 +289,30 @@ assert_eq "…and keeps the consecutive count, so the next cycle reaches the clo
 rc="$(run_check ok ok 3 3 1)"
 assert_eq "--dry-run, which never attempts the close, keeps the count for a real cycle to retire" \
   "3" "$(cut -f3 "$mt_state_path")"
+
+# --- persistence: a headroom-only verdict persists even when the parent's
+#     events window is unreadable (agent-ops#2655) -----------------------
+#
+# min_cgroup_headroom_bytes > 0 can reach a real headroom verdict from
+# memory.current/memory.high alone, with memory.events unreadable. Before
+# this fix, the state write was keyed on the events reading alone, so a
+# clean "ok" here reset (or retired) the consecutive count in memory only —
+# the persisted count never moved, leaving a node already at the escalate
+# threshold re-attempting retirement every clean cycle, and a later
+# re-entry escalating on its first firing rather than after the configured
+# run.
+
+rc="$(run_check ok ok 3 3 0 0 "")"
+assert_eq "a clean headroom-only reading (events unreadable) still persists the reset count" \
+  "0" "$(cut -f3 "$mt_state_path")"
+assert_eq "…and still calls the retirement function despite the unreadable events window" \
+  "yes" "$(if grep -q '^memory_throttle_retire_resolved' "$calls_file"; then echo yes; else echo no; fi)"
+assert_eq "…writing an empty rate-baseline field rather than skipping the write entirely" \
+  "" "$(cut -f2 "$mt_state_path")"
+
+rc="$(run_check ok near-ceiling 0 0 0 0 "")"
+assert_eq "a fresh near-ceiling verdict (events unreadable) still persists the incremented count" \
+  "1" "$(cut -f3 "$mt_state_path")"
 
 echo
 if (( failures == 0 )); then

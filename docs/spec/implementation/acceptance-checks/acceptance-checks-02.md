@@ -402,7 +402,11 @@
    the consecutive count only advances on a real `throttling`/`near-ceiling`
    or a real `ok` — an empty verdict (no evidence either way) leaves it
    exactly where it was, so a transient read failure can neither manufacture
-   nor erase a run; once the count reaches `memory_throttle_escalate_after`,
+   nor erase a run; the state file persists whenever either verdict was
+   produced, not only when `memory.events` itself was readable, so a
+   headroom-only verdict still writes the updated count — with an empty
+   rate-baseline field — rather than losing a reset or retirement when the
+   process exits (agent-ops#2655); once the count reaches `memory_throttle_escalate_after`,
    each further firing calls `_memory_throttle_escalate`, naming this node's
    own `memory-throttled:<node>` item ref, and a clean reading immediately
    afterward calls `lib/enabler.sh`'s `memory_throttle_retire_resolved`
