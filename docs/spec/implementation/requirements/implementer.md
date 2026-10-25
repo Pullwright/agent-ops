@@ -396,6 +396,44 @@
     `gh pr view`, so `poetic` and `poetic-fiddle`, neither of which carries a
     `tech-debt/` register of their own, get the marker/keyword half alone.
 
+    **A third, independent gap the same check closes (issue #2645): the
+    `td-record` body block requirement 25 itself asks for.** PR #2643 closed
+    tech-debt issue #2638 with a valid marker and a real closing keyword and
+    passed this check with no `td-record` block in its body at all — nothing
+    before this checked for the block mechanically, so a missing one was only
+    ever caught if a human or the Approver happened to notice before merge,
+    as the Approver did for #2643's own case. Given a repo slug and pull
+    request number (the same two optional arguments the record-flip half
+    above needs), this checks every issue in the same `unique_items` set the
+    record-flip half resolves — the marker- and branch-anchored ones, and any
+    bare-keyword harvest survivor — and, for each one labelled
+    `pw::type:tech-debt`, requires the raw PR body (never the markdown-
+    stripped copy the keyword harvest above reads — a `td-record` block is
+    exactly the content this check reads, not noise to discard) to carry a
+    fenced ```` ```td-record ```` block whose first five non-blank lines are,
+    in order, `issue: <N>` (`<N>` equal to this issue's own number), a
+    non-empty quoted `title:`, a `filed: YYYY-MM-DD`, a non-empty quoted
+    `summary:`, and a non-empty quoted `resolution:`. "Non-empty quoted"
+    means an opening and a closing quote with at least one character
+    between them, and nothing more: a quote *within* the value — the
+    escaped quote a record routinely puts around a shell snippet, a path or
+    a label — is part of the prose, not a malformation, so this check asks
+    for an escape-free value no more than requirement 25's own template
+    above does. A missing block, a
+    block with a field out of order, missing, or empty, or a block naming a
+    different issue number, each fail, naming the issue — independent of
+    whether that issue's own body carries a "Filed as" line, which only the
+    record-flip half above cares about, and independent of the base-branch
+    amnesty above, which exists only for the register file's own append-only
+    convention and has no analogue here (a resolved tech-debt issue's
+    `td-record` block is written once, at the PR that closes it, and never
+    revisited). This needs no `gh` call of its own — the block lives in the
+    PR body already fetched for the marker/keyword half — so it carries none
+    of the network-outage warn-and-skip reasoning the other two checks in
+    this half apply; a label read that already failed outright skips this
+    check too, exactly as it skips the record-flip check, since neither can
+    tell a tech-debt issue from any other without it.
+
     That workflow file guards only agent-ops, the repository that carries
     it — a workflow guards the repository it ships in, not every repository
     the pipeline raises pull requests in. `poetic` and `poetic-fiddle` carry

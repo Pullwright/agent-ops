@@ -702,7 +702,7 @@
       "label": "8m",
       "anchor": "impl-ac-8m",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 961,
+      "line": 982,
       "title": "The closing-keyword and changelog-section checks block, not just"
     },
     "IMPL AC 8n": {
@@ -710,7 +710,7 @@
       "label": "8n",
       "anchor": "impl-ac-8n",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 983,
+      "line": 1004,
       "title": "A claimed item's gone work is caught before the Implementer runs, not"
     },
     "IMPL AC 8o": {
@@ -718,7 +718,7 @@
       "label": "8o",
       "anchor": "impl-ac-8o",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1014,
+      "line": 1035,
       "title": "A void that is both actioned and old drops out of the extract; every"
     },
     "IMPL AC 8p": {
@@ -726,7 +726,7 @@
       "label": "8p",
       "anchor": "impl-ac-8p",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1036,
+      "line": 1057,
       "title": "The closing-keyword gate applies to every target repository, not only"
     },
     "IMPL AC 66": {
@@ -734,7 +734,7 @@
       "label": "66",
       "anchor": "impl-ac-66",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1064,
+      "line": 1085,
       "title": "The ready-gate backstop catches a required context with no check run at"
     },
     "IMPL AC 56": {
@@ -742,7 +742,7 @@
       "label": "56",
       "anchor": "impl-ac-56",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1082,
+      "line": 1103,
       "title": "The deterministic pre-flight finds a deleted or edited-away required"
     },
     "IMPL AC 25b": {
@@ -750,7 +750,7 @@
       "label": "25b",
       "anchor": "impl-ac-25b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1108,
+      "line": 1129,
       "title": "The tech-debt close-guard finds exactly what requirement 25b's"
     },
     "IMPL AC 25c": {
@@ -758,7 +758,7 @@
       "label": "25c",
       "anchor": "impl-ac-25c",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-03.md",
-      "line": 1140,
+      "line": 1161,
       "title": "A changelog section is enforced, not requested (requirement 25c,"
     },
     "IMPL AC 39a": {
@@ -2054,7 +2054,7 @@
       "label": "17a",
       "anchor": "impl-c-17a",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1215,
+      "line": 1240,
       "title": "`lib/closing-keyword-gate.sh` implementing requirement 25a's other"
     },
     "IMPL C 17b": {
@@ -2062,7 +2062,7 @@
       "label": "17b",
       "anchor": "impl-c-17b",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1241,
+      "line": 1266,
       "title": "`scripts/check-changelog-section.sh` and"
     },
     "IMPL C 17c": {
@@ -2070,7 +2070,7 @@
       "label": "17c",
       "anchor": "impl-c-17c",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1267,
+      "line": 1292,
       "title": "`scripts/assemble-changelog.sh` implementing requirement 25d: given"
     },
     "IMPL C 17d": {
@@ -2078,7 +2078,7 @@
       "label": "17d",
       "anchor": "impl-c-17d",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1295,
+      "line": 1320,
       "title": "`lib/changelog-section-gate.sh` implementing requirement 25c's other"
     },
     "IMPL C 17e": {
@@ -2902,7 +2902,7 @@
       "label": "25b",
       "anchor": "impl-25b",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 450,
+      "line": 488,
       "title": "A `pw::type:tech-debt` issue closed some other way still gets an"
     },
     "IMPL 56": {
@@ -2910,7 +2910,7 @@
       "label": "56",
       "anchor": "impl-56",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 512,
+      "line": 550,
       "title": "A pull request that deletes, or edits away, the workflow job producing"
     },
     "IMPL 25c": {
@@ -2918,7 +2918,7 @@
       "label": "25c",
       "anchor": "impl-25c",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 588,
+      "line": 626,
       "title": "The changelog entry is a section of the pull-request description, and"
     },
     "IMPL 25d": {
@@ -2926,7 +2926,7 @@
       "label": "25d",
       "anchor": "impl-25d",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 697,
+      "line": 735,
       "title": "`CHANGELOG.md` is assembled from merged pull-request descriptions,"
     },
     "IMPL 25e": {
@@ -2934,7 +2934,7 @@
       "label": "25e",
       "anchor": "impl-25e",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 797,
+      "line": 835,
       "title": "A repository that cuts no releases still gets its `[Unreleased]`"
     },
     "IMPL 26": {
@@ -2942,7 +2942,7 @@
       "label": "26",
       "anchor": "impl-26",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 880,
+      "line": 918,
       "title": "Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`"
     },
     "IMPL 26a": {
@@ -2950,7 +2950,7 @@
       "label": "26a",
       "anchor": "impl-26a",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 891,
+      "line": 929,
       "title": "Grades the complexity of the work, ex post, and labels the PR with"
     },
     "IMPL 26b": {
@@ -2958,7 +2958,7 @@
       "label": "26b",
       "anchor": "impl-26b",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 917,
+      "line": 955,
       "title": "May name labels for its own pull request (requirement 6c, issue"
     },
     "IMPL 26c": {
@@ -2966,7 +2966,7 @@
       "label": "26c",
       "anchor": "impl-26c",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 928,
+      "line": 966,
       "title": "Re-verifies the PR description against the diff when resolving a"
     },
     "IMPL 26d": {
@@ -2974,7 +2974,7 @@
       "label": "26d",
       "anchor": "impl-26d",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 960,
+      "line": 998,
       "title": "Re-verifies the PR description against the diff when a"
     },
     "IMPL 27": {
@@ -2982,7 +2982,7 @@
       "label": "27",
       "anchor": "impl-27",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 992,
+      "line": 1030,
       "title": "Ends with a single JSON object as its entire final message:"
     },
     "IMPL 33": {

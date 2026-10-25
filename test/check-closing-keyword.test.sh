@@ -281,8 +281,20 @@ assert_fail_tdr() {  # assert_fail_tdr DESC BODY BRANCH REPO PR_NUMBER FIXTURES_
   printf 'ok   - %s\n' "$desc"
 }
 
-body_240="Fixes #240.
-<!-- agent-ops:closes-issue item=240 -->"
+# Every assertion below that expects a pass needs a well-formed td-record
+# block for #240 too (issue #2645), since that check runs independently of
+# the "Filed as" record-flip check these fixtures otherwise vary — so it is
+# folded into the shared body here rather than repeated per assertion.
+body_240='Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+title: "A shortcut noticed in passing"
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```'
 
 # No "Filed as" line on the closed issue: passes exactly as today, no new
 # burden on an ordinary issue-closing PR.
@@ -575,7 +587,15 @@ assert_pass_tdr "a failed changed-files lookup does not fail the check" \
 # an interactive agent's — never puts #N into `items` via the marker/branch
 # resolution above, so the record-flip loop must re-derive it from the bare
 # closing keyword itself.
-body_240_bare="Fixes #240 for real this time."
+body_240_bare='Fixes #240 for real this time.
+
+```td-record
+issue: 240
+title: "A shortcut noticed in passing"
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```'
 
 mkdir -p "$tmp_dir/bare-unflipped"
 cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/bare-unflipped/issue-240.json"
@@ -708,6 +728,160 @@ nested content
 Fixes #240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
   "does not set its frontmatter status: to a terminal state"
+
+# --- The td-record block requirement (issue #2645) --------------------------
+# Requirement 25's permanent record is owed by every tech-debt close this
+# script can see — independent of whether that issue's own body carries a
+# "Filed as" line, which only the record-flip check above cares about. No
+# fixture here needs files.json/pr.json/contents.json at all: the td-record
+# block lives in the PR body already in hand, with no `gh` call of its own.
+mkdir -p "$tmp_dir/no-td-record"
+cat > "$tmp_dir/no-td-record/issue-240.json" <<'JSON'
+{"body": "An ordinary issue with nothing special about its last line.",
+ "labels": [{"name": "pw::type:tech-debt"}]}
+JSON
+
+assert_fail_tdr "a tech-debt close with no td-record block at all fails, naming the issue" \
+  "Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->" \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "issue #240"
+assert_fail_tdr "a tech-debt close with no td-record block names the gap" \
+  "Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->" \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "no td-record block"
+
+# Fields out of order (filed before title, issue itself still first) is
+# malformed, not merely missing — the block is identifiable as #240's own
+# (its first line is `issue: 240`) but its own shape is wrong.
+assert_fail_tdr "a td-record block with fields out of order is malformed" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+filed: 2026-08-01
+title: "A shortcut noticed in passing"
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "malformed"
+
+# A field missing entirely (only four present) is malformed too.
+assert_fail_tdr "a td-record block missing a field (only four present) is malformed" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+title: "A shortcut noticed in passing"
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "malformed"
+
+# An empty field value is malformed: the pattern demands non-empty quoted
+# text for title/summary/resolution, not just the key's presence.
+assert_fail_tdr "a td-record block with an empty field value is malformed" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+title: ""
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "malformed"
+
+# A td-record block present but naming a different issue does not satisfy
+# #240 — from #240's perspective this is indistinguishable from no block at
+# all, since the block it does carry belongs to #7, not to it.
+assert_fail_tdr "a td-record block naming a different issue does not satisfy this one" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 7
+title: "A shortcut noticed in passing"
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record" \
+  "no td-record block"
+
+# A well-formed block passes even though the issue carries no "Filed as"
+# line at all — the td-record requirement and the register-flip requirement
+# are independent checks (acceptance criterion 2).
+assert_pass_tdr "a well-formed td-record block passes with no 'Filed as' line on the issue" \
+  "$body_240" "agent/240" "acme/widgets" "9" "no-td-record"
+
+# A PR closing a non-tech-debt issue is unaffected: no td-record block is
+# ever demanded of it (acceptance criterion 3).
+mkdir -p "$tmp_dir/non-tech-debt-no-record"
+cat > "$tmp_dir/non-tech-debt-no-record/issue-240.json" <<'JSON'
+{"body": "An ordinary bug report.",
+ "labels": [{"name": "bug"}]}
+JSON
+assert_pass_tdr "a PR closing a non-tech-debt issue needs no td-record block" \
+  "Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->" \
+  "agent/240" "acme/widgets" "9" "non-tech-debt-no-record"
+
+# Two tech-debt issues closed by one PR are checked independently: #240
+# carries a well-formed block, #7 carries none, and the PR must still fail,
+# naming #7 specifically rather than passing on #240's own block alone.
+mkdir -p "$tmp_dir/two-issues-one-missing"
+cat > "$tmp_dir/two-issues-one-missing/issue-240.json" <<'JSON'
+{"body": "An ordinary issue.",
+ "labels": [{"name": "pw::type:tech-debt"}]}
+JSON
+cat > "$tmp_dir/two-issues-one-missing/issue-7.json" <<'JSON'
+{"body": "Another ordinary issue.",
+ "labels": [{"name": "pw::type:tech-debt"}]}
+JSON
+assert_fail_tdr "closing two tech-debt issues checks each independently, naming the one missing its block" \
+  'Fixes #240. Also fixes #7.
+<!-- agent-ops:closes-issue item=240 -->
+<!-- agent-ops:closes-issue item=7 -->
+
+```td-record
+issue: 240
+title: "A shortcut noticed in passing"
+filed: 2026-08-01
+summary: "What the debt was, briefly"
+resolution: "What this PR did about it"
+```' \
+  "fix/multi" "acme/widgets" "9" "two-issues-one-missing" \
+  "issue #7"
+
+# A quote *inside* a value is not malformedness. Real records escape one
+# routinely — around a shell snippet, a path, a label — so the three quoted
+# fields match `".+"` rather than `"[^"]+"`, which would have called 24 of
+# the 154 td-record blocks in main's own history malformed. The body below
+# is `63ffc5a`'s own block verbatim, one of those 24: its `resolution:`
+# quotes `assert_eq \"$1\" \"\" \"$2\"`. The `assert_fail_tdr` case above
+# pins the other side of the same line — `title: ""` is still malformed,
+# because `".+"` demands a character between the quotes.
+# shellcheck disable=SC2016  # the `$1`/`$2` are part of the quoted record text, not meant to expand
+assert_pass_tdr "a td-record value carrying escaped quotes is well-formed" \
+  'Fixes #240.
+<!-- agent-ops:closes-issue item=240 -->
+
+```td-record
+issue: 240
+title: "test/needs-refinement.test.sh calls assert_empty, a helper it never defines, so that assertion silently never runs"
+filed: 2026-10-22
+summary: "assert_empty was called but never defined in needs-refinement.test.sh, so the assertion it guarded silently never ran under set -uo pipefail."
+resolution: "Added the local assert_empty() { assert_eq \"$1\" \"\" \"$2\"; } wrapper, matching the other test files, so the assertion actually runs."
+```' \
+  "agent/240" "acme/widgets" "9" "no-td-record"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"

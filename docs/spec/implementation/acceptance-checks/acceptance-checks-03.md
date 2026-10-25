@@ -948,6 +948,27 @@
    three still does (issue #1463) — proving the stripping neither
    under-reaches (a real close still caught) nor over-reaches (the #1438
    regression case does not return).
+   Given that same repo slug and pull request number, the suite also passes
+   for the `td-record` block check (issue #2645): a tech-debt issue with no
+   `td-record` block in the body at all fails, naming the issue and that
+   none was found; one with its fields out of order (`filed:` before
+   `title:`, `issue:` itself still first and so still identifiable as this
+   issue's own), one missing a field (only four of the five present), and
+   one with an empty quoted field value, each fail naming the block as
+   malformed; a block naming a different issue number is indistinguishable
+   from no block at all and fails the same way an absent one does; a
+   well-formed block passes even when the issue carries no "Filed as" line
+   at all, proving the two checks are independent; a PR closing a
+   non-`pw::type:tech-debt` issue is asked for no block at all; and two
+   tech-debt issues closed by one PR are checked independently — one
+   carrying a well-formed block and the other none still fails, naming only
+   the one missing it. A block whose `title:`, `summary:` and `resolution:`
+   values carry escaped quotes of their own — `63ffc5a`'s own block
+   verbatim, whose `resolution:` quotes a shell snippet — passes, pinning
+   the one thing the empty-value case above must not also reject: a quote
+   *inside* a value is prose, not malformedness. None of these fixtures
+   supplies `files.json`, `pr.json`, or `contents.json`, proving the check
+   makes no `gh` call of its own.
    `test/sweep-closed-issues.test.sh` passes against a stubbed
    `gh`: a merged, marker-carrying pull request whose issue is still open is
    closed with the merge cited as evidence; a merged, markerless pull

@@ -1210,7 +1210,32 @@
     `lib/closing-keyword-gate.sh` (17a below) does not pass these two
     further arguments, so `poetic` and `poetic-fiddle` — which carry no
     `tech-debt/` register of their own — get the marker/keyword half only,
-    unchanged. Unit-tested (`test/check-closing-keyword.test.sh`); must pass
+    unchanged.
+
+    Given that same repo slug and pull request number, the script also
+    enforces requirement 25's own `td-record` body block (issue #2645): for
+    every issue number the marker/branch/bare-keyword resolution above
+    yields that is `pw::type:tech-debt`-labelled, the raw PR body (never the
+    fenced-block-and-blockquote-stripped copy the record-flip harvest above
+    reads) must carry a fenced ```` ```td-record ```` block whose first five
+    non-blank lines are, in order, `issue: <N>` naming that same issue, a
+    non-empty quoted `title:`, a `filed: YYYY-MM-DD`, a non-empty quoted
+    `summary:`, and a non-empty quoted `resolution:` — "non-empty quoted"
+    being an opening and a closing quote with at least one character
+    between them and nothing more, so an escaped quote inside the value is
+    prose rather than a malformation. A missing block, one
+    with a field out of order, missing, or empty, or one naming a different
+    issue number, each exit non-zero naming the issue — independent of
+    whether that issue's body carries a "Filed as" line, which only the
+    record-flip check above conditions on, and with no base-branch amnesty
+    of its own, the register's append-only convention having no analogue
+    for a block written once at the closing pull request and never
+    revisited. This makes no `gh` call of its own, reading only the body
+    already fetched for the checks above, so it carries none of the two
+    `gh`-call warn-and-skip exceptions those checks need; a label read that
+    already failed skips this check for the same reason it skips the
+    record-flip one — neither can tell a tech-debt issue from any other
+    without it. Unit-tested (`test/check-closing-keyword.test.sh`); must pass
     `shellcheck`.
 17a. <a id="impl-c-17a"></a>`lib/closing-keyword-gate.sh` implementing requirement 25a's other
     layer: given a pull request URL, `closing_keyword_gate` reads its

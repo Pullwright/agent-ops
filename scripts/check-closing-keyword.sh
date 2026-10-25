@@ -87,13 +87,44 @@
 # #1493 — skipping on it instead would turn every unreadable base into a
 # record-flip check nothing has to satisfy.
 #
+# A third, independent gap (issue #2645): requirement 25's own `td-record`
+# body block — the permanent record the squash-merge commit carries into
+# `main`'s immutable history, since D15 as revised moved the tech-debt store
+# off an in-repo register and onto the issue itself — had no CI enforcement
+# at all; PR #2643 closed a tech-debt issue with a valid marker and keyword
+# and no `td-record` block, caught only because the Approver happened to
+# notice before merge. This runs over the exact same `unique_items` this
+# half already resolves — the marker/branch anchors above and the bare-
+# keyword harvest alike — so it is owed by every tech-debt close this script
+# can see, independent of whether that issue's own body carries a "Filed as"
+# line (the record-flip check above only fires for that subset). For each
+# `pw::type:tech-debt` issue number here, the raw PR body (never the
+# markdown-stripped copy — a `td-record` block is exactly the content this
+# check reads, not noise to discard) must carry a fenced ```` ```td-record ````
+# block whose first five non-blank lines are, in order, `issue: <N>` (`<N>`
+# equal to this issue's own number), a non-empty quoted `title:`, a
+# `filed: YYYY-MM-DD`, a non-empty quoted `summary:`, and a non-empty quoted
+# `resolution:` — failing, naming the issue, when no such block exists at
+# all, or when a block naming this issue is present but malformed (a field
+# missing, out of order, or empty). A PR may close more than one tech-debt
+# issue; each is checked independently, exactly as the marker loop above
+# checks each marker independently. This needs no `gh` call at all — the
+# block lives in the PR body already in hand — so it carries none of the
+# surrounding network-outage caveats the other two checks in this `if` block
+# do. It does still sit behind the one `gh issue view` that reads the
+# labels, since nothing can tell a tech-debt issue from any other without
+# them; an unreadable issue skips this check for exactly the reason it skips
+# the record-flip one, and that warning says so.
+#
 # Usage: check-closing-keyword.sh <pr-body-text> [<head-branch>] [<repo-slug>] [<pr-number>]
 # Exit 0: nothing claims an issue, or every claim has its closing keyword and
-#   (where applicable) its tech-debt record correctly flipped.
+#   (where applicable) its tech-debt record correctly flipped and its
+#   `td-record` block well-formed.
 # Exit 1: a marker with no matching closing keyword, an `agent/<N>` branch
-#   missing the marker or the keyword, or a named tech-debt record this PR's
-#   diff does not flip to a terminal `status:` (`resolved`/`not-debt`) —
-#   printing why in each case.
+#   missing the marker or the keyword, a named tech-debt record this PR's
+#   diff does not flip to a terminal `status:` (`resolved`/`not-debt`), or a
+#   tech-debt issue this PR closes with no well-formed `td-record` block for
+#   it — printing why in each case.
 #
 # GH overrides the `gh` binary, for tests.
 
@@ -211,6 +242,67 @@ strip_markdown_noise() {
   sed -E 's/`+[^`]*`+/ /g' <<<"$no_fences"
 }
 
+# td_record_rows BODY
+# One row per ```td-record fenced block found in the raw BODY (never the
+# markdown-stripped copy — a td-record block is exactly the content the
+# check below reads, not noise to discard): "<issue-or-EMPTY><TAB><0|1>",
+# the block's own `issue: N` value (EMPTY when its first non-blank line
+# is not that shape) and whether the block's first five non-blank lines
+# are, in order, non-empty `issue:`/`title:`/`filed:`/`summary:`/
+# `resolution:` fields (requirement 25). Plain repeated `[0-9]` classes
+# stand in for `{4}`/`{2}` interval repetition in `filed:`'s date pattern —
+# `strip_markdown_noise` above avoids `{n,}` for the same reason: an ERE
+# interval combined with an alternation panics this image's mawk.
+#
+# The three quoted fields match `".+"`, not `"[^"]+"`: anchored at both ends
+# the two differ on exactly one thing, a `"` *inside* the value, and real
+# records carry those routinely — an escaped quote around a shell snippet, a
+# path, a label. `"[^"]+"` would call 24 of the 154 `td-record` blocks in
+# `main`'s own history malformed, `63ffc5a`'s among them, whose
+# `resolution:` quotes `assert_eq \"$1\" \"\" \"$2\"`; since
+# `closing-keyword` is a required check, each would have been a merge
+# blocked over a well-formed record, told it was malformed. `".+"` still
+# demands an opening and a closing quote with at least one character
+# between, so an empty `title: ""` stays malformed — the emptiness this
+# half is actually asked to catch — while a quote within the prose does
+# not. Nothing in requirement 25, `prompts/implementer.md`'s template or
+# the contributing guide's asks for an escape-free value, so nothing here
+# should demand one.
+td_record_rows() {
+  awk '
+    BEGIN { in_block = 0; n = 0 }
+    /^[[:space:]]*```td-record[[:space:]]*$/ { in_block = 1; n = 0; next }
+    in_block && /^[[:space:]]*```[[:space:]]*$/ {
+      in_block = 0
+      issue = "EMPTY"
+      if (n >= 1 && lines[1] ~ /^issue:[[:space:]]*[0-9]+[[:space:]]*$/) {
+        tmp = lines[1]
+        sub(/^issue:[[:space:]]*/, "", tmp)
+        sub(/[[:space:]]*$/, "", tmp)
+        issue = tmp
+      }
+      wf = 0
+      if (n >= 5 \
+        && lines[1] ~ /^issue:[[:space:]]*[0-9]+[[:space:]]*$/ \
+        && lines[2] ~ /^title:[[:space:]]*".+"[[:space:]]*$/ \
+        && lines[3] ~ /^filed:[[:space:]]*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]*$/ \
+        && lines[4] ~ /^summary:[[:space:]]*".+"[[:space:]]*$/ \
+        && lines[5] ~ /^resolution:[[:space:]]*".+"[[:space:]]*$/) {
+        wf = 1
+      }
+      printf "%s\t%s\n", issue, wf
+      next
+    }
+    in_block {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (line != "") { n++; lines[n] = line }
+      next
+    }
+  ' <<<"$1"
+}
+
 # --- the tech-debt record-flip check (issue #1363, extended by #1438) -------
 if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
   harvest_body="$(strip_markdown_noise "$body")"
@@ -253,12 +345,36 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
 
     issue_json="$("$GH" issue view "$item" -R "$repo_slug" --json body,labels 2>/dev/null)" || issue_json=""
     if [[ -z "$issue_json" ]]; then
-      echo "::warning::could not read issue #${item} to check for a tech-debt \"Filed as\" record — skipping the record-flip check for it" >&2
+      # Both label-gated checks below are skipped, not just the record-flip
+      # one: neither can tell a tech-debt issue from any other without the
+      # labels this call was to fetch. Naming only one of them was accurate
+      # before the td-record check existed (issue #2645) and would now
+      # understate what the warning is telling its reader.
+      echo "::warning::could not read issue #${item} to check whether it is pw::type:tech-debt — skipping both its td-record block check and its \"Filed as\" record-flip check" >&2
       continue
     fi
 
     is_tech_debt="$(jq -r '(.labels // []) | any(.name == "pw::type:tech-debt")' <<<"$issue_json" 2>/dev/null)"
     [[ "$is_tech_debt" == "true" ]] || continue
+
+    # --- requirement 25's td-record block (issue #2645) ---------------------
+    # Owed by every tech-debt close this script can see, independent of
+    # whether the issue's own body carries a "Filed as" line — unlike the
+    # record-flip check below, which only fires for that subset.
+    td_record_seen=0 td_record_well_formed=0
+    while IFS=$'\t' read -r td_issue td_wf; do
+      [[ "$td_issue" == "$item" ]] || continue
+      td_record_seen=1
+      [[ "$td_wf" == "1" ]] && td_record_well_formed=1
+    done < <(td_record_rows "$body")
+    if (( ! td_record_well_formed )); then
+      if (( td_record_seen )); then
+        echo "::error::issue #${item} is pw::type:tech-debt, but its td-record block is malformed — it must carry, in this order, non-empty issue/title/filed/summary/resolution fields, with issue matching #${item} (requirement 25)" >&2
+      else
+        echo "::error::issue #${item} is pw::type:tech-debt, but this pull request's body has no td-record block for it — closing a tech-debt issue must add one (issue/title/filed/summary/resolution fields, in that order, issue matching #${item}) so the squash merge writes the permanent record (requirement 25)" >&2
+      fi
+      status=1
+    fi
 
     issue_body="$(jq -r '.body // ""' <<<"$issue_json" 2>/dev/null)"
     # The last non-blank line, ignoring any trailing blank lines the body ends
