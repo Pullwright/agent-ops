@@ -34,6 +34,16 @@
 # host-facts collector has never run, is a run with less to say — never a
 # failed one.
 
+# `monitor_digest_limits` below reads the usage-limit union
+# (`limit_union_frozen_providers`, `limit_union_state_for`, `limit_reset_known`,
+# `limit_describe`), so this file sources lib/limit-detect.sh itself, the same
+# self-containment lib/limit-detect.sh gives lib/union-stream.sh: a test or
+# script that sources this file alone — test/monitor-digest.test.sh included —
+# still gets a reader that works, with no second source line of its own to
+# remember.
+# shellcheck source=lib/limit-detect.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/limit-detect.sh"
+
 # The event names the union log carries that are worth their own class in
 # the digest rather than being pooled into "everything else". Ordered by how
 # often a reader wants them, not alphabetically: the first rows of the
@@ -143,6 +153,68 @@ monitor_digest_pager() {
                             assignees: ([(.assignees // [])[] | .login // empty]),
                             body: (.body // "")}))}' 2>/dev/null)" || out=""
   [[ -n "$out" ]] || out='{"transitions":[],"open_pages":[]}'
+  printf '%s\n' "$out"
+}
+
+# monitor_digest_limits UNION_LOG_FILE NOW_EPOCH
+# Every provider currently standing down on a usage limit, right now (issue
+# #2135) — a live-state list in the same sense `monitor_digest_pager`'s own
+# `open_pages` is: not "every `limit-hit` the window saw" (the event-class
+# table above already carries that, windowed, under its own name), but
+# "whose stand-down is still in force this instant", as
+#   [{provider, resume_at, class, reset_known, since, description}]
+#
+# `limit_union_frozen_providers` names every provider (the wildcard bucket
+# included, as the empty string — "a record without one applies to every
+# provider") the union currently has a *record* for, whether or not that
+# record's own `resume_at` has actually passed; `limit_union_state_for`
+# resolves each one's actual governing record, folding the wildcard bucket
+# back in a second time ("later resume wins" — the same resolution the
+# Monitor's own per-provider stand-down check performs for the one provider
+# it runs as), and it is this function's own job to then ask the one
+# question neither of those answers: is that resume time still ahead of
+# NOW_EPOCH. A provider whose hit has lapsed or been cleared contributes no
+# entry — "currently frozen" means right now, not "was in force at some
+# point". `limit_reset_known` and `limit_describe` are the same two helpers
+# the dashboard banner and `--status` already use, so this list's own
+# `description` can never read differently from either of them.
+#
+# NOW_EPOCH is the caller's own notion of "now" — monitor-cycle.sh's
+# `$now_epoch`, the instant every other "is this still in force" check in
+# that script already compares against — so a test can hold it fixed rather
+# than race the wall clock; an unparseable or missing one falls back to a
+# real clock read, the same degradation `monitor_digest_since` gives.
+#
+# Entries are sorted by provider name, the empty (wildcard) string first,
+# so two runs over the same union render byte-identically (M6a) regardless
+# of `limit_union_frozen_providers`' own enumeration order.
+monitor_digest_limits() {
+  local union_log="${1:-}" now_epoch="${2:-}" rows provider state record \
+        resume_at resume_epoch class reset_known since description out
+  [[ "$now_epoch" =~ ^[0-9]+$ ]] || now_epoch="$(date +%s)"
+  if [[ ! -s "$union_log" ]]; then printf '[]\n'; return 0; fi
+  rows="$(mktemp 2>/dev/null)" || { printf '[]\n'; return 0; }
+  while IFS= read -r provider; do
+    state="$(limit_union_state_for "$provider" < "$union_log" 2>/dev/null)" || continue
+    record="$(jq -c '.record // empty' <<<"$state" 2>/dev/null)"
+    [[ -n "$record" ]] || continue
+    resume_at="$(jq -r '.resume_at // empty' <<<"$record" 2>/dev/null)"
+    [[ -n "$resume_at" ]] || continue
+    resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
+    (( resume_epoch > now_epoch )) || continue
+    class="$(jq -r '.class // "other"' <<<"$record" 2>/dev/null || echo other)"
+    reset_known="$(limit_reset_known "$record")"
+    since="$(jq -r '.since // empty' <<<"$state" 2>/dev/null)"
+    description="$(limit_describe "$resume_at" "$class" "$reset_known")"
+    jq -nc --arg p "$provider" --arg r "$resume_at" --arg c "$class" \
+      --argjson k "$reset_known" --arg s "$since" --arg d "$description" \
+      '{provider: $p, resume_at: $r, class: $c, reset_known: $k,
+        since: ($s | if . == "" then null else . end), description: $d}' \
+      2>/dev/null >> "$rows" || true
+  done < <(limit_union_frozen_providers < "$union_log" 2>/dev/null)
+  out="$(jq -sc 'sort_by(.provider)' "$rows" 2>/dev/null)" || out=''
+  rm -f "$rows"
+  [[ -n "$out" ]] || out='[]'
   printf '%s\n' "$out"
 }
 
@@ -324,7 +396,7 @@ monitor_digest_gotchas() {
 
 # monitor_digest_build WINDOW_JSON EVENTS_JSON PAGER_JSON NODES_JSON \
 #                      WORK_JSON FORGE_JSON GOTCHAS_JSON [PROMOTED_JSON] \
-#                      [PEERS_JSON]
+#                      [PEERS_JSON] [LIMITS_JSON]
 # The whole digest as one object. A plain assembly, kept as its own function
 # so the key names exist in exactly one place: `monitor_digest_render` below
 # and `prompts/monitor.md` both name these sections, and a rename that
@@ -344,16 +416,21 @@ monitor_digest_gotchas() {
 # makes every one of them suspect at once; that is why this is a property of
 # the whole digest's opening line (`_monitor_digest_render_at`) rather than
 # its own section.
+#
+# LIMITS_JSON is issue #2135's own: `monitor_digest_limits`' array of
+# providers currently standing down, defaulting to `[]` — a caller that has
+# not yet adopted this gets a digest whose "Currently frozen providers"
+# section always reads `_none_`, exactly as before this section existed.
 monitor_digest_build() {
   local window="${1:-{\}}" events="${2:-[]}" pager="${3:-{\}}" nodes="${4:-[]}" \
         work="${5:-{\}}" forge="${6:-{\}}" gotchas="${7:-[]}" promoted="${8:-[]}" \
-        peers="${9:-null}" out
+        peers="${9:-null}" limits="${10:-[]}" out
   out="$(jq -nc --argjson window "$window" --argjson events "$events" \
     --argjson pager "$pager" --argjson nodes "$nodes" --argjson work "$work" \
     --argjson forge "$forge" --argjson gotchas "$gotchas" --argjson promoted "$promoted" \
-    --argjson peers "$peers" \
+    --argjson peers "$peers" --argjson limits "$limits" \
     '{window: $window, peers: $peers, events: $events, pager: $pager, nodes: $nodes,
-      work: $work, forge: $forge, gotchas: $gotchas, promoted: $promoted}' 2>/dev/null)" || out=''
+      work: $work, forge: $forge, gotchas: $gotchas, promoted: $promoted, limits: $limits}' 2>/dev/null)" || out=''
   [[ -n "$out" ]] || out='{}'
   printf '%s\n' "$out"
 }
@@ -493,6 +570,13 @@ _monitor_digest_render_at() {
                           then " — assigned to \((.assignees | join(", ")))" else "" end)
                        + "\n\n  ```\n  " + ((.body // "") | esc) + "\n  ```" ]
                    | join("\n") ) + "\n" end ) )),
+
+    block("Currently frozen providers";
+      ( if (.limits // []) | length == 0 then "_none_\n"
+        else ( [ .limits[]
+                 | "- **\(if .provider == "" then "every provider" else .provider end)** "
+                   + (.description | esc) ]
+               | join("\n") ) + "\n" end )),
 
     block("Promoted findings — do not restate these";
       ( if (.promoted | length) == 0 then "_none_\n"

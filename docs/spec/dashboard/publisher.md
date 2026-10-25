@@ -71,12 +71,13 @@ agent-ops#1649). What a reader holds is what its answer is about:
   since it takes raw lines on stdin — and `blocked_items`/`void_items`/
   `draft_obsolete_flags` inside the item-lifecycle fold) each gather their
   declared types in the one `jq` process that folds them. Two of those
-  folds, and the stand-down banner's `limit_union_record`, are handed only
-  the lines of their declared types to begin with: `union_prefilter`
+  folds, and the stand-down banners' `limit_union_frozen_providers`/
+  `limit_union_state_for`, are handed only the lines of their declared types
+  to begin with: `union_prefilter`
   (`lib/union-stream.sh`) keeps, with one byte-level `grep -F`, the lines
   carrying `"event":"<type>"` for each type a reader declares —
   `crash_loop_verdict`'s `CRASH_LOOP_VERDICT_EVENTS` over the raw snapshot,
-  `limit_union_record`'s `LIMIT_UNION_EVENTS` over `$events_jsonl`, and
+  `lib/limit-detect.sh`'s own `LIMIT_UNION_EVENTS` over `$events_jsonl`, and
   `node_time_state_fold`'s `NODE_TIME_STATE_EVENTS` over the review union —
   into a file in the working set, and the fold's `jq` reads that file. The
   reduction keeps every record of a declared type (each is written compact,
@@ -97,8 +98,8 @@ itself log-scale, so the scorecards read a `{repo, item, fate}` projection
 of it. Four of the pager's invariants (`lib/pager-invariants.sh`, on a
 GitHub tick) gather their input unfiltered, where that input is the union
 reduced to the key's declared types (the pager section below). The
-stand-down banner's `limit_union_record` reads through
-`lib/limit-detect.sh`'s own reader (agent-ops#2037).
+stand-down banners' `limit_union_frozen_providers`/`limit_union_state_for`
+read through `lib/limit-detect.sh`'s own reader (agent-ops#2037).
 
 `data.js`'s size is dominated by capped transcripts, not by the small
 per-item records like `blocked[]`: one cycle at both caps (`TRANSCRIPT_CAP`
@@ -328,7 +329,14 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
   status:  { running, lock:{pid,started_at,alive},          // THIS node's lock
              current:{stage,repo,item,source,title},
              last_cycle:{id,node,ended_at,outcome,repo,item,title},  // the FLEET's newest FINISHED
-             limit:{active,note}, switch:{…},
+             limits:[ {provider,resume_at,class,reset_known,kind,actor}
+                      | {provider,resume_at:null,class:null,reset_known:null,
+                         kind:"auto",actor:null,note} ],
+                                            // one entry per provider currently
+                                            //   standing down (issue #2135),
+                                            //   never one fleet-wide verdict;
+                                            //   empty when none is
+             switch:{…},
              doctor:{timestamp,verdict,fails[],warns[],skips,
                      memory_cgroup:"unbounded"|"parented"|"livelocked"|
                                     "unconfirmed"|"bounded"|"unlimited"|
@@ -809,7 +817,11 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                  stage, repo, item, source, title } } ],
                                             // what THAT node is doing; null
                                             //   until it has run a cycle
-             flags:  { disabled, limit,                 // cached fleet flags (2.3a)
+             flags:  { disabled, limit,                 // cached fleet flags (2.3a);
+                                            //   `limit` is the raw cached
+                                            //   record, folded (never
+                                            //   rendered directly) into
+                                            //   `status.limits` above
                        merge_autonomy_kill: { state, record? } },
                                             // D18 issue #576; {state:"enabled"}
                                             //   when clear

@@ -388,8 +388,8 @@ assert_eq "the union carrier still reads the governing hit past a spliced line" 
 assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard_events | jq -s 'length')"
 
 : > "$log_file"; reset_guard_counts
-# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-out="$(limit_union_state() { echo "jq: killed" >&2; return 137; }; run_union_block)"
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+out="$(limit_union_state_for() { echo "jq: killed" >&2; return 137; }; run_union_block)"
 assert_eq "a union read that fails outright leaves the carrier empty" "" "$(head -n1 <<<"$out")"
 assert_eq "…marks the union's answers unknown, not empty" "0" "$(tail -n1 <<<"$out")"
 assert_eq "…and is reported, not read as no limit" "1" "$(last_guard_events | jq -s 'length')"
@@ -402,8 +402,8 @@ assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | 
 union_build_ok=0
 union_reads="$tmp_dir/union-reads"
 : > "$union_reads"
-# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-out="$(limit_union_state() { echo read >> "$union_reads"; return 1; }; run_union_block)"
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+out="$(limit_union_state_for() { echo read >> "$union_reads"; return 1; }; run_union_block)"
 assert_eq "a union that could not be built is not read" "" "$(cat "$union_reads")"
 assert_eq "…leaves the carrier empty, so the flag decides alone" "" "$(head -n1 <<<"$out")"
 assert_eq "…and marks the union's answers unknown" "0" "$(tail -n1 <<<"$out")"
@@ -451,7 +451,7 @@ printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\"
   "$spliced_line" > "$union_log"
 run_freeze_block "$now_s" "$auto_union"
 assert_eq "a three-day freeze past a spliced line escalates, keyed on its start" \
-  "usage-limit-freeze:$three_days_ago" "$(cat "$filed")"
+  "usage-limit-freeze:anthropic:$three_days_ago" "$(cat "$filed")"
 assert_eq "…and records the escalation against that start" "$three_days_ago" \
   "$(freeze_events | jq -r '.since')"
 assert_eq "…aged from the union's own first hit" "union" "$(freeze_events | jq -r '.since_basis')"
@@ -471,8 +471,8 @@ assert_eq "an escalation already in the union past a spliced line is not filed a
 # anyway would rest on the open-issue guard alone, which a closed escalation
 # passes, so every such cycle would file it again.
 printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
-# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-(limit_union_state() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+(limit_union_state_for() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
 assert_eq "a failed union read files no escalation" "" "$(cat "$filed")"
 assert_eq "…reports the read under its own site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
 assert_eq "…and says the escalation waits for the next cycle" "1" \
@@ -496,7 +496,7 @@ printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"cycle-end"}' "$spliced_line
 flag_record="{\"ts\":\"$three_days_ago\",\"resume_at\":\"2099-01-01T00:00:00Z\",\"kind\":\"auto\",\"class\":\"monthly\"}"
 run_freeze_block "$now_s" "$flag_record"
 assert_eq "a flag-only freeze three days old escalates, keyed on the flag record's time" \
-  "usage-limit-freeze:$three_days_ago" "$(cat "$filed")"
+  "usage-limit-freeze:anthropic:$three_days_ago" "$(cat "$filed")"
 assert_eq "…records that time as the escalation's since" "$three_days_ago" "$(freeze_events | jq -r '.since')"
 assert_eq "…and says it is the flag record's time" "flag" "$(freeze_events | jq -r '.since_basis')"
 assert_eq "…and so does the issue body" "1" \

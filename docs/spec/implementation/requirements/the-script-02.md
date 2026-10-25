@@ -901,31 +901,52 @@
       escalate_after` (default 3). Either of the first two at `0` turns
       that half off; both off turns the whole check off.
 
-   1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
-      the **later** `resume_at` wins. The log union's most recent `limit-hit`
-      is as fresh as the last state-sync fetch; `fleet/limit.json` on the
-      state repository's main is read live, which is what lets a limit one
-      node hit a minute ago stop this cycle now rather than a fetch interval
-      from now. If the winning `resume_at` is still in the future, stand
+   1. *Usage-limit cooldown*, scoped to the provider that hit it (issue
+      #2135): every node shares one account per provider, so a limit any
+      node hits stands every node down for that provider's own stages
+      alone. This check gates the Co-Ordinator, the very next stage from
+      here, so it reads both carriers narrowed to the Co-Ordinator's own
+      resolved provider (`check_provider`); later re-checks (below) cover
+      the Implementer, Enabler and Refiner against their own provider
+      instead, since a work order's own model is chosen per item.
+
+      The same signal arrives on two carriers, and the **later** `resume_at`
+      wins. The log union's most recent `limit-hit` for `check_provider` is
+      as fresh as the last state-sync fetch; `fleet/limit.json`, narrowed to
+      `check_provider`, is read live, which is what lets a limit one node
+      hit a minute ago stop this cycle now rather than a fetch interval from
+      now. Both carriers also fold in a wildcard bucket — every pre-#2133
+      `limit-hit`, and a wildcard `limit-cleared`/escalation — so an old or
+      fleet-wide record still governs every provider
+      (`limit_union_state_for`/`limit_flag_record_for`,
+      `lib/limit-detect.sh`: "a record without one applies to every
+      provider"). If the winning `resume_at` is still in the future, stand
       down. The flag is written by whichever node hits a limit (requirement
       10's `limit_decide` supplies `resume_at`/`class`/`reset_known`, plus
-      the node's name and a timestamp), **extend-only**: a writer never
-      shortens an existing `resume_at`, so concurrent hits converge on the
-      latest resume whatever order their contents-API writes land in. The
-      write is best-effort — on failure the node logs a `warning` and relies
-      on the union to carry its `limit-hit` to the fleet.
+      the node's name, its own provider and a timestamp), **extend-only**
+      *for that provider*: a writer never shortens a `resume_at` already
+      applying to the same provider (or every provider); a different
+      provider's own freeze is replaced outright, since the flag carries
+      only one provider's record at a time (`fleet_limit_publish`,
+      `lib/toggle.sh`). The write is best-effort — on failure the node logs
+      a `warning` and relies on the union to carry its `limit-hit` to the
+      fleet.
 
       Both carriers can be retired early, two ways — automatically by the
       probe of 1b when `reset_known` is false, or by hand with
-      `--clear-limit` (requirement 12) — and both retirements are the same
-      write: delete `fleet/limit.json` and log a `limit-cleared` event, which
-      the union's reduction — most-recent-wins over `limit-hit` **and**
-      `limit-cleared`, defined once in `lib/limit-detect.sh`
-      (`LIMIT_UNION_JQ`'s `limit_union_fold`, read through
-      `limit_union_record`, `limit_standdown_since` and `limit_union_state`)
-      so every reader shares it — treats as superseding every earlier hit.
-      Deleting rather than shortening the flag is what keeps extend-only
-      intact for the concurrent-hit case it exists for.
+      `--clear-limit [<provider>]` (requirement 12) — and both log a
+      `limit-cleared` event, carrying `provider` when named (absent means
+      every provider), which the union's reduction treats as superseding
+      every earlier hit *in that bucket* — defined once in
+      `lib/limit-detect.sh` (`LIMIT_UNION_JQ`'s `limit_union_fold`, read
+      through `limit_union_record_for`, `limit_standdown_since` and
+      `limit_union_state_for`) so every reader shares it. The flag is always
+      deleted outright rather than narrowed: the probe's own retirement (1b)
+      clears the whole flag, since the provider it just cleared is the one
+      it was carrying in any case; a hand `--clear-limit <provider>` deletes
+      it only when the flag's current record already names that provider,
+      leaving a different or wildcard record untouched; `--clear-limit` with
+      no provider always deletes it.
 
       The reduction folds the union with `reduce` over the tolerant raw-line
       event stream every union reader shares (`union_events`,
@@ -973,61 +994,77 @@
       matching limit line of the transcript). An extension of the flag is
       therefore always accompanied by the fresh observation that justified
       it, because the only writer is the detector responding to a hit.
-      `provider` is informational only here: the stand-down it names still
-      covers the whole fleet regardless of which provider hit it (scoping it
-      per-provider is #2135's business, not this one's). Still `anthropic`
-      on every record this system has ever written: a second provider,
-      Grok Build (issue #2134), now runs stages, but its own phrase-based
-      detection is held off until #2135 scopes a stand-down to the account
-      it hit (`detect_and_log_limit_hit`'s own guard), so a Grok limit
-      reaches the record through requirement 2.7's refusal classifier instead of
-      this one, and `provider` here stays a one-value field until #2135
-      lifts that guard. A
-      record whose `kind` is `manual` only ever enters `fleet/limit.json` by
-      an operator's hand: it is honoured as written until its `resume_at`
+      `provider` is what this check scopes on (issue #2135): a record names
+      only its own provider's stages. xAI's Grok Build substrate (issue
+      #2134) writes this same path too, via its own weekly/spend-cap
+      phrase table (`XAI_LIMIT_PHRASE_REGEX`/`limit_phrase_regex_for`,
+      requirement 10), so `provider` carries more than one value; a
+      transient refusal on either provider remains requirement 2.7's
+      business. A record whose `kind` is `manual` only ever enters
+      `fleet/limit.json` by an operator's hand: it is honoured as written
+      until its `resume_at`
       passes or `--clear-limit` lifts it, is never probed (1b) and never
-      escalates (1c), and its stand-down reason names its `actor` and says it
-      is manual. A record with no `kind` reads as `auto` — every record this
-      system has ever written was a detector's. `limit-cleared` events record
-      their own `actor` and `kind` (`manual` for `--clear-limit`, `auto` for
-      the probe), so the log distinguishes a human lifting a stand-down from
-      the system retiring one.
+      escalates (1c), and its stand-down reason names its `actor`, its
+      provider, and says it is manual. A record with no `kind` reads as
+      `auto`. `limit-cleared` events record their own `actor` and `kind`
+      (`manual` for `--clear-limit`, `auto` for the probe).
+
+      This top-of-cycle check only gates the Co-Ordinator's own provider.
+      The same fast carrier (`fleet_limit_resume_at_for`, live rather than a
+      fresh union read) is re-checked later against the stage about to
+      launch: right before a freshly claimed item's clone
+      (`lib/coordinator-phase.sh`, issue #2135, deferring the claim as
+      requirement 34m's stale-open-PR signal does) and right before the
+      Enabler (35) and Refiner (39) engage. The Reviewer launch carries no
+      such re-check: a provider hit after the Implementer's own check is
+      caught only when the Reviewer's stage re-hits it (requirement 10) or
+      by a later cycle (agent-ops#2661).
    1b. *An estimated stand-down probes its own exit.* When the governing
       record's `reset_known` is false, `resume_at` is this system's invented
       time and carries no information about the limit — so before standing
-      down, the Script spends one minimal headless invocation of
-      `implementer_model_trivial` (a fixed one-line prompt, 180 s timeout,
-      transcript kept as `limit-probe.out` in the cycle record), through the
-      same provider-neutral `run_model_stage` (requirement 4d) every other
-      stage launches on. It is not a stage — it logs no `stage-start`, like
-      0h's credential probe and a `<stage>-salvage` resume — but it still
-      spends real tokens, so `lib/standdown.sh` logs its own
-      `stage-end`, `stage: "limit-probe"`, carrying the metering record of
-      requirement 33a (issue #2239, D30): `lane`, `cost_usd`, `tokens` and
-      the rest, so this spend reaches the fleet-wide ledger the same way
-      every other launch's does, rather than only the dashboard's own cost
-      scan of the raw transcript. `lib/stage-health.sh`'s stage list does not
-      name `limit-probe`, so this carries no verdict risk for it. The Script
-      then classifies
-      it with `limit_probe_verdict` (`lib/limit-detect.sh`, regression-tested
-      against canned transcripts): the limit phrase anywhere in the transcript
-      is `limited`; otherwise a well-formed envelope with `is_error: false`
-      and a non-empty `result` is `clear`; anything else — a timeout, a
-      network failure, an empty file — is `inconclusive`. On `clear` it
-      retires both carriers exactly as `--clear-limit` would (the
-      `limit-cleared` event names `auto-probe@<node>` as `by`) and the cycle
-      proceeds; on `limited` it records the re-observed hit through
-      requirement 10 — whose parse also upgrades `reset_known` to true if the
-      probe's message finally states a reset, stopping further probes until a
-      time that is real — and stands down; on `inconclusive` it changes
-      nothing and stands down, with the verdict appended to the logged
-      reason either way.
+      down, the Script spends one minimal headless invocation of a model
+      that actually resolves to the frozen provider (`limit_probe_model_for`,
+      issue #2135): the first of this cycle's own already-resolved models —
+      `implementer_model_trivial` first, so a single-provider install still
+      probes exactly the model it always has — whose own `MODEL_PROVIDER`
+      matches `check_provider`; skipped, with a note, if none does. A fixed
+      one-line prompt, 180 s timeout, transcript kept as `limit-probe.out`,
+      through the same provider-neutral `run_model_stage` (requirement 4d)
+      every other stage launches on. It is not a stage — it logs no `stage-start`, like 0h's
+      credential probe and a `<stage>-salvage` resume — but it still spends
+      real tokens, so `lib/standdown.sh` logs its own `stage-end`,
+      `stage: "limit-probe"`, carrying the metering record of requirement
+      33a (issue #2239, D30): `lane`, `cost_usd`, `tokens` and the rest, so
+      this spend reaches the fleet-wide ledger the same way every other
+      launch's does, rather than only the dashboard's own cost scan of the
+      raw transcript. `lib/stage-health.sh`'s stage list does not name
+      `limit-probe`, so this carries no verdict risk for it. The Script then
+      classifies it with `limit_probe_verdict` (`lib/limit-detect.sh`,
+      regression-tested against canned transcripts), against
+      `check_provider`'s own phrase table (`limit_phrase_regex_for` —
+      Anthropic's own `LIMIT_PHRASE_REGEX` or xAI's own
+      `XAI_LIMIT_PHRASE_REGEX`, requirement 10): that provider's limit
+      phrase anywhere in the transcript is `limited`; otherwise a
+      well-formed envelope with `is_error: false` and a non-empty `result`
+      is `clear`; anything else — a timeout, a network failure, an empty
+      file — is `inconclusive`. On `clear` it retires both carriers for
+      `check_provider` exactly as `--clear-limit <provider>` would (the
+      `limit-cleared` event names `auto-probe@<node>` as `by` and carries
+      `provider`; the flag is deleted outright, since it was carrying that
+      provider's record in any case) and the cycle proceeds; on `limited` it
+      records the re-observed hit through requirement 10, under this same
+      provider — whose parse also upgrades `reset_known` to true if the
+      probe's message finally states a reset, stopping further probes until
+      a time that is
+      real — and stands down; on `inconclusive` it changes nothing and
+      stands down, with the verdict appended to the logged reason either
+      way.
 
       The economics run the right way round on both sides: a limited account
       answers the probe with the limit message at no token cost, and an
       unlimited one answers once for a fraction of a cent — the first `clear`
-      verdict retires the stand-down fleet-wide, so the gate stops firing.
-      A *stated* reset is never probed (the message named the time; asking
+      verdict retires that provider's stand-down fleet-wide, so the gate
+      stops firing for it. A *stated* reset is never probed (the message named the time; asking
       earlier is the one spend that buys nothing), and `--dry-run` never
       probes (a cycle that promises to change nothing must not write
       `limit-cleared`, and a verdict it would have to ignore is pure cost).
@@ -1037,26 +1074,27 @@
       deliberate human stand-down (#244).
    1c. *A long-running automatic freeze escalates; a manual stand-down never
       pages.* While an automatic stand-down holds, the Script ages it from
-      the freeze's start as 1's union read gives it (`limit_union_state`'s
-      `since`: the `ts` of the first `limit-hit` after the last
-      `limit-cleared` in the union — the start of the current freeze, not its
-      latest extension). When the union was read but holds no live hit — the
-      stand-down rests on `fleet/limit.json` alone — it ages the freeze from
-      the governing record's own `ts` instead, which is the flag record's
-      time: when `fleet_limit_publish` (`lib/toggle.sh`) last wrote it, and,
-      since every extension rewrites it, the latest extension. Once that age reaches
+      the freeze's start as 1's union read gives it, narrowed to
+      `check_provider` (`limit_union_state_for`'s `since`: the `ts` of the
+      first `limit-hit` after the last `limit-cleared` in that provider's own
+      bucket — the start of the current freeze, not its latest extension).
+      When the union was read but holds no live hit — the stand-down rests
+      on `fleet/limit.json` alone — it ages the freeze from the governing
+      record's own `ts` instead: when `fleet_limit_publish`
+      (`lib/toggle.sh`) last wrote it, and, since every extension rewrites
+      it, the latest extension. Once that age reaches
       `limit_escalate_after_hours` (0 disables the check), it files an
-      escalation issue in `crash_loop_repo` — label
-      `enabler_escalation_label`, assignee `enabler_assignee`, body carrying
-      the governing record and the item ref `usage-limit-freeze:<since>` —
+      escalation issue in `crash_loop_repo` — label `enabler_escalation_label`,
+      assignee `enabler_assignee`, body carrying the governing record, the
+      provider, and the item ref `usage-limit-freeze:<provider>:<since>` —
       through the same duplicate-guarded `create_escalation_issue` the
       Enabler and the crash-loop check use, and logs
-      `limit-freeze-escalated` with the issue, the time it aged from
-      (`since`) and which time that is (`since_basis`: `union` for the first
-      hit, `flag` for the flag record's own `ts`, which the issue body names
-      as such). That event in the union is what makes the escalation
-      once-per-freeze: a cycle that finds one whose `since` is the time it
-      ages from does not file again, and the open-issue guard catches the
+      `limit-freeze-escalated` with the issue, the provider, the time it
+      aged from (`since`) and which time that is (`since_basis`: `union` for
+      the first hit, `flag` for the flag record's own `ts`). This makes the
+      escalation once-per-freeze-per-provider: a cycle that finds one naming
+      this provider whose `since` is the time it ages from does not file
+      again, and the open-issue guard catches the
       cross-node race the union has not yet carried. A flag-only freeze that
       is extended gets a new `since`, and so is aged and escalated afresh
       from that extension. A failed filing logs a `warning` and retries next

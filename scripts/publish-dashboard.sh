@@ -899,8 +899,9 @@ epoch_of() { date -d "$1" +%s 2>/dev/null || echo 0; }
 # `limit_phrase_in`/`limit_reset_text`'s patterns for that same purpose;
 # `lib/limit-detect.sh`'s own copies (shared with agent-cycle.sh, see
 # TD26071401) remain in use elsewhere in this script for the stand-down
-# banner (`limit_union_record` et al.), which is a different reader of the
-# same phrase and is untouched by this change.
+# banner (`limit_union_frozen_providers`/`limit_governing_record_for` et
+# al.), which is a different reader of the same phrase and is untouched by
+# this change.
 detail_defs="$work_tmp/detail-defs.jq"
 cat > "$detail_defs" <<'JQDEFS'
 def try_json($s): ($s | try fromjson catch null);
@@ -1250,8 +1251,9 @@ fi
 # unfiltered — though that input is the union reduced to each key's
 # declared event types by `union_prefilter` before the evaluation runs
 # (lib/pager.sh, agent-ops#2429); and the stand-down banner's
-# `limit_union_record`, which reads through lib/limit-detect.sh's own reader
-# (agent-ops#2037) over its own declared reduction (`LIMIT_UNION_EVENTS`).
+# `limit_union_frozen_providers`/`limit_governing_record_for`, which read
+# through lib/limit-detect.sh's own reader (agent-ops#2037) over its own
+# declared reduction (`LIMIT_UNION_EVENTS`).
 # Each `reduce` below keeps its one
 # map at the top of the accumulator and updates an entry with `|=`, never
 # through an `as` binding of anything read from the accumulator: a binding
@@ -1760,47 +1762,87 @@ if [[ "$lock_alive" == "true" && -n "$lock_pid" ]]; then
   [[ -z "$running_events" || "$running_events" == "null" ]] && running_events='[]'
 fi
 
-# Usage-limit state: prefer a logged limit-hit with a future resume_at; else
-# fall back to limit phrasing detected in the most recent cycles' transcripts.
-# The reduction is lib/limit-detect.sh's, so a `limit-cleared` event retires
-# the banner exactly when it retires the stand-down itself (requirement 34a —
-# the dashboard must not still be reporting a limit the pipelines have lifted).
-# It reads `$events_jsonl` through `union_prefilter`, reduced to the three
-# event types `LIMIT_UNION_EVENTS` declares beside that reader's program, so
-# the fold's `jq` parses a few per cent of the union rather than all of it
-# (agent-ops#2429); the reduction is exact for a reader that keeps only its
-# declared types, and a prefilter that fails leaves the whole union in place.
+# Usage-limit state, scoped per provider (issue #2135): one entry per
+# provider the fleet is currently standing down, not one fleet-wide verdict.
+# `$events_jsonl` is reduced through `union_prefilter` to the three event
+# types `LIMIT_UNION_EVENTS` declares beside lib/limit-detect.sh's own
+# program, so the fold's `jq` parses a few per cent of the union rather than
+# all of it (agent-ops#2429); the reduction is exact for a reader that keeps
+# only its declared types, and a prefilter that fails leaves the whole union
+# in place.
 limit_input="$work_tmp/limit-input.jsonl"
 # shellcheck disable=SC2086  # a word list by design.
 union_prefilter "$events_jsonl" $LIMIT_UNION_EVENTS > "$limit_input" 2>/dev/null \
   || limit_input="$events_jsonl"
-last_limit_hit="$(limit_union_record < "$limit_input")"
-[[ -n "$last_limit_hit" ]] || last_limit_hit='{}'
-limit_resume="$(jq -r '.resume_at // empty' <<<"$last_limit_hit" 2>/dev/null)"
-limit_class="$(jq -r '.class // "other"' <<<"$last_limit_hit" 2>/dev/null)"
-limit_reset_is_known="$(limit_reset_known "$last_limit_hit")"
-limit_active=false; limit_note=""
-if [[ -n "$limit_resume" ]] && (( $(epoch_of "$limit_resume") > now_epoch )); then
-  # When no reset time was stated, `resume_at` is this system's own retry
-  # interval. Saying "until <t>" of a guess is what let a stand-down outlive
-  # its limit unquestioned, so limit_describe says which kind of time it is
-  # and names the two ways out (wait for the rollover, or raise the cap and
-  # clear it).
-  limit_active=true
-  limit_note="$(limit_describe "$limit_resume" "$limit_class" "$limit_reset_is_known") (logged)"
-fi
 
-if [[ "$limit_active" != "true" ]]; then
-  # A limit is "active" only if the most recent cycle that actually launched a
-  # stage hit one — otherwise a later successful cycle has cleared it and the
-  # banner would be a stale false positive. (Skipped/stand-down cycles launch no
-  # stage, so they don't count as recovery either way.)
-  lt="$(jq -r '
+# The live flag's own last-fetched copy only — never `fleet_flag_fetch`
+# itself, so this unconditional section (it runs on every tick, including a
+# fast `--no-github` one) costs no API call; the fleet-flags panel below
+# reads the very same cache file the very same way. The WITH_GITHUB block
+# further down (`fleet_flag_fetch "$state_repo" "$state_dir" limit`) is what
+# keeps this copy warm — on a tick that skips it, this list is only ever as
+# stale as that copy, the same bound the single fleet-wide badge this
+# replaces always had.
+limit_flag_raw="$(cat "$(fleet_cache_file "$state_dir" limit)" 2>/dev/null || true)"
+limit_flag_provider="$(jq -r '.provider // "anthropic"' <<<"${limit_flag_raw:-null}" 2>/dev/null)"
+[[ -n "$limit_flag_provider" && "$limit_flag_provider" != "null" ]] || limit_flag_provider="anthropic"
+
+# Candidate providers: every bucket `limit_union_frozen_providers` says
+# currently has a live `limit-hit` governing it (the wildcard bucket — every
+# pre-#2133 event with no `provider` field — printed as the empty string,
+# folded here onto "anthropic" exactly as every other caller's
+# `${check_provider:-anthropic}` already does), plus whatever provider the
+# cached flag itself names, in case a hit is fresh enough that the union
+# hasn't caught up to it yet.
+limit_candidate_providers="$( { limit_union_frozen_providers < "$limit_input"; printf '%s\n' "$limit_flag_provider"; } \
+  | sed 's/^$/anthropic/' | sort -u)"
+
+# Each candidate is resolved the same way `limit_governing_record_for`
+# (lib/limit-detect.sh) resolves one — that provider's own union bucket
+# combined with the wildcard bucket and the live flag, "later resume wins" —
+# except the flag half comes from the cached copy above rather than a fresh
+# fetch, for the no-API-call reason given there. A provider whose governing
+# record has already lapsed (a past resume_at with no `limit-cleared` logged
+# yet) does not render as frozen.
+limits_json='[]'
+while IFS= read -r limit_provider; do
+  [[ -n "$limit_provider" ]] || continue
+  limit_union_rec="$(jq -c '.record // empty' <<<"$(limit_union_state_for "$limit_provider" < "$limit_input")" 2>/dev/null)"
+  limit_flag_rec="$(limit_flag_record_for "$limit_flag_raw" "$limit_provider")"
+  limit_rec="$(limit_later_record "$limit_union_rec" "$limit_flag_rec")"
+  [[ -n "$limit_rec" ]] || continue
+  limit_resume="$(jq -r '.resume_at // empty' <<<"$limit_rec" 2>/dev/null)"
+  [[ -n "$limit_resume" ]] || continue
+  (( $(epoch_of "$limit_resume") > now_epoch )) || continue
+  limit_entry="$(jq -c --arg p "$limit_provider" --argjson rk "$(limit_reset_known "$limit_rec")" \
+    '{provider: $p, resume_at: (.resume_at), class: (.class // "other"),
+      reset_known: $rk, kind: (.kind // "auto"), actor: (.actor // .node // null)}' \
+    <<<"$limit_rec" 2>/dev/null)"
+  [[ -n "$limit_entry" ]] || continue
+  limits_json="$(jq -c --argjson e "$limit_entry" '. + [$e]' <<<"$limits_json" 2>/dev/null)"
+  [[ -n "$limits_json" ]] || limits_json='[]'
+done <<<"$limit_candidate_providers"
+
+# A limit mentioned in the most recent cycle's own transcript but not yet
+# turned into a `limit-hit` event is still worth a banner — the gap between
+# the two is usually one process, but a reader must not go a whole fetch
+# interval blind in the rare case it isn't. This heuristic carries no
+# provider of its own (it reads stage output text, not a structured record),
+# so it only ever speaks for "anthropic", and only when the structured path
+# above found nothing to say about that provider itself. (Skipped/stand-down
+# cycles launch no stage, so they don't count as recovery either way.)
+if ! jq -e 'any(.[]; .provider == "anthropic")' <<<"$limits_json" >/dev/null 2>&1; then
+  limit_transcript_text="$(jq -r '
     [ .[] | select(any(.stages[]?; .ran)) ] | (.[0] // {})
     | if .limit_hit
       then (.stages.implementer.limit_text // .stages.reviewer.limit_text // .stages.coordinator.limit_text // "usage limit reported in transcript")
       else "" end' "$cycles_file" 2>/dev/null)"
-  if [[ -n "$lt" ]]; then limit_active=true; limit_note="$lt"; fi
+  if [[ -n "$limit_transcript_text" ]]; then
+    limit_entry="$(jq -nc --arg p "anthropic" --arg note "$limit_transcript_text" \
+      '{provider: $p, resume_at: null, class: null, reset_known: null, kind: "auto", actor: null, note: $note}')"
+    limits_json="$(jq -c --argjson e "$limit_entry" '. + [$e]' <<<"$limits_json" 2>/dev/null)"
+    [[ -n "$limits_json" ]] || limits_json='[]'
+  fi
 fi
 
 # The switch (requirement 2.3), read through lib/toggle.sh — the same code the
@@ -1835,7 +1877,7 @@ status_json="$(jq -n \
   --argjson alive "$lock_alive" \
   --arg pid "$lock_pid" --arg started "$lock_started" \
   --argjson running "$running_events" \
-  --argjson limit_active "$limit_active" --arg limit_note "$limit_note" \
+  --argjson limits "$limits_json" \
   --argjson switch "$switch_json" \
   --argjson doctor "$doctor_status_json" \
   --argjson stage_health "$stage_health_json" \
@@ -1895,7 +1937,7 @@ status_json="$(jq -n \
       # badge it by `outcome`, and a cycle-start with no end has a null for the
       # first and the floor of the outcome ladder for the second.
       last_cycle: (($last_real // $last_any) | if . == null then null else {id, node, ended_at, outcome, repo, item, title} end),
-      limit: {active: $limit_active, note: $limit_note},
+      limits: $limits,
       switch: $switch,
       doctor: $doctor,
       stage_health: $stage_health,

@@ -289,8 +289,9 @@
     about one cycle interval.
 
     A usage-limit phrase in the transcript still goes down requirement 10's
-    ordinary path (`limit-hit`, `fleet/limit.json`), because a limit belongs to
-    the whole fleet and not to this stage. A claimed item the model never
+    ordinary path (`limit-hit`, `fleet/limit.json`), scoped to the provider
+    `enabler_model` resolves to (issue #2135) — because a limit belongs to
+    the account that hit it, not to this stage. A claimed item the model never
     mentions, and a verdict the Script does not recognise, are `warning`s: the
     item stays blocked and the log is the only place a stage that routinely
     omits items would ever become visible.

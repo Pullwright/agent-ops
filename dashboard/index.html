@@ -3914,44 +3914,51 @@
         el("span", {class:"sub", text: makDetail})
       ]));
     }
-    if (st.limit && st.limit.active) {
-      banners.appendChild(el("div", {class:"banner amber"}, [
-        el("span", {text: "⏸ Usage limit reached."}),
-        el("span", {class:"sub", text: st.limit.note ? ("Pipeline stands down — " + st.limit.note + ".") : "Pipeline stands down until the limit resets."})
-      ]));
-    } else if (ff.limit && ff.limit.resume_at && parseTs(ff.limit.resume_at) && parseTs(ff.limit.resume_at) > new Date()) {
-      // The fleet limit flag (2.1) matters here exactly when the local log
-      // union hasn't caught up — a standby with no state yet, or a hit
-      // seconds old on another node.
-      //
+    // One banner per provider the fleet is currently standing down (issue
+    // #2135): `status.limits` is already one entry per provider currently
+    // frozen — scripts/publish-dashboard.sh resolved each through
+    // `limit_governing_record_for`, the same "later resume wins" fold the
+    // stand-down check itself governs by, so this cannot disagree with it
+    // (requirement 34a). Zero entries renders nothing, exactly as a single
+    // fleet-wide badge did when nothing was active.
+    (st.limits || []).forEach(function (lim) {
+      if (lim.note) {
+        // No structured record yet — a limit phrase seen in the most recent
+        // cycle's own transcript, ahead of the `limit-hit` event that
+        // usually follows within the same process. Carries no resume_at/
+        // class/kind of its own, so it renders as plain text rather than a
+        // deadline.
+        banners.appendChild(el("div", {class:"banner amber"}, [
+          el("span", {text: "⏸ Usage-limit stand-down (" + lim.provider + ")."}),
+          el("span", {class:"sub", text: "Pipeline stands down — " + lim.note + "."})
+        ]));
+        return;
+      }
       // `reset_known` distinguishes a reset time the provider stated from the
-      // retry interval this system invented when it wasn't given one; older
-      // flags carry the superseded `needs_human`, whose sense is inverted.
-      // Saying "until <t>" of an invented time is the misreport this banner
-      // exists to avoid — a stand-down that reads like a deadline gets waited
-      // out instead of questioned.
-      var resetKnown = ff.limit.reset_known !== undefined ? !!ff.limit.reset_known
-                     : ff.limit.needs_human !== undefined ? !ff.limit.needs_human
-                     : true;
+      // retry interval this system invented when it wasn't given one. Saying
+      // "until <t>" of an invented time is the misreport this banner exists
+      // to avoid — a stand-down that reads like a deadline gets waited out
+      // instead of questioned.
+      var resetKnown = !!lim.reset_known;
       // `kind` (requirement 2.1, #244): a manual record is an operator's
       // decision — honoured as written, never probed — and the banner must
       // not describe it in the detector's voice.
-      var lkind = ff.limit.kind || "auto";
+      var lkind = lim.kind || "auto";
       var by = " — " + (lkind === "manual" ? "set" : "published") + " by "
-             + (ff.limit.actor || ff.limit.node || "?") + " (" + lkind + ").";
+             + (lim.actor || "?") + " (" + lkind + ").";
       var lsub = lkind === "manual"
-        ? "Until " + ff.limit.resume_at + by + " A manual stand-down is never probed; `agent-cycle.sh --clear-limit` lifts it early."
+        ? "Until " + lim.resume_at + by + " A manual stand-down is never probed; `agent-cycle.sh --clear-limit " + lim.provider + "` lifts it early."
         : resetKnown
-        ? "Until " + ff.limit.resume_at + by
-        : "Retrying after " + ff.limit.resume_at + " (estimated — no reset time was given)" + by +
-          (ff.limit.class === "weekly" || ff.limit.class === "monthly"
-            ? " It clears at the plan's rollover, or sooner if you raise the cap and run `agent-cycle.sh --clear-limit`."
+        ? "Until " + lim.resume_at + by
+        : "Retrying after " + lim.resume_at + " (estimated — no reset time was given)" + by +
+          (lim.class === "weekly" || lim.class === "monthly"
+            ? " It clears at the plan's rollover, or sooner if you raise the cap and run `agent-cycle.sh --clear-limit " + lim.provider + "`."
             : "");
       banners.appendChild(el("div", {class:"banner amber"}, [
-        el("span", {text: "⏸ Fleet-wide usage-limit stand-down."}),
+        el("span", {text: "⏸ Usage-limit stand-down (" + lim.provider + ")."}),
         el("span", {class:"sub", text: lsub})
       ]));
-    }
+    });
     // A node's own row can read stale here exactly like a peer's
     // (fleet_publication_status, agent-ops#602): self obeys the identical
     // publication-freshness rule rather than being definitionally fresh, so

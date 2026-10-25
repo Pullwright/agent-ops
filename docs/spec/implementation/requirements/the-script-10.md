@@ -280,12 +280,17 @@
     states `resetsAt` as an epoch, so the stand-down is a fact rather than an
     estimate, and it is the only source available on that path at all, since a
     stage stopped at the refusal writes no final message for a phrase matcher
-    to read. Otherwise — and whenever any `claude` invocation's transcript
-    matches the shared pattern in `lib/limit-detect.sh` (`LIMIT_PHRASE_REGEX`
-    — the generic `hit your .* limit` stem plus the legacy `usage limit` /
-    `rate limit` / `usage cap` / `quota exceeded` terms; sourced by both the
-    Script and `scripts/publish-dashboard.sh` so the two can't drift apart) —
-    it is parsed out of the prose. Either way the event is a `limit-hit`
+    to read. Otherwise — and whenever any stage's transcript matches the
+    phrase table `limit_phrase_regex_for` selects for its own provider
+    (`stage_provider`, issue #2135) in `lib/limit-detect.sh` — `LIMIT_PHRASE_REGEX`
+    (the generic `hit your .* limit` stem plus the legacy `usage limit` /
+    `rate limit` / `usage cap` / `quota exceeded` terms) for `anthropic` and
+    any provider with no table of its own, or `XAI_LIMIT_PHRASE_REGEX`'s own
+    disjoint weekly/spend-cap wording for xAI's Grok Build substrate (issue
+    #2134), so its transient 429 text is never mistaken for a stand-down —
+    sourced by the Script, `review-cycle.sh`, `monitor-cycle.sh` and
+    `scripts/publish-dashboard.sh` so none can drift apart — it is parsed
+    out of the prose. Either way the event is a `limit-hit`
     carrying the same three fields, because no reader downstream should have
     to know which source produced it: `resume_at`, `class`, and
     `reset_known`:
@@ -450,16 +455,23 @@
     included: a flag the parser honours but the usage omits is one an
     operator can only find by reading the source.
 
-    `--clear-limit [<reason>]` lifts a usage-limit stand-down (2.1) and runs
-    no cycle either. It is deliberately not `--enable`: the switch and the
-    stand-down are separate states with separate causes, and one command for
-    both would let an operator clearing a spend cap silently re-enable a
+    `--clear-limit [<provider>] [<reason>]` lifts a usage-limit stand-down
+    (2.1) and runs no cycle either. With no provider, every provider's own
+    stand-down lifts, as before issue #2135; naming one (matched against
+    `PROVIDER_SUBSTRATE`'s configured keys, plus the always-valid
+    `anthropic`) lifts only that provider's, leaving a different provider's
+    own freeze untouched. It is deliberately not `--enable`: the switch and
+    the stand-down are separate states with separate causes, and one command
+    for both would let an operator clearing a spend cap silently re-enable a
     pipeline another agent had disabled to edit these files. It clears both
-    carriers, reports what it lifted and what it could not, and warns loudly
-    on a failed flag delete — a flag left set keeps every node down after the
-    operator believes they have resumed. The reason is optional, unlike
-    `--disable`'s: a stand-down being lifted is self-explanatory in a way one
-    being imposed is not.
+    carriers for the named scope, reports what it lifted and what it could
+    not, and warns loudly on a failed flag delete — a flag left set keeps
+    every node down after the operator believes they have resumed; naming a
+    provider deletes the flag only when the flag's own current record already
+    names that provider, leaving a different or wildcard record untouched.
+    The reason is
+    optional, unlike `--disable`'s: a stand-down being lifted is
+    self-explanatory in a way one being imposed is not.
 
     `--kill-merge-autonomy [<reason>]` and `--restore-merge-autonomy`
     (requirement 2.3b) manage the D18 kill switch and run no cycle either. Like

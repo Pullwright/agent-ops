@@ -366,7 +366,7 @@ usage: agent-cycle.sh [--dry-run] [--once] [--wake-poll] [--repo <slug>]
        agent-cycle.sh --disable [<reason>] [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --drain <reason> [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --enable [--this-node]
-       agent-cycle.sh --clear-limit [<reason>]
+       agent-cycle.sh --clear-limit [<provider>] [<reason>]
        agent-cycle.sh --kill-merge-autonomy [<reason>]
        agent-cycle.sh --restore-merge-autonomy
        agent-cycle.sh --mix [<provider> [<lane>=<weight>... | <lane>.enabled=true | <lane>.balance_usd=<n>] | <provider> --reset]
@@ -427,10 +427,16 @@ stops cycles from starting (shared with review-cycle.sh).
                      node-scoped stand-down; --enable --this-node refuses to
                      clear one of those, since plain --enable is what undoes a
                      fleet-wide disable.
-  --clear-limit      Lift a usage-limit stand-down across the fleet (2.1). Use
-                     it once the limit is actually gone — you raised the cap,
-                     or the plan rolled over. Unlike --enable this touches no
-                     switch: it clears fleet/limit.json and logs a
+  --clear-limit [<provider>] [<reason>]
+                     Lift a usage-limit stand-down (2.1). With no provider,
+                     every provider's own stand-down lifts, as before issue
+                     #2135; name one (e.g. `anthropic`, `xai`) to lift only
+                     that provider's — a different provider's own freeze, if
+                     any, is untouched. Use it once the limit is actually
+                     gone — you raised the cap, or the plan rolled over.
+                     Unlike --enable this touches no switch: it clears
+                     fleet/limit.json (the named provider's own record, or the
+                     whole flag with no provider named) and logs a
                      `limit-cleared` event that supersedes the cooldown.
   --kill-merge-autonomy [reason]
                      Force every repo's effective `merge_autonomy` to `human`
@@ -498,6 +504,9 @@ DRAIN_REASON=""
 DISABLE_FOR=""
 DISABLE_UNTIL=""
 CLEAR_LIMIT_REASON=""
+CLEAR_LIMIT_PROVIDER=""
+CLEAR_LIMIT_ARG1=""
+CLEAR_LIMIT_ARG2=""
 KILL_MERGE_AUTONOMY_REASON=""
 THIS_NODE=0
 MIX_ARGS=()
@@ -531,9 +540,19 @@ while [[ $# -gt 0 ]]; do
     --enable) set_manage_action enable; shift ;;
     --clear-limit)
       set_manage_action clear-limit; shift
-      # Optional here, unlike --disable's: a stand-down being lifted is
-      # self-explanatory in a way that one being imposed is not.
-      if [[ $# -gt 0 && "$1" != --* ]]; then CLEAR_LIMIT_REASON="$1"; shift; fi
+      # Up to two bare tokens (issue #2135): a provider name and a reason, in
+      # that order, each optional on its own — `--clear-limit`, `--clear-limit
+      # "cap raised"`, `--clear-limit xai`, and `--clear-limit xai "cap
+      # raised"` are all valid. Which of one bare token is which (a provider
+      # vs. a reason, both optional) cannot be told from argv alone — no
+      # provider configured at parse time is loaded yet (providers_load runs
+      # well after argument parsing) — so `run_manage_command`'s own
+      # `clear-limit` case (lib/manage.sh) resolves it once that config is
+      # available: a single token matching a configured provider name is the
+      # provider with no reason; otherwise it is the reason, exactly as
+      # before this issue.
+      if [[ $# -gt 0 && "$1" != --* ]]; then CLEAR_LIMIT_ARG1="$1"; shift; fi
+      if [[ $# -gt 0 && "$1" != --* ]]; then CLEAR_LIMIT_ARG2="$1"; shift; fi
       ;;
     --kill-merge-autonomy)
       set_manage_action kill-merge-autonomy; shift

@@ -1883,14 +1883,14 @@ detect_and_log_limit_hit() {
     limit_hit_this_cycle=1
     evidence="$stage_rate_limit_json"
   else
-    # Before #2135 scopes a limit to the account that hit it, phrase
-    # detection stays off any non-Claude stage's output: xAI's own 429 text
-    # already matches `rate limit` in LIMIT_PHRASE_REGEX, and a Grok limit
-    # would otherwise stand the whole fleet down, Claude stages included.
-    # Such a limit still reaches the record through `stage_api_refusal`'s own
-    # normalisation (lib/substrate-grok-build.sh), as `api_error_429`
-    # (transient) or `credit_exhausted` (refused).
-    [[ "${stage_provider:-anthropic}" == "anthropic" ]] || return 1
+    # Scoped per provider (issue #2135): each provider's own phrase table
+    # (limit_phrase_regex_for, lib/limit-detect.sh) — xAI's own weekly/spend
+    # phrasing for `xai`, Anthropic's own for every other provider, including
+    # the implicit default. `limit_phrase_provider` is a local, so it is
+    # visible to `limit_phrase_in` below (bash's dynamic scope) without
+    # threading a new argument through every one of its three production
+    # callers.
+    local limit_phrase_provider="${stage_provider:-anthropic}"
     limit_phrase_in "$out_file" "$out_file.stderr" || return 1
     # Remembered for the rest of the cycle, because the Enabler runs from the exit
     # trap — after this point on every path — and engaging the fleet's most
@@ -1899,7 +1899,7 @@ detect_and_log_limit_hit() {
     limit_hit_this_cycle=1
     text="$(cat "$out_file" "$out_file.stderr" 2>/dev/null || true)"
     IFS=$'\t' read -r resume_at class reset_known < <(limit_decide "$text" "$limit_cooldown_default_hours")
-    evidence="$(grep -ihE "$LIMIT_PHRASE_REGEX" "$out_file" "$out_file.stderr" 2>/dev/null | head -n1 || true)"
+    evidence="$(grep -ihE "$(limit_phrase_regex_for "$limit_phrase_provider")" "$out_file" "$out_file.stderr" 2>/dev/null | head -n1 || true)"
   fi
   # The API's own words, bounded: what the detector actually saw is what
   # distinguishes an automatic stand-down from an assertion, and is what a

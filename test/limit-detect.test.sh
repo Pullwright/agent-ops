@@ -83,6 +83,55 @@ printf 'Implemented the feature and opened a pull request.\n' > "$tmp"
 assert_false "limit_phrase_in does not match ordinary output" limit_phrase_in "$tmp"
 rm -f "$tmp"
 
+# --- limit_phrase_regex_for / limit_phrase_in: per-provider phrase tables --
+# Issue #2135: xAI's own limit messages ("too many requests", "resource has
+# been exhausted", …) don't appear in Anthropic's table, and Anthropic's own
+# phrasing doesn't appear in xAI's deliberately disjoint one (see the comment
+# above XAI_LIMIT_PHRASE_REGEX in lib/limit-detect.sh) — so selecting a
+# provider has to actually change which phrases match, not just which table
+# happens to be in scope.
+assert_eq "limit_phrase_regex_for returns Anthropic's table for anthropic" \
+  "$LIMIT_PHRASE_REGEX" "$(limit_phrase_regex_for anthropic)"
+assert_eq "limit_phrase_regex_for returns xAI's table for xai" \
+  "$XAI_LIMIT_PHRASE_REGEX" "$(limit_phrase_regex_for xai)"
+assert_eq "limit_phrase_regex_for fails closed onto Anthropic's table for an unrecognised provider" \
+  "$LIMIT_PHRASE_REGEX" "$(limit_phrase_regex_for some-future-provider)"
+
+# limit_phrase_in reads $limit_phrase_provider, a bash variable rather than an
+# argument (see its own header) — unset or empty means anthropic, exactly as
+# every call site before this issue behaved. The two fixtures already proved
+# this above; this re-proves it with the variable explicitly unset, so a
+# regression that made limit_phrase_in require the variable to be set would
+# be caught here rather than only in callers that happen to set it.
+unset limit_phrase_provider
+assert_true  "limit_phrase_in with no provider set still matches the weekly-limit fixture" \
+  limit_phrase_in "$weekly_fixture"
+assert_true  "limit_phrase_in with no provider set still matches the monthly-spend-limit fixture" \
+  limit_phrase_in "$monthly_fixture"
+
+# provider=xai must match xAI's own phrasing...
+xai_tmp="$(mktemp)"
+printf 'Error: resource has been exhausted, try again later\n' > "$xai_tmp"
+limit_phrase_provider=xai
+assert_true  "limit_phrase_in with provider=xai matches xAI's own phrasing" \
+  limit_phrase_in "$xai_tmp"
+unset limit_phrase_provider
+assert_false "limit_phrase_in with no provider set does not match xAI's own phrasing (tables are disjoint)" \
+  limit_phrase_in "$xai_tmp"
+rm -f "$xai_tmp"
+
+# ...and the two Anthropic fixtures' own stems ("hit your weekly limit",
+# "hit your monthly spend limit") must NOT read as an xAI limit: neither
+# contains any of xAI's four phrases (checked by hand against both tables
+# before writing this), so a provider=xai read of either must come back
+# false, not fall through to Anthropic's table by accident.
+limit_phrase_provider=xai
+assert_false "limit_phrase_in with provider=xai does not match the weekly-limit fixture" \
+  limit_phrase_in "$weekly_fixture"
+assert_false "limit_phrase_in with provider=xai does not match the monthly-spend-limit fixture" \
+  limit_phrase_in "$monthly_fixture"
+unset limit_phrase_provider
+
 # --- limit_class_of --------------------------------------------------------
 assert_eq "limit_class_of classifies the weekly fixture"  "weekly"  "$(limit_class_of "$weekly_text")"
 assert_eq "limit_class_of classifies the monthly fixture" "monthly" "$(limit_class_of "$monthly_text")"
@@ -289,6 +338,115 @@ else
 fi
 rm -rf "$fake_jq_dir"
 
+# --- limit_union_record_for / limit_union_state_for / limit_union_frozen_providers:
+#     issue #2135's per-provider folding -------------------------------------
+# Before this issue every limit-hit this system ever wrote carried no
+# `provider` field at all, and governed every account at once because there
+# was only ever one account. LIMIT_UNION_JQ's fold now keys each event by its
+# own `provider`, with the empty string "" standing in for the wildcard
+# bucket an unscoped event falls into — so a hit on one provider's account
+# must stand down only that provider, while a record with no provider at all
+# (every event from before #2133, and a bare fleet-wide --clear-limit) still
+# has to govern every provider, the same back-compat rule
+# limit_flag_record_for applies to the flag carrier.
+
+# Two providers hit independently: each one's own query sees only its own.
+two_provider_hits="$(printf '%s\n' \
+  '{"ts":"2026-02-01T00:00:00Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z","provider":"anthropic"}' \
+  '{"ts":"2026-02-02T00:00:00Z","event":"limit-hit","resume_at":"2099-02-01T00:00:00Z","provider":"xai"}')"
+assert_eq "limit_union_record_for sees only anthropic's own hit" \
+  "2099-01-01T00:00:00Z" "$(limit_union_record_for anthropic <<<"$two_provider_hits" | jq -r '.resume_at')"
+assert_eq "limit_union_record_for sees only xai's own hit" \
+  "2099-02-01T00:00:00Z" "$(limit_union_record_for xai <<<"$two_provider_hits" | jq -r '.resume_at')"
+assert_eq "limit_union_record_for is clear for a third provider neither hit named" \
+  "" "$(limit_union_record_for grok <<<"$two_provider_hits")"
+
+# A wildcard (no-provider) hit governs every provider — the pre-#2133 record's
+# own reach, preserved.
+wildcard_hit='{"ts":"2026-02-01T00:00:00Z","event":"limit-hit","resume_at":"2099-03-01T00:00:00Z"}'
+assert_eq "a wildcard limit-hit governs a provider that never had its own" \
+  "2099-03-01T00:00:00Z" "$(limit_union_record_for anthropic <<<"$wildcard_hit" | jq -r '.resume_at')"
+assert_eq "…and a different provider too" \
+  "2099-03-01T00:00:00Z" "$(limit_union_record_for xai <<<"$wildcard_hit" | jq -r '.resume_at')"
+
+# Later-of-two wins within one provider's own query, the same "later resume
+# wins" limit_later_record applies across carriers, applied here a second
+# time inside the union itself: a provider's own later hit beats an earlier
+# wildcard, and a later wildcard beats an earlier provider-own hit.
+own_later_than_wildcard="$(printf '%s\n' \
+  '{"ts":"2026-02-01T00:00:00Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}' \
+  '{"ts":"2026-02-02T00:00:00Z","event":"limit-hit","resume_at":"2099-04-01T00:00:00Z","provider":"anthropic"}')"
+assert_eq "a provider's own later hit wins over an earlier wildcard" \
+  "2099-04-01T00:00:00Z" "$(limit_union_record_for anthropic <<<"$own_later_than_wildcard" | jq -r '.resume_at')"
+wildcard_later_than_own="$(printf '%s\n' \
+  '{"ts":"2026-02-01T00:00:00Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z","provider":"anthropic"}' \
+  '{"ts":"2026-02-02T00:00:00Z","event":"limit-hit","resume_at":"2099-05-01T00:00:00Z"}')"
+assert_eq "a later wildcard hit wins over a provider's own earlier one" \
+  "2099-05-01T00:00:00Z" "$(limit_union_record_for anthropic <<<"$wildcard_later_than_own" | jq -r '.resume_at')"
+
+# A provider-scoped limit-cleared clears only its own bucket, leaving every
+# other provider's own hit standing — the one place this issue's scoping
+# actually changes clearing behaviour, since a clear used to be fleet-wide by
+# definition.
+provider_cleared="$two_provider_hits
+{\"ts\":\"2026-02-03T00:00:00Z\",\"event\":\"limit-cleared\",\"provider\":\"anthropic\"}"
+assert_eq "a provider-scoped limit-cleared clears only that provider" \
+  "" "$(limit_union_record_for anthropic <<<"$provider_cleared")"
+assert_eq "…and leaves the other provider's own hit standing" \
+  "2099-02-01T00:00:00Z" "$(limit_union_record_for xai <<<"$provider_cleared" | jq -r '.resume_at')"
+
+# A wildcard (no-provider) limit-cleared resets every bucket seen so far at
+# once — the "clear everything" behaviour a bare --clear-limit has always
+# had, preserved exactly for providers that have never named themselves.
+wildcard_cleared="$two_provider_hits
+{\"ts\":\"2026-02-03T00:00:00Z\",\"event\":\"limit-cleared\"}"
+assert_eq "a wildcard limit-cleared clears anthropic's own bucket" \
+  "" "$(limit_union_record_for anthropic <<<"$wildcard_cleared")"
+assert_eq "…and xai's own bucket too" \
+  "" "$(limit_union_record_for xai <<<"$wildcard_cleared")"
+
+# limit_union_state_for prints the same {"record":…,"since":…,"escalated":[…]}
+# shape limit_union_state has always printed, narrowed to one provider.
+assert_eq "limit_union_state_for answers the same shape as limit_union_state, scoped to one provider" \
+  '{"resume_at":"2099-01-01T00:00:00Z","since":"2026-02-01T00:00:00Z"}' \
+  "$(limit_union_state_for anthropic <<<"$two_provider_hits" | jq -c '{resume_at: .record.resume_at, since}')"
+assert_eq "limit_union_state_for over a provider with nothing recorded answers nothing for each field" \
+  '{"record":null,"since":null,"escalated":[]}' \
+  "$(limit_union_state_for grok <<<"$two_provider_hits")"
+
+# limit_union_frozen_providers: every bucket (the wildcard included, printed
+# as the empty string) whose own record is currently non-null — the
+# dashboard/Monitor's enumeration of who is frozen right now, rather than
+# checking one provider at a time.
+frozen_mixed="$(printf '%s\n' \
+  '{"ts":"2026-02-01T00:00:00Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z","provider":"anthropic"}' \
+  '{"ts":"2026-02-02T00:00:00Z","event":"limit-hit","resume_at":"2099-02-01T00:00:00Z","provider":"xai"}' \
+  '{"ts":"2026-02-03T00:00:00Z","event":"limit-cleared","provider":"xai"}' \
+  '{"ts":"2026-02-04T00:00:00Z","event":"limit-hit","resume_at":"2099-03-01T00:00:00Z"}')"
+assert_eq "limit_union_frozen_providers lists exactly the currently-recorded buckets (xai was cleared, anthropic and the wildcard were not)" \
+  "$(printf '%s\n' "" anthropic | sort)" \
+  "$(limit_union_frozen_providers <<<"$frozen_mixed" | sort)"
+
+# --- limit_flag_record_for: fleet/limit.json's own record, narrowed --------
+# The flag holds exactly one record at a time. A record with no `provider`
+# field at all applies to every provider — the "before issue #2133" reading,
+# identical to the wildcard bucket above — while a record naming one provider
+# applies only to that provider, never to a different one asking.
+rec_anthropic='{"provider":"anthropic","resume_at":"2030-01-01T00:00:00Z"}'
+assert_eq "a record scoped to anthropic is returned when anthropic asks" \
+  "$rec_anthropic" "$(limit_flag_record_for "$rec_anthropic" anthropic)"
+assert_eq "…and withheld when a different provider asks" \
+  "" "$(limit_flag_record_for "$rec_anthropic" xai)"
+
+rec_no_provider='{"resume_at":"2030-01-01T00:00:00Z"}'
+assert_eq "a record with no provider field applies to anthropic" \
+  "$rec_no_provider" "$(limit_flag_record_for "$rec_no_provider" anthropic)"
+assert_eq "…and to xai too (it predates issue #2133, or was hand-written/migrated)" \
+  "$rec_no_provider" "$(limit_flag_record_for "$rec_no_provider" xai)"
+
+assert_eq "empty RAW returns nothing" "" "$(limit_flag_record_for "" anthropic)"
+assert_eq "garbage RAW returns nothing" "" "$(limit_flag_record_for "not json at all" anthropic)"
+
 # --- limit_later_record: requirement 2.1's "later resume wins" -------------
 rec_early='{"resume_at":"2030-01-01T00:00:00Z","class":"weekly","reset_known":true}'
 rec_late='{"resume_at":"2031-01-01T00:00:00Z","class":"monthly","reset_known":false}'
@@ -363,6 +521,26 @@ assert_eq "a failed envelope with no limit phrase is inconclusive" \
   "inconclusive" "$(limit_probe_verdict '{"is_error":true,"result":"upstream connect error"}')"
 assert_eq "a clean envelope with an empty result is inconclusive" \
   "inconclusive" "$(limit_probe_verdict '{"is_error":false,"result":""}')"
+
+# --- limit_probe_verdict: PROVIDER selects the phrase table (issue #2135) --
+# The probe now runs against the frozen provider's own adapter, so its
+# transcript carries that provider's own wording — an xAI-specific phrase
+# must be read as "limited" when the probe says it ran against xai, and must
+# NOT be mistaken for a limit at all when read under Anthropic's table
+# (the default, and what every call site used before this issue), since
+# "resource has been exhausted" never appears in Anthropic's own phrasing.
+xai_probe_text="Error: resource has been exhausted, try again later"
+assert_eq "an xAI phrase with provider=xai is limited" \
+  "limited" "$(limit_probe_verdict "$xai_probe_text" "" xai)"
+assert_eq "the same xAI phrase with provider=anthropic is not read as a limit at all" \
+  "inconclusive" "$(limit_probe_verdict "$xai_probe_text" "" anthropic)"
+assert_eq "…and the same, with PROVIDER simply omitted (anthropic's own default)" \
+  "inconclusive" "$(limit_probe_verdict "$xai_probe_text")"
+# The phrase check runs over both streams: an xAI phrase on stderr must be
+# caught the same way one on stdout is, for the provider it actually belongs
+# to.
+assert_eq "an xAI phrase on stderr alone is limited for provider=xai" \
+  "limited" "$(limit_probe_verdict "" "$xai_probe_text" xai)"
 
 # --- limit_decide_structured: the runner's own record, not its prose -------
 # The better source wherever it exists, for a reason worth pinning down: a
