@@ -1188,9 +1188,11 @@
     list` call per repo, never per pull request, for every open issue
     carrying `enabler_escalation_label` whose body names a `pr-<n>-approver-
     adjudication` reference, matched locally against the merged-pull-request
-    listing this sweep already fetched. When that labelled listing finds
-    nothing to retire, a second, label-less `gh issue list` call looks for
-    the same reference in any open issue's body — keyed on the escalation
+    listing this sweep already fetched. When that labelled listing finds no
+    issues at all, or finds none whose body matches that regex for a pull
+    request in this round's own merged-pull-request listing, a second,
+    label-less `gh issue list` call looks for the same reference in any open
+    issue's body — keyed on the escalation
     footer's backticked `` Item: `pr-<n>-approver-adjudication` `` form and
     excluding any `<!-- agent-ops:decision-log` body — so an escalation
     `create_escalation_issue` filed via the retry-without-label path

@@ -2542,7 +2542,7 @@
       "label": "17g",
       "anchor": "impl-17g",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1224,
+      "line": 1226,
       "title": "The reservation-release retry sweep."
     },
     "IMPL 18": {
@@ -2550,7 +2550,7 @@
       "label": "18",
       "anchor": "impl-18",
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "line": 1285,
+      "line": 1287,
       "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
     },
     "IMPL 18a": {

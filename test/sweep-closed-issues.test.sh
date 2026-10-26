@@ -382,6 +382,37 @@ assert_eq "the labelled escalation is retired" \
 assert_not_contains "  ... and no label-less fallback call is made — the labelled listing already had what it needed" \
   "-R x/y --state open --search approver-adjudication" "$calls"
 
+# --- Case 13b: a labelled match for a non-swept PR does not suppress the fallback for a swept one ---
+# The exact gap the review on #2689 found: a labelled escalation is open for
+# PR 1153, which has not merged this round (it is not in prs.json, so the
+# labelled listing's match for it is not "for a PR currently being swept"),
+# while a label-less escalation for PR 1152 — merged this round — sits
+# unfound by the labelled listing. Testing `esc_rows` (any labelled match at
+# all) for emptiness would see the 1153 match and skip the fallback,
+# permanently stranding the label-less escalation for 1152. The fallback
+# must trigger whenever the labelled listing has no match for a PR actually
+# in this round's merged listing — regardless of what else it matched.
+c="$tmp_dir/case13b"; mkdir -p "$c"
+jq -n '[{number: 1152, url: "https://github.com/x/y/pull/1152",
+         body: "A direct merge, no issue to close.",
+         mergeCommit: {oid: "lbl005"},
+         mergedAt: "2026-09-06T15:07:00Z", mergedBy: {login: "a-human"}}]' > "$c/prs.json"
+jq -n '[{number: 1162, url: "https://github.com/x/y/issues/1162",
+         body: "pr-1153-approver-adjudication"}]' > "$c/esc-issues.json"
+jq -n '[{number: 1172, url: "https://github.com/x/y/issues/1172",
+         body: "Item: `pr-1152-approver-adjudication` · pull request https://github.com/x/y/pull/1152"}]' \
+  > "$c/esc-issues-labelless.json"
+
+out="$(run_sweep "$c")"
+calls="$(cat "$c/calls.log")"
+assert_eq "the swept PR's label-less escalation is retired despite the unrelated labelled match" \
+  '{"action":"approver-escalation-retired","pr_url":"https://github.com/x/y/pull/1152","issue_number":1172,"issue_url":"https://github.com/x/y/issues/1172","cause":"merged","merged_by":"a-human","merged_at":"2026-09-06T15:07:00Z"}' \
+  "$(jq -c 'select(.action == "approver-escalation-retired")' <<<"$out")"
+assert_contains "  ... the label-less fallback listing itself was made" \
+  "-R x/y --state open --search approver-adjudication" "$calls"
+assert_not_contains "  ... and the unrelated labelled escalation for the non-swept PR is left alone" \
+  "issue close 1162" "$calls"
+
 # --- Case 14: a decision-log issue quoting the same reference is excluded from the fallback ---
 # The label-less listing has nothing but the body to match on, so without the
 # `<!-- agent-ops:decision-log` exclusion a `pw::decision` veto issue

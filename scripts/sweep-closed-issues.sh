@@ -195,8 +195,14 @@ fi
 # its retry-without-label path carries no $enabler_escalation_label, so the
 # labelled listing above never finds it, and it survives a direct human
 # merge indefinitely — the same failure requirement 8c/17c already fixed for
-# the labelled case. Tried only when the labelled listing above matched
-# nothing, matching the labelled-first/label-less-fallback shape
+# the labelled case. Tried whenever the labelled listing above found no
+# match for a PR actually in this round's merged, $pr_label-labelled listing
+# ($prs_json) — never merely "the labelled listing matched nothing at all",
+# since a labelled escalation can be open (and matched) for some other,
+# still-unresolved PR while a label-less one for a PR in $prs_json sits
+# unfound; checking the labelled listing globally rather than per-swept-PR
+# would let that other escalation's match suppress the fallback this round
+# needs. Matching the labelled-first/label-less-fallback shape
 # `lib/escalation-dedup.sh`'s `escalation_dedup_match` already established
 # for every other escalation reader, rather than a per-matched-PR
 # `escalation_issue_lookup` call (`lib/escalation-lookup.sh`): that helper
@@ -215,22 +221,34 @@ if [[ -n "$enabler_escalation_label" ]]; then
     warn "could not list open $enabler_escalation_label issues — no approver-adjudication escalation retired this pass"
   fi
   esc_rows=""
+  esc_rows_for_swept=""
   if [[ -n "$esc_json" ]]; then
     esc_rows="$(jq -r '.[]
       | select((.stateReason // "" | ascii_downcase) != "reopened")
       | ((.body // "") | capture("pr-(?<n>[0-9]+)-approver-adjudication")? // null) as $m
       | select($m != null)
       | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json" 2>/dev/null || true)"
+    esc_rows_for_swept="$(jq -r --argjson prs "$prs_json" '
+      ([$prs[].number]) as $swept
+      | .[]
+      | select((.stateReason // "" | ascii_downcase) != "reopened")
+      | ((.body // "") | capture("pr-(?<n>[0-9]+)-approver-adjudication")? // null) as $m
+      | select($m != null)
+      | select($swept | index($m.n | tonumber))
+      | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json" 2>/dev/null || true)"
   fi
-  if [[ -z "$esc_rows" ]]; then
+  if [[ -z "$esc_rows_for_swept" ]]; then
     if esc_json_labelless="$("$GH" issue list -R "$slug" --state open \
       --search "approver-adjudication" --json number,url,body,stateReason --limit 100 2>/dev/null)"; then
-      esc_rows="$(jq -r '.[]
+      esc_rows_labelless="$(jq -r '.[]
         | select((.stateReason // "" | ascii_downcase) != "reopened")
         | select((.body // "") | contains("<!-- agent-ops:decision-log") | not)
         | ((.body // "") | capture("Item: `pr-(?<n>[0-9]+)-approver-adjudication`")? // null) as $m
         | select($m != null)
         | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json_labelless" 2>/dev/null || true)"
+      if [[ -n "$esc_rows_labelless" ]]; then
+        esc_rows="$(printf '%s\n%s' "$esc_rows" "$esc_rows_labelless" | sed '/^$/d')"
+      fi
     else
       warn "could not list open issues for the label-less approver-adjudication fallback — no label-less escalation retired this pass"
     fi
