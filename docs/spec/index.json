@@ -830,7 +830,7 @@
       "label": "76",
       "anchor": "impl-ac-76",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 441,
+      "line": 468,
       "title": "The prose configuration tables are generated from the schema, and"
     },
     "IMPL AC 1m": {
@@ -838,7 +838,7 @@
       "label": "1m",
       "anchor": "impl-ac-1m",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 489,
+      "line": 516,
       "title": "`doctor.sh` checks write access, Claude credentials, the rendered"
     },
     "IMPL AC 1n": {
@@ -846,7 +846,7 @@
       "label": "1n",
       "anchor": "impl-ac-1n",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 542,
+      "line": 569,
       "title": "`--unattended` runs the GitHub section in full and skips only the two"
     },
     "IMPL AC 6h": {
@@ -854,7 +854,7 @@
       "label": "6h",
       "anchor": "impl-ac-6h",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 569,
+      "line": 596,
       "title": "The pipeline creates the labels it applies, and touches no others"
     },
     "IMPL AC 6j": {
@@ -862,7 +862,7 @@
       "label": "6j",
       "anchor": "impl-ac-6j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 588,
+      "line": 615,
       "title": "Labels a stage asks for are minted safely, and only within the caps"
     },
     "IMPL AC 38": {
@@ -870,7 +870,7 @@
       "label": "38",
       "anchor": "impl-ac-38",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 636,
+      "line": 663,
       "title": "Human-visibility (requirements 38a–38c)."
     },
     "IMPL AC 38e": {
@@ -878,7 +878,7 @@
       "label": "38e",
       "anchor": "impl-ac-38e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 764,
+      "line": 791,
       "title": "A violation the sweep cannot heal is read back and re-verified, not"
     },
     "IMPL AC 38f": {
@@ -886,7 +886,7 @@
       "label": "38f",
       "anchor": "impl-ac-38f",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 871,
+      "line": 898,
       "title": "Merge-queue awareness reads the field GitHub actually exposes, and"
     },
     "IMPL AC 38g": {
@@ -894,7 +894,7 @@
       "label": "38g",
       "anchor": "impl-ac-38g",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 907,
+      "line": 934,
       "title": "Requirement 38c's ruleset dependency is reported, not silent"
     },
     "IMPL AC 39": {
@@ -902,7 +902,7 @@
       "label": "39",
       "anchor": "impl-ac-39",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 920,
+      "line": 947,
       "title": "Finish-then-continue's chain decision is a pure, tested function of what"
     },
     "IMPL AC 67a": {
@@ -910,7 +910,7 @@
       "label": "67a",
       "anchor": "impl-ac-67a",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 929,
+      "line": 956,
       "title": "The chain only ever launches when it should, and never waits on what it"
     },
     "IMPL AC 39b": {
@@ -918,7 +918,7 @@
       "label": "39b",
       "anchor": "impl-ac-39b",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 946,
+      "line": 973,
       "title": "A sub-hourly cycle interval is an explicit cron minute list, correct at"
     },
     "IMPL AC 68": {
@@ -926,7 +926,7 @@
       "label": "68",
       "anchor": "impl-ac-68",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 959,
+      "line": 986,
       "title": "A pending image roll overrides an otherwise-eligible chain, never"
     },
     "IMPL AC 17e": {
@@ -934,7 +934,7 @@
       "label": "17e",
       "anchor": "impl-ac-17e",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 1028,
+      "line": 1055,
       "title": "Contended-claim-loss reporting is correct per node and per era"
     },
     "IMPL AC 8s": {
@@ -942,7 +942,7 @@
       "label": "8s",
       "anchor": "impl-ac-8s",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-04.md",
-      "line": 1038,
+      "line": 1065,
       "title": "The Approver runs only above `human`, picks its tier correctly, and"
     },
     "IMPL AC 8t": {

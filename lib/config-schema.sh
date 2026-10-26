@@ -1158,6 +1158,90 @@ config_documented_value_mismatches() {
   ' 2>/dev/null || true
 }
 
+# config_documented_value_coverage_gaps SCHEMA_FILE
+# Prints one dot-joined key path per line for every schema node that carries
+# both a string `x-docs.value` and a `default` — the exact condition
+# config_documented_value_mismatches (above) means to check — but that its
+# own `leaf_paths` walk never actually reaches. Empty when every such key is
+# covered; takes the schema alone, since coverage is a property of the
+# schema's own shape and has nothing to do with any particular config.json.
+#
+# `leaf_paths` decides where to stop descending the schema the same way it
+# decides what counts as a documented leaf: a node is eligible to be checked
+# exactly when it has no `properties` of its own, after `$ref` resolution.
+# Conflating "does this node carry a documented value" with "should the walk
+# recurse past it" is how issue #2653 happened — PR #2647 points every
+# `*_model` key at a dual-shape `$ref` target that gained a `properties`
+# member of its own, and the whole model band dropped out of `leaf_paths`
+# silently, with no `[warn]` line lost to notice it by. This walk asks the
+# two questions separately: `documented_paths` recurses into `properties`
+# wherever present, exactly as `leaf_paths` does, but it checks the
+# documented-value condition at *every* node it visits along the way, not
+# only the ones where the walk happens to stop — so a key that `leaf_paths`
+# skips past is still found here, and the difference between the two walks'
+# own path sets is exactly the coverage this function reports as lost.
+config_documented_value_coverage_gaps() {
+  local schema_file="$1"
+  jq -rn --slurpfile schema "$schema_file" '
+    ($schema[0]) as $root
+
+    # Shared with config_schema_errors/config_defaults/
+    # config_documented_value_mismatches: see any of those for why this is a
+    # fixpoint resolve bounded against a cyclic chain.
+    | def deref($s):
+        (reduce range(0; 10) as $i
+           ($s;
+              if (type == "object") and has("$ref")
+              then . as $cur
+                | ($root | getpath($cur["$ref"] | ltrimstr("#/") | split("/"))) as $target
+                | if $target == null
+                  then error("$ref \($cur["$ref"]) does not resolve")
+                  else $target + ($cur | del(.["$ref"]))
+                  end
+              else . end)) as $resolved
+        | if ($resolved | type) == "object" and ($resolved | has("$ref"))
+          then error("$ref chain at \($resolved["$ref"]) is too deep (or cyclic)")
+          else $resolved end;
+
+    # The same stop condition leaf_paths (config_documented_value_mismatches)
+    # uses: a node with its own `properties`, after `$ref` resolution, is not
+    # a leaf, and the walk recurses past it instead of visiting it.
+    def leaf_paths($node0; $path):
+        (try deref($node0) catch null) as $node
+        | if ($node == null) then empty
+          elif ($node | type) == "object" and ($node | has("properties")) then
+            ($node.properties | keys_unsorted[] as $k | leaf_paths($node.properties[$k]; $path + [$k]))
+          else $path end;
+
+    # Every node under `.properties`, recursively — unlike leaf_paths, this
+    # never stops descending just because the node in hand is documented:
+    # whether a node carries a documented value and whether the walk should
+    # keep recursing into it are independent questions, and asking the first
+    # only at the places the second already decided to stop is the bug this
+    # function exists to catch.
+    def documented_paths($node0; $path):
+        (try deref($node0) catch null) as $node
+        | if ($node == null) or ($node | type) != "object" then empty
+          else
+            (if ((try ($node["x-docs"].value) catch null) != null)
+                and ((try ($node["x-docs"].value) catch null | type) == "string")
+                and ($node | has("default"))
+             then $path else empty end),
+            (if ($node | has("properties")) then
+               ($node.properties | keys_unsorted[] as $k | documented_paths($node.properties[$k]; $path + [$k]))
+             else empty end)
+          end;
+
+    ([ ($root.properties // {}) | keys_unsorted[] as $k
+       | leaf_paths($root.properties[$k]; [$k]) | join(".") ]) as $visited
+
+    | ([ ($root.properties // {}) | keys_unsorted[] as $k
+         | documented_paths($root.properties[$k]; [$k]) | join(".") ] | unique) as $documented
+
+    | ($documented - $visited)[]
+  ' 2>/dev/null || true
+}
+
 # config_repository_review_repos DEFAULTED_CONFIG_JSON
 # `repository_review.repos`, each entry resolved against
 # `repository_review.defaults` per issue #342's rule: a key present and
