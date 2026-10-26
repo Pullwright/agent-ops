@@ -1123,20 +1123,25 @@
    `scripts/sweep-closed-issues.sh`'s fleet-wide merged-pull-request listing
    (requirement 17c) finds the pull request merged some other way — a
    human's own click, a later automatic landing, or a merge queue resolving
-   well after this round. Both read back through `escalation_issue_lookup`'s
-   own two-step read (lib/escalation-lookup.sh, agent-ops#2670) — an open
-   issue labelled `enabler_escalation_label` whose body quotes this
-   `pr-<n>-approver-adjudication` reference, backtick-delimited; falling
-   back, when that finds nothing, to a label-less read keyed on the
-   escalation footer's `` Item: `pr-<n>-approver-adjudication` `` form and
-   excluding any decision-log issue, the same two-step guard
-   `create_escalation_issue`'s own duplicate check and `escalation_open_
-   existing` already apply (agent-ops#2657, agent-ops#2666) — so an
-   escalation filed without the label (the retry-without-label path) is
-   retired here too, not left to survive its own disagreement because the
-   label never made it onto the issue. Both are a no-op, logging nothing,
-   when no such issue is open, which is the common case: most pull requests
-   never escalate at all. Both close it inside the same
+   well after this round. `approver_escalation_retire` reads back through
+   `escalation_issue_lookup`'s own two-step read (lib/escalation-lookup.sh,
+   agent-ops#2670) — an open issue labelled `enabler_escalation_label` whose
+   body quotes this `pr-<n>-approver-adjudication` reference,
+   backtick-delimited; falling back, when that finds nothing, to a
+   label-less read keyed on the escalation footer's
+   `` Item: `pr-<n>-approver-adjudication` `` form and excluding any
+   decision-log issue, the same two-step guard `create_escalation_issue`'s
+   own duplicate check and `escalation_open_existing` already apply
+   (agent-ops#2657, agent-ops#2666) — so an escalation filed without the
+   label (the retry-without-label path) is retired by this `land` cause too,
+   not left to survive its own disagreement because the label never made it
+   onto the issue. `scripts/sweep-closed-issues.sh`'s own `merged` cause
+   still lists only an open issue carrying `enabler_escalation_label` whose
+   body quotes this reference — a label-less escalation is not retired by a
+   merge this sweep observes (tracked as tech debt, agent-ops#2686). Both
+   are a no-op, logging nothing, when no such issue is open, which is the
+   common case: most pull requests never escalate at all. Both close it
+   inside the same
    `pipeline_comment_header`/`pipeline_comment_marker` envelope every other
    comment this system posts carries (component 3f), and both skip an issue
    GitHub reports reopened (`stateReason`, read on the same listing): a
