@@ -8,7 +8,11 @@
 # effective staleness (lib/repo-order.sh) and, for each, runs every
 # pre-fetched source's gather script, folding claims, first-seen state and
 # per-repo entries into `ordered_repos_json`/`source_states_json`/
-# `claimed_json`/`unvoid_requests_json`/`hand_flagged_refinements_json`.
+# `claimed_json`/`unvoid_requests_json`/`hand_flagged_refinements_json`/
+# `degraded_issues_excluded_json` (the repo slugs whose own `issues` gather
+# degraded this cycle — `lib/eligibility.sh`'s own open-`Blocked-by:`-
+# reference exclusion, requirement 35f, reads this alongside
+# `latest_issues_excluded_json` below).
 # `compute_skip_lists` reconciles the two label-driven human overrides
 # (`unvoid` and hand-flagged `needs_refinement`) against that cycle's own
 # claim, then derives `blocked_json`/`void_json`, the skip-lists everything
@@ -154,6 +158,17 @@ if ! (( ${union_build_ok:-1} )) \
     '{detail: $d}')"
 fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"
+# Repos whose issues gather degraded *this* cycle (`gather_issues_excluded`
+# returned `null` — the gatherer's own filter did not run to completion),
+# distinct from a repo that gathered cleanly with nothing excluded: both
+# fold to the same `issues_excluded: []` on the per-repo entry below
+# (requirement 33's own "Co-Ordinator's own runtime input is unaffected
+# either way" contract), so that field alone cannot tell the two apart.
+# `lib/eligibility.sh`'s open-`Blocked-by:`-reference exclusion (issue #2678)
+# reads this list to know when to fall back to `latest_issues_excluded_json`
+# above instead of trusting an entry's own (always-clean-looking) empty
+# `issues_excluded`.
+degraded_issues_excluded_json='[]'
 # This cycle's own resolved report_directory per repository (its override in
 # repository_review.repos, or repository_review.defaults' otherwise,
 # issue #342) — or, absent from repository_review entirely, the same
@@ -561,6 +576,9 @@ while IFS=$'\t' read -r _ slug default_branch; do
         latest_issues_excluded_json="$(jq -c --arg r "$slug" --argjson ex "$issues_excluded" \
           '.[$r] = $ex' <<<"$latest_issues_excluded_json" 2>/dev/null || printf '%s' "$latest_issues_excluded_json")"
       fi
+    else
+      degraded_issues_excluded_json="$(jq -c --arg s "$slug" '. + [$s]' \
+        <<<"${degraded_issues_excluded_json:-[]}" 2>/dev/null || printf '%s' "${degraded_issues_excluded_json:-[]}")"
     fi
   fi
   tech_debt="[]"; tech_debt_raw="[]"; tech_debt_excluded="[]"; tech_debt_excluded_raw="null"
@@ -670,7 +688,12 @@ while IFS=$'\t' read -r _ slug default_branch; do
       issues_excluded_raw="$(jq -c '.excluded' <<<"$issue_state_reapplied" 2>/dev/null || printf '%s' "$issues_excluded_raw")"
     fi
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
-    [[ "$issues_excluded_raw" != "null" ]] && issues_excluded="$issues_excluded_raw"
+    if [[ "$issues_excluded_raw" != "null" ]]; then
+      issues_excluded="$issues_excluded_raw"
+    else
+      degraded_issues_excluded_json="$(jq -c --arg s "$slug" '. + [$s]' \
+        <<<"${degraded_issues_excluded_json:-[]}" 2>/dev/null || printf '%s' "${degraded_issues_excluded_json:-[]}")"
+    fi
   fi
   tech_debt="[]"; tech_debt_excluded="[]"
   if jq -e 'any(.[]; . == "tech-debt")' <<<"$sources" >/dev/null 2>&1; then

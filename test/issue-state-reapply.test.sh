@@ -146,7 +146,7 @@ run_cached_issues_block() {  # <sources-json> <issues_raw> <issues_excluded_raw>
     # Consumed only by the eval'd block below, invisible to static analysis.
     # shellcheck disable=SC2034
     sources="$1" issues_raw="$2" issues_excluded_raw="$3" state="$4" \
-      claimed_item_refs_json='[]'
+      claimed_item_refs_json='[]' slug='o/r' degraded_issues_excluded_json='[]'
     eval "$issues_block_src"
     # issues/issues_excluded: assigned only by the eval'd block above,
     # invisible to static analysis.

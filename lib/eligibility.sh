@@ -12,7 +12,8 @@
 # the four blocks answer one question between them — who is eligible for what
 # this cycle — over the same inputs (`ordered_repos_json`,
 # `source_states_json`, `blocked_json`/`void_json`, `claimed_json`,
-# `repo_slug_aliases_json`), in an order that matters: the Enabler's eligible
+# `repo_slug_aliases_json`, `latest_issues_excluded_json`/
+# `degraded_issues_excluded_json`), in an order that matters: the Enabler's eligible
 # set and the Refiner's candidate set are both computed from the extracts the
 # band pass has just settled, so an Enabler engagement and a Refiner
 # engagement in the same cycle can never disagree about what is already
@@ -372,10 +373,37 @@ fi
 # used to read as still-open forever, even once closed, purely because that
 # digest never carried the repo at all. No fresh `gh` call is made by this
 # filter either way.
+# A repo whose `issues` gather degraded this cycle (`gather_issues_excluded`
+# returned `null`) folds to the identical `issues_excluded: []` a repo that
+# gathered cleanly with nothing excluded gets (requirement 33's own
+# "Co-Ordinator's own runtime input is unaffected either way" contract) — so
+# `ordered_repos_json`'s own `.issues_excluded` cannot tell "nothing excluded"
+# apart from "unknown" (issue #2678). `degraded_issues_excluded_json`
+# (lib/candidate-gather.sh) is the side channel that can: the list of repo
+# slugs whose issues gather degraded this very cycle. For exactly those
+# repos, the still-open `Blocked-by:` reading falls back to
+# `latest_issues_excluded_json`'s own carried-forward reading (the most
+# recent `issues-excluded` event logged for that repo, requirement 33) rather
+# than a blank slate — stale in the safe direction only: if the dependency
+# has since closed, `dependency_clearances` clears the block mechanically on
+# the next healthy cycle, so the only cost of a stale reading is one cycle's
+# delay engaging the Enabler, against a whole engagement of the most
+# expensive model otherwise. A repo this cycle's gather never walked at all,
+# or one whose issues gather never degraded, is untouched: `.issues_excluded`
+# off `ordered_repos_json` decides exactly as before. `tech_debt_excluded`
+# has no equivalent carried-forward reading yet (no `tech-debt-excluded`
+# event is logged, issue #2606) and keeps the existing "unknown is never
+# gone" behaviour on a degraded tech-debt gather.
 still_blocked_by_json='[]'
-[[ -z "$ordered_repos_json" ]] || still_blocked_by_json="$(jq -c '
+[[ -z "$ordered_repos_json" ]] || still_blocked_by_json="$(jq -c \
+  --argjson degraded "${degraded_issues_excluded_json:-[]}" \
+  --argjson latest "${latest_issues_excluded_json:-{\}}" '
   [.[] | .slug as $s
-       | ((.issues_excluded // []) + (.tech_debt_excluded // []))[]
+       | ( (if ($degraded | index($s)) != null
+            then ($latest[$s] // [])
+            else (.issues_excluded // [])
+            end)
+           + (.tech_debt_excluded // []) )[]
        | select((.reason // "") | startswith("blocked-by: "))
        | {repo: $s, item: (.number | tostring)}]
   ' <<<"$ordered_repos_json" 2>/dev/null || true)"
