@@ -3922,6 +3922,18 @@
     // (requirement 34a). Zero entries renders nothing, exactly as a single
     // fleet-wide badge did when nothing was active.
     (st.limits || []).forEach(function (lim) {
+      // The empty provider is the union's wildcard bucket — a record carrying
+      // no `provider` at all, as every one written before issue #2133 does —
+      // and it governs *every* provider by requirement 2.1's own "a record
+      // without one applies to every provider" rule. Named as such, never
+      // folded onto one provider's name: a reader told "anthropic" would
+      // take every other provider for healthy while the whole fleet was
+      // down. The Monitor's digest names the same bucket the same way
+      // (docs/spec/monitor.md M6). Its recourse is the bare `--clear-limit`
+      // too, since a clear scoped to one provider cannot lift a record that
+      // covers them all (requirement 2.1's own `--clear-limit`).
+      var provName = lim.provider ? lim.provider : "every provider";
+      var clearCmd = "`agent-cycle.sh --clear-limit" + (lim.provider ? " " + lim.provider : "") + "`";
       if (lim.note) {
         // No structured record yet — a limit phrase seen in the most recent
         // cycle's own transcript, ahead of the `limit-hit` event that
@@ -3929,7 +3941,7 @@
         // class/kind of its own, so it renders as plain text rather than a
         // deadline.
         banners.appendChild(el("div", {class:"banner amber"}, [
-          el("span", {text: "⏸ Usage-limit stand-down (" + lim.provider + ")."}),
+          el("span", {text: "⏸ Usage-limit stand-down (" + provName + ")."}),
           el("span", {class:"sub", text: "Pipeline stands down — " + lim.note + "."})
         ]));
         return;
@@ -3947,15 +3959,15 @@
       var by = " — " + (lkind === "manual" ? "set" : "published") + " by "
              + (lim.actor || "?") + " (" + lkind + ").";
       var lsub = lkind === "manual"
-        ? "Until " + lim.resume_at + by + " A manual stand-down is never probed; `agent-cycle.sh --clear-limit " + lim.provider + "` lifts it early."
+        ? "Until " + lim.resume_at + by + " A manual stand-down is never probed; " + clearCmd + " lifts it early."
         : resetKnown
         ? "Until " + lim.resume_at + by
         : "Retrying after " + lim.resume_at + " (estimated — no reset time was given)" + by +
           (lim.class === "weekly" || lim.class === "monthly"
-            ? " It clears at the plan's rollover, or sooner if you raise the cap and run `agent-cycle.sh --clear-limit " + lim.provider + "`."
+            ? " It clears at the plan's rollover, or sooner if you raise the cap and run " + clearCmd + "."
             : "");
       banners.appendChild(el("div", {class:"banner amber"}, [
-        el("span", {text: "⏸ Usage-limit stand-down (" + lim.provider + ")."}),
+        el("span", {text: "⏸ Usage-limit stand-down (" + provName + ")."}),
         el("span", {class:"sub", text: lsub})
       ]));
     });

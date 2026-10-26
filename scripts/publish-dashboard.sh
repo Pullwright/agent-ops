@@ -1784,18 +1784,25 @@ union_prefilter "$events_jsonl" $LIMIT_UNION_EVENTS > "$limit_input" 2>/dev/null
 # stale as that copy, the same bound the single fleet-wide badge this
 # replaces always had.
 limit_flag_raw="$(cat "$(fleet_cache_file "$state_dir" limit)" 2>/dev/null || true)"
-limit_flag_provider="$(jq -r '.provider // "anthropic"' <<<"${limit_flag_raw:-null}" 2>/dev/null)"
-[[ -n "$limit_flag_provider" && "$limit_flag_provider" != "null" ]] || limit_flag_provider="anthropic"
+# The empty string for a flag that names no provider — a wildcard record, as
+# every one written before issue #2133 is — and for no flag at all, which
+# contributes no candidate of its own once the loop below finds nothing in the
+# union's own wildcard bucket either. Never defaulted to "anthropic": a
+# wildcard record governs *every* provider, so calling it anthropic's would
+# report one provider frozen and the rest healthy when none of them is.
+limit_flag_provider="$(jq -r 'if type == "object" then (.provider // "") else "" end' \
+  <<<"${limit_flag_raw:-null}" 2>/dev/null || true)"
+[[ "$limit_flag_provider" != "null" ]] || limit_flag_provider=""
 
 # Candidate providers: every bucket `limit_union_frozen_providers` says
 # currently has a live `limit-hit` governing it (the wildcard bucket — every
-# pre-#2133 event with no `provider` field — printed as the empty string,
-# folded here onto "anthropic" exactly as every other caller's
-# `${check_provider:-anthropic}` already does), plus whatever provider the
-# cached flag itself names, in case a hit is fresh enough that the union
+# pre-#2133 event with no `provider` field — printed as the empty string, and
+# carried through as the empty string, which the Site renders as "every
+# provider" exactly as the Monitor's own digest does), plus whatever provider
+# the cached flag itself names, in case a hit is fresh enough that the union
 # hasn't caught up to it yet.
 limit_candidate_providers="$( { limit_union_frozen_providers < "$limit_input"; printf '%s\n' "$limit_flag_provider"; } \
-  | sed 's/^$/anthropic/' | sort -u)"
+  | sort -u)"
 
 # Each candidate is resolved the same way `limit_governing_record_for`
 # (lib/limit-detect.sh) resolves one — that provider's own union bucket
@@ -1803,10 +1810,14 @@ limit_candidate_providers="$( { limit_union_frozen_providers < "$limit_input"; p
 # except the flag half comes from the cached copy above rather than a fresh
 # fetch, for the no-API-call reason given there. A provider whose governing
 # record has already lapsed (a past resume_at with no `limit-cleared` logged
-# yet) does not render as frozen.
+# yet) does not render as frozen. The empty-string candidate is read like any
+# other — `limit_union_state_for ""` answers for the wildcard bucket and
+# `limit_flag_record_for "$raw" ""` matches only a wildcard flag record — so a
+# candidate list that carries one solely because no flag is cached falls out
+# at the `limit_rec` test below, with no entry, rather than being filtered
+# ahead of time on a name the loop would otherwise render honestly.
 limits_json='[]'
 while IFS= read -r limit_provider; do
-  [[ -n "$limit_provider" ]] || continue
   limit_union_rec="$(jq -c '.record // empty' <<<"$(limit_union_state_for "$limit_provider" < "$limit_input")" 2>/dev/null)"
   limit_flag_rec="$(limit_flag_record_for "$limit_flag_raw" "$limit_provider")"
   limit_rec="$(limit_later_record "$limit_union_rec" "$limit_flag_rec")"
@@ -1829,9 +1840,12 @@ done <<<"$limit_candidate_providers"
 # interval blind in the rare case it isn't. This heuristic carries no
 # provider of its own (it reads stage output text, not a structured record),
 # so it only ever speaks for "anthropic", and only when the structured path
-# above found nothing to say about that provider itself. (Skipped/stand-down
-# cycles launch no stage, so they don't count as recovery either way.)
-if ! jq -e 'any(.[]; .provider == "anthropic")' <<<"$limits_json" >/dev/null 2>&1; then
+# above found nothing to say about that provider itself — a wildcard entry
+# (`provider: ""`) included, since one of those already speaks for every
+# provider, anthropic among them, and a second banner saying so in prose
+# would only repeat it. (Skipped/stand-down cycles launch no stage, so they
+# don't count as recovery either way.)
+if ! jq -e 'any(.[]; .provider == "anthropic" or .provider == "")' <<<"$limits_json" >/dev/null 2>&1; then
   limit_transcript_text="$(jq -r '
     [ .[] | select(any(.stages[]?; .ran)) ] | (.[0] // {})
     | if .limit_hit

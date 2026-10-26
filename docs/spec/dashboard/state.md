@@ -424,7 +424,8 @@ transcript for limit phrasing directly, as a backstop for the gap before a
 `log_event` ran, or a cycle from before this detector existed, can widen it).
 That scan carries no provider of its own — it reads stage output text, not a
 structured record — so it only ever speaks for `anthropic`, and only when
-nothing else already does.
+nothing else already does: neither an entry for `anthropic` itself nor a
+wildcard entry, which already speaks for every provider including that one.
 
 `status.limits` is an array with one entry per provider the fleet is
 currently standing down, not one fleet-wide verdict: a usage limit is a draw
@@ -435,9 +436,15 @@ read as every provider's stages being frozen. Each entry is
 actor: null, note}` for the transcript-scan backstop above, which has only
 prose to offer). The candidate providers are every one the log union's
 `limit_union_frozen_providers` currently names a live `limit-hit` for (the
-wildcard bucket — every pre-#2133 event with no `provider` field — folded
-onto `anthropic`, the same default every other caller of a `provider` applies)
-plus whatever provider `fleet.flags.limit`'s own cached copy names, in case a
+wildcard bucket — every pre-#2133 event with no `provider` field — carried
+through as the empty string and rendered "every provider", never folded onto
+`anthropic`: such a record governs every provider by requirement 2.1's "a
+record without one applies to every provider" rule, so naming one of them
+would report the rest healthy while the whole fleet was down, and its
+recourse is the bare `--clear-limit` rather than a scoped one — the same
+bucket the Monitor's own digest names the same way, `docs/spec/monitor.md`
+M6) plus whatever provider `fleet.flags.limit`'s own cached copy names — the
+empty string again where that record names none — in case a
 hit is fresh enough that the union hasn't caught up to it yet. Each candidate
 is then resolved the same way `limit_governing_record_for` (`lib/limit-
 detect.sh`) resolves one — that provider's own union bucket (via

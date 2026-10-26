@@ -2198,6 +2198,30 @@ assert_eq "spend roll-ups are fleet-wide (one shared account)" "0.75" \
   "$(jq -r '.counts.spend_today_usd' <<<"$fdata")"
 assert_eq "the cached fleet limit flag is surfaced" "2031-01-01T00:00:00Z" \
   "$(jq -r '.fleet.flags.limit.resume_at' <<<"$fdata")"
+# …and folded into `status.limits` (issue #2135), which is the array the Site
+# renders banners from — `fleet.flags.limit` itself is never rendered
+# directly. This home's flag is deliberately the pre-#2133 shape with no
+# `provider` field at all, so it is the union's *wildcard* case: such a record
+# governs every provider by requirement 2.1's "a record without one applies to
+# every provider" rule, so it must stay the empty string — which the Site
+# renders "every provider", as `lib/monitor-digest.sh` names the same bucket —
+# rather than being folded onto `anthropic`. Folding it would tell an operator
+# one provider was frozen and imply every other was healthy, while in fact the
+# whole fleet was down: the mirror of the disagreement requirement 34a exists
+# to prevent.
+assert_eq "the flag's own record is one status.limits entry" "1" \
+  "$(jq '.status.limits | length' <<<"$fdata")"
+assert_eq "  ... a provider-less (wildcard) record stays the empty provider, never anthropic's" "" \
+  "$(jq -r '.status.limits[0].provider' <<<"$fdata")"
+assert_eq "  ... carrying the flag's own resume_at" "2031-01-01T00:00:00Z" \
+  "$(jq -r '.status.limits[0].resume_at' <<<"$fdata")"
+# The superseded `needs_human: true` inverts to reset_known: false, through
+# the same `limit_reset_known` the stand-down check reads it with — the
+# estimate-versus-deadline distinction the banner's wording turns on.
+assert_eq "  ... with needs_human inverted into reset_known" "false" \
+  "$(jq -r '.status.limits[0].reset_known' <<<"$fdata")"
+assert_eq "  ... and the writing node as its actor" "peer1" \
+  "$(jq -r '.status.limits[0].actor' <<<"$fdata")"
 assert_eq "claims default to empty without a GitHub tick" "[]" \
   "$(jq -c '.fleet.claims' <<<"$fdata")"
 assert_eq "the peers directory's own freshness marker surfaces as fleet.peers.ok" "false" \

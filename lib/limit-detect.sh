@@ -537,13 +537,23 @@ limit_flag_record_for() {
 # combining the log union's own answer for PROVIDER (limit_union_state_for,
 # itself already folding in the wildcard bucket) with the live flag, narrowed
 # to PROVIDER by limit_flag_record_for above. Prints the governing record, or
-# nothing when neither carrier names a live stand-down for PROVIDER. The
-# simple per-stage callers that need only the record — lib/enabler.sh,
-# lib/refinement.sh, the dashboard, the Monitor's digest — call this; the
-# stand-down check itself (lib/standdown.sh, review-cycle.sh,
-# monitor-cycle.sh) also needs the union's own `since`/`escalated` for its own
-# freeze-escalation step, so it calls limit_union_state_for directly instead
-# of duplicating this function's own union read.
+# nothing when neither carrier names a live stand-down for PROVIDER.
+#
+# The canonical statement of that resolution, for a caller that wants only
+# the record and can afford a fresh flag fetch — and the one
+# `docs/spec/dashboard/state.md` and `docs/spec/monitor.md` cite by name when
+# they describe what their own readers compute. No production caller spends
+# it today, for a different reason in each band, and each is deliberate
+# rather than an oversight: the stand-down checks themselves
+# (lib/standdown.sh, review-cycle.sh, monitor-cycle.sh) also need the union's
+# own `since`/`escalated` for their freeze-escalation step, so they call
+# limit_union_state_for directly rather than read the union twice; the live
+# pre-launch re-checks (lib/enabler.sh, lib/refinement.sh,
+# lib/coordinator-phase.sh) want the flag alone and take
+# fleet_limit_resume_at_for; and scripts/publish-dashboard.sh must not fetch
+# the flag at all, so it assembles the same two halves around its own cached
+# copy. Kept, and regression-tested in test/toggle.test.sh, so those four
+# spellings have one definition to agree with rather than four to drift from.
 limit_governing_record_for() {
   local state_repo="$1" state_dir="$2" provider="$3" union_record flag_record
   union_record="$(jq -c '.record // empty' <<<"$(limit_union_state_for "$provider")" 2>/dev/null)"
