@@ -1236,11 +1236,15 @@ config_documented_value_coverage_gaps() {
 
     # The same stop condition leaf_paths (config_documented_value_mismatches)
     # uses: a node with its own `properties`, after `$ref` resolution, is not
-    # a leaf, and the walk recurses past it instead of visiting it.
+    # a leaf, and the walk recurses past it instead of visiting it — unless
+    # the node also names its own `default` (the `modelIdOrSet`/
+    # `modelIdOrEmptyOrSet` dual-shape case), which makes it a leaf too, same
+    # as the real leaf_paths: a genuine container documents no scalar default
+    # of its own, only its children do.
     def leaf_paths($node0; $path):
         (try deref($node0) catch null) as $node
         | if ($node == null) then empty
-          elif ($node | type) == "object" and ($node | has("properties")) then
+          elif ($node | type) == "object" and ($node | has("properties")) and (($node | has("default")) | not) then
             ($node.properties | keys_unsorted[] as $k | leaf_paths($node.properties[$k]; $path + [$k]))
           else $path end;
 
