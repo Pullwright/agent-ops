@@ -65,7 +65,7 @@ GitHub access was denied (likely a token scope or authentication issue).
 
 ### `credential-refused`
 
-A credential provider (e.g., credential-helper for a nested token) refused to serve.
+A credential provider (e.g., credential-helper for a nested token) refused the request.
 
 - **Is a fault?** Yes. Check credential configuration.
 - **What to do:** Verify credential storage and permissions on this node.
