@@ -1605,8 +1605,14 @@ rm -f "$gh_backing/fleet/limit.json"
 # The same refusal, carried by the log union alone with no flag at all: a
 # pre-#2133 limit-hit still sitting in the log. The flag-only form of this
 # check reported success here, which is why it is re-read from the carriers.
+# The union's own fold is ts-ordered, not append-ordered (fleet_logs sorts the
+# whole stream, lib/fleet.sh), so this event's own `ts` has to sort after the
+# real clock-stamped `limit-cleared` events the two calls above already wrote
+# into this same log a moment ago — a canned past date here would let the
+# fold treat those earlier clears as happening *after* this hit and wipe the
+# wildcard bucket before the assertions below even run.
 printf '%s\n' \
-  '{"ts":"2026-01-02T00:00:00Z","cycle":"seed","node":"node-b","event":"limit-hit","resume_at":"2031-01-01T00:00:00Z","class":"monthly","reset_known":true}' \
+  "{\"ts\":\"$(date -u -d '+10 minutes' +%Y-%m-%dT%H:%M:%SZ)\",\"cycle\":\"seed\",\"node\":\"node-b\",\"event\":\"limit-hit\",\"resume_at\":\"2031-01-01T00:00:00Z\",\"class\":\"monthly\",\"reset_known\":true}" \
   >> "$b_log"
 clear_union_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
 assert_contains "a scoped --clear-limit reports a wildcard *union* record as NOT lifted too" \
