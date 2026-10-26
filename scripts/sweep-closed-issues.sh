@@ -189,13 +189,53 @@ fi
 # stand-down, indefinitely. The merged-pull-request listing above already
 # warns on its own failure; this is the same answer. The sweep carries on
 # either way: the closing-keyword pass below does not depend on this call.
+#
+# Label-less fallback (agent-ops#2657/#2666/#2670; this gap tracked as
+# agent-ops#2685/#2686): an escalation `create_escalation_issue` files via
+# its retry-without-label path carries no $enabler_escalation_label, so the
+# labelled listing above never finds it, and it survives a direct human
+# merge indefinitely — the same failure requirement 8c/17c already fixed for
+# the labelled case. Tried only when the labelled listing above matched
+# nothing, matching the labelled-first/label-less-fallback shape
+# `lib/escalation-dedup.sh`'s `escalation_dedup_match` already established
+# for every other escalation reader, rather than a per-matched-PR
+# `escalation_issue_lookup` call (`lib/escalation-lookup.sh`): that helper
+# takes one item_ref per call, while this listing already matches every
+# currently-merged PR at once, so reusing it here would trade one `gh` call
+# for one per matched PR. Keyed on the escalation footer's backticked
+# `Item: ` form rather than the bare substring the labelled search above
+# also keys on — a label-less listing has nothing but the body to match on —
+# and excluding any `<!-- agent-ops:decision-log` body, so an unlabelled
+# `pw::decision` veto or open-question issue naming the same reference is
+# never mistaken for the escalation.
 if [[ -n "$enabler_escalation_label" ]]; then
   if ! esc_json="$("$GH" issue list -R "$slug" --label "$enabler_escalation_label" --state open \
     --search "approver-adjudication" --json number,url,body,stateReason --limit 100 2>/dev/null)"; then
     esc_json=""
     warn "could not list open $enabler_escalation_label issues — no approver-adjudication escalation retired this pass"
   fi
+  esc_rows=""
   if [[ -n "$esc_json" ]]; then
+    esc_rows="$(jq -r '.[]
+      | select((.stateReason // "" | ascii_downcase) != "reopened")
+      | ((.body // "") | capture("pr-(?<n>[0-9]+)-approver-adjudication")? // null) as $m
+      | select($m != null)
+      | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json" 2>/dev/null || true)"
+  fi
+  if [[ -z "$esc_rows" ]]; then
+    if esc_json_labelless="$("$GH" issue list -R "$slug" --state open \
+      --search "approver-adjudication" --json number,url,body,stateReason --limit 100 2>/dev/null)"; then
+      esc_rows="$(jq -r '.[]
+        | select((.stateReason // "" | ascii_downcase) != "reopened")
+        | select((.body // "") | contains("<!-- agent-ops:decision-log") | not)
+        | ((.body // "") | capture("Item: `pr-(?<n>[0-9]+)-approver-adjudication`")? // null) as $m
+        | select($m != null)
+        | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json_labelless" 2>/dev/null || true)"
+    else
+      warn "could not list open issues for the label-less approver-adjudication fallback — no label-less escalation retired this pass"
+    fi
+  fi
+  if [[ -n "$esc_rows" ]]; then
     while IFS=$'\t' read -r esc_number esc_url esc_pr_number; do
       [[ -n "$esc_number" && "$esc_pr_number" =~ ^[0-9]+$ ]] || continue
       merged_fields="$(jq -r --argjson n "$esc_pr_number" \
@@ -231,11 +271,7 @@ $(pipeline_comment_marker "$cycle_id" script)"
       else
         warn "could not close approver-adjudication escalation issue #$esc_number (pull request #$esc_pr_number merged)"
       fi
-    done < <(jq -r '.[]
-      | select((.stateReason // "" | ascii_downcase) != "reopened")
-      | ((.body // "") | capture("pr-(?<n>[0-9]+)-approver-adjudication")? // null) as $m
-      | select($m != null)
-      | [(.number|tostring), .url, $m.n] | @tsv' <<<"$esc_json" 2>/dev/null || true)
+    done <<<"$esc_rows"
   fi
 fi
 
