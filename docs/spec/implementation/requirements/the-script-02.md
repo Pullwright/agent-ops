@@ -1003,7 +1003,7 @@
       resolving to the frozen provider (`limit_probe_model_for`, issue
       #2135): `implementer_model_trivial` first, then this cycle's other
       resolved models, for whichever one's `MODEL_PROVIDER` matches
-      `check_provider` — skipped, with a note, if none does. A fixed
+      `check_provider`, or that first one again if none does. A fixed
       one-line prompt, 180 s timeout, transcript kept as `limit-probe.out`,
       through the same provider-neutral `run_model_stage` (requirement 4d)
       every other stage launches on. It is not a stage — it logs no `stage-start`, like 0h's
