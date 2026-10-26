@@ -384,12 +384,24 @@
     `20261026T024800Z-poetic-2-4058217`: five candidates, every one still
     named by a standing `Blocked-by:` reference the prior cycle's own
     `issues-excluded` event already recorded, reached the Enabler because
-    that cycle's own gather for the repo had failed). `lib/candidate-
-    gather.sh` tracks which repo slugs this happened to, this cycle, in
-    `degraded_issues_excluded_json` — built in the same per-repo loop pass
-    that computes `issues_excluded_raw`, on both the branch that reads a
-    repo's `issues` band fresh and the branch that replays it from this
-    node's own expensive-gather cache. For exactly those repos, this
+    that cycle's own gather for the repo had failed).
+    `lib/candidate-gather.sh` tracks which repo slugs this happened to, this
+    cycle, in `degraded_issues_excluded_json` — built in the same per-repo
+    loop pass that computes `issues_excluded_raw`, on both the branch that
+    reads a repo's `issues` band fresh and the branch that replays it from
+    this node's own expensive-gather cache. On the replay branch the reading
+    is taken from the replayed value *ahead of* requirement 3j's own
+    deterministic reapplication (`issue_state_reapply`,
+    `lib/candidate-select.sh`, agent-ops#1095), which would otherwise mask
+    it: that reapplication returns `null` only when the replayed set was
+    `null` *and* this cycle's state sample found no fresh drop, so a cache
+    written from a degraded gather plus even one fresh
+    `assigned`/`blocked-label` drop yields a non-null array carrying nothing
+    but those fresh drops — no `blocked-by:` entry at all, since the prior it
+    would have come from was unknown — which read afterwards is
+    indistinguishable from a clean gather. Reading the replayed value is also
+    the strictly broader test, since that reapplication can never turn a
+    non-null set back into `null`. For exactly those repos, this
     filter's still-open `Blocked-by:` reading falls back to
     `latest_issues_excluded_json`'s own carried-forward reading (requirement
     33: the most recent `issues-excluded` event logged for that repo) in

@@ -681,6 +681,23 @@ while IFS=$'\t' read -r _ slug default_branch; do
     # sample — fail open (skip the reapplication, leaving the band exactly as
     # it replayed before this fix) when that sample itself did not succeed,
     # since "unknown decides nothing" here too.
+    #
+    # Whether this repo's exclusion set is *unknown* (issue #2678) has to be
+    # read off the replayed value here, ahead of the reapplication below,
+    # because that reapplication can turn an unknown set into a known-looking
+    # one: `issue_state_reapply` (lib/candidate-select.sh) returns `null` only
+    # when the prior set was `null` *and* this cycle's own state sample found
+    # no fresh drop, so a cache written from a degraded gather plus even one
+    # fresh `assigned`/`blocked-label` drop yields a non-null array carrying
+    # nothing but those fresh drops — no `blocked-by:` entry at all, since the
+    # prior it would have come from was unknown. Read after the reapplication,
+    # that array is indistinguishable from a clean gather, which is exactly the
+    # #2678 failure mode. This is also the strictly broader test: the
+    # reapplication can never turn a non-null prior back into `null` (that
+    # branch requires `$prior == null`), so "replayed value was `null`"
+    # subsumes "post-reapplication value is `null`".
+    issues_excluded_unknown=0
+    [[ "$issues_excluded_raw" == "null" ]] && issues_excluded_unknown=1
     if [[ "$(jq -r '.ok // false' <<<"$state" 2>/dev/null)" == "true" ]]; then
       issue_state_reapplied="$(issue_state_reapply "$issues_raw" \
         "$(jq -c '.issues // []' <<<"$state" 2>/dev/null || echo '[]')" "$issues_excluded_raw")"
@@ -688,9 +705,8 @@ while IFS=$'\t' read -r _ slug default_branch; do
       issues_excluded_raw="$(jq -c '.excluded' <<<"$issue_state_reapplied" 2>/dev/null || printf '%s' "$issues_excluded_raw")"
     fi
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
-    if [[ "$issues_excluded_raw" != "null" ]]; then
-      issues_excluded="$issues_excluded_raw"
-    else
+    [[ "$issues_excluded_raw" != "null" ]] && issues_excluded="$issues_excluded_raw"
+    if (( issues_excluded_unknown )); then
       degraded_issues_excluded_json="$(jq -c --arg s "$slug" '. + [$s]' \
         <<<"${degraded_issues_excluded_json:-[]}" 2>/dev/null || printf '%s' "${degraded_issues_excluded_json:-[]}")"
     fi
