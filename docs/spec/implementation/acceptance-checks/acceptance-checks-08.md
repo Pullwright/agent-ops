@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 8 of 9; items 11e–11e)
+### Acceptance checks — continued (part 8 of 10; items 11e–11e)
 
 11e. <a id="impl-ac-11e"></a>**A human's own label is read back, and only where this mechanism put it
     (requirement 34g).** `test/needs-refinement.test.sh` passes:

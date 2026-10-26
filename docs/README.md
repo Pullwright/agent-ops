@@ -112,14 +112,15 @@ each with a `README.md` holding a directory-wide table of contents.
 |------|----------|------|---------|
 | `docs/spec/implementation/README.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: index, environment, actors, directory table of contents |
 | `docs/spec/implementation/acceptance-checks/acceptance-checks-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 2 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 3 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 4 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 5 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 6 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 7 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 8 of 9 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-09.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 9 of 9 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 2 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 3 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 4 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 5 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 6 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 7 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 8 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-09.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 9 of 10 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-10.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 10 of 10 |
 | `docs/spec/implementation/components/components-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components |
 | `docs/spec/implementation/components/components-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 2 of 3 |
 | `docs/spec/implementation/components/components-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 3 of 3 |
@@ -142,16 +143,18 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/spec/implementation/requirements/refiner.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Refiner |
 | `docs/spec/implementation/requirements/reviewer.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Reviewer |
 | `docs/spec/implementation/requirements/the-script-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Requirements |
-| `docs/spec/implementation/requirements/the-script-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 2 of 11 |
-| `docs/spec/implementation/requirements/the-script-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 3 of 11 |
-| `docs/spec/implementation/requirements/the-script-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 4 of 11 |
-| `docs/spec/implementation/requirements/the-script-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 5 of 11 |
-| `docs/spec/implementation/requirements/the-script-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 6 of 11 |
-| `docs/spec/implementation/requirements/the-script-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 7 of 11 |
-| `docs/spec/implementation/requirements/the-script-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 8 of 11 |
-| `docs/spec/implementation/requirements/the-script-09.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 9 of 11 |
-| `docs/spec/implementation/requirements/the-script-10.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 10 of 11 |
-| `docs/spec/implementation/requirements/the-script-11.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 11 of 11 |
+| `docs/spec/implementation/requirements/the-script-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 2 of 13 |
+| `docs/spec/implementation/requirements/the-script-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 3 of 13 |
+| `docs/spec/implementation/requirements/the-script-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 4 of 13 |
+| `docs/spec/implementation/requirements/the-script-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 5 of 13 |
+| `docs/spec/implementation/requirements/the-script-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 6 of 13 |
+| `docs/spec/implementation/requirements/the-script-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 7 of 13 |
+| `docs/spec/implementation/requirements/the-script-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 8 of 13 |
+| `docs/spec/implementation/requirements/the-script-09.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 9 of 13 |
+| `docs/spec/implementation/requirements/the-script-10.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 10 of 13 |
+| `docs/spec/implementation/requirements/the-script-11.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 11 of 13 |
+| `docs/spec/implementation/requirements/the-script-12.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 12 of 13 |
+| `docs/spec/implementation/requirements/the-script-13.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 13 of 13 |
 | `docs/spec/dashboard/README.md` | operator, evaluator | reference | Monitoring dashboard specification: index, architecture, directory table of contents |
 | `docs/spec/dashboard/components.md` | operator, evaluator | reference | Monitoring dashboard specification: Components (as built) |
 | `docs/spec/dashboard/design-decisions.md` | operator, evaluator | reference | Monitoring dashboard specification: Design decisions |

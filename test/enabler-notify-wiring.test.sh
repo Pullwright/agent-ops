@@ -41,6 +41,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENABLER_LIB="$SCRIPT_DIR/lib/enabler.sh"
 NOTIFY_LIB="$SCRIPT_DIR/lib/notify.sh"
 
+# create_escalation_issue's duplicate guard (extracted below) calls this —
+# sourced whole, the same way lib/notify.sh is just below, rather than
+# extracted: it is a pure leaf dependency with nothing of its own to stub.
+# shellcheck source=lib/escalation-dedup.sh
+. "$SCRIPT_DIR/lib/escalation-dedup.sh"
+
 failures=0
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

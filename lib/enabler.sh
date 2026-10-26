@@ -18,6 +18,18 @@
 # process-group kill — lives in lib/stage-run.sh, sourced at the top of this
 # script alongside every other shared rule. It is shared with review-cycle.sh
 # rather than copied into it (requirement 4d).
+#
+# `escalation_dedup_match` (the duplicate-guard predicate `create_escalation_
+# issue`/`escalation_open_existing` below both call) is self-sourced just
+# below, unlike everything else this file reads — it is the one dependency
+# this file has that carries no cycle-scoped globals of its own, so it can
+# be sourced directly here rather than left for agent-cycle.sh's own list,
+# the same way lib/claim.sh self-sources its own leaf dependencies
+# (agent-ops#2669). `$SCRIPT_DIR` is already set by every caller of this
+# file by the time it is sourced — the same assumption this file's own
+# `lib/claim.sh` invocations below already make.
+# shellcheck source=lib/escalation-dedup.sh
+. "$SCRIPT_DIR/lib/escalation-dedup.sh"
 
 # --- The Enabler (requirements 35–37) ---------------------------------------
 # The pipeline's escalation path: a high-tier model, engaged rarely, that
@@ -98,11 +110,11 @@ escalation_webhook_notify() {
 # has already made one best-effort attempt at the credential-independent
 # fallback, so a caller need not repeat it. Three behaviours, in order:
 #
-#   - A duplicate guard. An open issue carrying the escalation label whose body
-#     already quotes this item's reference *is* the escalation — return it
-#     rather than filing a second one at the same human. The item ref in the
-#     issue footer (prompts/enabler.md) is what makes this findable, and the
-#     body check is what stops a bare number matching an unrelated escalation.
+#   - A duplicate guard: `escalation_dedup_match` (lib/escalation-dedup.sh).
+#     An open issue that already represents this item's reference *is* the
+#     escalation — return it rather than filing a second one at the same
+#     human. See that function's own header for the two-stage match it runs
+#     and why.
 #   - The create carries the label *and* the assignee. The assignee is the
 #     load-bearing half: assignment is what excludes an issue from the `issues`
 #     work source (requirement 16.4), so the pipeline can never select its own
@@ -119,11 +131,7 @@ escalation_webhook_notify() {
 create_escalation_issue() {
   local repo="$1" item="$2" label="$3" title="$4" body_file="$5"
   local existing raw url number
-  existing="$(gh issue list -R "$repo" --label "$label" --state open --search "$item" \
-                --json number,url,body 2>/dev/null \
-              | jq -r --arg it "$item" \
-                  'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  existing="$(escalation_dedup_match "$repo" "$item" "$label")"
   if [[ -n "$existing" ]]; then
     printf '%s' "$existing"
     return 0
@@ -179,20 +187,16 @@ escalation_recent_close() {
 
 # escalation_open_existing REPO ITEM_REF
 # The live-read half of the open-question re-escalation short-circuit
-# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO
-# carrying `enabler_escalation_label` whose body contains ITEM_REF, and
-# prints nothing (never a bare error) when there is none or the read fails —
-# mirrors `escalation_recent_close` above, but for `--state open` instead of
-# `--state closed`, and the same backtick-delimited-body match `create_
-# escalation_issue`'s own duplicate guard already uses, since the caller
-# only needs to know whether one still stands, not when it closed.
+# (agent-ops#2620): prints "<number>\t<url>" for the open issue in REPO whose
+# body contains ITEM_REF, and prints nothing (never a bare error) when there
+# is none or the read fails — mirrors `escalation_recent_close` above, but
+# for `--state open` instead of `--state closed`, via `escalation_dedup_match`
+# (lib/escalation-dedup.sh), the same duplicate-guard predicate
+# `create_escalation_issue` above calls, since the caller only needs to know
+# whether one still stands, not when it closed.
 escalation_open_existing() {
   local repo="$1" item_ref="$2"
-  gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
-      --json number,url,body 2>/dev/null \
-    | jq -r --arg it "$item_ref" \
-        'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-         | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true
+  escalation_dedup_match "$repo" "$item_ref" "$enabler_escalation_label"
 }
 
 # create_decision_log_issue REPO ITEM LABEL TITLE BODY_FILE REASON_KEY

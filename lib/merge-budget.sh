@@ -70,6 +70,25 @@
 # shellcheck source=lib/toggle.sh
 # shellcheck source=lib/github-limit.sh
 # (Sourced by every caller of this file already — see the header above.)
+#
+# `lib/escalation-dedup.sh`, unlike those two, is self-sourced right below
+# rather than left for every caller to add: it is a pure leaf dependency
+# (gh + jq, no cycle-scoped globals), the same way `lib/claim.sh` self-
+# sources its own leaf dependencies, so adding it here costs nothing to
+# `scripts/doctor.sh` or this file's own regression test even though
+# neither otherwise has reason to know it exists. `merge_budget_apply_
+# decision` below is this file's one caller of it — the freeze escalation's
+# duplicate guard, which used to inline its own copy of this predicate
+# because this file cannot source `lib/enabler.sh` to reach `create_
+# escalation_issue`/`escalation_open_existing` directly (those read cycle-
+# scoped globals — `cycle_dir`, `enabler_assignee` — that `scripts/doctor.sh`
+# and `scripts/publish-dashboard.sh` have no cycle to supply); the inlined
+# copy drifted from the real guard instead (agent-ops#2669), which sourcing
+# the one real implementation here stops. `$SCRIPT_DIR` is already set by
+# every caller of this file by the time it is sourced — the header above
+# already relies on that for the toggle.sh/github-limit.sh source order.
+# shellcheck source=lib/escalation-dedup.sh
+. "$SCRIPT_DIR/lib/escalation-dedup.sh"
 
 MERGE_BUDGET_FREEZE_FLAG_PREFIX="merge-budget-freeze-"
 
@@ -357,12 +376,15 @@ merge_budget_freeze_clear() {
 # assumes for `fleet_flag_*` — `log_event` is defined by `agent-cycle.sh`
 # itself, the one process that ever calls this function for real.
 #
-# Deduplicated the same way `create_escalation_issue` dedups every other
-# escalation (an open issue in SLUG already naming this item ref) — but this
-# file cannot call that function directly (it lives in agent-cycle.sh, not a
-# sourced library), so the same dedup is inlined here rather than skipped:
-# an escalation a human has not yet closed must not be re-filed every time
-# the arming step reconsiders this repository.
+# Deduplicated through `escalation_dedup_match` (lib/escalation-dedup.sh),
+# the same duplicate-guard predicate `create_escalation_issue`
+# (lib/enabler.sh) dedups every other escalation with — this file cannot
+# call `create_escalation_issue` itself (it reads cycle-scoped globals,
+# `cycle_dir`/`enabler_assignee`, that `scripts/doctor.sh` and
+# `scripts/publish-dashboard.sh` have no cycle to supply), but the guard
+# predicate itself needs none of those, so it is shared rather than
+# reimplemented: an escalation a human has not yet closed must not be
+# re-filed every time the arming step reconsiders this repository.
 #
 # `merge-budget-frozen` also carries `reason` (a short, deterministic
 # rendering of the same anomaly `merge_budget_freeze_set`'s own flag body
@@ -404,11 +426,7 @@ merge_budget_apply_decision() {
 
   local item_ref="merge-budget-freeze-${slug//\//-}"
   local existing
-  existing="$(gh issue list -R "$slug" --label "$escalation_label" --state open --search "$item_ref" \
-                --json number,url,body 2>/dev/null \
-              | jq -r --arg it "$item_ref" \
-                  'map(select(((.body // "") | contains($it)))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  existing="$(escalation_dedup_match "$slug" "$item_ref" "$escalation_label")"
 
   local outcome
   outcome="$(merge_budget_freeze_set "$state_repo" "$slug" "$cap" "$count")"

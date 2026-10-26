@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 3 of 9; items 7g–25c)
+### Acceptance checks — continued (part 3 of 10; items 7g–25c)
 
 7g. <a id="impl-ac-7g"></a>**A candidate's refinement is made to trace back to it, and one that
    cannot be is skipped rather than claimed (requirement 17f, agent-ops#626,

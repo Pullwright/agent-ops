@@ -433,11 +433,33 @@
     what `enabler_recheck_hours` is measured from.
 
     **The issue contract.** Before filing, a duplicate guard: an open issue
-    carrying `enabler_escalation_label` whose body already quotes the item's
-    reference **backtick-delimited** — the literal token `` `<item>` ``, never
-    the bare reference — *is* the escalation and is reused. The delimiters are
-    what make the match unambiguous where one item reference is a string
-    prefix of another, which `crash-loop:coordinator` is of every
+    whose body already quotes the item's reference **backtick-delimited** —
+    the literal token `` `<item>` ``, never the bare reference — *is* the
+    escalation and is reused. The query tries `--label` first; only when that
+    finds nothing does it fall back to a label-less read (agent-ops#2657):
+    `gh issue create`'s own retry below can file an escalation without the
+    label when the label does not exist and `labels_reconcile_role` could not
+    create it, so a label-less escalation from that retry path must still be
+    found on a later round rather than silently duplicated. The bare
+    backtick-delimited token is not a safe stand-in for the label on that
+    label-less read, though (agent-ops#2666): the label was excluding two
+    other classes of open issue that quote the same token for the same
+    repo/item pair, and returning either as "the escalation" files none and
+    asks no human — a `pw::decision` decision-log issue
+    (`enabler_decision_log_body`), which carries the identical
+    `` Item: `<item>` `` footer and, while open, is a standing human veto of a
+    *decision*; and a plain question issue from `techdebt_file_issue`
+    (component 23d), filed unlabelled and by design left open, whose body
+    quotes the item ref backtick-delimited too. So the label-less read keys on
+    the escalation footer's `` Item: `<item>` `` form rather than the bare
+    token — every escalation body this system files carries that form, while a
+    question issue's does not — **and** excludes any body carrying the
+    `<!-- agent-ops:decision-log` marker, since the decision log carries the
+    footer as well. An escalation body that deviated from the mandated footer
+    would be missed by the fallback and duplicated, which is agent-ops#2657's
+    own visible per-round noise rather than a swallowed escalation. The
+    delimiters are what make the match unambiguous where one item reference is
+    a string prefix of another, which `crash-loop:coordinator` is of every
     `crash-loop:coordinator:<owner>/<name>` (agent-ops#1694): no item
     reference this system mints contains a backtick, so the closing delimiter
     can only fall at the reference's own end. Every body filed through this
@@ -450,9 +472,17 @@
     dedup against nothing, re-filing on every later round.
     `lib/merge-budget.sh`'s freeze escalation (requirement 2.3c) carries the
     same footer but is not filed through this route: it cannot reach this
-    function from where it lives, so it inlines its own copy of the guard and
-    calls `gh issue create` itself, and that copy matches on the bare
-    reference rather than the delimited token. Otherwise
+    function from where it lives (`create_escalation_issue` reads cycle-scoped
+    globals — `cycle_dir`, `enabler_assignee` — that `lib/merge-budget.sh`'s
+    non-cycle callers, `scripts/doctor.sh` and `scripts/publish-dashboard.sh`,
+    have no cycle to supply), so it calls `gh issue create` itself rather than
+    this function. Its duplicate guard, though, is the same
+    `escalation_dedup_match` (`lib/escalation-dedup.sh`) this function's own
+    guard above calls — a shared predicate with no cycle-scoped globals of its
+    own, so both files can source it — rather than a second, independently
+    drifting copy (agent-ops#2669): the same delimited-token match, the same
+    label-then-label-less fallback, the same `pw::decision`/question-issue
+    exclusions. Otherwise
     `gh issue create` in
     the item's own repo with that label **and** `--assignee` set to
     `enabler_assignee`, retried once without the label so a repo where the

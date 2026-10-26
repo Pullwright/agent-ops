@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 9 of 9; items 8q–11d)
+### Acceptance checks — continued (part 9 of 10; items 8q–11d)
 
 8q. <a id="impl-ac-8q"></a>**A void shape with no closed-object or register-resolved signal still
    retires, once its source stops yielding it (requirement 34n's liveness

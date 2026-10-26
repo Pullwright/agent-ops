@@ -1423,7 +1423,13 @@ memory_throttle_check() {
   # "ok"): a verdict of "" (no parent window, or this is the first reading)
   # is not evidence either way, so the count is left exactly where it was,
   # the same "silence must never retire an alarm" reasoning lib/crash-loop.sh
-  # already rests on for its own escalation retirement.
+  # already rests on for its own escalation retirement. "There is one to
+  # persist" is judged below by either verdict, not by the events reading
+  # alone (agent-ops#2655): with `min_cgroup_headroom_bytes > 0`, a reachable
+  # memory.current/memory.high pair reaches a real headroom verdict even when
+  # the parent's memory.events window is unreadable, and that verdict's
+  # effect on the consecutive count — reset or retirement included — still
+  # has to land in the state file or it is lost the moment this process exits.
   local mt_triggered=0 mt_cleared=0 mt_new_consecutive="$mt_prev_consecutive" mt_reason=""
   if [[ "$mt_throttle_verdict" == "throttling" || "$mt_headroom_verdict" == "near-ceiling" ]]; then
     mt_triggered=1
@@ -1466,9 +1472,15 @@ memory_throttle_check() {
     fi
   fi
 
-  if [[ -n "$mt_current_high" ]]; then
+  if [[ -n "$mt_current_high" || -n "$mt_throttle_verdict" || -n "$mt_headroom_verdict" ]]; then
     local mt_state_tmp="$mt_state_file.tmp.$$"
-    if printf '%s\t%s\t%s\n' "$mt_current_ts" "$mt_current_high" "$mt_new_consecutive" \
+    # `IFS=$'\t' read` below treats tab as IFS whitespace, so an empty
+    # middle field written as two adjacent tabs collapses on read: the
+    # consecutive count shifts left into mt_prev_high and mt_prev_consecutive
+    # falls back to 0 (agent-ops#2667 review). A non-numeric sentinel keeps
+    # the field non-empty on disk while still reading as "no previous
+    # reading" to memory_cgroup_throttle_rate_per_min's own numeric check.
+    if printf '%s\t%s\t%s\n' "$mt_current_ts" "${mt_current_high:--}" "$mt_new_consecutive" \
          > "$mt_state_tmp" 2>/dev/null; then
       mv -f "$mt_state_tmp" "$mt_state_file" 2>/dev/null || rm -f "$mt_state_tmp" 2>/dev/null
     else
