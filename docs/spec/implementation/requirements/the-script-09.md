@@ -240,10 +240,13 @@
     without also removing the `open-question` label — closing is not the
     releasing act — would otherwise get a fresh issue on every subsequent
     refusing round. Before filing, `open_question_escalate` reads the most
-    recently closed `enabler_escalation_label` issue for this pull request's
-    own `pr-<n>-open-question` reference live from GitHub
-    (`escalation_recent_close`, `lib/enabler.sh`). Filing is suppressed —
-    logged as a `warning` naming the prior issue and the UTC instant the
+    recently closed issue matching this pull request's own
+    `pr-<n>-open-question` reference live from GitHub (`escalation_recent_
+    close`, `lib/enabler.sh`) — labelled `enabler_escalation_label` first,
+    falling back, when that finds nothing, to a label-less read keyed on the
+    escalation footer (agent-ops#2657, agent-ops#2666, agent-ops#2670), so a
+    human closing a label-less escalation still throttles re-filing here.
+    Filing is suppressed — logged as a `warning` naming the prior issue and the UTC instant the
     window lapses, with no GitHub write — while `now − closedAt` is less
     than `escalation_refile_after_hours` (`escalation_refile_suppressed`,
     `lib/escalation-autonomy.sh`, a pure comparator), *unless* it is the one

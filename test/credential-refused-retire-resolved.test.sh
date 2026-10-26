@@ -36,6 +36,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # notify_post_cycle call below is an undefined command, not the no-op an
 # unset notify_webhook_url is meant to be.
 . "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/escalation-lookup.sh
+# agent-cycle.sh always sources this ahead of lib/enabler.sh too
+# (agent-ops#2670); without it here, credential_refused_retire_resolved's
+# own escalation_issue_lookup call below is an undefined command.
+. "$SCRIPT_DIR/lib/escalation-lookup.sh"
 # shellcheck source=lib/enabler.sh
 . "$SCRIPT_DIR/lib/enabler.sh"
 
@@ -63,15 +68,22 @@ enabler_escalation_label="autonomous-agent-escalation"
 events_file="$tmp_dir/events"
 log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$events_file"; }
 
-# gh: `gh issue list` returns whatever GH_ISSUE_LIST_JSON names, or fails
-# with no output when GH_ISSUE_LIST_RC is non-zero; `gh issue close` is
-# recorded into GH_CLOSE_CALLS_FILE, `---end---`-terminated since the body is
-# multi-line (the same convention run_block's own escalation stub in
-# test/standdown-credential-preflight.test.sh uses for the same reason), or
-# fails without being recorded when GH_ISSUE_CLOSE_RC is non-zero — simulating
-# the two failure windows #2511 found (lookup errors, close errors) without
-# ever conflating either with a genuinely empty/successful result.
+# gh: `gh issue list` returns GH_ISSUE_LIST_JSON for a `--label`-carrying
+# call and GH_ISSUE_LIST_UNLABELLED_JSON (defaulting to GH_ISSUE_LIST_JSON,
+# so every test above #2670 that never sets it keeps seeing the same payload
+# on both calls) for a label-less one — `escalation_issue_lookup`'s own
+# two-step read dispatches exactly on that flag's presence, the same `gh()`
+# stub shape test/escalation-autonomy.test.sh already uses for the same
+# function — or fails with no output when GH_ISSUE_LIST_RC is non-zero;
+# `gh issue close` is recorded into GH_CLOSE_CALLS_FILE, `---end---`-
+# terminated since the body is multi-line (the same convention run_block's
+# own escalation stub in test/standdown-credential-preflight.test.sh uses
+# for the same reason), or fails without being recorded when
+# GH_ISSUE_CLOSE_RC is non-zero — simulating the two failure windows #2511
+# found (lookup errors, close errors) without ever conflating either with a
+# genuinely empty/successful result.
 GH_ISSUE_LIST_JSON='[]'
+GH_ISSUE_LIST_UNLABELLED_JSON=''
 GH_ISSUE_LIST_RC=0
 GH_ISSUE_CLOSE_RC=0
 GH_CLOSE_CALLS_FILE="$tmp_dir/close-calls"
@@ -80,7 +92,11 @@ gh() {
     if (( GH_ISSUE_LIST_RC != 0 )); then
       return "$GH_ISSUE_LIST_RC"
     fi
-    printf '%s' "$GH_ISSUE_LIST_JSON"
+    if [[ " $* " == *" --label "* ]]; then
+      printf '%s' "$GH_ISSUE_LIST_JSON"
+    else
+      printf '%s' "${GH_ISSUE_LIST_UNLABELLED_JSON:-$GH_ISSUE_LIST_JSON}"
+    fi
     return 0
   elif [[ "$1" == "issue" && "$2" == "close" ]]; then
     (( GH_ISSUE_CLOSE_RC == 0 )) || return "$GH_ISSUE_CLOSE_RC"
@@ -207,6 +223,42 @@ assert_eq "…logs a warning naming the unparseable payload and the retry" \
   "yes" "$(if grep -E '^warning' "$events_file" | grep -q 'could not parse' \
               && grep -E '^warning' "$events_file" | grep -q 'will retry next cycle'; then echo yes; else echo no; fi)"
 GH_ISSUE_LIST_JSON='[]'
+
+# --- the label-less fallback (agent-ops#2657, agent-ops#2666, agent-ops#2670):
+# an escalation filed via `create_escalation_issue`'s own retry-without-label
+# path — no `enabler_escalation_label` on the issue, found by neither
+# `--label` search — is still found and retired here, through
+# `escalation_issue_lookup`'s own two-step read. ---
+
+GH_ISSUE_LIST_JSON='[]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+GH_ISSUE_LIST_UNLABELLED_JSON='[{"number":58,"url":"https://github.com/acme/agent-ops/issues/58","body":"- node: `test-node`\n\n---\nItem: `credential-refused:test-node` · raised by the Script"}]'
+: > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-11" \
+  "2026-10-14T19:49:02Z"
+assert_eq "a label-less escalation is still closed exactly once" \
+  "1" "$(grep -c '^---end---$' "$GH_CLOSE_CALLS_FILE" 2>/dev/null)"
+assert_eq "…the right issue number" \
+  "yes" "$(if grep -q '^number=58$' "$GH_CLOSE_CALLS_FILE"; then echo yes; else echo no; fi)"
+assert_eq "…and logs credential-refused-retired" \
+  "1" "$(grep -c '^credential-refused-retired' "$events_file" 2>/dev/null)"
+
+# --- the label-less fallback must not mistake an open `pw::decision`
+# decision-log issue for the escalation: it carries the identical
+# `` Item: `<ref>` `` footer, but the `<!-- agent-ops:decision-log` marker
+# excludes it (agent-ops#2666). ---
+
+GH_ISSUE_LIST_JSON='[]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+GH_ISSUE_LIST_UNLABELLED_JSON='[{"number":59,"url":"https://github.com/acme/agent-ops/issues/59","body":"<!-- agent-ops:decision-log item=credential-refused:test-node repo=acme/agent-ops reason_key=k -->\n\n---\nItem: `credential-refused:test-node` · decided by the pipeline"}]'
+: > "$GH_CLOSE_CALLS_FILE"; : > "$events_file"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-12" \
+  "2026-10-14T19:49:02Z"
+assert_eq "an open decision-log issue is never closed as the escalation" \
+  "0" "$(wc -l < "$GH_CLOSE_CALLS_FILE" | tr -d ' ')"
+assert_eq "…and nothing is logged as retired" \
+  "0" "$(grep -c '^credential-refused-retired' "$events_file" 2>/dev/null)"
+GH_ISSUE_LIST_UNLABELLED_JSON=''
 
 printf '\n'
 if (( failures )); then

@@ -172,9 +172,11 @@
 # other lib/*.sh — the caller (`agent-cycle.sh` runs under
 # `set -euo pipefail`; a test, `set -uo pipefail`) owns those. Depends on
 # `github_pr_list_truncated` (lib/github-limit.sh), `merge_queue_for_branch`
-# (lib/merge-queue.sh) and `landing_retry_source_map`
-# (lib/union-log-scan.sh, #1050), all already sourced ahead of this file by
-# every caller.
+# (lib/merge-queue.sh), `landing_retry_source_map` (lib/union-log-scan.sh,
+# #1050) and `escalation_issue_lookup` (lib/escalation-lookup.sh,
+# agent-ops#2670 — `open_question_pass_available`'s own labelled-first/
+# label-less-fallback escalation read), all already sourced ahead of this
+# file by every caller.
 #
 # Environment:
 #   LANDING_GH  override `gh` (tests stub it), matching
@@ -183,6 +185,7 @@
 # shellcheck source=lib/github-limit.sh
 # shellcheck source=lib/merge-queue.sh
 # shellcheck source=lib/union-log-scan.sh
+# shellcheck source=lib/escalation-lookup.sh
 # (Sourced by every caller of this file already — see the header above.)
 
 # GitHub documents a 3000-file ceiling on the pull-request files endpoint
@@ -2270,16 +2273,20 @@ protected_path_tier_reapproval_attempted_before() {
 # does not.
 #
 # The exemption mirrors 36b's own "issue-closed": a *closed* escalation
-# issue carrying ITEM_REF in its body means a human has already acted on
-# this exact question since the last pass, so the next one is the first
-# since they did — read live from GitHub, never from the log, on the same
-# "ask the thing that actually changed" reasoning `approver_refuse_streak`
-# already applies to the Approver's own streak.
+# issue matching ITEM_REF means a human has already acted on this exact
+# question since the last pass, so the next one is the first since they
+# did — read live from GitHub, never from the log, on the same "ask the
+# thing that actually changed" reasoning `approver_refuse_streak` already
+# applies to the Approver's own streak. Reads through `escalation_issue_
+# lookup` (lib/escalation-lookup.sh) — the same labelled-first/label-less-
+# fallback two-step read `create_escalation_issue`'s own duplicate guard
+# and `escalation_open_existing` already apply (agent-ops#2657,
+# agent-ops#2666, agent-ops#2670), so a human closing a label-less
+# escalation still restores this pass.
 open_question_pass_available() {
   local slug="$1" pr_url="$2" item_ref="$3" closed
-  closed="$(gh issue list -R "$slug" --label "$enabler_escalation_label" --state closed --search "$item_ref" \
-              --json body 2>/dev/null \
-            | jq -r --arg it "$item_ref" 'map(select(((.body // "") | contains($it)))) | length' 2>/dev/null || echo 0)"
+  closed="$(escalation_issue_lookup "$slug" closed "$item_ref" 2>/dev/null \
+            | jq -r 'length' 2>/dev/null || echo 0)"
   [[ "$closed" =~ ^[0-9]+$ ]] || closed=0
   (( closed > 0 )) && return 0
   open_question_adjudicated_before "$pr_url" < "${union_log:-$log_file}" || return 0

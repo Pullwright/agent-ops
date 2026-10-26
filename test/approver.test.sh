@@ -32,6 +32,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # retry policy (agent-ops#1082).
 # shellcheck source=lib/github-limit.sh
 . "$SCRIPT_DIR/lib/github-limit.sh"
+# shellcheck source=lib/escalation-lookup.sh
+# Sourced ahead of lib/approver.sh too, matching agent-cycle.sh's own order
+# (agent-ops#2670) — approver_escalation_retire reads through escalation_
+# issue_lookup rather than its own inlined dedup lookup now.
+. "$SCRIPT_DIR/lib/escalation-lookup.sh"
 # shellcheck source=lib/approver.sh
 . "$SCRIPT_DIR/lib/approver.sh"
 # approver_escalation_retire wraps its own close comment in the same

@@ -815,9 +815,9 @@
       5xx/overload) — `credential_refused_retire_resolved` (lib/enabler.sh)
       closes this node's own open `credential-refused:<node>` escalation,
       found the same way `create_escalation_issue`'s own duplicate guard
-      finds it (an open issue, labelled `enabler_escalation_label`, whose
-      body quotes `` `credential-refused:<node>` ``), with a comment naming
-      this cycle and the probe's own timestamp. Per node, never fleet-wide:
+      finds it (`escalation_issue_lookup`, lib/escalation-lookup.sh,
+      agent-ops#2670), with a comment naming this cycle and the probe's own
+      timestamp. Per node, never fleet-wide:
       the escalation is filed per node in the first place, so only that
       node's own probe can speak to whether it has cleared, and a staggered
       fleet recovery is therefore not the hazard it is for

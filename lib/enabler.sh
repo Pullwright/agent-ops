@@ -31,6 +31,12 @@
 # shellcheck source=lib/escalation-dedup.sh
 . "$SCRIPT_DIR/lib/escalation-dedup.sh"
 
+# `escalation_recent_close`, `credential_refused_retire_resolved` and
+# `memory_throttle_retire_resolved` below all read through `escalation_issue_
+# lookup` (lib/escalation-lookup.sh, agent-ops#2670) — already sourced ahead
+# of this file by every caller, the same reliance this file already places
+# on lib/stage-run.sh above.
+
 # --- The Enabler (requirements 35–37) ---------------------------------------
 # The pipeline's escalation path: a high-tier model, engaged rarely, that
 # re-examines items recorded as blocked which the pipeline has not managed to
@@ -153,21 +159,24 @@ create_escalation_issue() {
 # escalation_recent_close REPO ITEM_REF
 # The live-read half of the requirement 8f/8c re-filing guard (agent-ops#779,
 # decided on #784): prints "<number>\t<url>\t<closedAt>" for the most
-# recently closed issue in REPO carrying `enabler_escalation_label` whose
-# body contains ITEM_REF, and prints nothing (never a bare error) when there
-# is none or the read fails — "no recent close" is the safe reading of an
-# unreadable state, the same "ask the thing that actually changed" reasoning
-# `open_question_pass_available` already applies to its own closed-issue
-# read, mirrored here verbatim but for `closedAt` and `sort_by(...) | last`
-# rather than a bare count, since the caller needs to know *when* it closed,
-# not merely that one exists.
+# recently closed issue in REPO matching ITEM_REF, and prints nothing (never
+# a bare error) when there is none or the read fails — "no recent close" is
+# the safe reading of an unreadable state, the same "ask the thing that
+# actually changed" reasoning `open_question_pass_available` already applies
+# to its own closed-issue read, mirrored here verbatim but for `closedAt` and
+# `sort_by(...) | last` rather than a bare count, since the caller needs to
+# know *when* it closed, not merely that one exists. Reads through
+# `escalation_issue_lookup` (lib/escalation-lookup.sh), the same labelled-
+# first/label-less-fallback two-step `create_escalation_issue`'s own
+# duplicate guard and `escalation_open_existing` already apply
+# (agent-ops#2657, agent-ops#2666, agent-ops#2670) — a label-less escalation
+# closed by hand must still throttle re-filing here, not only on the open
+# side.
 escalation_recent_close() {
   local repo="$1" item_ref="$2"
-  gh issue list -R "$repo" --label "$enabler_escalation_label" --state closed --search "$item_ref" \
-      --json number,url,body,closedAt 2>/dev/null \
-    | jq -r --arg it "$item_ref" \
-        'map(select(((.body // "") | contains("`" + $it + "`")))) | sort_by(.closedAt) | last
-         | if . == null then empty else "\(.number)\t\(.url)\t\(.closedAt)" end' 2>/dev/null || true
+  escalation_issue_lookup "$repo" closed "$item_ref" number,url,body,closedAt 2>/dev/null \
+    | jq -r 'sort_by(.closedAt) | last
+             | if . == null then empty else "\(.number)\t\(.url)\t\(.closedAt)" end' 2>/dev/null || true
 }
 
 # escalation_open_existing REPO ITEM_REF
@@ -862,47 +871,49 @@ Retired automatically by agent-cycle.sh (requirement 2.7)."
 # this function does no verdict judgement of its own; it only finds and
 # closes the issue.
 #
-# Looked up the same way `create_escalation_issue`'s own duplicate guard
-# finds an existing escalation — an open issue, labelled
-# `enabler_escalation_label`, whose body quotes this exact item ref — rather
-# than through any id this function was handed, since nothing upstream of
-# here ever recorded the issue number the original filing returned. No open
-# issue (never filed, or already closed by hand) is not an error: there is
-# nothing to retire, and the function returns quietly.
+# Looked up through `escalation_issue_lookup` (lib/escalation-lookup.sh) —
+# the same labelled-first/label-less-fallback two-step read `create_
+# escalation_issue`'s own duplicate guard and `escalation_open_existing`
+# apply (agent-ops#2657, agent-ops#2666) — rather than through any id this
+# function was handed, since nothing upstream of here ever recorded the
+# issue number the original filing returned. A label-less escalation (the
+# retry-without-label path, agent-ops#2657) is found exactly the same as a
+# labelled one (agent-ops#2670): this function's own per-node auto-
+# retirement must not stay blind to it just because the label never made it
+# onto the issue. No open issue (never filed, or already closed by hand) is
+# not an error: there is nothing to retire, and the function returns
+# quietly.
 #
-# Returns non-zero on any of the three failure windows below — the `gh issue
-# list` call erroring, that call succeeding but returning a payload `jq`
-# cannot parse (which yields the same empty match a genuinely empty lookup
-# does, so only `jq`'s own exit status tells the two apart, agent-ops#2554),
-# or the close itself failing — rather than always 0 as before #2511: the caller
-# (`lib/standdown.sh`'s own 2.0h block) uses this to decide whether to clear
-# its own `cred_prev_verdict` state to `"ok"` or leave it at `"refused"` so a
-# future cycle retries the close instead of forfeiting it for the container's
-# whole remaining lifetime (agent-ops#2511). A genuinely empty lookup (no open
+# Returns non-zero on any of the three failure windows below — either `gh
+# issue list` call `escalation_issue_lookup` makes erroring, a call that
+# succeeded returning a payload `jq` cannot parse (which yields the same
+# empty match a genuinely empty lookup does, so only `jq`'s own exit status
+# tells the two apart, agent-ops#2554), or the close itself failing —
+# rather than always 0 as before #2511: the caller (`lib/standdown.sh`'s own
+# 2.0h block) uses this to decide whether to clear its own `cred_prev_
+# verdict` state to `"ok"` or leave it at `"refused"` so a future cycle
+# retries the close instead of forfeiting it for the container's whole
+# remaining lifetime (agent-ops#2511). A genuinely empty lookup (no open
 # escalation, never filed or already closed by hand) is still success — only
 # an *error* finding out is a failure.
 credential_refused_retire_resolved() {
   local repo="$1" node="$2" cycle="$3" success_ts="$4"
   [[ -n "$repo" ]] || return 0
   local item_ref="credential-refused:$node"
-  local list_out list_rc jq_rc existing issue_number issue_url body
-  list_out="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
-                --json number,url,body 2>>"$cycle_dir/credential-refused-retire.err")"
-  list_rc=$?
-  if (( list_rc != 0 )); then
+  local matched lookup_rc existing issue_number issue_url body
+  matched="$(escalation_issue_lookup "$repo" open "$item_ref" 2>>"$cycle_dir/credential-refused-retire.err")"
+  lookup_rc=$?
+  if (( lookup_rc == 1 )); then
     log_event "warning" "$(jq -nc --arg d "credential-refused escalation lookup for $item_ref failed — see credential-refused-retire.err — will retry next cycle" \
       '{detail: $d}')"
     return 1
-  fi
-  existing="$(jq -r --arg it "$item_ref" \
-      'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-       | if . == null then empty else "\(.number)\t\(.url)" end' <<<"$list_out" 2>>"$cycle_dir/credential-refused-retire.err")"
-  jq_rc=$?
-  if (( jq_rc != 0 )); then
+  elif (( lookup_rc != 0 )); then
     log_event "warning" "$(jq -nc --arg d "credential-refused escalation lookup for $item_ref returned a payload jq could not parse — see credential-refused-retire.err — will retry next cycle" \
       '{detail: $d}')"
     return 1
   fi
+  existing="$(jq -r 'first | if . == null then empty else "\(.number)\t\(.url)" end' \
+      <<<"$matched" 2>>"$cycle_dir/credential-refused-retire.err")"
   [[ -n "$existing" ]] || return 0
   issue_number="${existing%%$'\t'*}"
   issue_url="${existing#*$'\t'}"
@@ -939,29 +950,29 @@ Retired automatically by agent-cycle.sh (requirement 2.0h)."
 # reading had reached `memory_throttle_escalate_after` and this one did
 # not — so this function does no verdict judgement of its own; it only
 # finds and closes the issue, the same "no open issue is not an error"
-# contract `credential_refused_retire_resolved` documents.
+# contract `credential_refused_retire_resolved` documents — including that
+# function's own `escalation_issue_lookup` read (lib/escalation-lookup.sh),
+# so a label-less escalation (the retry-without-label path, agent-ops#2657)
+# is auto-retired here too, not only when the label made it onto the issue
+# (agent-ops#2670).
 memory_throttle_retire_resolved() {
   local repo="$1" node="$2" cycle="$3"
   [[ -n "$repo" ]] || return 0
   local item_ref="memory-throttled:$node"
-  local list_out list_rc jq_rc existing issue_number issue_url body
-  list_out="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
-                --json number,url,body 2>>"$cycle_dir/memory-throttle-retire.err")"
-  list_rc=$?
-  if (( list_rc != 0 )); then
+  local matched lookup_rc existing issue_number issue_url body
+  matched="$(escalation_issue_lookup "$repo" open "$item_ref" 2>>"$cycle_dir/memory-throttle-retire.err")"
+  lookup_rc=$?
+  if (( lookup_rc == 1 )); then
     log_event "warning" "$(jq -nc --arg d "memory-throttled escalation lookup for $item_ref failed — see memory-throttle-retire.err — will retry next cycle" \
       '{detail: $d}')"
     return 1
-  fi
-  existing="$(jq -r --arg it "$item_ref" \
-      'map(select(((.body // "") | contains("`" + $it + "`")))) | first
-       | if . == null then empty else "\(.number)\t\(.url)" end' <<<"$list_out" 2>>"$cycle_dir/memory-throttle-retire.err")"
-  jq_rc=$?
-  if (( jq_rc != 0 )); then
+  elif (( lookup_rc != 0 )); then
     log_event "warning" "$(jq -nc --arg d "memory-throttled escalation lookup for $item_ref returned a payload jq could not parse — see memory-throttle-retire.err — will retry next cycle" \
       '{detail: $d}')"
     return 1
   fi
+  existing="$(jq -r 'first | if . == null then empty else "\(.number)\t\(.url)" end' \
+      <<<"$matched" 2>>"$cycle_dir/memory-throttle-retire.err")"
   [[ -n "$existing" ]] || return 0
   issue_number="${existing%%$'\t'*}"
   issue_url="${existing#*$'\t'}"
