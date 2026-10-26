@@ -10,8 +10,8 @@
 # per-repo entries into `ordered_repos_json`/`source_states_json`/
 # `claimed_json`/`unvoid_requests_json`/`hand_flagged_refinements_json`/
 # `degraded_issues_excluded_json` (the repo slugs whose own `issues` gather
-# degraded this cycle — `lib/eligibility.sh`'s own open-`Blocked-by:`-
-# reference exclusion, requirement 35f, reads this alongside
+# degraded this cycle, which requirement 35f's own open-`Blocked-by:`-reference
+# exclusion in `lib/eligibility.sh` reads alongside
 # `latest_issues_excluded_json` below).
 # `compute_skip_lists` reconciles the two label-driven human overrides
 # (`unvoid` and hand-flagged `needs_refinement`) against that cycle's own
