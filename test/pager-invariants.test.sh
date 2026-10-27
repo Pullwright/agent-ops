@@ -6,7 +6,8 @@
 # peer-vantage invariants; agent-ops#1281's seven selection/ledger
 # invariants (idle-with-demand, coordinator-fit-ladder-pinned, work-order-repaired-rate,
 # blocked-label-orphaned, claim-unreconciled, escalation-burst,
-# digest-truncated); agent-ops#2277's `gather-claimed-degraded`.
+# digest-truncated); agent-ops#2277's `gather-claimed-degraded`; agent-ops#2698's
+# `memory-cgroup`.
 #
 # lib/pager.sh's own registry/state-machine/remedy-class behaviour is
 # test/pager.test.sh's job; this file calls each invariant's EVAL_FN and
@@ -818,6 +819,34 @@ PAGER_EVAL_DASHBOARD_FETCH_SECONDS=""
 assert_eq "no configured threshold: never fires" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_dashboard_unreadable "$df_nodes" /dev/null)")"
 PAGER_EVAL_DASHBOARD_FETCH_SECONDS=30
+
+# --- memory-cgroup (agent-ops#2698) ----------------------------------------
+
+mc_row() {  # mc_row NAME STALE MEMORY_CGROUP_OR_EMPTY
+  jq -nc --arg n "$1" --argjson stale "$2" --arg v "$3" \
+    '{node: $n, stale: $stale,
+      doctor: (if $v == "" then {} else {memory_cgroup: $v} end)}'
+}
+mc_nodes="$(printf '%s\n%s\n%s\n%s\n%s\n' \
+  "$(mc_row n1 false unbounded)" "$(mc_row n2 false livelocked)" \
+  "$(mc_row n3 false parented)" "$(mc_row n4 false unconfirmed)" \
+  "$(mc_row n5 false "")" | jq -sc '.')"
+verdict="$(pager_eval_memory_cgroup "$mc_nodes" /dev/null)"
+assert_eq "unbounded and livelocked fire" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... naming exactly those two nodes" "n1,n2" \
+  "$(jq -r '.nodes | sort | join(",")' <<<"$verdict")"
+assert_contains "  ... evidence names each node's own verdict" "n1 (unbounded)" \
+  "$(jq -r '.evidence' <<<"$verdict")"
+assert_reduced_verdict_eq memory-cgroup "$mc_nodes" /dev/null
+
+mc_nodes_ok="$(printf '%s\n%s\n%s\n' "$(mc_row n1 false bounded)" "$(mc_row n2 false unlimited)" \
+  "$(mc_row n3 false "")" | jq -sc '.')"
+assert_eq "bounded, unlimited and absent never fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_ok" /dev/null)")"
+
+mc_nodes_stale="$(printf '%s\n' "$(mc_row n1 true unbounded)" | jq -sc '.')"
+assert_eq "a stale node's own reading is not trusted" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_stale" /dev/null)")"
 
 # --- idle-with-demand (agent-ops#1281) -------------------------------------
 

@@ -208,6 +208,13 @@
     `pw::type:tech-debt`, unassigned, and returns failure rather than filing
     nowhere when `PAGER_REMEDY_REPO` is unset.
 
+    The same file also drives agent-ops#2698's `memory-cgroup` invariant: it
+    fires on a live row whose `doctor.memory_cgroup` reads `unbounded` or
+    `livelocked`, naming the affected node and its verdict in the evidence;
+    it does not fire on a row reading `parented`, `unconfirmed`, `bounded`,
+    or `unlimited`, on a row carrying no `memory_cgroup` field at all, or on
+    an otherwise-matching row that is stale.
+
     `scripts/render-config-table.sh --check` passes with
     `pager_stale_file_after_minutes`/`pager_dashboard_fetch_seconds`/
     `pager_idle_cycles`/`pager_repair_rate_percent`/`pager_escalation_burst`/

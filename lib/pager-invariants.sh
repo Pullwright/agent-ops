@@ -904,6 +904,46 @@ pager_eval_dashboard_unreadable() {
   ' 2>/dev/null || printf '{"firing":false}'
 }
 
+# pager_eval_memory_cgroup FLEET_NODES_JSON UNION_LOG_FILE
+# Fires when any *live* node's own hourly doctor pass reports
+# `doctor.memory_cgroup` (scripts/state-sync.sh, lib/memory.sh's
+# `memory_cgroup_verdict`) as `unbounded` or `livelocked` — the two readings
+# that mean nothing reclaims this container's memory before its hard
+# ceiling, whatever state-sync.sh happened to be classifying them as inside
+# scripts/doctor.sh's own advisory `warn`. Live, not cycling, the same
+# precedent updater-stuck sets: every node's own doctor pass runs from its
+# crontab whatever its role, and a standby left unbounded still holds memory
+# a healthy standby would not.
+#
+# agent-ops#1569/#1579 is the fact this invariant exists to give a paging
+# path: a memory-cgroup verdict visible on the dashboard had none, so the
+# gap it was raised against took five autonomous investigations escalating
+# to the owner, over roughly nine days, before a human was paged directly —
+# the designed blocked-item fallback working, but far slower than firing on
+# the verdict itself would have. Classified owner-only: the fix is a
+# host-side cgroup configuration change — setting `memory.high` on the
+# node's own parent cgroup, exactly what #1579 did — never something this
+# pipeline can perform on its own behalf.
+#
+# `bounded`/`unconfirmed`/`unlimited`/absent never fire this: `bounded` and
+# `unlimited` are already reclaimed or uncapped, and `unconfirmed` is a
+# measurement gap, not a known-bad configuration — the issue this invariant
+# answers names only `unbounded`/`livelocked`.
+pager_eval_memory_cgroup() {
+  local fleet_nodes_json="$1" _union_log_file="$2"
+  jq -c -n --argjson nodes "$fleet_nodes_json" "$PAGER_JQ_ROW_PREDICATES"'
+    ($nodes | map(select(pager_row_live))
+     | map(select((.doctor.memory_cgroup? // "") as $v
+                   | $v == "unbounded" or $v == "livelocked"))) as $hits
+    | if ($hits | length) == 0 then {firing: false}
+      else {firing: true, nodes: ($hits | map(.node)),
+            evidence: ("doctor.memory_cgroup reports "
+              + (($hits | map("\(.node) (\(.doctor.memory_cgroup))")) | join(", "))
+              + " — the container cgroup is not reclaimed before its hard ceiling (agent-ops#1569/#1579'"'"'s own class)")}
+      end
+  ' 2>/dev/null || printf '{"firing":false}'
+}
+
 # --- agent-ops#1281: selection and ledger -----------------------------------
 
 # pager_eval_idle_with_demand FLEET_NODES_JSON UNION_LOG_FILE
@@ -1992,9 +2032,9 @@ pager_register_builtin_invariants() {
     "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
     "$firing_missed_file_after"
   pager_declare_events firing-missed cycle-start cycle-end cycle-skipped
-  # node-stale, updater-stuck and dashboard-unreadable read fleet_nodes_json
-  # alone; review-pipeline-failing reads the review union through
-  # PAGER_EVAL_REVIEW_UNION_LOG_FILE and ignores UNION_LOG_FILE.
+  # node-stale, updater-stuck, dashboard-unreadable and memory-cgroup read
+  # fleet_nodes_json alone; review-pipeline-failing reads the review union
+  # through PAGER_EVAL_REVIEW_UNION_LOG_FILE and ignores UNION_LOG_FILE.
   pager_register node-stale pager_eval_node_stale owner-only \
     "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. If instead the node has left the fleet for good — decommissioned, renamed, or a stray hostname that should never have published (agent-ops#2421) — delete its \`nodes/<node>\` branch on the state repository: fleet membership is any \`nodes/*\` branch, so this page cannot clear on its own until that branch is gone. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"
@@ -2008,6 +2048,9 @@ pager_register_builtin_invariants() {
   pager_register dashboard-unreadable pager_eval_dashboard_unreadable owner-only \
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
   pager_declare_events dashboard-unreadable
+  pager_register memory-cgroup pager_eval_memory_cgroup owner-only \
+    "A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked: nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class). Set memory.high on the node's own parent cgroup directly (see deploy/docker/compose.yaml for the recipe that survives a roll) — this is a host-configuration fix, never one this pipeline can perform on its own behalf."
+  pager_declare_events memory-cgroup
   # agent-ops#1281: the selection and ledger class.
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \
     "A node's own selection/stand-down history shows real demand going unclaimed for several cycles running (agent-ops#1128/#1163/#1165's own class of fleet-wide stand-down and starvation). The evidence above carries this node's own most recent none-selected reason and coordinator-input-fitted detail — the two facts a diagnosis starts from. Check the Co-Ordinator's own verdicts and eligibility gates on this node directly."

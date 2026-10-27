@@ -794,6 +794,26 @@
     `verdict-unanimous`'s own terms. No new configuration: the invariant
     reads the union log alone.
 
+    Issue #2698 adds one more, giving a live node's memory-cgroup verdict
+    the paging path #1569/#1579 went without: that saga's own resolution
+    took five autonomous investigations escalating to the owner, over
+    roughly nine days, before a human was paged directly — the designed
+    blocked-item fallback working, but far slower than firing on the
+    verdict itself would have: **`memory-cgroup`** (owner-only). Fires when
+    any *live* node's `doctor.memory_cgroup` — `scripts/doctor.sh`'s hourly
+    unattended pass, `lib/memory.sh`'s own `memory_cgroup_verdict`, now
+    published in the heartbeat's `doctor` object alongside `timestamp`/
+    `verdict`/`fails` (`scripts/state-sync.sh`, additive) — reads `unbounded`
+    or `livelocked`: nothing reclaims that container's memory before its
+    hard ceiling. `bounded`/`unconfirmed`/`unlimited`/absent never fire it:
+    the first two are already reclaimed or uncapped, and `unconfirmed` is a
+    measurement gap rather than a known-bad configuration. The remedy is
+    owner-only because fixing it is a host-configuration change — setting
+    `memory.high` on the node's own parent cgroup, exactly what #1579 did —
+    never one this pipeline can perform on its own behalf. No new
+    configuration: the invariant reads `fleet_nodes_json` alone, declared
+    with no event types, on `node-stale`/`updater-stuck`'s own terms.
+
     `docs/spec/dashboard/publisher.md`'s "The Publisher" section documents the
     evaluation site and the `WITH_GITHUB`-not-merely-`FULL` gate; its own
     page-rendering section documents the `pager-firing` banner and node-card

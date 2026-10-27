@@ -232,6 +232,7 @@ jq -nc --arg long "$(printf 'x%.0s' $(seq 1 260))" '
    fails: ["first failing check", $long, "third failing check", "fourth failing check"],
    warns: ["a warning no peer reads"],
    skips: 2,
+   memory_cgroup: "unbounded",
    token_expiry: "2026-12-01"}' > "$state/.doctor-status.json"
 # The per-stage health snapshot (lib/stage-health.sh, agent-ops#662): local to
 # this node as a raw file, on the same reasoning as the doctor status cache
@@ -441,6 +442,8 @@ assert_eq "warns stay local — no reader off this node" "false" \
   "$(jq -r '.doctor | has("warns")' <<<"$hb")"
 assert_eq "and so does token_expiry, which only the node holding the credential can act on" "false" \
   "$(jq -r '.doctor | has("token_expiry")' <<<"$hb")"
+assert_eq "but memory_cgroup does travel (agent-ops#2698): lib/pager-invariants.sh's memory-cgroup invariant reads it fleet-wide" "unbounded" \
+  "$(jq -r '.doctor.memory_cgroup' <<<"$hb")"
 
 # --- The heartbeat carries a mirror-rebuild verdict slot (#604) ---------------
 # lib/mirror-integrity.sh's own behaviour (a corrupted mirror is discarded

@@ -1200,7 +1200,8 @@ do_push() {
     --argjson updater "$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \
       "$updater_defer_stuck_after_seconds" "${HOSTNAME:-}" "${AGENT_OPS_SERVICE:-}" || echo null)" \
     --argjson doctor "$(jq -c '{timestamp, verdict,
-                                fails: ([(.fails // [])[] | .[0:200]] | .[0:3])}' \
+                                fails: ([(.fails // [])[] | .[0:200]] | .[0:3]),
+                                memory_cgroup: (.memory_cgroup // null)}' \
                           "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
     --argjson resources "$heartbeat_resources_json" \
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,

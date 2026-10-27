@@ -190,7 +190,7 @@ lib_check crash_loop_verdict "$(declare -f crash_loop_verdict)" "${CRASH_LOOP_VE
 # instead, so that a later read of the implementation union cannot hide
 # behind the exception.
 pager_register_builtin_invariants 180 15 >/dev/null 2>&1
-assert_eq "the built-in registry is the eighteen keys this test expects" "18" "${#PAGER_KEYS[@]}"
+assert_eq "the built-in registry is the nineteen keys this test expects" "19" "${#PAGER_KEYS[@]}"
 pager_program_of() {  # pager_program_of KEY -> the EVAL_FN's body plus the bodies it reads through
   local key="$1"
   declare -f "${PAGER_EVAL_FN[$key]}"

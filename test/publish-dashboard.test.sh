@@ -2830,7 +2830,7 @@ assert_eq "a fired invariant in this node's own log reaches the payload's pager 
   "dashboard-unreadable" "$(jq -r '.pager[0].key' <<<"$(data_of "$x")")"
 assert_eq "  ... carrying its evidence and the node it names" "data.js unreadable nodeX-self" \
   "$(jq -r '.pager[0] | "\(.evidence) \(.nodes[0])"' <<<"$(data_of "$x")")"
-assert_eq "  ... and only that one, of the eighteen registered keys" "1" \
+assert_eq "  ... and only that one, of the nineteen registered keys" "1" \
   "$(jq '.pager | length' <<<"$(data_of "$x")")"
 
 # A --no-github tick carries the index forward like every other GitHub-sourced
