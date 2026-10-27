@@ -410,7 +410,16 @@
     force for the launch, which is not yet known when this event is logged —
     so on a node holding both credentials the two disagree by construction,
     and a reader wanting the forced lane reads the launch's own
-    `stage_lane`, never this. Distinct too from the `lane` requirement 33a's
+    `stage_lane`, never this. When the launching key is a weighted model set
+    (requirement 1a, issue #2247) rather than one bare/qualified id, the
+    event also carries `model_set` (the config key's own name) and
+    `model_set_member` (the qualified id the draw settled on, before the
+    lane) — both omitted outright for a key no installation has turned into
+    a set, never logged empty, since the model named on the event itself
+    (the ordinary `model` field every stage-start already carries) already
+    says which concrete id launches either way; these two exist only to say
+    *which set, and which of its members* when there was one to name.
+    Distinct too from the `lane` requirement 33a's
     metering record carries on the matching `stage-end`, which is what the
     run *actually* used — read off the stage's own stream rather than
     assumed, so the two may disagree. A `stage-end` carries `kill_reason` —

@@ -124,6 +124,14 @@ eval "$coordinator_corroborate_and_fallback_fn"
 # test/void-guard.test.sh); here they always accept, so this file's own
 # assertions are about *which* items reach them and how many times, not
 # about the guards' own judgement.
+#
+# stage_model_resolve_into (issue #2247, lib/stage-run.sh): the extracted
+# run_coordinator_stage_attempt_fn above now draws its model before the
+# lane; test/stage-run.test.sh covers that draw directly, so this stub is
+# a plain never-a-set pass-through, matching lib/stage-run.sh's own
+# never-a-set behaviour for coordinator_model as this file configures it.
+# shellcheck disable=SC2034  # read by the extracted run_coordinator_stage_attempt_fn above
+stage_model_resolve_into() { STAGE_MODEL_SET_EXTRA_JSON='{}'; printf -v "$1" '%s' "$2"; }
 calls_log=""
 record() { printf '%s\n' "$*" >> "$calls_log"; }
 

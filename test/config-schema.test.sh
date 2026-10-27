@@ -2025,30 +2025,33 @@ assert_eq "...and config_documented_value_mismatches reports no mismatch either 
 # Simulate PR #2647's own change: mykey's $ref target gains a properties
 # member (the dual-shape modelIdOrSet/modelIdOrEmptyOrSet carry
 # properties.models) — mykey's own x-docs.value and default are untouched.
+# config_documented_value_mismatches's own leaf_paths treats a node with both
+# properties and its own default as a leaf regardless (the fix PR #2647 made
+# for exactly this dual shape), and config_documented_value_coverage_gaps's
+# local copy of that same stop condition agrees — so the mutation produces no
+# gap: both walks reach mykey the same way, which is what keeping the two
+# copies of the stop condition in sync is for.
 coverage_schema_mutated="$tmp/coverage-schema-mutated.json"
 jq '."$defs".modelIdOrEmpty.properties = {}' "$coverage_schema" > "$coverage_schema_mutated"
 
 assert_eq "...config_documented_value_mismatches's own [warn] output is unchanged by the mutation — still no mismatch, with nothing to say the key was never checked" \
   "" "$(config_documented_value_mismatches "$(cat "$coverage_config")" "$coverage_schema_mutated")"
-assert_eq "...but config_documented_value_coverage_gaps now reports mykey as lost — the regression this guard exists to catch" \
-  "mykey" "$(config_documented_value_coverage_gaps "$coverage_schema_mutated")"
+assert_eq "...and config_documented_value_coverage_gaps reports mykey as covered too, not lost — its own stop condition matches the fixed leaf_paths" \
+  "" "$(config_documented_value_coverage_gaps "$coverage_schema_mutated")"
 
-# Over the shipped schema itself: two keys already fall through leaf_paths
-# this way, independently of the *_model/$ref scenario above —
-# refinement_policy and revert_rate_baseline each carry their own
-# x-docs.value/default (a single documented JSON object) the same way
-# scripts/render-config-table.sh's own flatten_region already treats every
-# top-level key but schedule and repository_review as one opaque row — while
-# also carrying `properties` of their own for shape validation, so
-# leaf_paths recurses past them instead of checking either as the single
-# unit each is documented as. Filed as #2674 rather than fixed here: fixing
-# leaf_paths' own stop condition is a free-standing change from the coverage
-# guard that found it (issue #2653's own scope note). Pinned to the exact
-# known set, not merely asserted non-empty, so a *third* key dropping out of
-# coverage still turns this assertion red.
-assert_eq "the shipped schema's own leaf_paths walk already misses exactly the two known, deferred keys (issue #2674) and nothing else" \
-  "refinement_policy
-revert_rate_baseline" "$(config_documented_value_coverage_gaps "$SCHEMA")"
+# Over the shipped schema itself: refinement_policy and revert_rate_baseline
+# (issue #2674) each carry their own x-docs.value/default (a single
+# documented JSON object) the same way scripts/render-config-table.sh's own
+# flatten_region already treats every top-level key but schedule and
+# repository_review as one opaque row, while also carrying `properties` of
+# their own for shape validation — exactly the dual shape PR #2647's
+# has("default") stop condition treats as a leaf. Both walks already reach
+# them the same way the model-set keys are reached, so there is nothing left
+# in this coverage set. Pinned to empty, not merely asserted absent of any
+# particular name, so a *first* key dropping out of coverage still turns this
+# assertion red.
+assert_eq "the shipped schema's own leaf_paths walk misses nothing — refinement_policy and revert_rate_baseline (issue #2674) are covered by the same has(\"default\") stop condition the model-set keys are" \
+  "" "$(config_documented_value_coverage_gaps "$SCHEMA")"
 
 guard_app="$tmp/guard-app"
 mkdir -p "$guard_app"

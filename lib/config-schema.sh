@@ -390,6 +390,21 @@ config_defaults() {
     def fill($s0; $v):
         (try deref($s0) catch null) as $s
         | if ($s == null) then $v
+          # A node naming both `properties` and a string-only keyword
+          # (`pattern`/`minLength`) — issue #2247 modelIdOrSet/
+          # modelIdOrEmptyOrSet, the one shape in this schema a value can
+          # legitimately take two different JSON types — must not have an
+          # already-set scalar value coerced into `{}` just because the node
+          # also knows how to default an object'\''s own fields: `has
+          # ("properties")` alone cannot tell "absent, synthesize the whole
+          # object" apart from "present, and not an object at all", so this
+          # checks the value'\''s own type first. A present, non-object,
+          # non-null `$v` is left exactly as the config wrote it, which is
+          # this function'\''s own contract for an already-set key, and never
+          # reaches the branch below that assumes an object to fill
+          # properties into.
+          elif ($s | has("properties")) and ($v != null) and (($v | type) != "object") then
+            $v
           elif ($s | has("properties")) then
             (if ($v | type) == "object" then $v else {} end) as $obj
             | reduce ($s.properties | keys_unsorted[]) as $k
@@ -750,42 +765,50 @@ config_missing_plan_path_repos() {
          | join(", ")' <<<"$repos_json"
 }
 
-# config_model_tier_floor_violations REFINER_MODEL ENABLER_MODEL IMPLEMENTER_MODEL_DEFAULT IMPLEMENTER_MODEL_TRIVIAL
+# config_model_tier_floor_violations REFINER_IDS ENABLER_IDS IMPLEMENTER_DEFAULT_IDS IMPLEMENTER_TRIVIAL_IDS
 # Prints one "author_key<TAB>floor_key<TAB>author_id<TAB>floor_id" line per
 # pair where refiner_model or enabler_model — the two stages that can author a
 # work order's context/acceptance directly rather than relay text a human or
 # the Script already wrote (docs/spec/implementation/requirements requirements
 # 39 and 36b) — ranks below an implementer tier it might write for
 # (requirement 1c, "the floor"; agent-ops#822). Empty when every rankable pair
-# clears it. Takes already-resolved *qualified* model ids
-# (`resolve_model_qualified`'s own "<provider>/<bare-id>" shape, issue
-# #2131), as every caller has already resolved them for its own purposes
-# (requirement 1a); an empty value on either side of a pair is skipped (an
-# empty model means that stage is disabled — a different check's business),
-# and so is a pair `model_tier_below` cannot rank on one side or the other —
-# an unranked model is `scripts/doctor.sh`'s own warning, not a floor
-# violation, because this predicate cannot tell "definitely clears it" from
-# "cannot tell" and must never report the latter as the former. A pair
-# ranked on both sides compares on MODEL_TIER_RANK's one cross-provider scale
-# (D31, issue #2445) whether or not the two name the same provider.
+# clears it. Each argument is a compact JSON array of already-resolved
+# *qualified* model ids (`resolve_model_qualified`'s own "<provider>/<bare-id>"
+# shape, issue #2131) — `lib/model-id.sh`'s `model_key_qualified_ids`, one
+# member for an ordinary key, every member of a weighted set for one
+# configured that way (issue #2247): a set's every member is checked against
+# every member on the other side, never just whichever one a single draw
+# happened to pick, since this runs at config-load time, well before any
+# draw does. An empty array is skipped (an empty model means that stage is
+# disabled — a different check's business), and so is a pair
+# `model_tier_below` cannot rank on one side or the other — an unranked
+# model is `scripts/doctor.sh`'s own warning, not a floor violation, because
+# this predicate cannot tell "definitely clears it" from "cannot tell" and
+# must never report the latter as the former. A pair ranked on both sides
+# compares on MODEL_TIER_RANK's one cross-provider scale (D31, issue #2445)
+# whether or not the two name the same provider.
 config_model_tier_floor_violations() {
-  local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
-  local author author_key floor floor_key
+  local refiner_ids="$1" enabler_ids="$2" impl_default_ids="$3" impl_trivial_ids="$4"
+  local author author_key author_ids floor floor_key floor_ids
   for author_key in refiner_model enabler_model; do
     case "$author_key" in
-      refiner_model) author="$refiner" ;;
-      enabler_model) author="$enabler" ;;
+      refiner_model) author_ids="$refiner_ids" ;;
+      enabler_model) author_ids="$enabler_ids" ;;
     esac
-    [[ -n "$author" ]] || continue
     for floor_key in implementer_model_default implementer_model_trivial; do
       case "$floor_key" in
-        implementer_model_default) floor="$impl_default" ;;
-        implementer_model_trivial) floor="$impl_trivial" ;;
+        implementer_model_default) floor_ids="$impl_default_ids" ;;
+        implementer_model_trivial) floor_ids="$impl_trivial_ids" ;;
       esac
-      [[ -n "$floor" ]] || continue
-      if model_tier_below "$author" "$floor"; then
-        printf '%s\t%s\t%s\t%s\n' "$author_key" "$floor_key" "$author" "$floor"
-      fi
+      while IFS= read -r author; do
+        [[ -n "$author" ]] || continue
+        while IFS= read -r floor; do
+          [[ -n "$floor" ]] || continue
+          if model_tier_below "$author" "$floor"; then
+            printf '%s\t%s\t%s\t%s\n' "$author_key" "$floor_key" "$author" "$floor"
+          fi
+        done < <(jq -r '.[]?' <<<"$floor_ids" 2>/dev/null)
+      done < <(jq -r '.[]?' <<<"$author_ids" 2>/dev/null)
     done
   done
 }
@@ -1132,11 +1155,19 @@ config_documented_value_mismatches() {
     # Every leaf under `.properties`, one level of `properties` at a time —
     # `schedule` and `repository_review` (and its own `defaults`) recurse the
     # same way render-config-table.sh'\''s `flatten_region` does; anything
-    # without its own `properties` (after `$ref` resolution) is a leaf.
+    # without its own `properties` (after `$ref` resolution) is a leaf. A
+    # node naming both `properties` and its own `default` (issue #2247
+    # modelIdOrSet/modelIdOrEmptyOrSet, the one shape in this schema a value
+    # can legitimately take two different JSON types) is a leaf too, never a
+    # container to recurse into: a genuine container documents no scalar
+    # default of its own, only its children do, so `has("default")` is what
+    # tells "a set of models with a scalar-or-object default" apart from "an
+    # object whose own fields each default separately" — the same signal
+    # `fill`'\''s own fix for this schema shape (above) keys on.
     def leaf_paths($node0; $path):
         (try deref($node0) catch null) as $node
         | if ($node == null) then empty
-          elif ($node | type) == "object" and ($node | has("properties")) then
+          elif ($node | type) == "object" and ($node | has("properties")) and (($node | has("default")) | not) then
             ($node.properties | keys_unsorted[] as $k | leaf_paths($node.properties[$k]; $path + [$k]))
           else {path: $path, node: $node} end;
 
@@ -1205,11 +1236,15 @@ config_documented_value_coverage_gaps() {
 
     # The same stop condition leaf_paths (config_documented_value_mismatches)
     # uses: a node with its own `properties`, after `$ref` resolution, is not
-    # a leaf, and the walk recurses past it instead of visiting it.
+    # a leaf, and the walk recurses past it instead of visiting it — unless
+    # the node also names its own `default` (the `modelIdOrSet`/
+    # `modelIdOrEmptyOrSet` dual-shape case), which makes it a leaf too, same
+    # as the real leaf_paths: a genuine container documents no scalar default
+    # of its own, only its children do.
     def leaf_paths($node0; $path):
         (try deref($node0) catch null) as $node
         | if ($node == null) then empty
-          elif ($node | type) == "object" and ($node | has("properties")) then
+          elif ($node | type) == "object" and ($node | has("properties")) and (($node | has("default")) | not) then
             ($node.properties | keys_unsorted[] as $k | leaf_paths($node.properties[$k]; $path + [$k]))
           else $path end;
 

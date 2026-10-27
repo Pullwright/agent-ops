@@ -640,6 +640,35 @@
    outright, the same way requirement 4k's own settings refusal is, rather
    than launched at all. A second substrate manages no lanes yet (#2246 is
    Grok Build's own).
+
+   **The model, drawn before the lane (issue #2247).** A key whose
+   configured value is a weighted set rather than one bare/qualified id
+   (requirement 1a) resolves to a single concrete member once per launch,
+   at the call site, before `run_model_stage` is ever reached:
+   `lib/stage-run.sh`'s `stage_model_resolve_into`/`stage_model_draw_into`
+   draw a member by the identical seeded rule the lane draw above already
+   uses — `cksum SEED mod the live candidates' total weight`, bucketed by
+   each candidate's own share — reusing the rule rather than inventing a
+   second one, and reusing the exact seed the call's own `run_model_stage`
+   invocation below it will reuse for its own lane draw, so "this launch"
+   means the same thing to both. A member whose provider has no lane open
+   right now (the same presence-then-open check `run_model_stage` itself
+   repeats for whichever model the set settles on) is excluded and the
+   remaining candidates' weights are renormalised for a further draw at the
+   same seed, rather than the hash being redrawn — so a set with one closed-
+   lane member still draws its open siblings deterministically from the one
+   seed; if every member's provider is shut, the draw gives up excluding and
+   settles on the very first (unscreened) draw, and `run_model_stage`'s own
+   "no open lane" refusal is the correct outcome for that, not a special
+   case the draw itself needs to pre-empt. `run_model_stage` itself takes no
+   part in this and needs no change for it: every caller resolves a set's
+   handle to a concrete bare id first and passes only that concrete id to
+   `run_model_stage`, exactly as it always passed a plain configured id.
+   Every per-launch seed suffix convention above (the per-repository loop,
+   the per-pull-request loop, the landing gate's own retried adjudication)
+   is reused unchanged for the model draw too, so a sibling launch within
+   one cycle draws its model independently the same way it already draws
+   its lane independently.
    It launches the invocation in its own process
    group (`set -m`), so the stage timeout's kill reaches every descendant
    (requirement 9c), and it runs the invocation under

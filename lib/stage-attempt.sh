@@ -77,6 +77,21 @@
 # site already treats empty output as failure regardless of the exit code, so
 # this changes no observable behaviour; it just stops the exit code lying
 # about what happened.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 extract_json_result() {
   local text="$1" block line_no suffix
   [[ "$text" =~ ^[[:space:]]*$ ]] && return 1
@@ -490,20 +505,35 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   # since #1560 merged, but still reachable from anything that calls this
   # function without a per-repository `extra` — falls back to "*" exactly as
   # every call did before this.
-  local coord_budget_repo
+  local coord_budget_repo coordinator_model_launch coord_extra
   coord_budget_repo="$(jq -r '.repo // "*"' <<<"$extra" 2>/dev/null || printf '*')"
   [[ -n "$coord_budget_repo" && "$coord_budget_repo" != "null" ]] || coord_budget_repo="*"
-  stage_budget_apply coordinator "$coord_budget_repo" "$coordinator_model" "$extra"
   # Issue #2436: the repository this engagement belongs to is also the lane
   # draw's own seed suffix, so the per-repository loop's several Coordinator
   # launches within one cycle draw independently rather than sharing the one
-  # cycle-and-stage seed every one of them would otherwise reuse.
-  if run_model_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$coord_budget_repo"; then
+  # cycle-and-stage seed every one of them would otherwise reuse. The model
+  # draw (issue #2247) reuses that exact seed too, drawn before the lane,
+  # into its own local rather than overwriting `coordinator_model` itself:
+  # this function runs once per repository, and overwriting the global with
+  # one repository's own drawn member would leave `model_key_is_set` reading
+  # that bare id instead of the set's own handle on every later repository.
+  stage_model_resolve_into coordinator_model_launch "$coordinator_model" \
+    "${cycle_id:-}:coordinator:$coord_budget_repo"
+  # `extra` is passed through byte-for-byte, never re-serialized, when there
+  # is no set member to name: a caller's own `extra` text (its whitespace
+  # included) is otherwise a fact about what it wrote, not something this
+  # function should normalize — test/coordinator-merge-fallback.test.sh
+  # asserts on that exact text.
+  coord_extra="$extra"
+  [[ "$STAGE_MODEL_SET_EXTRA_JSON" == '{}' ]] \
+    || coord_extra="$(jq -c --argjson s "$STAGE_MODEL_SET_EXTRA_JSON" '. + $s' <<<"$extra")"
+  stage_budget_apply coordinator "$coord_budget_repo" "$coordinator_model_launch" "$coord_extra"
+  if run_model_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model_launch" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$coord_budget_repo"; then
     rc=0
   else
     rc=$?
   fi
-  coord_attempt_metering_json="$(metering_fields "$coordinator_model" "$out_file" "$stage_gaps_json" "$stage_lane_json")"
+  coord_attempt_metering_json="$(metering_fields "$coordinator_model_launch" "$out_file" "$stage_gaps_json" "$stage_lane_json")"
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --argjson m "$coord_attempt_metering_json" --argjson e "$extra" \
     '{stage: "coordinator", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m + $e')"

@@ -323,6 +323,107 @@ resolve_model_qualified() {
   printf '%s/%s\n' "$provider" "$bare"
 }
 
+# Weighted model sets (issue #2247, D30's own lever extended from lanes to
+# providers): a `*_model`-shaped key may name an object `{"models":
+# [{"id": ..., "weight": ...}, ...]}` instead of one bare/qualified id, so a
+# share of that actor's work can be split across providers — "a third of the
+# Implementer's work on Grok, the rest on Claude" — the same way
+# `providers.<name>.lanes` already splits a share of one provider's own work
+# across its two credentials. Keyed by the config key's own name (never by
+# VALUE itself, which for a set is the whole object and too large a
+# subscript to be worth using), valued by a normalized, compact JSON array
+# `[{"id": "<qualified>", "weight": N}, ...]` — every member already
+# resolved through `resolve_model_qualified` at load time, so nothing that
+# reads this table later needs to resolve or validate a member again.
+declare -gA MODEL_SET_JSON=()
+
+# model_key_is_set VALUE
+# True (exit 0) iff VALUE names a set a prior `model_key_load_into` call
+# populated MODEL_SET_JSON with — i.e. VALUE is itself a config key's own
+# name being used as that set's handle, never a model id. Every call site
+# that holds a key's already-resolved variable asks this before treating the
+# variable as a bare model id, the same way a `*_model` key's own emptiness
+# is checked before treating it as "disabled".
+model_key_is_set() {
+  local value="${1:-}"
+  [[ -n "$value" ]] || return 1
+  [[ -n "${MODEL_SET_JSON[$value]+set}" ]]
+}
+
+# model_key_load_into VAR KEY VALUE
+# The set-aware form of `resolve_model_id_into`: every existing call site
+# that resolved a `*_model`-shaped key switches to this one, and nothing
+# changes for it — a bare, qualified, or empty VALUE is resolved exactly as
+# `resolve_model_id_into` already does, VAR included, since this delegates
+# to it outright for that case.
+#
+# A VALUE that is instead a JSON object (`{"models": [...]}`; requirement
+# 1b's schema is what actually enforces that it carries nothing else) is a
+# set: every member's `id` is validated and recorded exactly as an ordinary
+# model key's own value is — through `resolve_model_id_into`, so an
+# unresolvable member fails fast, naming KEY and the offending member's own
+# id, the identical message an ordinary key's bad value already prints —
+# before this returns 1 without touching MODEL_SET_JSON at all; a set this
+# function refuses is never half-recorded. A member's own `weight` defaults
+# to 1 (requirement 1b's schema floors it at 0, which this treats as "never
+# drawn" rather than refusing — a zero-weight member configured today but
+# switched on by raising it tomorrow without edits elsewhere). On success,
+# MODEL_SET_JSON[KEY] holds the normalized array and VAR is set to KEY
+# itself — the "handle" `model_key_is_set`/`stage_model_resolve_into`
+# (lib/stage-run.sh) read back, standing in for the single bare id an
+# ordinary key's VAR would hold.
+model_key_load_into() {
+  local __mkl_var="$1" __mkl_key="$2" __mkl_value="$3"
+  if ! jq -e 'type == "object"' <<<"$__mkl_value" >/dev/null 2>&1; then
+    resolve_model_id_into "$__mkl_var" "$__mkl_key" "$__mkl_value"
+    return $?
+  fi
+  local __mkl_id __mkl_weight __mkl_bare __mkl_qualified __mkl_rows="[]"
+  while IFS=$'\t' read -r __mkl_id __mkl_weight; do
+    [[ -n "$__mkl_id" ]] || continue
+    [[ "$__mkl_weight" =~ ^[0-9]+$ ]] || __mkl_weight=1
+    resolve_model_id_into __mkl_bare "$__mkl_key" "$__mkl_id" || return 1
+    __mkl_qualified="$(resolve_model_qualified "$__mkl_key" "$__mkl_id")" || return 1
+    __mkl_rows="$(jq -c --argjson rows "$__mkl_rows" --arg id "$__mkl_qualified" \
+      --argjson w "$__mkl_weight" -n '$rows + [{id: $id, weight: $w}]')"
+  done < <(jq -r '.models[]? | [(.id // ""), (.weight // 1)] | @tsv' <<<"$__mkl_value" 2>/dev/null)
+  MODEL_SET_JSON["$__mkl_key"]="$__mkl_rows"
+  printf -v "$__mkl_var" '%s' "$__mkl_key"
+}
+
+# model_key_qualified_ids KEY VALUE
+# Prints a compact JSON array of every qualified id VALUE can resolve to —
+# `[]` for an empty VALUE (the "stage disabled" convention), the one
+# qualified id for an ordinary bare VALUE, wrapped in an array, or every
+# member's own id for a set VALUE names (`model_key_is_set`). Requirement 1c's
+# floor check reads this rather than a single resolved id, so a set's every
+# member is checked against every member of whatever it is floored against,
+# never just whichever one a single draw happened to pick.
+#
+# VALUE is taken to be already-resolved — `model_key_load_into`'s own VAR,
+# the bare id with any qualifier already stripped — never a raw config
+# value, so the provider is read back from MODEL_PROVIDER (recorded by that
+# same resolution) rather than re-derived from VALUE's own text:
+# `resolve_model_qualified` would see no "/" left in a bare id and assume
+# `anthropic` regardless of which provider it actually resolved from,
+# turning a configured `xai/grok-4.3` into a wrongly-qualified
+# `anthropic/grok-4.3` here — invisible to every ordinary launch, which
+# reads the bare id and the provider separately, but silently wrong for a
+# floor check that compares the qualified form across providers. KEY is
+# accepted for symmetry with every other model-key reader in this file, but
+# unused: there is no resolution left to perform, or to fail, here.
+model_key_qualified_ids() {
+  local value="${2:-}"
+  if model_key_is_set "$value"; then
+    jq -c '[.[].id]' <<<"${MODEL_SET_JSON[$value]}"
+  elif [[ -n "$value" ]]; then
+    jq -cn --arg id "${MODEL_PROVIDER[$value]:-anthropic}/$value" \
+      'if $id == "" then [] else [$id] end'
+  else
+    printf '[]\n'
+  fi
+}
+
 # Model-tier ordering (agent-ops#822, docs/spec/implementation/README.md
 # requirement 1c). #815 (fixed by #819) and #821 both trace to the same root
 # cause: nothing stopped a cheaper model from authoring a work order

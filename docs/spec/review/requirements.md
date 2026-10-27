@@ -15,7 +15,7 @@ R1a. <a id="rev-r1a"></a>**Model id resolution, against a configured set of prov
    requirement 1a). Every configured repository's own resolved model
    (`repository_review.defaults.model`, or its own override in
    `repository_review.repos`, issue #342) is then resolved through
-   `lib/model-id.sh`'s `resolve_model_id_into` immediately after `repository_review`'s
+   `lib/model-id.sh`'s `model_key_load_into` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
    same rule `agent-cycle.sh` applies to its own model keys, the assigning
    form included, so that this sweep is also what records each repository's
@@ -33,6 +33,26 @@ R1a. <a id="rev-r1a"></a>**Model id resolution, against a configured set of prov
    repository's model is validated in this one sweep, before any repository is
    worked, so a bad model on one repository is never discovered only after
    others have already been reviewed.
+
+   `repository_review.defaults.model` and a repository's own override may
+   instead each name a weighted set of models, on the identical terms
+   `docs/spec/implementation/README.md` requirement 1a describes for its own
+   model keys (issue #2247) — `model_key_load_into` is the set-aware form of
+   `resolve_model_id_into` this sweep now calls, delegating outright to it
+   for an ordinary bare/qualified value, so nothing above changes for a
+   repository that has not turned its model into a set. A member is drawn
+   once per repository review, before the lock budget and the
+   `review-stage-start` event are computed — `lib/stage-run.sh`'s
+   `stage_model_resolve_into`, the same seeded draw and lane-presence
+   screening requirement 4d describes, seeded on `"$review_id:$slug:reviewer"`
+   (the per-repository identifier this script's own `while`-loop already
+   keys `review-stage-end`/`review-attempt-failed` on, since several
+   repositories under one `review_id` must draw independently rather than
+   sharing one seed) — so the budget cell, the `review-stage-start` event's
+   own `model`, and the eventual launch all agree on the same concrete
+   member, and `review-stage-start` additionally carries `model_set`/
+   `model_set_member` when the repository's model was a set, on the same
+   terms requirement 33 describes for `stage-start`.
 
 R1b. <a id="rev-r1b"></a>**Duplicate-slug refusal.** Issue #342's resolution rule assumes
    exactly one `repository_review.repos` entry per repository; two entries naming

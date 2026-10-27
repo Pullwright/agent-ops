@@ -195,6 +195,21 @@
 # trusted as a complete answer — the same "a page cap is a truncation
 # signal, not a floor to trust" reasoning `GITHUB_PR_LIST_LIMIT` and
 # `github_pr_list_truncated` already apply to `gh pr list`.
+# Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
+# lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
+# own tests source this file alone and stub run_model_stage directly,
+# never lib/model-id.sh or lib/stage-run.sh (the same gap lib/metering.sh's
+# own MODEL_PROVIDER guard already documents for exactly this reason). A
+# plain, never-a-set pass-through here is behaviourally identical to the
+# real functions for every configuration those tests exercise, since none
+# of them configures a weighted set, and is never reached in production
+# (agent-cycle.sh sources both real implementations well before this file).
+declare -F model_key_is_set >/dev/null 2>&1 || model_key_is_set() { return 1; }
+declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into() {
+  STAGE_MODEL_SET_EXTRA_JSON='{}'
+  printf -v "$1" '%s' "$2"
+}
+
 LANDING_PR_FILES_LIMIT="${LANDING_PR_FILES_LIMIT:-3000}"
 
 # Fixed, unconfigurable — the same footing `blocked`/`obsolete`
@@ -2353,20 +2368,30 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/approver-adjudicate-open-question-${number}.out"
-  stage_budget_apply approver-adjudicate-open-question "$slug" "$approver_model_critical" '{}' "$item"
   # Issue #2462: the pull request this adjudication is judging is also the
   # lane draw's own seed suffix, so the 2.1e landing-retry sweep's several
   # same-cycle adjudications draw independently rather than sharing the one
   # cycle-and-stage seed every one of them would otherwise reuse (the same
   # fix issue #2436 gave the Co-Ordinator's per-repository loop and the
-  # Approver's own per-pull-request loop).
-  if run_model_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
+  # Approver's own per-pull-request loop). The model draw (issue #2247)
+  # reuses that exact seed too, drawn before the lane, into its own local
+  # rather than overwriting `approver_model_critical` itself: this function
+  # runs once per qualifying pull request within one cycle, and overwriting
+  # the global with one pull request's own drawn member would leave
+  # `model_key_is_set` reading that bare id instead of the set's own handle
+  # for every later pull request this cycle.
+  local approver_model_critical_launch
+  stage_model_resolve_into approver_model_critical_launch "$approver_model_critical" \
+    "${cycle_id:-}:approver-adjudicate-open-question:$pr_url"
+  stage_budget_apply approver-adjudicate-open-question "$slug" "$approver_model_critical_launch" \
+    "$STAGE_MODEL_SET_EXTRA_JSON" "$item"
+  if run_model_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical_launch" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
     rc=0
   else
     rc=$?
   fi
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
-    --argjson m "$(metering_fields "$approver_model_critical" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    --argjson m "$(metering_fields "$approver_model_critical_launch" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     --arg r "$slug" --arg i "$item" \
     '{stage: "approver-adjudicate-open-question", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
      + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
@@ -2588,19 +2613,28 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/approver-reapprove-protected-path-tier-${number}.out"
-  stage_budget_apply approver-reapprove-protected-path-tier "$slug" "$approver_model_critical" '{}' "$item"
   # Same per-pull-request lane seed as `run_open_question_adjudication`
   # (issue #2462): the pull request this reapproval is judging is also the
   # lane draw's own seed suffix, so several same-cycle reapprovals draw
   # independently rather than sharing the one cycle-and-stage seed every one
-  # of them would otherwise reuse.
-  if run_model_stage approver-reapprove-protected-path-tier "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
+  # of them would otherwise reuse. The model draw (issue #2247) reuses that
+  # exact seed too, drawn before the lane, into its own local rather than
+  # overwriting `approver_model_critical` itself — see the identical comment
+  # on `run_open_question_adjudication`'s own launch above; this one is read
+  # again below (`decision-taken`'s own model field), so the record names
+  # whichever member actually approved, not the configured set itself.
+  local approver_model_critical_launch
+  stage_model_resolve_into approver_model_critical_launch "$approver_model_critical" \
+    "${cycle_id:-}:approver-reapprove-protected-path-tier:$pr_url"
+  stage_budget_apply approver-reapprove-protected-path-tier "$slug" "$approver_model_critical_launch" \
+    "$STAGE_MODEL_SET_EXTRA_JSON" "$item"
+  if run_model_stage approver-reapprove-protected-path-tier "$(( stage_backstop_min * 60 ))" "$approver_model_critical_launch" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
     rc=0
   else
     rc=$?
   fi
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
-    --argjson m "$(metering_fields "$approver_model_critical" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    --argjson m "$(metering_fields "$approver_model_critical_launch" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     --arg r "$slug" --arg i "$item" \
     '{stage: "approver-reapprove-protected-path-tier", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
      + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
@@ -2643,7 +2677,7 @@ $(jq . <<<"$input")
   fi
 
   log_event "approver-verdict" "$(jq -nc --arg u "$pr_url" --arg r "$slug" --arg t "critical" \
-    --arg m "$approver_model_critical" --arg v "approve" --argjson s 0 --argjson adj true \
+    --arg m "$approver_model_critical_launch" --arg v "approve" --argjson s 0 --argjson adj true \
     --argjson posted true --arg cr "protected-path-tier-reapproval" --arg i "$item" \
     '{pr_url: $u, repo: $r, tier: $t, model: $m, verdict: $v, refuse_streak: $s, adjudication: $adj, posted: $posted}
      + (if $cr == "" then {} else {critical_reason: $cr} end)

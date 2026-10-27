@@ -675,8 +675,11 @@ workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # directly.
 export PW_GH_STATE_DIR="$state_dir"
 # Every stage model is read raw and then resolved *in place*, with
-# `resolve_model_id_into VAR KEY VALUE` (lib/model-id.sh) — never the
-# printing `resolve_model_id`, whose command substitution would discard the
+# `model_key_load_into VAR KEY VALUE` (lib/model-id.sh) — the set-aware form
+# of `resolve_model_id_into`, which it delegates to outright for an ordinary
+# bare/qualified/empty VALUE, so nothing here changes for a key that is not
+# configured as a weighted set (issue #2247). Never the printing
+# `resolve_model_id`, whose command substitution would discard the
 # MODEL_PROVIDER recording that requirement 4d's substrate dispatch and
 # requirement 33a's `provider` field both read back, leaving every stage
 # silently launching on `claude-code` whatever its model resolved to. The
@@ -685,32 +688,32 @@ export PW_GH_STATE_DIR="$state_dir"
 # own reasons, so the whole block now reads one way; it also keeps each
 # variable a visible assignment, which an indirect `printf -v` is not.
 coordinator_model="$(cfg '.coordinator_model')"
-resolve_model_id_into coordinator_model coordinator_model "$coordinator_model"
+model_key_load_into coordinator_model coordinator_model "$coordinator_model"
 implementer_model_default="$(cfg '.implementer_model_default')"
-resolve_model_id_into implementer_model_default implementer_model_default "$implementer_model_default"
+model_key_load_into implementer_model_default implementer_model_default "$implementer_model_default"
 implementer_model_trivial="$(cfg '.implementer_model_trivial')"
-resolve_model_id_into implementer_model_trivial implementer_model_trivial "$implementer_model_trivial"
+model_key_load_into implementer_model_trivial implementer_model_trivial "$implementer_model_trivial"
 reviewer_model_default="$(cfg '.reviewer_model_default')"
-resolve_model_id_into reviewer_model_default reviewer_model_default "$reviewer_model_default"
+model_key_load_into reviewer_model_default reviewer_model_default "$reviewer_model_default"
 # The complexity escalation (requirement 8a): a PR graded `complexity:high` is
 # reviewed on this tier. Empty falls back to the default tier, which switches
 # the escalation off.
 reviewer_model_complex="$(cfg '.reviewer_model_complex')"
 [[ -n "$reviewer_model_complex" ]] || reviewer_model_complex="$reviewer_model_default"
-resolve_model_id_into reviewer_model_complex reviewer_model_complex "$reviewer_model_complex"
+model_key_load_into reviewer_model_complex reviewer_model_complex "$reviewer_model_complex"
 # The Approver (requirement 8b, D18 WI-5). Three tiers on the same
 # empty-falls-back-to-the-tier-below chain `reviewer_model_complex` already
 # uses, extended one step further for adjudication — `resolve_model_id_into`
 # passes an empty value through unchanged, so `approver_model_default` empty
 # stays empty here and disables the whole stage further down (requirement 8b).
 approver_model_default="$(cfg '.approver_model_default')"
-resolve_model_id_into approver_model_default approver_model_default "$approver_model_default"
+model_key_load_into approver_model_default approver_model_default "$approver_model_default"
 approver_model_complex="$(cfg '.approver_model_complex')"
 [[ -n "$approver_model_complex" ]] || approver_model_complex="$approver_model_default"
-resolve_model_id_into approver_model_complex approver_model_complex "$approver_model_complex"
+model_key_load_into approver_model_complex approver_model_complex "$approver_model_complex"
 approver_model_critical="$(cfg '.approver_model_critical')"
 [[ -n "$approver_model_critical" ]] || approver_model_critical="$approver_model_complex"
-resolve_model_id_into approver_model_critical approver_model_critical "$approver_model_critical"
+model_key_load_into approver_model_critical approver_model_critical "$approver_model_critical"
 # The restale sweep's own no-progress escalation threshold (requirement 46,
 # agent-ops#682) — how long a rebase-only-stale Approver review, or an
 # unreviewed pull request whose recovery engagements are not producing one
@@ -725,7 +728,7 @@ approver_unreviewed_engage_after_hours="$(cfg '.approver_unreviewed_engage_after
 # runs, which is affordable only because the eligibility rule engages it rarely:
 # an empty `enabler_model` disables the stage outright.
 enabler_model="$(cfg '.enabler_model')"
-resolve_model_id_into enabler_model enabler_model "$enabler_model"
+model_key_load_into enabler_model enabler_model "$enabler_model"
 # The Enabler's own critical tier (D18 §6, agent-ops#936): both bounded
 # passes below `escalate` — `adjudicate-first`'s adjudication and
 # `decide-tactical`'s decide — run at this model, on the same
@@ -735,7 +738,7 @@ resolve_model_id_into enabler_model enabler_model "$enabler_model"
 # first appearance.
 enabler_model_critical="$(cfg '.enabler_model_critical')"
 [[ -n "$enabler_model_critical" ]] || enabler_model_critical="$enabler_model"
-resolve_model_id_into enabler_model_critical enabler_model_critical "$enabler_model_critical"
+model_key_load_into enabler_model_critical enabler_model_critical "$enabler_model_critical"
 enabler_after_coordinator_cycles="$(cfg '.enabler_after_coordinator_cycles')"
 # A refinement block (requirements 34e, 35a) ages on its own threshold,
 # because unlike an ordinary block it waits on the Enabler and nothing else —
@@ -897,7 +900,7 @@ escalation_adjudication_max_passes="$(cfg '.escalation_adjudication_max_passes')
 # object is treated as empty, which is "every source exempt" — the same "not a
 # licence to spend" default every threshold here falls back to.
 refiner_model="$(cfg '.refiner_model')"
-resolve_model_id_into refiner_model refiner_model "$refiner_model"
+model_key_load_into refiner_model refiner_model "$refiner_model"
 refined_label="$(cfg '.refined_label')"
 refiner_max_per_engagement="$(cfg '.refiner_max_per_engagement')"
 [[ "$refiner_max_per_engagement" =~ ^[0-9]+$ ]] || refiner_max_per_engagement=5
@@ -944,15 +947,17 @@ refinement_paused_sources="$(config_refinement_sources_paused_by_cap \
 # tier it might write for is exactly the failure #815 (fixed by #819) and
 # #821 both trace to. Shared with scripts/doctor.sh through the same
 # lib/config-schema.sh function, so the Script's refusal and doctor's `fail`
-# can never drift. Re-resolved to each model's *qualified* id (issue #2131)
-# rather than reusing the bare variables above: MODEL_TIER_RANK is keyed by
-# qualified id, and these four have already been validated once each by the
-# resolve_model_id_into calls above, so re-resolving here cannot fail afresh.
+# can never drift. Each side is expanded to every qualified id it can draw
+# from (`model_key_qualified_ids`, issue #2247) — one id for an ordinary key,
+# every member for a weighted set — rather than reusing the bare variables
+# above directly: MODEL_TIER_RANK is keyed by qualified id, and every member
+# has already been validated once each by the model_key_load_into calls
+# above, so expanding here cannot fail afresh.
 tier_violations="$(config_model_tier_floor_violations \
-  "$(resolve_model_qualified refiner_model "$(cfg '.refiner_model')")" \
-  "$(resolve_model_qualified enabler_model "$(cfg '.enabler_model')")" \
-  "$(resolve_model_qualified implementer_model_default "$(cfg '.implementer_model_default')")" \
-  "$(resolve_model_qualified implementer_model_trivial "$(cfg '.implementer_model_trivial')")")"
+  "$(model_key_qualified_ids refiner_model "$refiner_model")" \
+  "$(model_key_qualified_ids enabler_model "$enabler_model")" \
+  "$(model_key_qualified_ids implementer_model_default "$implementer_model_default")" \
+  "$(model_key_qualified_ids implementer_model_trivial "$implementer_model_trivial")")"
 if [[ -n "$tier_violations" ]]; then
   while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
     [[ -n "$author_key" ]] || continue
