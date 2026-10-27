@@ -330,13 +330,24 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
              last_cycle:{id,node,ended_at,outcome,repo,item,title},  // the FLEET's newest FINISHED
              limit:{active,note}, switch:{…},
              doctor:{timestamp,verdict,fails[],warns[],skips,
+                     memory_cgroup:"unbounded"|"parented"|"livelocked"|
+                                    "unconfirmed"|"bounded"|"unlimited"|
+                                    "unknown" | null,
                      token_expiry:{expires_at,days_remaining} | null} | null,
                                     //   THIS node's most recent hourly
                                     //   `doctor.sh --unattended` pass
                                     //   (agent-ops#543), read from
                                     //   state_dir/.doctor-status.json —
                                     //   null until the first hourly pass
-                                    //   has run. token_expiry (agent-ops#694)
+                                    //   has run. memory_cgroup
+                                    //   (agent-ops#2698) is
+                                    //   `lib/memory.sh`'s own
+                                    //   `memory_cgroup_verdict`, published so
+                                    //   `lib/pager-invariants.sh`'s
+                                    //   `memory-cgroup` invariant can page a
+                                    //   fleet-wide `unbounded`/`livelocked`
+                                    //   reading directly. token_expiry
+                                    //   (agent-ops#694)
                                     //   is this node's PAT's own
                                     //   expiry, read from GitHub's
                                     //   `GitHub-Authentication-Token-
@@ -950,7 +961,7 @@ reduced to the event types its registration declares
 (`pager_declare_events`, `PAGER_EVAL_EVENTS`; `union_prefilter` makes the
 file under the working set before the evaluation and removes it after): a
 key declared with no types — `verdict-unanimous`, `page-outlived-item`,
-`node-stale`, `updater-stuck`, `dashboard-unreadable` and
+`node-stale`, `updater-stuck`, `dashboard-unreadable`, `memory-cgroup` and
 `review-pipeline-failing`, which read the heartbeats, GitHub or the review
 union — receives an empty file, a key with no declaration receives the
 whole union, and a prefilter that fails leaves the whole union in place.

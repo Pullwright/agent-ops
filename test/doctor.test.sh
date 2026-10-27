@@ -2635,6 +2635,36 @@ assert_eq "its timestamp is a real UTC instant" "1" \
 assert_eq "no GitHub-Authentication-Token-Expiration header (this fixture's stub sends none) leaves token_expiry null" \
   "null" "$(jq -c '.token_expiry' "$status_file" 2>/dev/null)"
 
+# --- --unattended: the memory-cgroup verdict reaches .doctor-status.json, for
+#     lib/pager-invariants.sh's memory-cgroup invariant to page on fleet-wide
+#     (agent-ops#2698) --------------------------------------------------------
+#
+# A forced cgroup fixture, not this test host's own real one — the same
+# reason the plain assertion above only checks that *some* verdict was
+# reported, never which one: this host may or may not be a cgroup v2
+# container, and if it is, which of memory_cgroup_verdict's seven readings it
+# is in is not something this test can pin. MEMORY_CGROUP_ROOT/_PARENT_HIGH/
+# _PARENT_MAX, read by lib/memory.sh, override that at the source instead.
+
+mc_status_state_dir="$tmp/mc-status-state-dir"
+mkdir -p "$mc_status_state_dir"
+mc_status_config="$tmp/mc-status-config.json"
+jq --arg sd "$mc_status_state_dir" '.state_dir = $sd' "$niced_config" > "$mc_status_config"
+mc_cgroup_root="$tmp/mc-cgroup"
+mkdir -p "$mc_cgroup_root"
+printf 'max\n' > "$mc_cgroup_root/memory.high"
+printf '1610612736\n' > "$mc_cgroup_root/memory.max"
+printf '786432000\n' > "$mc_cgroup_root/memory.current"
+env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  bash "$DOCTOR" --config "$mc_status_config" --unattended >/dev/null 2>&1
+mc_status_file="$mc_status_state_dir/.doctor-status.json"
+assert_eq "a real ceiling with memory.high unset (unbounded) reaches .doctor-status.json's memory_cgroup field" \
+  "unbounded" "$(jq -r '.memory_cgroup' "$mc_status_file" 2>/dev/null)"
+
 # --- --unattended: a refused model credential is read from this node's own
 #     log.jsonl, by name, without the live credential ever being read
 #     (agent-ops#2308) --------------------------------------------------------

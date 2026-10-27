@@ -386,14 +386,17 @@ image_cache="$state_dir/.image-drift-cache.json"
 # this instead. `null` when no unattended pass has run yet on this node.
 doctor_status_file="$state_dir/.doctor-status.json"
 doctor_status_json="$(jq -c '.' "$doctor_status_file" 2>/dev/null || echo null)"
-# The same projection scripts/state-sync.sh folds into `heartbeat.json` for a
-# peer (requirement 2.5): `{timestamp, verdict}` and nothing else. This node's
-# own *fleet row* has to carry exactly the shape a peer's does, or the fleet
-# would be a set of rows only one of which answers to the same schema — and
-# `verdict-unanimous` reads `.doctor.verdict` across all of them alike. The
-# full record still reaches `status.doctor` above, where it is local to this
-# node and the page's own doctor panel reads `fails`/`warns` from it.
-doctor_heartbeat_json="$(jq -c '{timestamp, verdict}' "$doctor_status_file" 2>/dev/null || echo null)"
+# A projection of the same file scripts/state-sync.sh folds into
+# `heartbeat.json` for a peer (requirement 2.5). This node's own *fleet row*
+# has to carry the fields a peer's does, or the fleet would be a set of rows
+# only one of which answers to the same schema — `verdict-unanimous` reads
+# `.doctor.verdict` across all of them alike, and `memory-cgroup`
+# (lib/pager-invariants.sh, agent-ops#2698) reads `.doctor.memory_cgroup` the
+# same way. The full record still reaches `status.doctor` above, where it is
+# local to this node and the page's own doctor panel reads `fails`/`warns`
+# from it.
+doctor_heartbeat_json="$(jq -c '{timestamp, verdict, memory_cgroup: (.memory_cgroup // null)}' \
+  "$doctor_status_file" 2>/dev/null || echo null)"
 # This node's own resource-budget report (scripts/resource-budget-report.sh,
 # requirement 55, D14, agent-ops#606) — read directly via the identical pure
 # function that script wraps, on the same precedent doctor_heartbeat_json

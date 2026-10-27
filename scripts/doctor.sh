@@ -3116,7 +3116,7 @@ fi
 # Directories section above already reported as a fail, and this must not
 # mask that behind a second, unrelated failure of its own.
 write_unattended_status() {
-  local dir="$1" ts verdict tmp fail_json warn_json token_expiry_json
+  local dir="$1" ts verdict tmp fail_json warn_json token_expiry_json memory_cgroup
   [[ -n "$dir" && "$dir" != "null" ]] || return 0
   mkdir -p "$dir" 2>/dev/null && [[ -w "$dir" ]] || return 0
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -3133,12 +3133,22 @@ write_unattended_status() {
       '{expires_at: $e, days_remaining: $d}' 2>/dev/null)"
   fi
   [[ -n "${token_expiry_json:-}" ]] || token_expiry_json='null'
+  # The same verdict the Memory section's case statement above already
+  # named (unbounded/parented/livelocked/unconfirmed/bounded/unlimited/
+  # unknown) — recomputed rather than threaded through as a global, since
+  # memory_cgroup_verdict is a pure read of a handful of local cgroup files
+  # (lib/memory.sh), cheap enough to call twice. Published raw so a peer's
+  # own invariant (lib/pager-invariants.sh's `memory-cgroup`, agent-ops#2698)
+  # can read it fleet-wide — today this value reaches only this node's own
+  # advisory warn, never another node.
+  memory_cgroup="$(memory_cgroup_verdict 2>/dev/null)"
   tmp="$(mktemp "$dir/.doctor-status.json.XXXXXX" 2>/dev/null)" || return 0
   if jq -n --arg ts "$ts" --arg verdict "$verdict" \
         --argjson fails "$fail_json" --argjson warns "$warn_json" --argjson skips "$skips" \
-        --argjson token_expiry "$token_expiry_json" \
+        --argjson token_expiry "$token_expiry_json" --arg memory_cgroup "$memory_cgroup" \
         '{timestamp: $ts, verdict: $verdict, fails: $fails, warns: $warns, skips: $skips,
-          token_expiry: $token_expiry}' \
+          token_expiry: $token_expiry,
+          memory_cgroup: (if $memory_cgroup == "" then null else $memory_cgroup end)}' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "$dir/.doctor-status.json"
   else
