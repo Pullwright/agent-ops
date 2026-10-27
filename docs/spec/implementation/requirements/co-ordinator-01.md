@@ -1188,10 +1188,22 @@
     list` call per repo, never per pull request, for every open issue
     carrying `enabler_escalation_label` whose body names a `pr-<n>-approver-
     adjudication` reference, matched locally against the merged-pull-request
-    listing this sweep already fetched. A match closes the issue with a
-    comment naming who merged the pull request and when, and reports
-    `{"action":"approver-escalation-retired", …, "cause":"merged", …}` for
-    the caller to log as `approver-escalation-retired` — this is the only
+    listing this sweep already fetched. When that labelled listing finds no
+    issues at all, or finds none whose body matches that regex for a pull
+    request in this round's own merged-pull-request listing, a second,
+    label-less `gh issue list` call looks for the same reference in any open
+    issue's body — keyed on the escalation
+    footer's backticked `` Item: `pr-<n>-approver-adjudication` `` form and
+    excluding any `<!-- agent-ops:decision-log` body — so an escalation
+    `create_escalation_issue` filed via the retry-without-label path
+    (agent-ops#2657, agent-ops#2666) is still retired by a direct human
+    merge, matching the labelled-first/label-less-fallback shape every other
+    escalation reader already applies (agent-ops#2670), rather than left to
+    survive its own disagreement indefinitely because the label never made
+    it onto the issue (agent-ops#2685, agent-ops#2686). A match closes the
+    issue with a comment naming who merged the pull request and when, and
+    reports `{"action":"approver-escalation-retired", …, "cause":"merged", …}`
+    for the caller to log as `approver-escalation-retired` — this is the only
     fleet-wide site that ever notices a pull request merged some way other
     than this pipeline's own arm (`lib/landing.sh`), so it is also the only
     place a human's own merge click can retire one. Shares this pass's
@@ -1203,13 +1215,14 @@
     merged pull request every stand-down for as long as it stays inside
     `pr_search_limit`, so without the check a re-open would be undone —
     with a fresh comment — on the hour, every hour. A listing that fails
-    outright reports a `warning`, the same as the merged-pull-request
-    listing above: a successful call with nothing matching answers `[]`, so
-    an empty result means the call itself did not answer, and skipping that
-    silently would be indistinguishable from the common "nothing is
-    escalated" case while retiring nothing for as long as the failure
-    lasted. The rest of the pass runs regardless — the closing-keyword
-    sweep does not depend on this call.
+    outright — either the labelled listing or its label-less fallback —
+    reports a `warning`, the same as the merged-pull-request listing above:
+    a successful call with nothing matching answers `[]`, so an empty result
+    means the call itself did not answer, and skipping that silently would
+    be indistinguishable from the common "nothing is escalated" case while
+    retiring nothing for as long as the failure lasted. The rest of the pass
+    runs regardless — the closing-keyword sweep does not depend on either
+    call.
 17g. <a id="impl-17g"></a>**The reservation-release retry sweep.** A `td/<id>`/`td-record/<id>`
     tech-debt reservation branch a failed cleanup delete could not remove is
     not left orphaned for good: since TD-PPagop-26082427, that

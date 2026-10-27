@@ -1136,12 +1136,21 @@
    label (the retry-without-label path) is retired by this `land` cause too,
    not left to survive its own disagreement because the label never made it
    onto the issue. `scripts/sweep-closed-issues.sh`'s own `merged` cause
-   still lists only an open issue carrying `enabler_escalation_label` whose
-   body quotes this reference — a label-less escalation is not retired by a
-   merge this sweep observes (tracked as tech debt, agent-ops#2686). Both
-   are a no-op, logging nothing, when no such issue is open, which is the
-   common case: most pull requests never escalate at all. Both close it
-   inside the same
+   applies the identical two-step shape inline rather than calling
+   `escalation_issue_lookup` itself: a labelled listing first, matched
+   locally against the merged-pull-request listing this sweep already
+   fetched, then — only when that labelled listing finds no issues at all,
+   or finds none matching this reference for a pull request in this round's
+   own merged-pull-request listing — the same label-less, decision-log-
+   excluding fallback read (agent-ops#2657, agent-ops#2666, agent-ops#2685,
+   agent-ops#2686), so an escalation filed via the retry-without-label path
+   is retired by a direct human merge too, not only by this round's own
+   adjudication landing it. Inline rather than a call to
+   `escalation_issue_lookup` because that helper takes a single `item_ref`
+   per call, while this listing already matches every currently-merged pull
+   request at once. Both causes are a no-op, logging nothing, when no such
+   issue is open, which is the common case: most pull requests never
+   escalate at all. Both close it inside the same
    `pipeline_comment_header`/`pipeline_comment_marker` envelope every other
    comment this system posts carries (component 3f), and both skip an issue
    GitHub reports reopened (`stateReason`, read on the same listing): a
