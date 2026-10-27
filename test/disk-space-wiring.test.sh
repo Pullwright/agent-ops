@@ -65,8 +65,12 @@ extract_block() {
 # (test/memory-wiring.test.sh) sits between them, and extracting through it
 # would eval that block here too — where its helpers are not stubbed, so the
 # fall-through cases below would abort under `set -e` and read as a false
-# "never fell through".
-disk_block="$(extract_block '^# 2\.0c Free disk space' '^# 2\.0f Free host memory' "$AGENT_CYCLE")"
+# "never fell through". lib/standdown.sh now wraps each stand-down band in
+# its own `_standdown_*` helper (issue #2699), so the raw extraction also
+# carries this check's own closing `}` and 2.0f's `_standdown_host_memory() {`
+# opening line, both stripped below — neither is part of the check itself.
+disk_block="$(extract_block '^# 2\.0c Free disk space' '^# 2\.0f Free host memory' "$AGENT_CYCLE" \
+  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
 if [[ -z "$disk_block" ]]; then
   echo "FAIL - could not extract the free-disk-space check block from lib/standdown.sh — has it moved?" >&2
   exit 1

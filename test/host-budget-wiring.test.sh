@@ -59,7 +59,12 @@ extract_block() {
 # free, no-network checks, and 2.0h — the credential preflight, which spends
 # — follows it. Stopping at 2.1 instead would lift that preflight in too,
 # unstubbed, which is this file's own subject in neither sense.
-budget_block="$(extract_block '^# 2\.0g Host budget' '^# 2\.0h Model credential check' "$AGENT_CYCLE")"
+# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
+# helper (issue #2699), so the raw extraction also carries this check's own
+# closing `}` and 2.0h's own `_standdown_model_credential_check() {` opening
+# line — both stripped below, neither is part of the check itself.
+budget_block="$(extract_block '^# 2\.0g Host budget' '^# 2\.0h Model credential check' "$AGENT_CYCLE" \
+  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
 if [[ -z "$budget_block" ]]; then
   echo "FAIL - could not extract the host-budget check block from lib/standdown.sh — has it moved?" >&2
   exit 1
