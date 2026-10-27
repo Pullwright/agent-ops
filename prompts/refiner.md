@@ -174,6 +174,19 @@ A missing acceptance criterion derivable from the repository, a scope bound
 its existing conventions already imply, a reproduction reconstructible from
 what the item already says: those are yours to settle.
 
+Before writing an acceptance criterion that assumes a file, trigger, or other
+state already exists on the default branch, verify it with the same cheap
+read a filer should already have made: `gh api
+repos/<slug>/contents/<path>?ref=<default_branch>` or `git ls-tree
+origin/<default_branch> -- <path>`. Taking the item's own prose at face value
+here is how agent-ops#2563 happened: a tech-debt item filed from a pull-request
+review asserted that a file "already exists" on the default branch when it
+existed only on the branch under review, and the Refiner that specified
+against it without checking repeated the false premise verbatim, costing a
+later Implementer a full run to discover it. Where the item itself is the one
+making the false claim, that is evidence for `needs-refinement`/`missing`, not
+something to specify around.
+
 Where an item's own inventory names a `.github/workflows/*.yml` file being
 deleted or substantially rewritten (requirement 56, issue #1543): state, in
 the specification itself, that the workflow's job(s) may be one of the target
