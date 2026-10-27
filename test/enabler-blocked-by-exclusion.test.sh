@@ -109,21 +109,52 @@ run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [a
     # `--jq '.body // ""'` filter returns that candidate's own body (from
     # `$gh_live_json`'s `"<r>#<n>".body`), the same shape with `--jq
     # '[.[].body // ""] | join("\n")'` (the `/comments` path) returns its
-    # joined comments (`.comments`), and `--jq '.state'` — `issue_blocked_by_ref`'s
+    # comments (`.comments`), and `--jq '.state'` — `issue_blocked_by_ref`'s
     # own check of a *referenced* issue's live state — returns
     # `.ref_state` (empty, i.e. fail-open to "still-open", when absent).
     # Dispatched on the `--jq` filter text, not the path, since the
     # candidate's own body/comments reads and a referenced issue's
     # state read share the identical `repos/<r>/issues/<n>` path shape.
+    #
+    # The comments read also models REST's own paging, so the suite can pin
+    # the direction of truncation rather than assuming the whole thread
+    # arrives: where `.comments` is an *array* of bodies (rather than one
+    # pre-joined string, as the simpler cases below give it), the mock
+    # returns every element only under `--paginate`, and otherwise just the
+    # first `per_page` of them — defaulting, exactly as the real endpoint
+    # does, to the *oldest* 30. A `Blocked-by:` line in element 31 is
+    # therefore invisible to any call that does not page, which is what the
+    # 31-comment case further down asserts against.
+    #
+    # Argument scanning, not positional indexing: `--paginate` sits between
+    # the path and `--jq` on the comments read, so `$4` is not reliably the
+    # filter, and the path may now carry a `?per_page=` query string.
     # shellcheck disable=SC2317
     gh() {
-      local cmd="$1" path="$2" filter="$4" repo item key
+      local cmd="$1" path filter="" paginate=0 per_page=0 query="" repo item key
       [[ "$cmd" == "api" ]] || return 1
+      shift; path="$1"; shift
+      while (( $# )); do
+        case "$1" in
+          --paginate) paginate=1 ;;
+          --jq) filter="${2:-}"; shift ;;
+        esac
+        shift
+      done
+      query="${path#*\?}"; [[ "$query" != "$path" ]] || query=""
+      path="${path%%\?*}"
+      [[ "$query" =~ per_page=([0-9]+) ]] && per_page="${BASH_REMATCH[1]}"
       [[ "$path" =~ ^repos/(.+)/issues/([0-9]+)(/comments)?$ ]] || return 1
       repo="${BASH_REMATCH[1]}"; item="${BASH_REMATCH[2]}"; key="$repo#$item"
       case "$filter" in
         *state*) jq -r --arg k "$key" '(.[$k].ref_state // "")' <<<"$gh_live_json" ;;
-        *join*)  jq -r --arg k "$key" '(.[$k].comments // "")' <<<"$gh_live_json" ;;
+        *join*)  jq -r --arg k "$key" --argjson pag "$paginate" --argjson pp "$per_page" '
+                   (.[$k].comments // "") as $c
+                   | if ($c | type) == "array"
+                     then (if $pag == 1 then $c
+                           else $c[0:(if $pp > 0 then $pp else 30 end)] end
+                           | join("\n"))
+                     else $c end' <<<"$gh_live_json" ;;
         *)       jq -r --arg k "$key" '(.[$k].body // "")' <<<"$gh_live_json" ;;
       esac
     }
@@ -343,6 +374,40 @@ no_stamp_gh_live='{"o/r#44": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state"
 no_stamp_result="$(run_open_blocked_by_block "$no_stamp_ordered" "$no_stamp_eligible" '{}' '[]' '{}' "$no_stamp_gh_live")"
 assert_eq "a candidate whose repo carries no expensive_gather stamp is left eligible (no stamp reads as fresh)" "1" \
   "$(jq '[.eligible[] | select(.item == "44")] | length' <<<"$no_stamp_result")"
+
+# --- the live re-check reads the *whole* comment thread, not REST's own ---
+# --- first page: the `Blocked-by:` line sits at the end of a thread ------
+# A 31-comment thread whose `Blocked-by:` line is the newest comment. REST's
+# own default is the oldest 30 ascending, so a read that does not page cannot
+# see element 31 at all — and the pipeline posts the line at the moment it
+# records the block, which is exactly what the `blocked_ts > gathered_at` gate
+# above selects for, so this is the common shape rather than a corner. The
+# mocked `gh` models that truncation (see its own comment), which is what lets
+# this assertion fail against a non-paging read.
+long_thread_comments="$(jq -nc '[range(0; 30) | "a routine pipeline comment, number \(.)"]
+  + ["Blocked-by: #2684"]')"
+long_thread_gh_live="$(jq -nc --argjson c "$long_thread_comments" \
+  '{"o/r#2693": {body: "no dependency named in the body", comments: $c},
+    "o/r#2684": {ref_state: "open"}}')"
+long_thread_result="$(run_open_blocked_by_block "$after_open_ordered" "$after_eligible" '{}' '[]' '{}' "$long_thread_gh_live")"
+assert_eq "a Blocked-by line in the 31st comment is still seen (the whole thread is read, not REST's oldest-30 default)" "0" \
+  "$(jq '[.eligible[] | select(.item == "2693")] | length' <<<"$long_thread_result")"
+
+# --- only a bare issue number is re-checked live -------------------------
+# `.item` is an issue number for the `issues` and `tech_debt` bands alone —
+# the only two either `_excluded` sidecar ever reports on. A surviving
+# `pr-<n>-conflict-<sha>` claim (requirement 35e's own stale-ref pass keeps a
+# *live* one) is not a path `repos/<slug>/issues/<item>` can resolve, so
+# re-checking it would spend two unconditional 404s on a question with no
+# answer. The mocked `gh` refuses the non-numeric path exactly as the real
+# endpoint 404s it, so the candidate survives either way — what this pins is
+# that it is never put to the question at all.
+pr_ref_eligible='[{"repo": "o/r", "item": "pr-2700-conflict-a1b2c3d", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+pr_ref_result="$(run_open_blocked_by_block "$after_open_ordered" "$pr_ref_eligible" '{}' '[]' '{}' '{}')"
+assert_eq "a non-issue-numbered item is left eligible and never live-re-checked" "1" \
+  "$(jq '[.eligible[] | select(.item == "pr-2700-conflict-a1b2c3d")] | length' <<<"$pr_ref_result")"
+assert_eq "  ... and nothing is logged for it" "" \
+  "$(jq -r '.logged' <<<"$pr_ref_result")"
 
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then

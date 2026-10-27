@@ -481,6 +481,16 @@ fi
 # with no `expensive_gather` stamp at all reads as fresh, the same
 # convention `issues_by_repo_json` (lib/candidate-gather.sh) already
 # observes, so it is left alone here too.
+#
+# Narrowed once more, to an `.item` that is a bare issue number: that is the
+# only shape either sidecar ever reports on (both are keyed by `.number`, off
+# the `issues` and `tech_debt` bands), and it is the only shape
+# `repos/<slug>/issues/<item>` can resolve. A surviving `pr-<n>-conflict-<sha>`
+# claim, a `review-feedback` round or a `review-<date>-R-NN` finding would
+# otherwise spend two unconditional 404s apiece here for a question that has
+# no answer either way — live API spend in the one place this design is
+# explicitly rationed. (A `TD-<scope>-<id>` ref never reaches this far:
+# requirement 35e's own stale-ref pass always drops it first.)
 stale_gather_candidates_json='[]'
 [[ -z "$ordered_repos_json" ]] || stale_gather_candidates_json="$(jq -c \
   --argjson eligible "$enabler_eligible_json" \
@@ -495,7 +505,8 @@ stale_gather_candidates_json='[]'
       | (canon_repo($e.repo // "")) as $crepo
       | ($repomap[$crepo]) as $r
       | select($r != null and $r.fresh == false and $r.gathered_at != ""
-               and (($e.blocked_ts // "") > $r.gathered_at))
+               and (($e.blocked_ts // "") > $r.gathered_at)
+               and (($e.item // "") | test("^[0-9]+$")))
       | {repo: ($e.repo // ""), canon_repo: $crepo, item: ($e.item // "")} ]
   ' <<<"$ordered_repos_json" 2>/dev/null || true)"
 [[ -n "$stale_gather_candidates_json" ]] || stale_gather_candidates_json='[]'
@@ -504,8 +515,23 @@ stale_gather_live_checked_json='[]'
 while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item; do
   [[ -n "$sglr_orig_repo" && -n "$sglr_canon_repo" && -n "$sglr_item" ]] || continue
   sglr_thread="$(gh api "repos/$sglr_canon_repo/issues/$sglr_item" --jq '.body // ""' 2>/dev/null || true)"
-  sglr_thread="$sglr_thread"$'\n'"$(gh api "repos/$sglr_canon_repo/issues/$sglr_item/comments" \
-    --jq '[.[].body // ""] | join("\n")' 2>/dev/null || true)"
+  # `per_page=100` *and* `--paginate`, never the bare path: REST's own default
+  # is the *first* 30 comments ascending by `created_at`, and a `Blocked-by:`
+  # line sits at the end of a thread, not its start — the pipeline posts it at
+  # the moment it records the block, which is the very thing the `blocked_ts >
+  # gathered_at` gate above selects for. A bare read of this repository's own
+  # PR #2437 (35 comments) returns 30 and drops the four newest days of it, so
+  # on any thread past 30 comments the filter would be searching a window that
+  # cannot contain the line it exists to find. This is the identical direction
+  # `lib/issue-prefetch.sh`'s own header rules out for the gather walk
+  # (`comments(last:100)`, "clarifications and corrected requirements
+  # accumulate at the end of a thread, not its start"); reading the whole
+  # thread settles the direction question rather than reversing it, and stays
+  # one call for any thread of 100 or fewer. `--jq` runs per page under
+  # `--paginate`, so each page contributes its own joined block to the text
+  # `dependency_refs` then scans — concatenation is all this needs.
+  sglr_thread="$sglr_thread"$'\n'"$(gh api "repos/$sglr_canon_repo/issues/$sglr_item/comments?per_page=100" \
+    --paginate --jq '[.[].body // ""] | join("\n")' 2>/dev/null || true)"
   sglr_ref="$(issue_blocked_by_ref "$sglr_canon_repo" "$sglr_thread")"
   [[ -n "$sglr_ref" ]] || continue
   stale_gather_live_checked_json="$(jq -c --arg r "$sglr_orig_repo" --arg i "$sglr_item" \

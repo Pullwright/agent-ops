@@ -450,22 +450,51 @@
     `issues_by_repo_json` reshape already observes) *and* whose own
     `blocked_ts` (`ENABLER_ELIGIBLE_JQ`, `lib/cycle-state.sh`) is later than
     that repo's own `gathered_at` is blocked after the cache was written,
-    so neither sidecar could ever have seen it. For just that narrow
+    so neither sidecar could ever have seen it — narrowed once more to an
+    `.item` that is a bare issue number, the only shape either sidecar
+    reports on (both are keyed by `.number`) and the only one
+    `repos/<slug>/issues/<item>` can resolve, so a surviving
+    `pr-<n>-conflict-<sha>` claim or a `review-<date>-R-NN` finding is
+    never put to a question that would 404 either way. For just that narrow
     set — never every eligible candidate, which is exactly what issue
     #2603 removed for cost and must not come back — the candidate's own
-    live thread is re-read directly (one `gh` read per candidate) and
-    tested with the identical `dependency_refs`/`issue_blocked_by_ref`
-    (`lib/dependency-gate.sh`, `lib/issue-prefetch.sh`) the gathers
-    themselves use at gather time; `issue_blocked_by_ref`'s own fail-open
-    direction applies unchanged — a reference whose live state cannot be
-    read, or a thread that cannot be read at all, counts as still-open,
-    which here simply means the candidate is left eligible rather than the
-    optimisation firing (never a correctness hole: `dependency_clearances`
-    is the gate that actually resolves a block, and reaches this candidate
-    on its own ordinary terms regardless). `lib/issue-prefetch.sh` is
-    sourced by `agent-cycle.sh` itself for this one caller, alongside
-    `scripts/gather-issues.sh`'s and `scripts/gather-tech-debt.sh`'s own
-    existing uses of it as separate processes.
+    live thread is re-read directly and tested with the identical
+    `dependency_refs`/`issue_blocked_by_ref` (`lib/dependency-gate.sh`,
+    `lib/issue-prefetch.sh`) the gathers themselves use at gather time.
+    The thread is read *whole* — its body, plus its comments at
+    `per_page=100` under `--paginate`, one call for any thread of 100 or
+    fewer — never the bare comments path, whose own default is the *oldest*
+    30 ascending by `created_at`: a `Blocked-by:` line accumulates at the
+    end of a thread rather than its start (the same reasoning
+    `lib/issue-prefetch.sh`'s own `comments(last:100)` gather walk records),
+    and the stage posts it at the moment it records the block, which is the
+    very thing the `blocked_ts` gate above selects for.
+
+    The two ways a live read can fail here go in opposite directions, and
+    both match what `issue_blocked_by_ref` already does at gather time:
+
+    - **The candidate's own thread cannot be read at all.** It yields no
+      text, so `dependency_refs` finds no reference and the candidate is
+      left eligible — the optimisation simply does not fire, and the
+      Enabler reaches the candidate on its ordinary terms.
+    - **A reference the thread does name cannot have its own live state
+      read.** `issue_blocked_by_ref`'s fail-safe direction counts it as
+      still-open, so the candidate *is* excluded on an unverified
+      reference. Fleet-wide, that means a `gh` outage or an exhausted rate
+      limit holds every stale-cache candidate whose thread names any
+      `Blocked-by:` reference — including long-closed ones — out of
+      Enabler eligibility until reads recover.
+
+    Neither is a correctness hole: `dependency_clearances` (requirement
+    34j) is the gate that actually resolves a block, and reaches the
+    candidate regardless of what this optimisation concluded; the cost of
+    the second is a delayed Enabler engagement, against a whole engagement
+    of the most expensive model in the system otherwise.
+
+    `lib/issue-prefetch.sh` is sourced by `agent-cycle.sh` itself for this
+    one caller, alongside `scripts/gather-issues.sh`'s and
+    `scripts/gather-tech-debt.sh`'s own existing uses of it as separate
+    processes.
 
     Every entry this live re-check excludes is logged under the identical
     `enabler-stale-refs-skipped` event requirement 35e's own
