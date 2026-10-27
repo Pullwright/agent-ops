@@ -1,8 +1,6 @@
 # D18 Stage 3 — the promotion diff, written before the decision
 
-**Status: preparation. No repository's `merge_autonomy` changes in this
-document, and none of the preconditions below is met yet.** Written for
-agent-ops#580, which asks that the Stage 3 promotion be spelled out — the exact
+**Status: filed 2026-08-23.** Planning and promotion document for D18 Stage 3, written before the promotion was validated against the schema and the doctor and became a decision. The promotion has progressed since this document was filed; this record preserves the planning that guided it. Written for agent-ops#580, which asks that the Stage 3 promotion be spelled out — the exact
 `config.json` diff, what each edit assumes, the order, and the rollback — and
 validated against the schema and the doctor *before* it is a decision rather
 than after. Stage 2's own promotion (PR #560) needed a companion vocabulary fix

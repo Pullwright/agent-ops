@@ -12,7 +12,7 @@ overtakes it.
 
 D8 (`docs/ROADMAP.md`) is a transfer followed by an extraction. The transfer
 is done: agent-ops itself moved to the Pullwright organisation on
-2026-09-07 (#912, `docs/PULLWRIGHT-REHOMING.md`) and is the product
+2026-09-07 (#912, `docs/records/PULLWRIGHT-REHOMING.md`) and is the product
 repository in place, with its history, its issues, its D18 evidence and its
 Approver. What remains is the extraction: Poetic's consumer configuration
 and deployment move **out** of agent-ops into a new, differently named
@@ -95,7 +95,7 @@ invokes (`state-sync.sh`, `publish-dashboard.sh`, the sweeps) accept
 `$SCRIPT_DIR/config.json` when it is unset; the reporting and housekeeping
 utilities under `scripts/` (`wake-poll.sh`, `rotate-logs.sh`,
 `node-health.sh`, the metrics reports) still read that path directly.
-`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`
+`docs/records/PHASE-1-POETIC-SPECIFICS-AUDIT.md`
 finding 6 (#657) is resolved: the Dockerfile's `RUN` and
 `deploy/docker/crontab.tmpl` both now read `state_dir`/`workspace_root` out
 of `config.json` at build/render time (PR #1883, merged 2026-09-27), so the
@@ -166,7 +166,7 @@ first, is recommended:
   pipeline code: its own CI workflow clones `Pullwright/agent-ops` at
   `main` (or a pinned ref) and runs `scripts/doctor.sh --config config.json
   --offline` plus `jq -e .` against its own `config.json`, the same two
-  checks `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §4 already runs by hand
+  checks `docs/records/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §4 already runs by hand
   against a copy. This composes the validation capability at check time
   rather than vendoring it — the D20-aligned shape, for a check D20 itself
   does not yet cover.
@@ -278,7 +278,7 @@ its own to drift-check.
 
 The vendored `project-review` skill that `review-cycle.sh` stages into each
 clone at runtime is product source (D7) and stays. Nothing inside it is
-Poetic-specific (`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md` finding 15). Its
+Poetic-specific (`docs/records/PHASE-1-POETIC-SPECIFICS-AUDIT.md` finding 15). Its
 provenance — the upstream commit it is pinned to and the local change it
 carries — is recorded in `docs/spec/review/README.md`'s "The `project-review`
 skill (vendored)" section, so nothing about it belongs in this plan.
@@ -425,7 +425,7 @@ owner) but touches every node's `.env`, so the same order and the same
 discipline apply:
 
 1. **Stand the fleet down** and wait for running cycles to finish, exactly
-   as `docs/PULLWRIGHT-REHOMING.md`'s own T0 step 1
+   as `docs/records/PULLWRIGHT-REHOMING.md`'s own T0 step 1
    (`agent-cycle.sh --disable`, then `watchtower-pre-update.sh` on each
    node until idle).
 2. **Create the consumer repository** in Poetic-Poems (name is the owner's
@@ -529,15 +529,14 @@ rather than gating it.
 
 The consumer repository starts at agent-ops's own `merge_autonomy` level
 from day one, not at the product default — Principle 8
-(`docs/ROADMAP.md`) states this directly: "`docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md`
+(`docs/ROADMAP.md`) states this directly: "`docs/records/PULLWRIGHT-DAY-ONE-AUTONOMY.md`
 is the provisioning checklist this rule cashes out to for any repository
 created after the transfer — **the consumer repository first**." That
-checklist's own status header predates the 2026-08-28 D8 amendment and
-still describes a hypothetical product repository in Pullwright; correcting
-it is out of scope here (per the issue specification), but its checklist
-content — the default-branch ruleset matching agent-ops's own, extending
-the Pullwright Approver App installation to cover the new repository, and
-the `repos[]` entry mirroring agent-ops's own current one — applies
+checklist's own status header records that it is filed and still in
+force, not yet executed; its checklist content — the default-branch
+ruleset matching agent-ops's own, extending the Pullwright Approver App
+installation to cover the new repository, and the `repos[]` entry
+mirroring agent-ops's own current one — applies
 directly to the consumer repository created by this plan. This plan does
 not restate that checklist; it is referenced as the constraint governing
 step 2 of T0 ("populate it with... its own validation workflow") and the

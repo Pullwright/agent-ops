@@ -1,5 +1,7 @@
 # Provider seam audit
 
+**Status: filed 2026-10-03.** Planning document auditing Claude Code–specific assumptions before provider seam (#2131/#2133) implementation; records the state as of that date. No code changes included; classified findings feed follow-up work.
+
 This is the inventory issue #2130 asks for: every place `lib/`, `scripts/`,
 `deploy/`, `prompts/`, the three cycle scripts (`agent-cycle.sh`,
 `review-cycle.sh`, `monitor-cycle.sh`), `config.schema.json` and `test/`
@@ -10,7 +12,7 @@ in the right place. It does not sweep or fix any of them: this is a planning
 document, not an as-built specification, so `AGENTS.md`'s as-built rule pulls
 no specification in, and no code, prompt or configuration changes ride along
 with it. The precedent is
-[`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`](PHASE-1-POETIC-SPECIFICS-AUDIT.md)
+[`PHASE-1-POETIC-SPECIFICS-AUDIT.md`](PHASE-1-POETIC-SPECIFICS-AUDIT.md)
 (#584), which inventoried the Poetic-specifics the same way before the sweep
 that removed them.
 
