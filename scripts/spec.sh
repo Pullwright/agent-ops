@@ -24,6 +24,14 @@
 #
 # Read-only: no subcommand writes anything except `index` writing
 # docs/spec/index.json itself. Uses only bash and jq.
+#
+# Each per-label entry in docs/spec/index.json carries {kind, label, anchor,
+# file, title} — deliberately no line number. A stored line shifts with
+# every edit above it anywhere in the same file, which made the index
+# conflict across unrelated branches that each only touched their own spec
+# file (agent-ops#2690); `show` locates a label's line at read time instead
+# (spec_line_for_anchor), re-scanning the file rather than trusting a cached
+# position.
 
 set -uo pipefail
 
@@ -103,6 +111,12 @@ spec_title_from_rest() {
   printf '%s' "$title"
 }
 
+# The one regex that recognises an anchored label line, shared between
+# spec_scan (which needs every capture group) and spec_line_for_anchor
+# (which needs only to relocate one anchor at read time) — a divergent
+# second copy is exactly how the two could disagree on where a label lives.
+spec_anchor_line_re='^[[:space:]]*([A-Za-z0-9-]+)\. <a id="([a-z0-9-]+)"></a>(.*)$'
+
 # Scan every spec markdown file and emit one TSV row per labelled entry:
 # kind\tlabel\tqualified\tanchor\tfile\tline\ttitle
 spec_scan() {
@@ -111,7 +125,7 @@ spec_scan() {
     lineno=0
     while IFS= read -r line; do
       lineno=$((lineno + 1))
-      if [[ $line =~ ^[[:space:]]*([A-Za-z0-9-]+)\.\ \<a\ id=\"([a-z0-9-]+)\"\>\</a\>(.*)$ ]]; then
+      if [[ $line =~ $spec_anchor_line_re ]]; then
         label="${BASH_REMATCH[1]}"
         anchor="${BASH_REMATCH[2]}"
         rest="${BASH_REMATCH[3]}"
@@ -123,6 +137,24 @@ spec_scan() {
       fi
     done < "$file"
   done < <(spec_md_files)
+}
+
+# Locate the line in $1 carrying the anchor id $2, at read time rather than
+# from a stored index value — the line a label sits on shifts with every
+# edit above it in the same file, so storing it in docs/spec/index.json is
+# exactly what makes that file conflict across unrelated branches
+# (agent-ops#2690). Prints the 1-based line number and returns 0, or
+# returns 1 if the anchor is not found in the file.
+spec_line_for_anchor() {
+  local file="$1" wanted="$2" lineno=0 line
+  while IFS= read -r line; do
+    lineno=$((lineno + 1))
+    if [[ $line =~ $spec_anchor_line_re ]] && [[ "${BASH_REMATCH[2]}" == "$wanted" ]]; then
+      echo "$lineno"
+      return 0
+    fi
+  done < "$file"
+  return 1
 }
 
 # Reads the TSV from spec_scan on stdin; prints a message per duplicate
@@ -153,7 +185,7 @@ spec_tsv_to_index_json() {
     split("\n") | map(select(length > 0)) | map(split("\t")) |
     map({
       qualified: .[2],
-      value: {kind: .[0], label: .[1], anchor: .[3], file: .[4], line: (.[5] | tonumber), title: .[6]}
+      value: {kind: .[0], label: .[1], anchor: .[3], file: .[4], title: .[6]}
     })
   ' | jq '{generated_by: "scripts/spec.sh index", labels: (map({(.qualified): .value}) | add // {})}'
 }
@@ -254,11 +286,11 @@ cmd_show() {
   key="$(spec_normalize "$query")" || { echo "spec.sh: cannot parse label '$query'" >&2; exit 1; }
   entry="$(spec_index_entry "$key")" || { echo "spec.sh: no such label: $key" >&2; exit 1; }
   file="$(jq -r '.file' <<< "$entry")"
-  line="$(jq -r '.line' <<< "$entry")"
   anchor="$(jq -r '.anchor' <<< "$entry")"
   title="$(jq -r '.title' <<< "$entry")"
   kind="$(jq -r '.kind' <<< "$entry")"
   label="$(jq -r '.label' <<< "$entry")"
+  line="$(spec_line_for_anchor "$file" "$anchor")" || { echo "spec.sh: anchor $anchor not found in $file" >&2; exit 1; }
 
   echo "$key  —  $title"
   echo "$file#$anchor"
