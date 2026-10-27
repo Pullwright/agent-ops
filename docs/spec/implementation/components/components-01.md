@@ -165,10 +165,12 @@ What exists, and the requirements each part answers to:
    that sampled cleanly — how "is that escalation issue still open?" is
    answered without a `gh` call per escalation — consumes the two snapshots
    above for requirement 35e's filter, builds `still_blocked_by_json`
-   directly from `ordered_repos_json`'s own `issues_excluded`/
+   from `ordered_repos_json`'s own `issues_excluded`/
    `tech_debt_excluded` arrays (neither of which the blocked/void
-   subtraction above ever touches, so no snapshot of its own is needed) for
-   requirement 35f's filter, and ends by setting
+   subtraction above ever touches, so no snapshot of its own is needed),
+   falling back to `lib/candidate-gather.sh`'s own `latest_issues_excluded_json`
+   for whichever repo's own `issues` gather `degraded_issues_excluded_json`
+   names as degraded this cycle (requirement 35f, issue #2678), and ends by setting
    `enabler_allowed`. `prefetch_refiner_sources` seeds `refiner_repos_json`
    from that snapshot and fetches the Refiner's own
    two extra sources into it, which `ordered_repos_json`

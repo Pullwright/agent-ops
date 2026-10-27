@@ -146,12 +146,14 @@ run_cached_issues_block() {  # <sources-json> <issues_raw> <issues_excluded_raw>
     # Consumed only by the eval'd block below, invisible to static analysis.
     # shellcheck disable=SC2034
     sources="$1" issues_raw="$2" issues_excluded_raw="$3" state="$4" \
-      claimed_item_refs_json='[]'
+      claimed_item_refs_json='[]' slug='o/r' degraded_issues_excluded_json='[]'
     eval "$issues_block_src"
     # issues/issues_excluded: assigned only by the eval'd block above,
     # invisible to static analysis.
     # shellcheck disable=SC2154
-    jq -nc --argjson i "$issues" --argjson e "$issues_excluded" '{issues: $i, issues_excluded: $e}'
+    jq -nc --argjson i "$issues" --argjson e "$issues_excluded" \
+      --argjson d "$degraded_issues_excluded_json" \
+      '{issues: $i, issues_excluded: $e, degraded: $d}'
   )
 }
 
@@ -178,6 +180,37 @@ assert_eq "wiring: a failed state sample reports no new exclusion" \
 out_nosource="$(run_cached_issues_block '["tech-debt"]' "$band" 'null' "$state_ok")"
 assert_eq "wiring: a repo not configured for issues gets the empty band, same as today" \
   "[]" "$(jq -c '.issues' <<<"$out_nosource")"
+
+# --- issue #2678: whether this repo's exclusion set is *unknown* must be read
+# --- off the replayed value, not off what issue_state_reapply left behind.
+# --- The very first case above is the trap: a `null` replayed set (the cache
+# --- was written from a degraded gather) plus fresh assigned/blocked-label
+# --- drops off this cycle's own state sample makes issue_state_reapply return
+# --- a non-null array — one carrying no `blocked-by:` entry at all, since the
+# --- prior it would have come from was unknown. Read after the reapplication,
+# --- that array is indistinguishable from a clean gather, and requirement
+# --- 35f's own fallback (lib/eligibility.sh) would never fire for the repo.
+assert_eq "wiring: a null replayed exclusion set reports the repo degraded even though the reapplication made it non-null (issue #2678)" \
+  '["o/r"]' "$(jq -c '.degraded' <<<"$out")"
+assert_eq "  ... and the reapplication's own fresh drops still reach issues_excluded" \
+  "true" "$(jq -e '.issues_excluded | length == 2' <<<"$out" >/dev/null 2>&1 && echo true || echo false)"
+
+# ... a null replayed set with no fresh drop at all stays null, and reports the
+# repo degraded by the same reading.
+out_bad_degraded="$(run_cached_issues_block '["issues:high"]' "$band" 'null' "$state_bad")"
+assert_eq "wiring: a null replayed exclusion set with no reapplication reports the repo degraded (issue #2678)" \
+  '["o/r"]' "$(jq -c '.degraded' <<<"$out_bad_degraded")"
+
+# ... a non-null replayed set is a gather that ran to completion: never
+# degraded, however empty it happens to be.
+out_clean_empty="$(run_cached_issues_block '["issues:high"]' "$band" '[]' "$state_bad")"
+assert_eq "wiring: a genuinely empty (non-null) replayed exclusion set reports the repo clean, not degraded" \
+  '[]' "$(jq -c '.degraded' <<<"$out_clean_empty")"
+
+# ... and a repo not configured for the issues source is never reported
+# degraded either, whatever the replayed value says.
+assert_eq "wiring: a repo not configured for issues is never reported degraded" \
+  '[]' "$(jq -c '.degraded' <<<"$out_nosource")"
 
 printf '\n'
 if (( failures > 0 )); then

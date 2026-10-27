@@ -8,7 +8,11 @@
 # effective staleness (lib/repo-order.sh) and, for each, runs every
 # pre-fetched source's gather script, folding claims, first-seen state and
 # per-repo entries into `ordered_repos_json`/`source_states_json`/
-# `claimed_json`/`unvoid_requests_json`/`hand_flagged_refinements_json`.
+# `claimed_json`/`unvoid_requests_json`/`hand_flagged_refinements_json`/
+# `degraded_issues_excluded_json` (the repo slugs whose own `issues` gather
+# degraded this cycle, which requirement 35f's own open-`Blocked-by:`-reference
+# exclusion in `lib/eligibility.sh` reads alongside
+# `latest_issues_excluded_json` below).
 # `compute_skip_lists` reconciles the two label-driven human overrides
 # (`unvoid` and hand-flagged `needs_refinement`) against that cycle's own
 # claim, then derives `blocked_json`/`void_json`, the skip-lists everything
@@ -154,6 +158,17 @@ if ! (( ${union_build_ok:-1} )) \
     '{detail: $d}')"
 fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"
+# Repos whose issues gather degraded *this* cycle (`gather_issues_excluded`
+# returned `null` — the gatherer's own filter did not run to completion),
+# distinct from a repo that gathered cleanly with nothing excluded: both
+# fold to the same `issues_excluded: []` on the per-repo entry below
+# (requirement 33's own "Co-Ordinator's own runtime input is unaffected
+# either way" contract), so that field alone cannot tell the two apart.
+# `lib/eligibility.sh`'s open-`Blocked-by:`-reference exclusion (issue #2678)
+# reads this list to know when to fall back to `latest_issues_excluded_json`
+# above instead of trusting an entry's own (always-clean-looking) empty
+# `issues_excluded`.
+degraded_issues_excluded_json='[]'
 # This cycle's own resolved report_directory per repository (its override in
 # repository_review.repos, or repository_review.defaults' otherwise,
 # issue #342) — or, absent from repository_review entirely, the same
@@ -561,6 +576,9 @@ while IFS=$'\t' read -r _ slug default_branch; do
         latest_issues_excluded_json="$(jq -c --arg r "$slug" --argjson ex "$issues_excluded" \
           '.[$r] = $ex' <<<"$latest_issues_excluded_json" 2>/dev/null || printf '%s' "$latest_issues_excluded_json")"
       fi
+    else
+      degraded_issues_excluded_json="$(jq -c --arg s "$slug" '. + [$s]' \
+        <<<"${degraded_issues_excluded_json:-[]}" 2>/dev/null || printf '%s' "${degraded_issues_excluded_json:-[]}")"
     fi
   fi
   tech_debt="[]"; tech_debt_raw="[]"; tech_debt_excluded="[]"; tech_debt_excluded_raw="null"
@@ -663,6 +681,23 @@ while IFS=$'\t' read -r _ slug default_branch; do
     # sample — fail open (skip the reapplication, leaving the band exactly as
     # it replayed before this fix) when that sample itself did not succeed,
     # since "unknown decides nothing" here too.
+    #
+    # Whether this repo's exclusion set is *unknown* (issue #2678) has to be
+    # read off the replayed value here, ahead of the reapplication below,
+    # because that reapplication can turn an unknown set into a known-looking
+    # one: `issue_state_reapply` (lib/candidate-select.sh) returns `null` only
+    # when the prior set was `null` *and* this cycle's own state sample found
+    # no fresh drop, so a cache written from a degraded gather plus even one
+    # fresh `assigned`/`blocked-label` drop yields a non-null array carrying
+    # nothing but those fresh drops — no `blocked-by:` entry at all, since the
+    # prior it would have come from was unknown. Read after the reapplication,
+    # that array is indistinguishable from a clean gather, which is exactly the
+    # #2678 failure mode. This is also the strictly broader test: the
+    # reapplication can never turn a non-null prior back into `null` (that
+    # branch requires `$prior == null`), so "replayed value was `null`"
+    # subsumes "post-reapplication value is `null`".
+    issues_excluded_unknown=0
+    [[ "$issues_excluded_raw" == "null" ]] && issues_excluded_unknown=1
     if [[ "$(jq -r '.ok // false' <<<"$state" 2>/dev/null)" == "true" ]]; then
       issue_state_reapplied="$(issue_state_reapply "$issues_raw" \
         "$(jq -c '.issues // []' <<<"$state" 2>/dev/null || echo '[]')" "$issues_excluded_raw")"
@@ -671,6 +706,10 @@ while IFS=$'\t' read -r _ slug default_branch; do
     fi
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
     [[ "$issues_excluded_raw" != "null" ]] && issues_excluded="$issues_excluded_raw"
+    if (( issues_excluded_unknown )); then
+      degraded_issues_excluded_json="$(jq -c --arg s "$slug" '. + [$s]' \
+        <<<"${degraded_issues_excluded_json:-[]}" 2>/dev/null || printf '%s' "${degraded_issues_excluded_json:-[]}")"
+    fi
   fi
   tech_debt="[]"; tech_debt_excluded="[]"
   if jq -e 'any(.[]; . == "tech-debt")' <<<"$sources" >/dev/null 2>&1; then

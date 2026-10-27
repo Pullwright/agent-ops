@@ -76,12 +76,15 @@ if [[ "$open_blocked_by_block_src" != *"open_blocked_by_json"* ]]; then
 fi
 
 run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [aliases-json]
+                                # [degraded-issues-excluded-json] [latest-issues-excluded-json]
   (
     # ordered_repos_json/etc. are consumed by the eval'd filter below — not
     # visible to the static analysis here.
     # shellcheck disable=SC2034
     ordered_repos_json="$1" enabler_eligible_json="$2" \
-      repo_slug_aliases_json="${3:-{\}}" union_log='/dev/null' logged="" logged_fields=""
+      repo_slug_aliases_json="${3:-{\}}" \
+      degraded_issues_excluded_json="${4:-[]}" latest_issues_excluded_json="${5:-{\}}" \
+      union_log='/dev/null' logged="" logged_fields=""
     # shellcheck disable=SC2317
     guard_warn() { :; }
     # shellcheck disable=SC2317
@@ -215,6 +218,38 @@ assert_eq "the issues-band drop excludes its own candidate" "0" \
   "$(jq '[.eligible[] | select(.item == "42")] | length' <<<"$both_result")"
 assert_eq "  ... and the tech-debt-band drop excludes its own candidate, same cycle" "0" \
   "$(jq '[.eligible[] | select(.item == "2581")] | length' <<<"$both_result")"
+
+# --- issue #2678: a repo whose issues gather degraded this cycle folds to --
+# --- the identical issues_excluded: [] a clean, nothing-excluded gather ----
+# --- gets (requirement 33) — but `degraded_issues_excluded_json` names the --
+# --- repo as degraded, so the filter falls back to the prior reading -------
+# --- `latest_issues_excluded_json` carries for it, rather than treating the
+# --- standing Blocked-by: reference as unknown and leaving it eligible -----
+degraded_ordered='[{"slug": "o/r", "issues_excluded": []}]'
+degraded_eligible='[{"repo": "o/r", "item": "2616", "reason": "threshold"}]'
+degraded_list='["o/r"]'
+degraded_latest='{"o/r": [{"number": 2616, "reason": "blocked-by: #2437"}]}'
+degraded_result="$(run_open_blocked_by_block "$degraded_ordered" "$degraded_eligible" '{}' \
+  "$degraded_list" "$degraded_latest")"
+assert_eq "a degraded-gather repo's candidate falls back to the prior reading and is dropped (issue #2678)" "0" \
+  "$(jq '[.eligible[] | select(.item == "2616")] | length' <<<"$degraded_result")"
+assert_eq "  ... and the drop is logged, not silent" "true" \
+  "$(jq -r '.logged | test("enabler-open-blocked-by-skipped")' <<<"$degraded_result")"
+
+# ... the same repo, same empty issues_excluded, but NOT named in
+# degraded_issues_excluded_json: this cycle's own gather really was clean, so
+# the stale prior reading must not override it.
+clean_result="$(run_open_blocked_by_block "$degraded_ordered" "$degraded_eligible" '{}' \
+  '[]' "$degraded_latest")"
+assert_eq "a repo not reported degraded uses this cycle's own (genuinely empty) exclusion set, not the stale prior one" "1" \
+  "$(jq '[.eligible[] | select(.item == "2616")] | length' <<<"$clean_result")"
+
+# ... a degraded repo with no prior reading at all still decides nothing —
+# "unknown is never gone" survives the fallback.
+no_prior_result="$(run_open_blocked_by_block "$degraded_ordered" "$degraded_eligible" '{}' \
+  "$degraded_list" '{}')"
+assert_eq "a degraded repo with no prior latest_issues_excluded reading is left eligible" "1" \
+  "$(jq '[.eligible[] | select(.item == "2616")] | length' <<<"$no_prior_result")"
 
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then

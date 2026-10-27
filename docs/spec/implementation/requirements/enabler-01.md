@@ -310,7 +310,7 @@
 35f. <a id="impl-35f"></a>**A candidate scripts/gather-issues.sh or scripts/gather-tech-debt.sh has
     already excluded for naming a still-open `Blocked-by:` reference is
     dropped before it reaches eligibility (issue #2593; corrected by
-    #2603).** Requirement 34j's `dependency_clearances`
+    #2603; extended by #2678).** Requirement 34j's `dependency_clearances`
     (`lib/candidate-gather.sh`) already clears a block the instant every
     reference its thread names closes — but until then, the block sits
     eligible on the ordinary `threshold`/`recheck` terms of requirement 35a
@@ -368,6 +368,60 @@
     this cycle never sampled — one that is not configured at all, or did not
     sample cleanly — is read at its true state rather than fail-safing to
     still-open on every cycle for as long as the digest lacks it.
+
+    A repo this cycle *did* walk, whose own `issues` gather degraded mid-walk
+    (`scripts/gather-issues.sh`'s deterministic filter did not run to
+    completion, requirement 33's own `gather_issues_excluded` reporting
+    `null`), is a third case this filter tells apart from the two above
+    (issue #2678). Requirement 33 folds that `null` to the identical
+    `issues_excluded: []` a repo that walked cleanly and found nothing to
+    exclude gets — "the Co-Ordinator's own runtime input is unaffected
+    either way" — so `ordered_repos_json`'s own `.issues_excluded` cannot
+    tell the two apart, and reading only it here would read a degraded
+    repo's own still-open `Blocked-by:` candidates as unknown, spending a
+    full Enabler engagement to re-derive exactly the verdict this filter
+    exists to short-circuit (observed on cycle
+    `20261026T024800Z-poetic-2-4058217`: five candidates, every one still
+    named by a standing `Blocked-by:` reference the prior cycle's own
+    `issues-excluded` event already recorded, reached the Enabler because
+    that cycle's own gather for the repo had failed).
+    `lib/candidate-gather.sh` tracks which repo slugs this happened to, this
+    cycle, in `degraded_issues_excluded_json` — built in the same per-repo
+    loop pass that computes `issues_excluded_raw`, on both the branch that
+    reads a repo's `issues` band fresh and the branch that replays it from
+    this node's own expensive-gather cache. On the replay branch the reading
+    is taken from the replayed value *ahead of* requirement 3j's own
+    deterministic reapplication (`issue_state_reapply`,
+    `lib/candidate-select.sh`, agent-ops#1095), which would otherwise mask
+    it: that reapplication returns `null` only when the replayed set was
+    `null` *and* this cycle's state sample found no fresh drop, so a cache
+    written from a degraded gather plus even one fresh
+    `assigned`/`blocked-label` drop yields a non-null array carrying nothing
+    but those fresh drops — no `blocked-by:` entry at all, since the prior it
+    would have come from was unknown — which read afterwards is
+    indistinguishable from a clean gather. Reading the replayed value is also
+    the strictly broader test, since that reapplication can never turn a
+    non-null set back into `null`. For exactly those repos, this
+    filter's still-open `Blocked-by:` reading falls back to
+    `latest_issues_excluded_json`'s own carried-forward reading (requirement
+    33: the most recent `issues-excluded` event logged for that repo) in
+    place of `ordered_repos_json`'s own (always-clean-looking) empty
+    `.issues_excluded` — stale in the safe direction only, since
+    `dependency_clearances` clears a resolved block on the next healthy
+    cycle regardless, so the one cost of a stale reading is at most one
+    cycle's delay before the Enabler is engaged on it, against a whole
+    engagement of its own most expensive model otherwise. A repo absent from
+    `degraded_issues_excluded_json` is read exactly as before this
+    extension: its own `.issues_excluded` off `ordered_repos_json` decides,
+    whether that is a real exclusion or a genuinely clean gather. A degraded
+    repo with no prior `latest_issues_excluded_json` entry at all falls
+    through to the same "unknown is never gone" reading the paragraph above
+    already gives a never-walked repo. `tech_debt_excluded` has no
+    equivalent carried-forward reading to fall back to — no
+    `tech-debt-excluded` event is logged on change the way requirement 33's
+    `issues-excluded` is (issue #2606) — so a degraded `tech_debt` gather
+    keeps the plain "unknown is never gone" reading on its own
+    `tech_debt_excluded` until that gap closes.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with
