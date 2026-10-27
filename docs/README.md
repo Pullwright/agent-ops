@@ -213,6 +213,7 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/reviews/project-review-2026-09-05/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-21/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-28/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
+| `docs/reviews/project-review-2026-10-27/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 
 ### Pipeline prompts: `prompts/`
 
