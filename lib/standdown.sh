@@ -650,7 +650,7 @@ fi
 # skipped rather than matched against `MODEL_PROVIDER` — that table is keyed
 # by bare model ids, never by a config key's own name, so a handle can only
 # ever miss or coincidentally hit here; picking a member on PROVIDER out of a
-# mixed-provider set is tracked separately (agent-ops#2683) rather than
+# mixed-provider set is tracked separately (agent-ops#2711) rather than
 # guessed at in this conflict resolution. Always prints something: no
 # configured model resolving to PROVIDER cannot happen for a provider this
 # system itself just froze (some model's own launch is what proved it
