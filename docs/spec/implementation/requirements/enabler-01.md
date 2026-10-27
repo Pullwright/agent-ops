@@ -422,6 +422,56 @@
     `issues-excluded` is (issue #2606) — so a degraded `tech_debt` gather
     keeps the plain "unknown is never gone" reading on its own
     `tech_debt_excluded` until that gap closes.
+35g. <a id="impl-35g"></a>**A `Blocked-by:` reference posted after a repo's expensive-gather cache
+    was written is re-checked live, for the narrow set of candidates a
+    stale cache cannot speak to (issue #2709).** `still_blocked_by_json`
+    above is sound only when `ordered_repos_json`'s own `issues_excluded`/
+    `tech_debt_excluded` sidecars came from a gather run *this* cycle. On
+    every cycle where the candidate's repo is not `expensive_gather_slug`
+    (requirement 48, `lib/candidate-gather.sh`), both sidecars are instead
+    replayed from that node's own expensive-gather cache, so a
+    `Blocked-by:` line posted to the candidate's own thread after the
+    cache's own `gathered_at` is invisible to requirement 35f's filter for
+    the whole gather rotation — exactly the window during which the marker
+    crosses the Enabler threshold (item `2693`: blocked and commented
+    `Blocked-by: #2684` five minutes after the repo's cache was written,
+    reaching the Enabler across four subsequent cycles before the repo's
+    own next fresh gather). Falling back to `latest_issues_excluded_json`
+    the way requirement 35f's own degraded-gather case does would still
+    miss this, since that reading is only as fresh as the last logged
+    `issues-excluded` event, which can itself predate the comment.
+
+    Instead, each entry of `enabler_eligible_json` surviving requirement
+    35f's own subtraction is tested against `ordered_repos_json`'s own
+    `expensive_gather.fresh`/`expensive_gather.gathered_at` for its
+    (alias-resolved) repo: an entry whose repo's `expensive_gather.fresh`
+    is `false` (an entry carrying no `expensive_gather` stamp at all reads
+    as fresh, the same convention `lib/candidate-gather.sh`'s own
+    `issues_by_repo_json` reshape already observes) *and* whose own
+    `blocked_ts` (`ENABLER_ELIGIBLE_JQ`, `lib/cycle-state.sh`) is later than
+    that repo's own `gathered_at` is blocked after the cache was written,
+    so neither sidecar could ever have seen it. For just that narrow
+    set — never every eligible candidate, which is exactly what issue
+    #2603 removed for cost and must not come back — the candidate's own
+    live thread is re-read directly (one `gh` read per candidate) and
+    tested with the identical `dependency_refs`/`issue_blocked_by_ref`
+    (`lib/dependency-gate.sh`, `lib/issue-prefetch.sh`) the gathers
+    themselves use at gather time; `issue_blocked_by_ref`'s own fail-open
+    direction applies unchanged — a reference whose live state cannot be
+    read, or a thread that cannot be read at all, counts as still-open,
+    which here simply means the candidate is left eligible rather than the
+    optimisation firing (never a correctness hole: `dependency_clearances`
+    is the gate that actually resolves a block, and reaches this candidate
+    on its own ordinary terms regardless). `lib/issue-prefetch.sh` is
+    sourced by `agent-cycle.sh` itself for this one caller, alongside
+    `scripts/gather-issues.sh`'s and `scripts/gather-tech-debt.sh`'s own
+    existing uses of it as separate processes.
+
+    Every entry this live re-check excludes is logged under the identical
+    `enabler-stale-refs-skipped` event requirement 35e's own
+    `stale_enabler_refs_json` mechanism already uses — the same `{skipped:
+    [{repo, item}…]}` object shape, not a second event name for what is,
+    to an operator reading the log, the identical kind of skip.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with

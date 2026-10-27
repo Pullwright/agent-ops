@@ -448,6 +448,86 @@ if (( open_blocked_by_n > 0 )); then
     ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
 fi
 
+# --- Stale-expensive-gather-cache live re-check (issue #2709) --------------
+# `still_blocked_by_json` above answers "did the cached issues_excluded/
+# tech_debt_excluded sidecar report this candidate as naming a still-open
+# Blocked-by: reference" — sound only when that sidecar was built from a
+# gather run *this* cycle. On every cycle where the candidate's repo is not
+# `expensive_gather_slug` (lib/candidate-gather.sh, requirement 48), both
+# sidecars are instead replayed from `expensive_gather_cache_load`, so a
+# `Blocked-by:` line posted to the candidate's own thread after that cache's
+# own `gathered_at` is invisible to the filter above for the whole gather
+# rotation — exactly the window during which the marker crosses the Enabler
+# threshold (observed on item `2693`: blocked and commented `Blocked-by:
+# #2684` at 11:00Z, five minutes after a 10:53Z cache write, reaching the
+# Enabler across four subsequent cycles before the repo's own next fresh
+# gather).
+#
+# Falling back to `latest_issues_excluded_json` (requirement 33's own
+# carried-forward reading, already consulted above for a repo whose gather
+# merely *degraded*) would still miss this: that reading is only ever as
+# fresh as the last logged `issues-excluded` event, which can itself predate
+# the comment. Instead, this narrows to the one case that can actually flip
+# the verdict: an eligible candidate whose repo's `ordered_repos_json` entry
+# reports `expensive_gather.fresh == false` *and* whose own `blocked_ts`
+# (`ENABLER_ELIGIBLE_JQ`, lib/cycle-state.sh) is later than that entry's own
+# `expensive_gather.gathered_at` — blocked after the cache was written, so
+# neither sidecar could ever have seen it. For just that narrow set — never
+# every eligible candidate, which is exactly what issue #2603 removed for
+# cost and must not come back — the candidate's own live thread is re-read
+# directly (one `gh` read per candidate) and tested with the identical
+# `dependency_refs`/`issue_blocked_by_ref` (lib/dependency-gate.sh,
+# lib/issue-prefetch.sh) the gathers themselves use at gather time. An entry
+# with no `expensive_gather` stamp at all reads as fresh, the same
+# convention `issues_by_repo_json` (lib/candidate-gather.sh) already
+# observes, so it is left alone here too.
+stale_gather_candidates_json='[]'
+[[ -z "$ordered_repos_json" ]] || stale_gather_candidates_json="$(jq -c \
+  --argjson eligible "$enabler_eligible_json" \
+  --argjson aliases "$repo_slug_aliases_json" '
+  def canon_repo($r): ($aliases[$r] // $r);
+  ([ .[] | {key: .slug,
+            value: {fresh: (if .expensive_gather.fresh == null then true else .expensive_gather.fresh end),
+                    gathered_at: (.expensive_gather.gathered_at // "")}} ]
+   | from_entries) as $repomap
+  | [ $eligible[]
+      | . as $e
+      | (canon_repo($e.repo // "")) as $crepo
+      | ($repomap[$crepo]) as $r
+      | select($r != null and $r.fresh == false and $r.gathered_at != ""
+               and (($e.blocked_ts // "") > $r.gathered_at))
+      | {repo: ($e.repo // ""), canon_repo: $crepo, item: ($e.item // "")} ]
+  ' <<<"$ordered_repos_json" 2>/dev/null || true)"
+[[ -n "$stale_gather_candidates_json" ]] || stale_gather_candidates_json='[]'
+
+stale_gather_live_checked_json='[]'
+while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item; do
+  [[ -n "$sglr_orig_repo" && -n "$sglr_canon_repo" && -n "$sglr_item" ]] || continue
+  sglr_thread="$(gh api "repos/$sglr_canon_repo/issues/$sglr_item" --jq '.body // ""' 2>/dev/null || true)"
+  sglr_thread="$sglr_thread"$'\n'"$(gh api "repos/$sglr_canon_repo/issues/$sglr_item/comments" \
+    --jq '[.[].body // ""] | join("\n")' 2>/dev/null || true)"
+  sglr_ref="$(issue_blocked_by_ref "$sglr_canon_repo" "$sglr_thread")"
+  [[ -n "$sglr_ref" ]] || continue
+  stale_gather_live_checked_json="$(jq -c --arg r "$sglr_orig_repo" --arg i "$sglr_item" \
+    '. + [{repo: $r, item: $i}]' <<<"$stale_gather_live_checked_json" 2>/dev/null \
+    || printf '%s' "$stale_gather_live_checked_json")"
+done < <(jq -r '.[] | [(.repo // ""), (.canon_repo // ""), (.item // "")] | @tsv' \
+  <<<"$stale_gather_candidates_json" 2>/dev/null || true)
+stale_gather_live_checked_n="$(jq 'length' <<<"$stale_gather_live_checked_json" 2>/dev/null || printf 0)"
+[[ "$stale_gather_live_checked_n" =~ ^[0-9]+$ ]] || stale_gather_live_checked_n=0
+if (( stale_gather_live_checked_n > 0 )); then
+  # The identical `enabler-stale-refs-skipped` event the sibling
+  # `stale_enabler_refs_json` mechanism above already logs under (issue
+  # #2709's own "Logging" instruction): same `{skipped: [{repo, item}, ...]}`
+  # shape, not a new event name.
+  log_event "enabler-stale-refs-skipped" "$(jq -c '{skipped: [.[] | {repo, item}]}' <<<"$stale_gather_live_checked_json")"
+  enabler_eligible_json="$(jq -c --argjson skip "$stale_gather_live_checked_json" '
+    ($skip | map((.repo // "") + "#" + (.item // ""))) as $skipset
+    | [ .[] | (.repo // "") as $repo | (.item // "") as $item
+            | select(($skipset | index($repo + "#" + $item)) == null) ]
+    ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+fi
+
 # Past this line the exit trap may engage the Enabler: every input it needs now
 # exists, so `maybe_run_enabler`'s own guards are all that stand between this
 # cycle and an engagement. Before it, an early exit could not have one.
