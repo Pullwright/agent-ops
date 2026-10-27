@@ -19,6 +19,13 @@
 # indistinguishable, to the rest of the cycle, from the inline block it
 # replaces. `exit 0` inside it ends the cycle exactly as it did inline: nothing
 # here runs inside a subshell.
+#
+# The ladder is one `_standdown_*` function per band, in file order below;
+# `run_standdown_checks` sits at the foot of the file and calls them in that
+# order. Everything the paragraph above says holds of each band individually —
+# each reads and writes the spine's globals directly, declares nothing `local`,
+# and is called as a plain function rather than a subshell.
+#
 # Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
 # lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
 # own tests source this file alone and stub run_model_stage directly,
@@ -1390,6 +1397,18 @@ if (( listing_truncated )); then
 fi
 }
 
+# run_standdown_checks — the ladder's orchestrator: one call per band, in the
+# order a cycle runs them. That order is this file's order, not its numbering's
+# — 2.0c, 2.0f, 2.0i, 2.0g, 2.0h is the sequence the checks actually run in,
+# the free and cheap ones ahead of every check that can spend, so the list
+# below reads down the file rather than up the requirement ladder. Reordering
+# it is a behavioural change, not a tidy-up.
+#
+# Each band is a plain function call, never a subshell, so an `exit 0` inside
+# one ends the whole cycle where it stands and nothing below it here runs; and
+# each sets the spine's own globals in place, so the ones the spine reads after
+# this returns (`backpressure_tripped`, `open_composition`, … — the file header
+# names them) are already set by the time it does.
 run_standdown_checks() {
   _standdown_forge_auth_identity
   _standdown_github_api_budget
