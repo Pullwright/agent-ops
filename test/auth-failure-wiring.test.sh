@@ -72,7 +72,13 @@ extract_block() {
   ' "$file"
 }
 
-auth_block="$(extract_block '^# 2\.0b GitHub credential check' '^# 2\.0c Free disk space' "$AGENT_CYCLE")"
+# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
+# helper (issue #2699), so the raw extraction up to 2.0c's heading also
+# carries this check's own closing `}` and 2.0c's own
+# `_standdown_disk_space() {` opening line — both stripped below, neither is
+# part of the check itself.
+auth_block="$(extract_block '^# 2\.0b GitHub credential check' '^# 2\.0c Free disk space' "$AGENT_CYCLE" \
+  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
 if [[ -z "$auth_block" ]]; then
   echo "FAIL - could not extract the GitHub credential check block from agent-cycle.sh — has it moved?" >&2
   exit 1

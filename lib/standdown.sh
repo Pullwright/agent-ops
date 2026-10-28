@@ -19,6 +19,13 @@
 # indistinguishable, to the rest of the cycle, from the inline block it
 # replaces. `exit 0` inside it ends the cycle exactly as it did inline: nothing
 # here runs inside a subshell.
+#
+# The ladder is one `_standdown_*` function per band, in file order below;
+# `run_standdown_checks` sits at the foot of the file and calls them in that
+# order. Everything the paragraph above says holds of each band individually —
+# each reads and writes the spine's globals directly, declares nothing `local`,
+# and is called as a plain function rather than a subshell.
+#
 # Defensive fallback for lib/stage-run.sh's stage_model_resolve_into and
 # lib/model-id.sh's model_key_is_set (issue #2247): several of this file's
 # own tests source this file alone and stub run_model_stage directly,
@@ -34,7 +41,7 @@ declare -F stage_model_resolve_into >/dev/null 2>&1 || stage_model_resolve_into(
   printf -v "$1" '%s' "$2"
 }
 
-run_standdown_checks() {
+_standdown_forge_auth_identity() {
 # --- 1.9 Forge authoring identity (D18 decision 1, agent-ops#607; the
 # on-demand credential seam, agent-ops#1021). Nothing here resolves or
 # exports a credential any more — that now happens per call, on demand,
@@ -54,7 +61,9 @@ if [[ "$forge_auth_source" == "gh-token-degraded" ]]; then
     --arg d "the forge authoring App credential (PULLWRIGHT_AUTHOR_APP_ID/_INSTALLATION_ID(S)/_PRIVATE_KEY_PATH) is configured but no token could be minted against this node's *default* installation — so every call the seam cannot attribute to a repository owner degrades to its fallback (PW_GH_DEGRADE_TOKEN, or GH_TOKEN), exactly as a node with none of them configured. Either the mint failed, or PULLWRIGHT_AUTHOR_INSTALLATION_ID is unset and only the per-owner map is configured" \
     '{detail: $d}')"
 fi
+}
 
+_standdown_github_api_budget() {
 # --- 2. Stand-down checks ---
 # 2.0 GitHub API budget (requirement 2.0). First of the stand-down checks
 # because it is the cheapest one: two points — one metered `GET /meta` for its
@@ -100,7 +109,9 @@ if (( github_min_core_budget > 0 || github_min_graphql_budget > 0 )); then
     exit 0
   fi
 fi
+}
 
+_standdown_github_credential_check() {
 # 2.0b GitHub credential check (requirement 2.0b, agent-ops#691). The same
 # free `/rate_limit` call classifies a 401, and a missing token, apart from
 # every other failure: either GitHub read the request and rejected the
@@ -186,7 +197,9 @@ if [[ "$gh_auth_verdict" == "unauthorized" ]]; then
   set_node_state_terminal externally-blocked unauthorized
   exit 0
 fi
+}
 
+_standdown_disk_space() {
 # 2.0c Free disk space (requirement 2.0c, agent-ops#756; both directories,
 # agent-ops#992). Free, like 2.0 and 2.0b: `df -Pk` costs nothing and touches
 # no network, so it runs ahead of every check below that can spend.
@@ -292,7 +305,9 @@ if (( min_free_workspace_bytes > 0 )); then
     exit 0
   fi
 fi
+}
 
+_standdown_host_memory() {
 # 2.0f Free host memory (requirement 2.0f). Free, and for the same reason as
 # 2.0c immediately above: reading `/proc/meminfo` touches no network and costs
 # nothing, so it runs ahead of every check below that can spend. 2.0c stands a
@@ -325,7 +340,9 @@ if (( min_free_memory_bytes > 0 )); then
     exit 0
   fi
 fi
+}
 
+_standdown_cgroup_memory_throttle() {
 # 2.0i Parent-cgroup memory throttle (requirement 2.0i, agent-ops#2469). Free,
 # and for the same reason as 2.0c/2.0f immediately above: every value this
 # reads is already bind-mounted read-only (the three MEMORY_CGROUP_PARENT_*
@@ -346,7 +363,9 @@ fi
 # starts, since the gather phase between here and there routinely takes
 # longer than the interval a throttle band can open and close in.
 memory_throttle_check
+}
 
+_standdown_host_budget() {
 # 2.0g Host budget (requirement 2.0g, agent-ops#757). Free, and for the same
 # reason as 2.0c/2.0f immediately above: this reads a file already sitting in
 # this node's own state_dir, no network and no docker socket of its own (the
@@ -403,7 +422,9 @@ if [[ "$host_budget_enforce" == "true" ]]; then
     fi
   fi
 fi
+}
 
+_standdown_model_credential_check() {
 # 2.0h Model credential check (requirement 2.0h, agent-ops#2308). The model
 # path has no equivalent of 2.0b above: the first thing that exercises
 # ANTHROPIC_API_KEY (or a subscription login) is the Co-Ordinator itself,
@@ -612,7 +633,9 @@ if ! (( DRY_RUN )); then
       '{container_started: $s, verdict: $v}' > "$cred_state_file" 2>/dev/null || true
   fi
 fi
+}
 
+_standdown_usage_limit_cooldown() {
 # 2.1 Usage-limit cooldown (fleet-wide: every node shares one Claude account,
 # so a limit any node hit stands this one down too). Two carriers of the same
 # signal, and the later resume wins: the log union is as fresh as the last
@@ -860,7 +883,9 @@ if (( resume_epoch > now_epoch )); then
     exit 0
   fi
 fi
+}
 
+_standdown_claim_gc() {
 # 2.1a Claim GC — sweep registry entries older than claim_ttl_hours (17a).
 # Every node runs it, because it needs no coordination: a registry delete is
 # sha-guarded, and a claim branch is deleted only if it is unmoved AND has no
@@ -870,7 +895,9 @@ fi
 if ! (( DRY_RUN )); then
   "$SCRIPT_DIR/lib/claim.sh" gc >>"$cycle_dir/claim.log" 2>&1 || true
 fi
+}
 
+_standdown_orphan_branch_sweep() {
 # 2.1b Orphan-branch sweep (requirement 17b) — the state the gc above leaves
 # behind on purpose. Retiring a moved branch's registry entry while keeping
 # its ref is right for the work (pushed commits are never deleted) and wrong
@@ -902,7 +929,9 @@ if ! (( DRY_RUN )); then
                2>>"$cycle_dir/orphan-sweep.err" || true)
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
 fi
+}
 
+_standdown_closing_keyword_sweep() {
 # 2.1c Post-merge closing-keyword sweep (requirement 17c) — the backstop for
 # requirement 25a's CI check: a merged, `pr_label`-labelled pull request that
 # named an issue (the `agent-ops:closes-issue` marker, requirement 23b) but
@@ -940,7 +969,9 @@ if ! (( DRY_RUN )); then
                2>>"$cycle_dir/closed-issue-sweep.err" || true)
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
 fi
+}
 
+_standdown_human_visibility_sweep() {
 # 2.1d Human-visibility sweep (requirement 38) — the periodic half of the same
 # guarantee requirement 38a keeps at the moment of handoff: every open, ready
 # pull request this system raised gets a live review request whether or not
@@ -1012,7 +1043,9 @@ if ! (( DRY_RUN )); then
     done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
   fi
 fi
+}
 
+_standdown_landing_retry_sweep() {
 # 2.1e Landing-retry sweep (TD-PPagop-26081701) — the tracked gap "## The
 # Landing Gate" and requirement 8d gate 5 both name: a pull request the
 # arming step already approved once, but could not land for a reason that
@@ -1041,7 +1074,9 @@ if ! (( DRY_RUN )); then
     done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
   fi
 fi
+}
 
+_standdown_classifier_escape_audit() {
 # 2.1f Classifier-escape audit (D18 Stage 2 exit criterion "zero classifier
 # escapes"; agent-ops#572) — nothing above re-checks the *outcome* of a
 # landing, only the decision that produced it: `scripts/detect-classifier-
@@ -1093,7 +1128,9 @@ if escape_login="$(approver_token_identity_login "")" && [[ -n "$escape_login" ]
     tail -n "+$(( escape_log_lines_before + 1 ))" "$log_file" >> "$union_log" 2>/dev/null || true
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
 fi
+}
 
+_standdown_reservation_release_retry_sweep() {
 # 2.1g Reservation-release retry sweep (TD-PPagop-26082427) — the durable
 # backstop for a `_techdebt_unfile` (lib/tech-debt-file.sh) DELETE that could
 # not land: rather than leaving an abandoned `td/<id>`/`td-record/<id>`
@@ -1123,7 +1160,9 @@ if ! (( DRY_RUN )); then
   done < <(timeout 120 "$SCRIPT_DIR/scripts/release-pending-reservations.sh" \
              2>>"$cycle_dir/reservation-release-sweep.err" || true)
 fi
+}
 
+_standdown_backpressure() {
 # 2.2 Back-pressure — across ALL configured repos, regardless of --repo.
 #
 # The stand-down is *deferred* rather than taken here (requirement 2.2a). Back-
@@ -1356,7 +1395,38 @@ if (( listing_truncated )); then
   backpressure_tripped=1
   open_composition="$open_composition — at least one repo's listing was truncated, so these are floors"
 fi
+}
 
+# run_standdown_checks — the ladder's orchestrator: one call per band, in the
+# order a cycle runs them. That order is this file's order, not its numbering's
+# — 2.0c, 2.0f, 2.0i, 2.0g, 2.0h is the sequence the checks actually run in,
+# the free and cheap ones ahead of every check that can spend, so the list
+# below reads down the file rather than up the requirement ladder. Reordering
+# it is a behavioural change, not a tidy-up.
+#
+# Each band is a plain function call, never a subshell, so an `exit 0` inside
+# one ends the whole cycle where it stands and nothing below it here runs; and
+# each sets the spine's own globals in place, so the ones the spine reads after
+# this returns (`backpressure_tripped`, `open_composition`, … — the file header
+# names them) are already set by the time it does.
+run_standdown_checks() {
+  _standdown_forge_auth_identity
+  _standdown_github_api_budget
+  _standdown_github_credential_check
+  _standdown_disk_space
+  _standdown_host_memory
+  _standdown_cgroup_memory_throttle
+  _standdown_host_budget
+  _standdown_model_credential_check
+  _standdown_usage_limit_cooldown
+  _standdown_claim_gc
+  _standdown_orphan_branch_sweep
+  _standdown_closing_keyword_sweep
+  _standdown_human_visibility_sweep
+  _standdown_landing_retry_sweep
+  _standdown_classifier_escape_audit
+  _standdown_reservation_release_retry_sweep
+  _standdown_backpressure
 }
 
 # memory_throttle_check — requirement 2.0i (agent-ops#2469). Defined at file

@@ -55,7 +55,13 @@ extract_block() {
   ' "$file"
 }
 
-memory_block="$(extract_block '^# 2\.0f Free host memory' '^# 2\.0i Parent-cgroup memory throttle' "$AGENT_CYCLE")"
+# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
+# helper (issue #2699), so the raw extraction up to 2.0i's heading also
+# carries this check's own closing `}` and 2.0i's own
+# `_standdown_cgroup_memory_throttle() {` opening line — both stripped
+# below, neither is part of the check itself.
+memory_block="$(extract_block '^# 2\.0f Free host memory' '^# 2\.0i Parent-cgroup memory throttle' "$AGENT_CYCLE" \
+  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
 if [[ -z "$memory_block" ]]; then
   echo "FAIL - could not extract the free-memory check block from lib/standdown.sh — has it moved?" >&2
   exit 1

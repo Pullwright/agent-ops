@@ -76,7 +76,13 @@ extract_block() {
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
 
-cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.1 Usage-limit cooldown' "$STANDDOWN")"
+# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
+# helper (issue #2699), so the raw extraction up to 2.1's heading also
+# carries this check's own closing `}` and 2.1's own
+# `_standdown_usage_limit_cooldown() {` opening line — both stripped below,
+# neither is part of the check itself.
+cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.1 Usage-limit cooldown' "$STANDDOWN" \
+  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
 if [[ -z "$cred_block" ]]; then
   echo "FAIL - could not extract the model-credential check block from lib/standdown.sh — has it moved?" >&2
   exit 1
