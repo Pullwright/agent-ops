@@ -215,6 +215,22 @@ assert_eq "index: anchor for IMPL AC 2" "impl-ac-2" \
   "$(cd "$repo" && jq -r '.labels["IMPL AC 2"].anchor' docs/spec/index.json)"
 assert_eq "index: anchor for IMPL AC 2a-i (hyphenated sub-item)" "impl-ac-2a-i" \
   "$(cd "$repo" && jq -r '.labels["IMPL AC 2a-i"].anchor' docs/spec/index.json)"
+assert_eq "index: entries carry no line number (agent-ops#2690)" "0" \
+  "$(cd "$repo" && jq '[.labels[] | select(has("line"))] | length' docs/spec/index.json)"
+
+# An edit that shifts every anchor below it in one file must not change any
+# entry belonging to a different file — the conflict class agent-ops#2690
+# reports, now closed by dropping the stored line number entirely.
+rev_r1_before="$(cd "$repo" && jq -c '.labels["REV R1"]' docs/spec/index.json)"
+sed -i '1i\
+\
+\
+\
+' "$repo/docs/spec/implementation/requirements/fixture.md"
+run "$repo" index >/dev/null
+rev_r1_after="$(cd "$repo" && jq -c '.labels["REV R1"]' docs/spec/index.json)"
+assert_eq "index: an edit to one file leaves another file's entry byte-identical" \
+  "$rev_r1_before" "$rev_r1_after"
 
 index_check_out="$(run "$repo" index --check)"
 index_check_status=$?
