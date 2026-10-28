@@ -442,29 +442,40 @@
     That drift check's own coverage is itself checked (`config_documented_value_coverage_gaps`,
     issue #2653): `config_documented_value_mismatches`'s `leaf_paths` walk
     decides where to stop descending the schema the same way it decides what
-    counts as a documented leaf — a node with no `properties` of its own,
-    after `$ref` resolution — so a key whose `$ref` target gains a
-    `properties` member (the dual-shape `modelIdOrSet`/`modelIdOrEmptyOrSet`
+    counts as a documented leaf — a node with no `properties` of its own
+    after `$ref` resolution, or one that carries `properties` alongside its
+    own `default` (issue #2674's and PR #2647's shared stop condition,
+    `has("properties") and not has("default")` deciding whether to recurse).
+    That second clause is what keeps a key whose `$ref` target carries its
+    own `properties` member (the dual-shape `modelIdOrSet`/`modelIdOrEmptyOrSet`
     PR #2647 points every `*_model` key at, carrying `properties.models`)
-    drops out of the walk silently, with no change to `config_documented_value_mismatches`'s
-    own output when the live config already matches what is documented — the
-    one case nothing else would notice. `config_documented_value_coverage_gaps`
+    from dropping out of the walk silently, with no change to
+    `config_documented_value_mismatches`'s own output when the live config
+    already matches what is documented — the one case nothing else would
+    notice. `config_documented_value_coverage_gaps`
     walks the schema independently, checking the documented-value condition
     at every node along the way rather than only the ones `leaf_paths`
     happens to stop at, and reports any key the two walks disagree on. A
     constructed schema and config — built from scratch rather than derived
     from `config.schema.json`, since the scenario is a property of the
     schema's own shape — assert this directly: a key is covered while its
-    `$ref` target carries no `properties`, and dropped the moment it gains
-    an empty one, with `config_documented_value_mismatches`'s own output
+    `$ref` target carries no `properties`, and still covered once it gains an
+    empty one (its own merged node still carries both `properties` and its
+    own `default`), with `config_documented_value_mismatches`'s own output
     unchanged across the mutation. Run over the shipped schema itself, the
-    same check is pinned to the exact two keys (`refinement_policy`,
-    `revert_rate_baseline`) it already finds uncovered there for an
-    unrelated reason — each carries its own `x-docs.value`/`default` naming
-    a whole documented object, but also carries `properties` of its own for
-    shape validation, so `leaf_paths` recurses past it the same way — filed
-    as #2674 rather than fixed here, so a third key dropping out of coverage
-    still turns this assertion red.
+    same check is pinned to empty — every documented key is reached,
+    including `refinement_policy` and `revert_rate_baseline`: each carries
+    its own `x-docs.value`/`default` naming a whole documented object
+    alongside `properties` of its own for shape validation, exactly the dual
+    shape the stop condition treats as a leaf, so neither drops out of
+    coverage (issue #2674). Pinned to empty, not merely asserted absent of
+    any particular name, so a key dropping out of
+    coverage still turns this assertion red. That both keys are checked
+    rather than merely reached is asserted on the drift itself: a config
+    resolving `refinement_policy` or `revert_rate_baseline` to anything
+    other than what the schema documents earns a `config_documented_value_mismatches`
+    mismatch naming the key, the same way `refiner_model` (issue #567) does
+    above.
 76. <a id="impl-ac-76"></a>**The prose configuration tables are generated from the schema, and
     regenerating them is gated (requirement 1b, component 16).**
     `scripts/render-config-table.sh` with no arguments run against this

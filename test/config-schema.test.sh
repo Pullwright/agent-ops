@@ -2053,6 +2053,20 @@ assert_eq "...and config_documented_value_coverage_gaps reports mykey as covered
 assert_eq "the shipped schema's own leaf_paths walk misses nothing — refinement_policy and revert_rate_baseline (issue #2674) are covered by the same has(\"default\") stop condition the model-set keys are" \
   "" "$(config_documented_value_coverage_gaps "$SCHEMA")"
 
+# Reachable is not the same as checked: config_documented_value_mismatches
+# must actually flag a live config whose refinement_policy or
+# revert_rate_baseline disagrees with what config.schema.json documents,
+# the same way it already does for refiner_model (issue #567) above —
+# otherwise leaf_paths stopping at the right node would be unexercised by
+# anything that fails when it regresses.
+refinement_policy_drifted="$(jq -c '.refinement_policy = {"issues": "preferred"}' "$BASE_CONFIG")"
+assert_contains "a refinement_policy that drifts from its documented value is flagged as a mismatch (issue #2674)" \
+  "refinement_policy" "$(config_documented_value_mismatches "$refinement_policy_drifted" "$SCHEMA")"
+
+revert_rate_baseline_drifted="$(jq -c '.revert_rate_baseline = {"source": "nope"}' "$BASE_CONFIG")"
+assert_contains "a revert_rate_baseline that drifts from its documented value is flagged as a mismatch (issue #2674)" \
+  "revert_rate_baseline" "$(config_documented_value_mismatches "$revert_rate_baseline_drifted" "$SCHEMA")"
+
 guard_app="$tmp/guard-app"
 mkdir -p "$guard_app"
 cp "$SCRIPT_DIR/agent-cycle.sh" "$SCHEMA" "$guard_app/"
