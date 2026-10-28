@@ -132,7 +132,6 @@
       "label": "1g-iii",
       "anchor": "impl-ac-1g-iii",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
-      "line": 743,
       "title": "The four hand-pinned toolchain `ARG` defaults in"
     },
     "IMPL AC 2m": {
@@ -1974,7 +1973,6 @@
       "label": "10b",
       "anchor": "impl-c-10b",
       "file": "docs/spec/implementation/components/components-03.md",
-      "line": 1192,
       "title": "`scripts/check-docker-toolchain-drift.sh` and"
     },
     "IMPL 40": {
