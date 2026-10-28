@@ -773,8 +773,13 @@ oblige anyone to edit a test.
    different feeds, read through two different resolvers, never one path
    reused for both. `lib/github-limit.sh` is sourced ahead of everything
    else, exactly as component 10a's own script does, so a rate-limit refusal
-   on either GitHub releases lookup, or on the issue-filing call itself, is
-   waited out rather than read as "could not check".
+   on either GitHub releases lookup is waited out rather than read as "could
+   not check" — the issue-filing call gets that same coverage only because
+   the workflow's own `GH_TOKEN` (`secrets.GITHUB_TOKEN`) is passed through
+   as `techdebt_file_debt`'s `TOKEN` argument; the tokenless default every
+   other `techdebt_file_debt` caller relies on execs `gh` directly (`env -u
+   GH_TOKEN gh`) rather than the shadowed shell function, and would bypass
+   this coverage entirely.
    On any drift, filing goes through `lib/tech-debt-file.sh`'s
    `techdebt_file_debt` (component 23d) under a stable title, so a second
    scheduled run that finds the same or further drift comments on the issue
