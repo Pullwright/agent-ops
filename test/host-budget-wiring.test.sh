@@ -46,27 +46,13 @@ assert_eq() {
   fi
 }
 
-extract_block() {
-  local start_re="$1" end_re="$2" file="$3"
-  BLOCK_START_RE="$start_re" BLOCK_END_RE="$end_re" awk '
-    $0 ~ ENVIRON["BLOCK_START_RE"] { on = 1 }
-    on                             { print }
-    on && $0 ~ ENVIRON["BLOCK_END_RE"] { exit }
-  ' "$file"
+extract() {  # <function name>
+  awk -v fn="^$1\\(\\) \\{" '$0 ~ fn { on = 1 } on { print } on && /^\}$/ { exit }' "$AGENT_CYCLE"
 }
 
-# Ends at 2.0h's own heading, the next block down: 2.0g is the last of the
-# free, no-network checks, and 2.0h — the credential preflight, which spends
-# — follows it. Stopping at 2.1 instead would lift that preflight in too,
-# unstubbed, which is this file's own subject in neither sense.
-# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
-# helper (issue #2699), so the raw extraction also carries this check's own
-# closing `}` and 2.0h's own `_standdown_model_credential_check() {` opening
-# line — both stripped below, neither is part of the check itself.
-budget_block="$(extract_block '^# 2\.0g Host budget' '^# 2\.0h Model credential check' "$AGENT_CYCLE" \
-  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
+budget_block="$(extract _standdown_host_budget | sed '1d;$d')"
 if [[ -z "$budget_block" ]]; then
-  echo "FAIL - could not extract the host-budget check block from lib/standdown.sh — has it moved?" >&2
+  echo "FAIL - could not extract _standdown_host_budget from lib/standdown.sh — has it moved?" >&2
   exit 1
 fi
 if ! grep -q 'host_budget_mem_verdict' <<<"$budget_block"; then

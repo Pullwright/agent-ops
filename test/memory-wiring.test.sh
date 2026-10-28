@@ -46,24 +46,13 @@ assert_eq() {
   fi
 }
 
-extract_block() {
-  local start_re="$1" end_re="$2" file="$3"
-  BLOCK_START_RE="$start_re" BLOCK_END_RE="$end_re" awk '
-    $0 ~ ENVIRON["BLOCK_START_RE"] { on = 1 }
-    on                             { print }
-    on && $0 ~ ENVIRON["BLOCK_END_RE"] { exit }
-  ' "$file"
+extract() {  # <function name>
+  awk -v fn="^$1\\(\\) \\{" '$0 ~ fn { on = 1 } on { print } on && /^\}$/ { exit }' "$AGENT_CYCLE"
 }
 
-# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
-# helper (issue #2699), so the raw extraction up to 2.0i's heading also
-# carries this check's own closing `}` and 2.0i's own
-# `_standdown_cgroup_memory_throttle() {` opening line — both stripped
-# below, neither is part of the check itself.
-memory_block="$(extract_block '^# 2\.0f Free host memory' '^# 2\.0i Parent-cgroup memory throttle' "$AGENT_CYCLE" \
-  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
+memory_block="$(extract _standdown_host_memory | sed '1d;$d')"
 if [[ -z "$memory_block" ]]; then
-  echo "FAIL - could not extract the free-memory check block from lib/standdown.sh — has it moved?" >&2
+  echo "FAIL - could not extract _standdown_host_memory from lib/standdown.sh — has it moved?" >&2
   exit 1
 fi
 if ! grep -q 'memory_verdict' <<<"$memory_block"; then

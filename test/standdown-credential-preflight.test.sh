@@ -62,13 +62,8 @@ state_verdict() {
   jq -r '.verdict // ""' "$1/.credential-preflight.json" 2>/dev/null
 }
 
-extract_block() {
-  local start_re="$1" end_re="$2" file="$3"
-  BLOCK_START_RE="$start_re" BLOCK_END_RE="$end_re" awk '
-    $0 ~ ENVIRON["BLOCK_START_RE"] { on = 1 }
-    on                             { print }
-    on && $0 ~ ENVIRON["BLOCK_END_RE"] { exit }
-  ' "$file"
+extract() {  # <function name>
+  awk -v fn="^$1\\(\\) \\{" '$0 ~ fn { on = 1 } on { print } on && /^\}$/ { exit }' "$STANDDOWN"
 }
 
 # shellcheck source=lib/stage-attempt.sh
@@ -76,15 +71,9 @@ extract_block() {
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
 
-# lib/standdown.sh wraps each stand-down band in its own `_standdown_*`
-# helper (issue #2699), so the raw extraction up to 2.1's heading also
-# carries this check's own closing `}` and 2.1's own
-# `_standdown_usage_limit_cooldown() {` opening line — both stripped below,
-# neither is part of the check itself.
-cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.1 Usage-limit cooldown' "$STANDDOWN" \
-  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
+cred_block="$(extract _standdown_model_credential_check | sed '1d;$d')"
 if [[ -z "$cred_block" ]]; then
-  echo "FAIL - could not extract the model-credential check block from lib/standdown.sh — has it moved?" >&2
+  echo "FAIL - could not extract _standdown_model_credential_check from lib/standdown.sh — has it moved?" >&2
   exit 1
 fi
 if ! grep -q 'run_model_stage credential-probe' <<<"$cred_block"; then
