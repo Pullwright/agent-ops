@@ -285,6 +285,13 @@ A viewer fetching this node's `data.js` found it slower than `pager_dashboard_fe
 - **Is a fault?** Yes.
 - **What to do:** Check network/tailnet conditions to that node and the size of its `data.js` directly.
 
+### `memory-cgroup`
+
+A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked: nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class).
+
+- **Is a fault?** Yes.
+- **What to do:** Set `memory.high` on the node's own parent cgroup directly (see `deploy/docker/compose.yaml` for the recipe that survives a roll) — this is a host-configuration fix, never one this pipeline can perform on its own behalf.
+
 ### `idle-with-demand`
 
 A node's own selection/stand-down history shows real demand going unclaimed for several cycles running.
