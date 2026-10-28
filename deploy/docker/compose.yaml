@@ -770,7 +770,7 @@ services:
   # while nothing on any network can. The privacy model of DASHBOARD-SPEC
   # survives the move to containers without the server changing a line.
   tailscale:
-    image: tailscale/tailscale:v1.104.1
+    image: tailscale/tailscale:v1.104.2
     profiles: [tailnet]
     hostname: ${NODE_NAME:-agent-ops}
     # Bounded, unlike every other service in this file: `unless-stopped`
