@@ -483,6 +483,63 @@ assert_eq "  ... issue #5 was closed" "1" \
 assert_eq "  ... issue #6 was left alone (no footer; the issue URL outranks the merged pull URL cited first)" "0" \
   "$(grep -c '^issue close 6 ' "$GH_CALLS_FILE")"
 
+# --- page-outlived-item: orphaned/renamed invariant key (agent-ops#2575) ---
+#
+# #2372's own real shape: a page filed under `fit-ladder-pinned`
+# (pager_file's own `ref: pager:<key>` footer, lib/pager.sh) after that
+# invariant key was renamed to `coordinator-fit-ladder-pinned` and
+# re-registered under the new name. `pager_register_builtin_invariants`
+# above has already registered every real built-in key — `fit-ladder-pinned`
+# absent among them — so this needs no fixture registry of its own. Page #8
+# carries the still-registered key with no concluded item (left alone); #9
+# carries the same still-registered key but its own item has concluded,
+# proving the orphaned-key check does not crowd out the pre-existing
+# item-concluded one for a page whose key is still live.
+: > "$GH_CALLS_FILE"
+STUB_GH_LIST_BY_LABEL=(
+  [enabler-escalation]="[]"
+  [pw::pager]="$(jq -nc \
+    --arg b7 'Pager: fit-ladder-pinned fired.
+
+---
+Filed automatically by lib/pager.sh (issue #1278).
+ref: pager:fit-ladder-pinned' \
+    --arg b8 'Pager: coordinator-fit-ladder-pinned fired.
+
+---
+Filed automatically by lib/pager.sh (issue #1278).
+ref: pager:coordinator-fit-ladder-pinned' \
+    --arg b9 'This page is about https://github.com/o/r/issues/40 among other things.
+
+---
+Filed automatically by lib/pager.sh (issue #1278).
+ref: pager:coordinator-fit-ladder-pinned' \
+    '[{number:7,url:"https://github.com/o/r/issues/7",body:$b7},
+      {number:8,url:"https://github.com/o/r/issues/8",body:$b8},
+      {number:9,url:"https://github.com/o/r/issues/9",body:$b9}]')"
+)
+STUB_GH_ISSUE_STATE_MAP="https://github.com/o/r/issues/40=CLOSED"
+
+verdict="$(pager_eval_page_outlived_item "" "")"
+evidence="$(jq -r '.evidence' <<<"$verdict")"
+assert_eq "a retired-key page, a live-key page with no concluded item, and a live-key page with a concluded item: fires" \
+  "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... names the one orphaned-key page" "1" "$(grep -c 'key no longer registered' <<<"$evidence")"
+assert_eq "  ... and the one item-concluded page" "1" "$(grep -c 'item already concluded' <<<"$evidence")"
+assert_eq "  ... page #7 (key fit-ladder-pinned, retired) is named" "1" "$(grep -c '#7' <<<"$evidence")"
+assert_eq "  ... page #8 (key coordinator-fit-ladder-pinned, still registered, no concluded item) is not named" "0" \
+  "$(grep -c '#8' <<<"$evidence")"
+assert_eq "  ... page #9 (same still-registered key, its own item closed) is named" "1" "$(grep -c '#9' <<<"$evidence")"
+assert_reduced_verdict_eq page-outlived-item "" /dev/null
+
+: > "$GH_CALLS_FILE"
+outcome="$(pager_remedy_page_outlived_item page-outlived-item "irrelevant, re-derived live")"
+assert_eq "the remedy closes the orphaned-key page and the concluded-item page, leaving the live key's open page alone" \
+  "closed 2 outlived page(s)" "$outcome"
+assert_eq "  ... issue #7 (retired key) was closed" "1" "$(grep -c '^issue close 7 ' "$GH_CALLS_FILE")"
+assert_eq "  ... issue #8 (live key, own item still open) was left alone" "0" "$(grep -c '^issue close 8 ' "$GH_CALLS_FILE")"
+assert_eq "  ... issue #9 (live key, own item concluded) was closed" "1" "$(grep -c '^issue close 9 ' "$GH_CALLS_FILE")"
+
 # --- firing-missed (agent-ops#1282) ---------------------------------------------
 
 cycle_ev() {  # cycle_ev TS NODE CYCLE EVENT [EXTRA_JSON]

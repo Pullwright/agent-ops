@@ -27,8 +27,15 @@
     when a stale node's own disagreement would otherwise break the
     unanimity; `page-outlived-item` fires when a stubbed `gh issue
     list`/`gh pr view` shows an open page's own linked PR merged or closed,
-    and its remedy closes exactly the pages found outlived, none still
-    open. The same file also drives agent-ops#1282's five peer-vantage
+    and also when a stubbed listing's page carries a `ref: pager:<key>`
+    footer naming a key absent from the registered built-ins
+    (agent-ops#2575) — proving the orphaned-key check fires and closes a
+    page on its own, leaves a page whose key is still registered and whose
+    own item has not concluded untouched, and still closes a still-registered
+    key's page whose own item has concluded, so the two checks coexist
+    rather than one crowding out the other — and its remedy closes exactly
+    the pages found outlived (by either reason), none still open. The same
+    file also drives agent-ops#1282's five peer-vantage
     invariants against fixture union logs and heartbeat sets:
     `firing-missed` fires on an active node whose newest `cycle-start` or
     `cycle-skipped` is past 2× a configured interval with no lock held, but

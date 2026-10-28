@@ -621,9 +621,11 @@ M15a. <a id="mon-m15a"></a>**The Monitor never closes a page.** The pager's life
    reach the dashboard's own state read. Closing is `pager_close`'s — reached
    when the fact behind the key clears — and `page-outlived-item`'s, the
    invariant that retires a page whose own linked pull request or issue has
-   gone. The prompt states this rule to the stage as well as the spec stating
-   it here, because a model asked to "deal with" a page will reach for the
-   close button otherwise.
+   gone terminal, or whose own `ref: pager:<key>` footer names an invariant
+   key absent from the current registry (agent-ops#2575). The prompt
+   states this rule to the stage as well as the spec stating it here,
+   because a model asked to "deal with" a page will reach for the close
+   button otherwise.
 
 ### The report
 
