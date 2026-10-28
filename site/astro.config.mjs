@@ -38,16 +38,6 @@ export default defineConfig({
             if (file.endsWith('components-02.md') && link.includes('extended-notes-')) {
               return true;
             }
-            // Pre-existing stale citation in docs/reference/configuration.md
-            // (the heading it names no longer exists in
-            // docs/guides/contributing/README.md) — deferred as tech debt
-            // rather than fixed here; see this pull request's `Defers:` line.
-            if (
-              file.endsWith('reference/configuration.md') &&
-              link.includes('making-a-change-when-every-instance-is-a-container')
-            ) {
-              return true;
-            }
             return false;
           },
         }),
