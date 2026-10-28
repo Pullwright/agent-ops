@@ -740,3 +740,67 @@ oblige anyone to edit a test.
    checked as a document, while a `prompts/` file carrying one is; two
    documents in one file are each found at their own line; and an anonymous
    shorthand query is wrapped like any other.
+1g-iii. <a id="impl-ac-1g-iii"></a>**The four hand-pinned toolchain `ARG` defaults in
+   `deploy/docker/Dockerfile` — `SUPERCRONIC_VERSION`, `SHELLCHECK_VERSION`,
+   `CLAUDE_CODE_VERSION`, `GROK_BUILD_VERSION` — are checked against their own
+   upstream release feed nightly rather than at merge time, and a stale pin
+   is reported as an issue rather than fixed.** `.github/workflows/
+   docker-toolchain-drift.yml` runs `./scripts/check-docker-toolchain-drift.sh`
+   on a daily schedule (component 10b). None of these four is visible to any
+   Dependabot ecosystem — unlike the base image and the compose/Action
+   manifests `.github/dependabot.yml` already covers — because each is a
+   bare version string an install step substitutes into a URL or an `npm
+   install`, not a manifest entry any ecosystem parses (issue #2697). Being
+   off the pull-request path, like component 10a's GraphQL check beside it,
+   is the point: the drift this catches is an upstream release, which does
+   not arrive with a commit to this repository, so gating a merge on it
+   would cost every pull request for no return.
+   The script never bumps a pin and never opens a pull request — issue
+   #2708's own decide-tactical decision rejected that shape, because the two
+   GitHub-released pins (`SUPERCRONIC_VERSION`, `SHELLCHECK_VERSION`) each
+   sit beside two architecture-specific checksums
+   (`*_SHA1SUM_{AMD64,ARM64}`/`*_SHA256_{AMD64,ARM64}`), so a correct bump
+   recomputes three values, not one, which is implementer work rather than
+   safe template substitution in a scheduled job, and because the rejected
+   alternative — accepting manual review as the permanent model — is a
+   standing human obligation, owner-only under requirement 36a condition 5.
+   `SUPERCRONIC_VERSION` and `SHELLCHECK_VERSION` resolve against GitHub's
+   releases API for `aptible/supercronic` and `koalaman/shellcheck`
+   respectively (the same releases each one's own install step in
+   `deploy/docker/Dockerfile` downloads from); `CLAUDE_CODE_VERSION` and
+   `GROK_BUILD_VERSION` resolve against the npm registry's own `latest`
+   dist-tag for `@anthropic-ai/claude-code` and `@xai-official/grok` — two
+   different feeds, read through two different resolvers, never one path
+   reused for both. `lib/github-limit.sh` is sourced ahead of everything
+   else, exactly as component 10a's own script does, so a rate-limit refusal
+   on either GitHub releases lookup, or on the issue-filing call itself, is
+   waited out rather than read as "could not check".
+   On any drift, filing goes through `lib/tech-debt-file.sh`'s
+   `techdebt_file_debt` (component 23d) under a stable title, so a second
+   scheduled run that finds the same or further drift comments on the issue
+   a prior run already opened rather than filing a duplicate — the "updates
+   the existing open one" half of the behaviour falls out of that dedup
+   rather than this script tracking any state of its own between runs. The
+   filed issue is labelled `pw::type:tech-debt` for the ordinary tech-debt
+   gatherer to serve, never a pull request: bumping a pin, including
+   recomputing the two GitHub-released pins' checksums, happens afterward as
+   ordinary selected implementer work. The two GitHub-released pins' own
+   issue text additionally names the checksum recompute, so the implementer
+   who eventually picks up the filed issue is not surprised that the bump
+   moves three values.
+   Exit 0: every pin's upstream version was resolved — whether or not any had
+   drifted, and whether a drift was newly filed or commented onto an
+   existing issue. Exit 1: a pin had drifted but the filing itself failed.
+   Exit 2: at least one pin's upstream version could not be resolved at
+   all — never reported as clean, and never as drift, the same convention
+   component 10a's own exit contract uses. `--list` prints every pin and its
+   resolved upstream version and files nothing, never returning 1.
+   `test/docker-toolchain-drift.test.sh` passes: stubbed against both a `gh`
+   and a `curl` recorder — never the real GitHub releases API or the real
+   npm registry, the same reason component 10a's own test stubs `gh` rather
+   than asking GitHub — it asserts no drift files nothing; a drifted pin
+   with no existing open issue opens one naming the stale pin, its pinned
+   and upstream versions, and the checksum-recompute note; a drifted pin
+   with an existing open issue comments on it instead of opening a second
+   one; an unresolvable upstream version exits 2 and files nothing; and
+   `--list` prints every pin without filing. Must pass `shellcheck`.
