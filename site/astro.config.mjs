@@ -94,12 +94,18 @@ export default defineConfig({
         {
           label: 'Audits and investigations',
           items: [
-            { label: 'Phase 1 Poetic-specifics audit', link: '/phase-1-poetic-specifics-audit/' },
-            { label: 'Vocabulary sweep #679 audit', link: '/vocabulary-sweep-679-audit/' },
-            { label: 'Pullwright day-one autonomy', link: '/pullwright-day-one-autonomy/' },
-            { label: 'Pullwright rehoming', link: '/pullwright-rehoming/' },
+            // These five live in docs/records/, so sync-docs.mjs lands them
+            // under the records/ slug prefix; docs/CONSUMER-EXTRACTION-PLAN.md
+            // is still a top-level docs/ file and keeps a top-level slug.
+            {
+              label: 'Phase 1 Poetic-specifics audit',
+              link: '/records/phase-1-poetic-specifics-audit/',
+            },
+            { label: 'Vocabulary sweep #679 audit', link: '/records/vocabulary-sweep-679-audit/' },
+            { label: 'Pullwright day-one autonomy', link: '/records/pullwright-day-one-autonomy/' },
+            { label: 'Pullwright rehoming', link: '/records/pullwright-rehoming/' },
             { label: 'Consumer extraction plan', link: '/consumer-extraction-plan/' },
-            { label: 'Provider seam audit', link: '/provider-seam-audit/' },
+            { label: 'Provider seam audit', link: '/records/provider-seam-audit/' },
           ],
         },
         {
