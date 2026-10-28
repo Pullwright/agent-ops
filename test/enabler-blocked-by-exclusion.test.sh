@@ -375,6 +375,24 @@ no_stamp_result="$(run_open_blocked_by_block "$no_stamp_ordered" "$no_stamp_elig
 assert_eq "a candidate whose repo carries no expensive_gather stamp is left eligible (no stamp reads as fresh)" "1" \
   "$(jq '[.eligible[] | select(.item == "44")] | length' <<<"$no_stamp_result")"
 
+# --- a stale stamp carrying no gathered_at at all is left alone too ------
+# The node had no cache for that repo to load, so `lib/candidate-gather.sh`
+# stamped `gathered_at: null`. There is no timestamp to compare a
+# `blocked_ts` against, so there is no narrow set left to take — and the
+# `gathered_at != ""` guard is what holds the line: jq's own `"…" > null` is
+# *true*, so without it every eligible candidate in such a repo would be
+# live-re-checked, which is precisely the per-candidate check issue #2603
+# removed for cost. The mocked `gh` reads would exclude this candidate if the
+# re-check ran, so the surviving entry is what pins the guard.
+null_at_ordered='[{"slug": "o/r", "expensive_gather": {"fresh": false, "gathered_at": null}}]'
+null_at_eligible='[{"repo": "o/r", "item": "45", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+null_at_gh_live='{"o/r#45": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state": "open"}}'
+null_at_result="$(run_open_blocked_by_block "$null_at_ordered" "$null_at_eligible" '{}' '[]' '{}' "$null_at_gh_live")"
+assert_eq "a stale stamp with no gathered_at is left eligible, never live-re-checked" "1" \
+  "$(jq '[.eligible[] | select(.item == "45")] | length' <<<"$null_at_result")"
+assert_eq "  ... and nothing is logged for it" "" \
+  "$(jq -r '.logged' <<<"$null_at_result")"
+
 # --- the live re-check reads the *whole* comment thread, not REST's own ---
 # --- first page: the `Blocked-by:` line sits at the end of a thread ------
 # A 31-comment thread whose `Blocked-by:` line is the newest comment. REST's

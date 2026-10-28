@@ -470,6 +470,16 @@
     and the stage posts it at the moment it records the block, which is the
     very thing the `blocked_ts` gate above selects for.
 
+    A stamp reporting `fresh` as `false` with no `gathered_at` at all — the
+    node had no cache for that repo to load, so `lib/candidate-gather.sh`
+    stamped the timestamp `null` — is left alone too, despite being the
+    most stale reading of the three: with no timestamp to compare a
+    `blocked_ts` against there is no narrow set left to take, and testing
+    every eligible candidate in that repo is the per-candidate live check
+    issue #2603 removed for cost. The omission costs what this requirement
+    already bounds — one Enabler engagement — and stands only until that
+    repo's own next expensive gather writes a cache to compare against.
+
     The two ways a live read can fail here go in opposite directions, and
     both match what `issue_blocked_by_ref` already does at gather time:
 
