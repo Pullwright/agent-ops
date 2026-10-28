@@ -1217,7 +1217,16 @@
    resolvers, never one path reused for both. `lib/github-limit.sh`
    (component 2a's own rate-limit module) is sourced first, exactly as
    component 10a beside it, so a rate-limit refusal on a releases lookup or
-   on the filing call itself is waited out rather than read as unable.
+   on the filing call itself is waited out rather than read as unable — the
+   filing call gets that coverage only because the workflow's own `GH_TOKEN`
+   (`secrets.GITHUB_TOKEN`) is passed through as `techdebt_file_debt`'s
+   `TOKEN` argument. A GitHub Actions runner carries no stored `gh auth
+   login` identity, so the tokenless default every other `techdebt_file_debt`
+   caller's Enabler path relies on would run every dedup/comment/create call
+   this script makes unauthenticated, and — because `lib/tech-debt-file.sh`'s
+   tokenless branch execs `gh` via `env -u GH_TOKEN` rather than calling the
+   shadowed shell function — outside `lib/github-limit.sh`'s rate-limit
+   coverage too.
    On drift, `lib/tech-debt-file.sh`'s `techdebt_file_debt` (component 23d)
    files — or, under its own title-dedup, comments on — a `pw::type:
    tech-debt`-labelled issue naming every stale pin, its pinned and upstream

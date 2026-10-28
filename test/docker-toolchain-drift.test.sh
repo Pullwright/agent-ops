@@ -50,6 +50,7 @@ cat > "$tmp_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 tmp_dir="$(cd "$(dirname "$0")" && pwd)"
 args=("$@")
+printf '%s %s\n' "${GH_TOKEN:-<none>}" "${args[*]}" >> "$tmp_dir/calls"
 if [[ "${args[0]:-}" == "api" ]]; then
   case "${args[1]:-}" in
     repos/aptible/supercronic/releases/latest)
@@ -106,9 +107,17 @@ esac
 STUB
 chmod +x "$tmp_dir/curl"
 
+# The workflow (.github/workflows/docker-toolchain-drift.yml) runs this
+# script with GH_TOKEN set from secrets.GITHUB_TOKEN for the whole step — a
+# GitHub Actions runner carries no stored `gh auth login` identity, so every
+# run_check call below reproduces that rather than the tokenless, locally-
+# authenticated case the stub would otherwise paper over.
+ci_token="ci-gh-token-abc123"
+
 run_check() {
-  rm -f "$tmp_dir"/create_titles "$tmp_dir"/create_log "$tmp_dir"/comment_log "$tmp_dir"/comment_numbers
+  rm -f "$tmp_dir"/create_titles "$tmp_dir"/create_log "$tmp_dir"/comment_log "$tmp_dir"/comment_numbers "$tmp_dir"/calls
   PATH="$tmp_dir:$PATH" DOCKER_DRIFT_DOCKERFILE="$dockerfile" DOCKER_DRIFT_REPO="Example/repo" \
+    GH_TOKEN="$ci_token" \
     "$CHECK" "$@"
 }
 
@@ -136,6 +145,10 @@ assert_eq "drift+new: names the pinned version" "yes" "$(saw 'v0.2.47' "$body")"
 assert_eq "drift+new: names the upstream version" "yes" "$(saw 'v0.2.51' "$body")"
 assert_eq "drift+new: mentions the checksum recompute" "yes" "$(saw 'recomputed' "$body")"
 assert_eq "drift+new: no comment on an existing issue" "no" "$([[ -f "$tmp_dir/comment_log" ]] && echo yes || echo no)"
+calls="$(cat "$tmp_dir/calls" 2>/dev/null)"
+assert_eq "drift+new: dedup issue list carried GH_TOKEN" "yes" "$(saw "^$ci_token issue list" "$calls")"
+assert_eq "drift+new: issue create carried GH_TOKEN" "yes" "$(saw "^$ci_token issue create" "$calls")"
+assert_eq "drift+new: no filing call ran tokenless" "0" "$(grep -c '^<none> issue' <<<"$calls")"
 
 # --- 3. drift on one pin, an open issue already covers it: comments -------
 printf '[{"number":42,"url":"https://github.com/Example/repo/issues/42","title":"Docker toolchain pins have drifted from upstream","body":"old"}]' \
@@ -144,6 +157,10 @@ out="$(run_check)"; rc=$?
 assert_eq "drift+existing: exit 0" "0" "$rc"
 assert_eq "drift+existing: no new issue created" "no" "$([[ -f "$tmp_dir/create_log" ]] && echo yes || echo no)"
 assert_eq "drift+existing: commented on #42" "42" "$(cat "$tmp_dir/comment_numbers" 2>/dev/null)"
+calls="$(cat "$tmp_dir/calls" 2>/dev/null)"
+assert_eq "drift+existing: dedup issue list carried GH_TOKEN" "yes" "$(saw "^$ci_token issue list" "$calls")"
+assert_eq "drift+existing: issue comment carried GH_TOKEN" "yes" "$(saw "^$ci_token issue comment" "$calls")"
+assert_eq "drift+existing: no filing call ran tokenless" "0" "$(grep -c '^<none> issue' <<<"$calls")"
 
 # --- 4. upstream unresolvable: unable, never reported as clean or drift ---
 printf '[]' > "$tmp_dir/issue_list_json"

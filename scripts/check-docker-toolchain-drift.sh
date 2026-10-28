@@ -32,13 +32,21 @@
 # duplicate, which is also how "updates the existing open one" is satisfied
 # without this script tracking any state of its own between runs. Labelled
 # pw::type:tech-debt, the same label scripts/gather-tech-debt.sh already
-# serves from.
+# serves from. The workflow's own GH_TOKEN (.github/workflows/
+# docker-toolchain-drift.yml's `secrets.GITHUB_TOKEN`) is passed through as
+# techdebt_file_debt's TOKEN argument: a GitHub Actions runner carries no
+# stored `gh auth login` identity, so the tokenless default every other
+# caller's Enabler path relies on would leave every dedup/comment/create call
+# inside the filing helper unauthenticated here.
 #
 # lib/github-limit.sh is sourced ahead of it for the same reason
 # check-graphql-drift.sh sources it: this shadows `gh` for every call below,
 # including the two GitHub releases lookups and techdebt_file_debt's own
 # filing call, so a rate-limit refusal on any of them is waited out rather
-# than read as "could not check".
+# than read as "could not check". The filing call only gets that coverage
+# because it carries GH_TOKEN as above — `_techdebt_gh` (lib/tech-debt-file.sh)
+# runs a tokenless call through `env -u GH_TOKEN gh`, which execs the `gh`
+# binary directly and bypasses this shadow.
 #
 # Usage:
 #   ./scripts/check-docker-toolchain-drift.sh           # check, file on drift
@@ -188,7 +196,7 @@ trap 'rm -f "$body_file"' EXIT
 provenance="Filed by the scheduled docker-toolchain-drift check (scripts/check-docker-toolchain-drift.sh), run ${GITHUB_RUN_ID:+${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-$REPO}/actions/runs/$GITHUB_RUN_ID}."
 
 result="$(techdebt_file_debt "$REPO" "Docker toolchain pins have drifted from upstream" \
-  "$(cat "$body_file")" "$provenance")" || result=""
+  "$(cat "$body_file")" "$provenance" "${GH_TOKEN:-}")" || result=""
 
 if [[ -z "$result" ]]; then
   printf '::error::could not file or update the drift issue in %s\n' "$REPO" >&2
