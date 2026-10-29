@@ -1199,12 +1199,15 @@ config_documented_value_mismatches() {
 #
 # `leaf_paths` decides where to stop descending the schema the same way it
 # decides what counts as a documented leaf: a node is eligible to be checked
-# exactly when it has no `properties` of its own, after `$ref` resolution.
-# Conflating "does this node carry a documented value" with "should the walk
-# recurse past it" is how issue #2653 happened — PR #2647 points every
+# when it has no `properties` of its own, after `$ref` resolution, or when
+# it has `properties` but also names its own `default` — the dual-shape
+# case (`modelIdOrSet`/`modelIdOrEmptyOrSet`) that still counts it as a
+# leaf. Conflating "does this node carry a documented value" with "should
+# the walk recurse past it" is why this function exists: without that
+# `default` exception, issue #2653 happened when PR #2647 pointed every
 # `*_model` key at a dual-shape `$ref` target that gained a `properties`
-# member of its own, and the whole model band dropped out of `leaf_paths`
-# silently, with no `[warn]` line lost to notice it by. This walk asks the
+# member of its own, and the whole model band silently dropped out of
+# `leaf_paths`, with no `[warn]` line lost to notice it by. This walk asks the
 # two questions separately: `documented_paths` recurses into `properties`
 # wherever present, exactly as `leaf_paths` does, but it checks the
 # documented-value condition at *every* node it visits along the way, not
