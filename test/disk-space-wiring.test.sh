@@ -61,18 +61,13 @@ extract_block() {
   ' "$file"
 }
 
-# Ends at 2.0f's own heading, not 2.1's: requirement 2.0f's free-memory gate
-# (test/memory-wiring.test.sh) sits between them, and extracting through it
-# would eval that block here too — where its helpers are not stubbed, so the
-# fall-through cases below would abort under `set -e` and read as a false
-# "never fell through". lib/standdown.sh now wraps each stand-down band in
-# its own `_standdown_*` helper (issue #2699), so the raw extraction also
-# carries this check's own closing `}` and 2.0f's `_standdown_host_memory() {`
-# opening line, both stripped below — neither is part of the check itself.
-disk_block="$(extract_block '^# 2\.0c Free disk space' '^# 2\.0f Free host memory' "$AGENT_CYCLE" \
-  | grep -vE '^}$|^_standdown_[a-z_]+\(\) \{$')"
+extract() {  # <function name>
+  awk -v fn="^$1\\(\\) \\{" '$0 ~ fn { on = 1 } on { print } on && /^\}$/ { exit }' "$AGENT_CYCLE"
+}
+
+disk_block="$(extract _standdown_disk_space | sed '1d;$d')"
 if [[ -z "$disk_block" ]]; then
-  echo "FAIL - could not extract the free-disk-space check block from lib/standdown.sh — has it moved?" >&2
+  echo "FAIL - could not extract _standdown_disk_space from lib/standdown.sh — has it moved?" >&2
   exit 1
 fi
 if ! grep -q 'disk_space_verdict' <<<"$disk_block"; then
