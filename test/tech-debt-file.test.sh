@@ -22,6 +22,11 @@
 #     own wording) never matches by this path, and neither does a PR number
 #     that is merely a digit prefix of one the body names (`#25` against a
 #     body naming only `#2567`).
+#   - **PROVENANCE naming a pull request earns the filed/commented body a
+#     `Blocked-by: <owner/repo>#<n>` line** naming that same pull request
+#     (agent-ops#2721), so requirement 34j's existing live check holds the
+#     record out of the band while it stays open. A provenance naming no PR
+#     (the Enabler's own wording) adds no such line.
 #   - **A TOKEN, given, is used for every gh call** (issue list, comment,
 #     create) — never the ordinary login.
 #   - **A labelled create that fails is retried once unlabelled** (a
@@ -361,6 +366,37 @@ out="$(techdebt_file_debt "o/r" "A finding worth filing" "New evidence." \
         "while the Approver was judging https://github.com/o/r/pull/999" "")"
 assert_eq "file_debt: title match still hits even when the PR differs" \
   "49	https://github.com/o/r/issues/49" "$out"
+
+# --- PROVENANCE naming a pull request -> the filed body also carries a ----
+# `Blocked-by:` line naming that same pull request (agent-ops#2721), so the
+# record is held out of the tech-debt band by requirement 34j's existing live
+# check for as long as that pull request stays open.
+reset_stub
+out="$(techdebt_file_debt "o/r" "A finding against an open PR" "The body." \
+        "while the Approver was judging https://github.com/o/r/pull/2652" "")"
+rc=$?
+assert_eq "file_debt: PR named in provenance, exit 0" "0" "$rc"
+assert_eq "  ... fresh issue filed" "77	https://github.com/o/r/issues/77" "$out"
+assert_eq "  ... the filed body carries a Blocked-by: line naming that PR" "1" \
+  "$(last_issue_body | grep -c '^Blocked-by: o/r#2652$')"
+
+# --- ... and the same line lands in the dedup comment, not just a fresh ----
+# filing -----------------------------------------------------------------
+reset_stub
+jq -nc '[{number: 52, url: "https://github.com/o/r/issues/52", title: "A finding worth filing"}]' \
+  > "$tmp_dir/issue-list-response"
+techdebt_file_debt "o/r" "A finding worth filing" "New evidence." \
+  "while the Approver was judging https://github.com/o/r/pull/2652" "" >/dev/null
+assert_eq "file_debt: dedup comment also carries the Blocked-by: line" "1" \
+  "$(last_issue_body | grep -c '^Blocked-by: o/r#2652$')"
+
+# --- PROVENANCE naming no pull request (the Enabler's own wording) -> no ---
+# Blocked-by: line at all -- the scope note's no-op stays a no-op -----------
+reset_stub
+techdebt_file_debt "o/r" "A finding from the Enabler" "The body." \
+  "during an Enabler engagement on 2721 (cycle c1)" "" >/dev/null
+assert_eq "file_debt: no PR in provenance -> no Blocked-by: line" "0" \
+  "$(last_issue_body | grep -c '^Blocked-by:')"
 
 # --- A dedup hit still carries DEFAULT_FIX/OWNER_DECISION into the comment --
 reset_stub
