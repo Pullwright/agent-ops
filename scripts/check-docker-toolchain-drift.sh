@@ -43,10 +43,11 @@
 # check-graphql-drift.sh sources it: this shadows `gh` for every call below,
 # including the two GitHub releases lookups and techdebt_file_debt's own
 # filing call, so a rate-limit refusal on any of them is waited out rather
-# than read as "could not check". The filing call only gets that coverage
-# because it carries GH_TOKEN as above — `_techdebt_gh` (lib/tech-debt-file.sh)
-# runs a tokenless call through `env -u GH_TOKEN gh`, which execs the `gh`
-# binary directly and bypasses this shadow.
+# than read as "could not check". `_techdebt_gh` (lib/tech-debt-file.sh)
+# reaches `gh` by an unqualified word on both its branches — the tokenless one
+# strips GH_TOKEN in a subshell rather than exec'ing `env` (agent-ops#2732) —
+# so the shadow covers the filing call either way; what GH_TOKEN buys here is
+# the identity, not the retry.
 #
 # Usage:
 #   ./scripts/check-docker-toolchain-drift.sh           # check, file on drift
