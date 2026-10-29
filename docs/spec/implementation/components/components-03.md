@@ -793,6 +793,16 @@
       merely left alone, so a `GH_TOKEN` this process happens to have
       inherited can never leak into a call asked to run under the ordinary
       login — the Enabler's own case, which holds no App identity of its own.
+      `TOKEN` omitted under `GITHUB_ACTIONS=true` (agent-ops#2722) is refused
+      outright rather than run that way: a GitHub Actions runner carries no
+      stored `gh auth login` identity for the ordinary-login path to fall
+      back on, so stripping its one credential (`GH_TOKEN`) would leave
+      every call unauthenticated. `_techdebt_gh` prints the missing-TOKEN-
+      under-Actions condition to stderr and returns 1 before calling `gh` at
+      all; both public functions' usage comments and the file header state
+      the resulting contract — a caller running under GitHub Actions MUST
+      pass `TOKEN`. Component 10b's own `scripts/check-docker-toolchain-
+      drift.sh` is the standing example of a caller that already does.
 
     Regression-tested in `test/tech-debt-file.test.sh`: for `techdebt_file_debt`,
     an exact-title dedup hit comments on the matched issue and returns its own

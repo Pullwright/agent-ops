@@ -44,6 +44,13 @@
 #     exists; a failed create returns 1 and prints nothing. (Unchanged by
 #     agent-ops#874 — kept here as a regression guard since both functions
 #     share this file.)
+#   - **_techdebt_gh refuses a tokenless call under GITHUB_ACTIONS=true**
+#     (agent-ops#2722): a GitHub Actions caller has no stored `gh auth
+#     login` identity to fall back to, so stripping its only credential
+#     (GH_TOKEN) and running anyway would just fail unauthenticated with no
+#     clue why. Caught before `gh` is ever invoked. Unset or not "true",
+#     the tokenless path is unchanged; a non-empty TOKEN is unaffected
+#     either way.
 #
 # `gh` is stubbed through a fake executable on PATH, recording every
 # invocation to a file for assertions — the technique
@@ -150,6 +157,42 @@ reset_stub() {
 last_issue_body() {
   cat "$tmp_dir/last-issue-body" 2>/dev/null || true
 }
+
+# ============================================================================
+# _techdebt_gh
+# ============================================================================
+
+# --- Tokenless under GITHUB_ACTIONS=true -> refuses, never calls gh --------
+reset_stub
+out="$(GITHUB_ACTIONS=true _techdebt_gh "" issue list -R o/r 2>"$tmp_dir/stderr")"
+rc=$?
+assert_eq "_techdebt_gh: tokenless under GITHUB_ACTIONS=true -> exit 1" "1" "$rc"
+assert_eq "  ... no output" "" "$out"
+assert_eq "  ... gh is never invoked" "0" "$(wc -l < "$tmp_dir/calls")"
+assert_eq "  ... stderr names the missing-TOKEN-under-Actions condition" "1" \
+  "$(grep -c 'GITHUB_ACTIONS=true' "$tmp_dir/stderr")"
+
+# --- Tokenless with GITHUB_ACTIONS unset -> unchanged, still calls gh ------
+reset_stub
+out="$(_techdebt_gh "" issue list -R o/r)"
+rc=$?
+assert_eq "_techdebt_gh: tokenless, GITHUB_ACTIONS unset -> exit 0" "0" "$rc"
+assert_eq "  ... gh was invoked" "1" "$(grep -c '^<none> issue list -R o/r$' "$tmp_dir/calls")"
+
+# --- Tokenless with GITHUB_ACTIONS set to something other than "true" ------
+reset_stub
+out="$(GITHUB_ACTIONS=false _techdebt_gh "" issue list -R o/r)"
+rc=$?
+assert_eq "_techdebt_gh: tokenless, GITHUB_ACTIONS=false -> exit 0" "0" "$rc"
+assert_eq "  ... gh was invoked" "1" "$(grep -c '^<none> issue list -R o/r$' "$tmp_dir/calls")"
+
+# --- A non-empty TOKEN is unaffected by GITHUB_ACTIONS ----------------------
+reset_stub
+out="$(GITHUB_ACTIONS=true _techdebt_gh "app-token-123" issue list -R o/r)"
+rc=$?
+assert_eq "_techdebt_gh: token given under GITHUB_ACTIONS=true -> exit 0" "0" "$rc"
+assert_eq "  ... gh was invoked under that token" "1" \
+  "$(grep -c '^app-token-123 issue list -R o/r$' "$tmp_dir/calls")"
 
 # ============================================================================
 # techdebt_file_debt

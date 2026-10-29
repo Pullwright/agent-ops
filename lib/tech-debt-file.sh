@@ -8,6 +8,16 @@
 # `file_issue` in their final JSON; the Script is what actually files it,
 # under the calling stage's own identity where one applies.
 #
+# A tokenless call (TOKEN omitted) strips any inherited GH_TOKEN so a
+# pipeline-host caller always uses the ordinary `gh auth login` identity —
+# see _techdebt_gh below. A caller running under GitHub Actions
+# (GITHUB_ACTIONS=true) has no such stored login — GH_TOKEN is its only
+# credential — so it MUST pass TOKEN; _techdebt_gh fails loudly rather than
+# running unauthenticated when it doesn't (agent-ops#2722). A tokenless call
+# also bypasses lib/github-limit.sh's `gh` shell-function shadow (it execs
+# the binary directly via `env`), so it loses that library's rate-limit wait
+# too — a known, separate limitation this fix does not address.
+#
 # techdebt_file_issue REPO ITEM_REF TITLE BODY_FILE [TOKEN] [DEFAULT_FIX] \
 #                      [OWNER_DECISION]
 #   Files one plain GitHub issue, or returns an existing one that already
@@ -16,6 +26,10 @@
 #   is legitimate autonomous work for a later cycle to pick up, not a
 #   request excluded from the `issues` source. Prints "<number>\t<url>" on
 #   success; prints nothing and returns 1 otherwise.
+#
+#   A caller running under GitHub Actions (GITHUB_ACTIONS=true) MUST pass
+#   TOKEN — see _techdebt_gh below for why an omitted TOKEN fails loudly
+#   there instead of running unauthenticated.
 #
 #   DEFAULT_FIX/OWNER_DECISION (agent-ops#938): see techdebt_default_section
 #   below for what they add to the filed body, and pw::owner-decision for
@@ -45,6 +59,10 @@
 #   `gh`'s default of 30. Prints "<number>\t<url>" on
 #   success — the new issue's, or the matched one's — and prints nothing and
 #   returns 1 otherwise.
+#
+#   A caller running under GitHub Actions (GITHUB_ACTIONS=true) MUST pass
+#   TOKEN — see _techdebt_gh below for why an omitted TOKEN fails loudly
+#   there instead of running unauthenticated.
 #
 #   Retired by this move (agent-ops#874): the `td/<id>` reservation
 #   (scripts/reserve-tech-debt-id.pl), the `td-record/<id>` filing branch,
@@ -108,10 +126,22 @@ fi
 # GH_TOKEN`), never merely left alone, so a GH_TOKEN this process happened to
 # inherit from its own environment can never leak into a call this function
 # was asked to make under the ordinary login.
+#
+# Under GitHub Actions (GITHUB_ACTIONS=true) there is no stored `gh auth
+# login` identity to fall back to — GH_TOKEN is the only credential a
+# workflow run has — so a tokenless call there would strip the one
+# credential available and fail unauthenticated with no clue why
+# (agent-ops#2722). Caught here instead: fail fast and loudly, before `gh`
+# is ever invoked, rather than let that happen silently. This does not apply
+# outside Actions, where the tokenless path's strip-and-use-the-stored-login
+# contract is the one it's meant to have.
 _techdebt_gh() {
   local token="$1"; shift
   if [[ -n "$token" ]]; then
     GH_TOKEN="$token" gh "$@"
+  elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    printf '_techdebt_gh: no TOKEN given under GITHUB_ACTIONS=true -- refusing to strip the only credential (GH_TOKEN) available here\n' >&2
+    return 1
   else
     env -u GH_TOKEN gh "$@"
   fi
