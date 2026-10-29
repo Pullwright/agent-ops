@@ -3802,6 +3802,8 @@ run_publish "$d" NODE_NAME=nodeDoctor
 ddata="$(data_of "$d")"
 assert_eq "with no doctor status file yet, status.doctor is null" "null" \
   "$(jq -c '.status.doctor' <<<"$ddata")"
+assert_eq "...and the fleet self-row's doctor projection is null too" "null" \
+  "$(jq -c '.fleet.nodes[] | select(.self) | .doctor' <<<"$ddata")"
 
 cat > "$d/.local/state/poetic-agents/.doctor-status.json" <<'JSON'
 {"timestamp":"2026-08-18T09:00:00Z","verdict":"warn","fails":[],"warns":["acme-org/target-repo has no \"autonomous-agent\" label"],"skips":2}
@@ -3814,6 +3816,28 @@ assert_eq "its warns array reaches the page" "1" \
   "$(jq '.status.doctor.warns | length' <<<"$ddata")"
 assert_eq "and its timestamp" "2026-08-18T09:00:00Z" \
   "$(jq -r '.status.doctor.timestamp' <<<"$ddata")"
+
+# The fleet self-row's doctor projection (doctor_heartbeat_json,
+# scripts/publish-dashboard.sh:398) is a narrower, peer-comparable subset of
+# the same file: timestamp, verdict and memory_cgroup only — never
+# warns/fails/skips, which stay local to status.doctor above (agent-ops#2705).
+assert_eq "the fleet self-row's doctor object carries exactly timestamp/verdict/memory_cgroup" \
+  '["memory_cgroup","timestamp","verdict"]' \
+  "$(jq -c '.fleet.nodes[] | select(.self) | .doctor | keys' <<<"$ddata")"
+assert_eq "...with the same verdict as status.doctor" "warn" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.verdict' <<<"$ddata")"
+assert_eq "...the same timestamp" "2026-08-18T09:00:00Z" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.timestamp' <<<"$ddata")"
+assert_eq "...and memory_cgroup defaulted to null when the status file has none" "null" \
+  "$(jq -c '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup' <<<"$ddata")"
+
+cat > "$d/.local/state/poetic-agents/.doctor-status.json" <<'JSON'
+{"timestamp":"2026-08-19T09:00:00Z","verdict":"fail","fails":[],"warns":[],"skips":0,"memory_cgroup":"fail"}
+JSON
+run_publish "$d" NODE_NAME=nodeDoctor
+ddata="$(data_of "$d")"
+assert_eq "a populated memory_cgroup reaches the fleet self-row's doctor projection too" "fail" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup' <<<"$ddata")"
 
 # token_expiry (agent-ops#694) rides through the same verbatim read as
 # verdict/warns/timestamp above — no field-level plumbing of its own in
