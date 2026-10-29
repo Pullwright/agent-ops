@@ -66,6 +66,16 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# A short secondary-limit wait, fixed before lib/github-limit.sh is sourced
+# below (its own default, 20s, would make the retry assertions slow without
+# proving anything more).
+export GITHUB_LIMIT_SECONDARY_WAIT_SECONDS=1
+# lib/github-limit.sh is sourced *before* lib/tech-debt-file.sh so its `gh`
+# shell-function shadow is in scope by the time `_techdebt_gh`'s tokenless
+# branch runs a bare `gh` word (agent-ops#2732) -- the real shadow, not a
+# second PATH-stub, is what proves the tokenless path still resolves to it.
+# shellcheck source=lib/github-limit.sh
+. "$SCRIPT_DIR/lib/github-limit.sh"
 # shellcheck source=lib/tech-debt-file.sh
 . "$SCRIPT_DIR/lib/tech-debt-file.sh"
 
@@ -99,10 +109,21 @@ assert_eq() {
 #                                exist in the repository; an unlabelled create
 #                                still succeeds
 # $tmp_dir/fail-comment         present -> `issue comment` fails
+# $tmp_dir/fail-rate-limit-once present -> this invocation fails with a
+#                                secondary-rate-limit-shaped stderr message
+#                                and removes the file, so the *next*
+#                                invocation (the shadow's own retry) succeeds
+#                                normally
 cat > "$tmp_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
 printf '%s %s\n' "${GH_TOKEN:-<none>}" "$*" >> "$d/calls"
+
+if [[ -f "$d/fail-rate-limit-once" ]]; then
+  rm -f "$d/fail-rate-limit-once"
+  echo "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." >&2
+  exit 1
+fi
 
 if [[ "$1" == "issue" && "$2" == "create" ]]; then
   shift 2
@@ -149,9 +170,11 @@ export PATH="$tmp_dir:$PATH"
 
 reset_stub() {
   : > "$tmp_dir/calls"
-  rm -f "$tmp_dir/fail-labelled-issue-create" "$tmp_dir/fail-comment" "$tmp_dir/last-issue-body"
+  rm -f "$tmp_dir/fail-labelled-issue-create" "$tmp_dir/fail-comment" "$tmp_dir/last-issue-body" \
+     "$tmp_dir/fail-rate-limit-once"
   echo "https://github.com/o/r/issues/77" > "$tmp_dir/issue-url"
   echo '[]' > "$tmp_dir/issue-list-response"
+  GITHUB_LIMIT_WAITED_SECONDS=0
 }
 
 last_issue_body() {
@@ -193,6 +216,36 @@ rc=$?
 assert_eq "_techdebt_gh: token given under GITHUB_ACTIONS=true -> exit 0" "0" "$rc"
 assert_eq "  ... gh was invoked under that token" "1" \
   "$(grep -c '^app-token-123 issue list -R o/r$' "$tmp_dir/calls")"
+
+# --- The tokenless path still goes through lib/github-limit.sh's own `gh` --
+# shadow (agent-ops#2732): a secondary-rate-limit-shaped failure is waited
+# out and retried once, exactly as a call made through the token branch
+# below already is. Before this fix, the tokenless branch ran `env -u
+# GH_TOKEN gh "$@"` -- `env` is an external binary, so it exec'd the `gh`
+# binary straight from PATH and never reached this shadow at all.
+reset_stub
+: > "$tmp_dir/fail-rate-limit-once"
+out="$(_techdebt_gh "" issue list -R o/r 2>"$tmp_dir/stderr")"
+rc=$?
+assert_eq "_techdebt_gh: tokenless call retries through the rate-limit shadow, exit 0" \
+  "0" "$rc"
+assert_eq "  ... gh was invoked twice (the refusal, then the retry)" "2" \
+  "$(grep -c '^<none> issue list -R o/r$' "$tmp_dir/calls")"
+assert_eq "  ... the shadow's own retry notice was printed" "1" \
+  "$(grep -c 'secondary rate limit; waiting' "$tmp_dir/stderr")"
+
+# --- The token path goes through the same shadow -- a companion case ------
+# showing no regression there.
+reset_stub
+: > "$tmp_dir/fail-rate-limit-once"
+out="$(_techdebt_gh "app-token-123" issue list -R o/r 2>"$tmp_dir/stderr")"
+rc=$?
+assert_eq "_techdebt_gh: token call retries through the rate-limit shadow, exit 0" \
+  "0" "$rc"
+assert_eq "  ... gh was invoked twice under that token" "2" \
+  "$(grep -c '^app-token-123 issue list -R o/r$' "$tmp_dir/calls")"
+assert_eq "  ... the shadow's own retry notice was printed" "1" \
+  "$(grep -c 'secondary rate limit; waiting' "$tmp_dir/stderr")"
 
 # ============================================================================
 # techdebt_file_debt

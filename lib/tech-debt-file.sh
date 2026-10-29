@@ -13,10 +13,12 @@
 # see _techdebt_gh below. A caller running under GitHub Actions
 # (GITHUB_ACTIONS=true) has no such stored login — GH_TOKEN is its only
 # credential — so it MUST pass TOKEN; _techdebt_gh fails loudly rather than
-# running unauthenticated when it doesn't (agent-ops#2722). A tokenless call
-# also bypasses lib/github-limit.sh's `gh` shell-function shadow (it execs
-# the binary directly via `env`), so it loses that library's rate-limit wait
-# too — a known, separate limitation this fix does not address.
+# running unauthenticated when it doesn't (agent-ops#2722). The strip happens
+# in a subshell (`( unset GH_TOKEN; gh "$@" )`), never via `env -u`, so the
+# bare `gh` word still resolves to lib/github-limit.sh's own `gh` shell-function
+# shadow where that library has been sourced ahead of this one, and a
+# tokenless call keeps that library's rate-limit wait (agent-ops#2732) — `env`
+# is an external binary and would exec the `gh` binary directly, losing it.
 #
 # techdebt_file_issue REPO ITEM_REF TITLE BODY_FILE [TOKEN] [DEFAULT_FIX] \
 #                      [OWNER_DECISION]
@@ -122,10 +124,16 @@ fi
 
 # _techdebt_gh TOKEN ARGS...
 # Run `gh` ARGS..., under TOKEN's identity if non-empty, the ordinary
-# pipeline login otherwise — explicitly unset for that call (`env -u
-# GH_TOKEN`), never merely left alone, so a GH_TOKEN this process happened to
-# inherit from its own environment can never leak into a call this function
-# was asked to make under the ordinary login.
+# pipeline login otherwise — explicitly unset for that call, in a subshell
+# (`( unset GH_TOKEN; gh "$@" )`), never merely left alone, so a GH_TOKEN this
+# process happened to inherit from its own environment can never leak into a
+# call this function was asked to make under the ordinary login. The subshell
+# form, not `env -u GH_TOKEN`, is deliberate: `env` is an external binary and
+# would exec the `gh` binary straight from PATH, never lib/github-limit.sh's
+# own `gh` shell-function shadow, losing that library's rate-limit wait
+# (agent-ops#2732). The subshell keeps the bare `gh` word resolving to
+# whichever `gh` — function or binary — is in scope where this function is
+# sourced, exactly as the token branch above already does.
 #
 # Under GitHub Actions (GITHUB_ACTIONS=true) there is no stored `gh auth
 # login` identity to fall back to — GH_TOKEN is the only credential a
@@ -143,7 +151,7 @@ _techdebt_gh() {
     printf '_techdebt_gh: no TOKEN given under GITHUB_ACTIONS=true -- refusing to strip the only credential (GH_TOKEN) available here\n' >&2
     return 1
   else
-    env -u GH_TOKEN gh "$@"
+    ( unset GH_TOKEN; gh "$@" )
   fi
 }
 
