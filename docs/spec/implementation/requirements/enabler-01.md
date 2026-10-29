@@ -422,6 +422,95 @@
     `issues-excluded` is (issue #2606) — so a degraded `tech_debt` gather
     keeps the plain "unknown is never gone" reading on its own
     `tech_debt_excluded` until that gap closes.
+35g. <a id="impl-35g"></a>**A `Blocked-by:` reference posted after a repo's expensive-gather cache
+    was written is re-checked live, for the narrow set of candidates a
+    stale cache cannot speak to (issue #2709).** `still_blocked_by_json`
+    above is sound only when `ordered_repos_json`'s own `issues_excluded`/
+    `tech_debt_excluded` sidecars came from a gather run *this* cycle. On
+    every cycle where the candidate's repo is not `expensive_gather_slug`
+    (requirement 48, `lib/candidate-gather.sh`), both sidecars are instead
+    replayed from that node's own expensive-gather cache, so a
+    `Blocked-by:` line posted to the candidate's own thread after the
+    cache's own `gathered_at` is invisible to requirement 35f's filter for
+    the whole gather rotation — exactly the window during which the marker
+    crosses the Enabler threshold (item `2693`: blocked and commented
+    `Blocked-by: #2684` five minutes after the repo's cache was written,
+    reaching the Enabler across four subsequent cycles before the repo's
+    own next fresh gather). Falling back to `latest_issues_excluded_json`
+    the way requirement 35f's own degraded-gather case does would still
+    miss this, since that reading is only as fresh as the last logged
+    `issues-excluded` event, which can itself predate the comment.
+
+    Instead, each entry of `enabler_eligible_json` surviving requirement
+    35f's own subtraction is tested against `ordered_repos_json`'s own
+    `expensive_gather.fresh`/`expensive_gather.gathered_at` for its
+    (alias-resolved) repo: an entry whose repo's `expensive_gather.fresh`
+    is `false` (an entry carrying no `expensive_gather` stamp at all reads
+    as fresh, the same convention `lib/candidate-gather.sh`'s own
+    `issues_by_repo_json` reshape already observes) *and* whose own
+    `blocked_ts` (`ENABLER_ELIGIBLE_JQ`, `lib/cycle-state.sh`) is later than
+    that repo's own `gathered_at` is blocked after the cache was written,
+    so neither sidecar could ever have seen it — narrowed once more to an
+    `.item` that is a bare issue number, the only shape either sidecar
+    reports on (both are keyed by `.number`) and the only one
+    `repos/<slug>/issues/<item>` can resolve, so a surviving
+    `pr-<n>-conflict-<sha>` claim or a `review-<date>-R-NN` finding is
+    never put to a question that would 404 either way. For just that narrow
+    set — never every eligible candidate, which is exactly what issue
+    #2603 removed for cost and must not come back — the candidate's own
+    live thread is re-read directly and tested with the identical
+    `dependency_refs`/`issue_blocked_by_ref` (`lib/dependency-gate.sh`,
+    `lib/issue-prefetch.sh`) the gathers themselves use at gather time.
+    The thread is read *whole* — its body, plus its comments at
+    `per_page=100` under `--paginate`, one call for any thread of 100 or
+    fewer — never the bare comments path, whose own default is the *oldest*
+    30 ascending by `created_at`: a `Blocked-by:` line accumulates at the
+    end of a thread rather than its start (the same reasoning
+    `lib/issue-prefetch.sh`'s own `comments(last:100)` gather walk records),
+    and the stage posts it at the moment it records the block, which is the
+    very thing the `blocked_ts` gate above selects for.
+
+    A stamp reporting `fresh` as `false` with no `gathered_at` at all — the
+    node had no cache for that repo to load, so `lib/candidate-gather.sh`
+    stamped the timestamp `null` — is left alone too, despite being the
+    most stale reading of the three: with no timestamp to compare a
+    `blocked_ts` against there is no narrow set left to take, and testing
+    every eligible candidate in that repo is the per-candidate live check
+    issue #2603 removed for cost. The omission costs what this requirement
+    already bounds — one Enabler engagement — and stands only until that
+    repo's own next expensive gather writes a cache to compare against.
+
+    The two ways a live read can fail here go in opposite directions, and
+    both match what `issue_blocked_by_ref` already does at gather time:
+
+    - **The candidate's own thread cannot be read at all.** It yields no
+      text, so `dependency_refs` finds no reference and the candidate is
+      left eligible — the optimisation simply does not fire, and the
+      Enabler reaches the candidate on its ordinary terms.
+    - **A reference the thread does name cannot have its own live state
+      read.** `issue_blocked_by_ref`'s fail-safe direction counts it as
+      still-open, so the candidate *is* excluded on an unverified
+      reference. Fleet-wide, that means a `gh` outage or an exhausted rate
+      limit holds every stale-cache candidate whose thread names any
+      `Blocked-by:` reference — including long-closed ones — out of
+      Enabler eligibility until reads recover.
+
+    Neither is a correctness hole: `dependency_clearances` (requirement
+    34j) is the gate that actually resolves a block, and reaches the
+    candidate regardless of what this optimisation concluded; the cost of
+    the second is a delayed Enabler engagement, against a whole engagement
+    of the most expensive model in the system otherwise.
+
+    `lib/issue-prefetch.sh` is sourced by `agent-cycle.sh` itself for this
+    one caller, alongside `scripts/gather-issues.sh`'s and
+    `scripts/gather-tech-debt.sh`'s own existing uses of it as separate
+    processes.
+
+    Every entry this live re-check excludes is logged under the identical
+    `enabler-stale-refs-skipped` event requirement 35e's own
+    `stale_enabler_refs_json` mechanism already uses — the same `{skipped:
+    [{repo, item}…]}` object shape, not a second event name for what is,
+    to an operator reading the log, the identical kind of skip.
 36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with

@@ -30,6 +30,13 @@
 # fixture, so a change to the real block is what this suite exercises, not a
 # second copy of it.
 #
+# The extracted span now also covers the stale-expensive-gather-cache live
+# re-check (issue #2709): a second, later exclusion pass over the same
+# `enabler_eligible_json`, which can issue real `gh api` reads for the narrow
+# set of candidates a stale cache cannot speak to. Those reads are mocked
+# below via a `gh` function the extracted block's own `eval` picks up from
+# this process, exactly as `log_event`/`guard_warn` already are.
+#
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:
 #
@@ -43,6 +50,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=lib/dependency-gate.sh
 . "$SCRIPT_DIR/lib/dependency-gate.sh"
+# shellcheck source=lib/issue-prefetch.sh
+. "$SCRIPT_DIR/lib/issue-prefetch.sh"
 # shellcheck source=lib/candidate-select.sh
 . "$SCRIPT_DIR/lib/candidate-select.sh"
 # shellcheck source=lib/cycle-state.sh
@@ -65,8 +74,8 @@ assert_eq() {
 extract_open_blocked_by_block() {
   awk '
     /^still_blocked_by_json='"'"'\[\]'"'"'$/ { on = 1 }
-    on                                      { print }
-    on && /^fi$/                            { exit }
+    on && /^# Past this line the exit trap/   { exit }
+    on                                        { print }
   ' "$SCRIPT_DIR/lib/eligibility.sh"
 }
 open_blocked_by_block_src="$(extract_open_blocked_by_block)"
@@ -74,9 +83,14 @@ if [[ "$open_blocked_by_block_src" != *"open_blocked_by_json"* ]]; then
   printf 'FAIL - could not extract the open-Blocked-by block from lib/eligibility.sh (moved or reworded?)\n'
   exit 1
 fi
+if [[ "$open_blocked_by_block_src" != *"stale_gather_live_checked_json"* ]]; then
+  printf 'FAIL - extracted span does not reach the stale-expensive-gather-cache live re-check (moved, reworded, or the end marker drifted?)\n'
+  exit 1
+fi
 
 run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [aliases-json]
                                 # [degraded-issues-excluded-json] [latest-issues-excluded-json]
+                                # [gh-live-json]
   (
     # ordered_repos_json/etc. are consumed by the eval'd filter below — not
     # visible to the static analysis here.
@@ -84,11 +98,66 @@ run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [a
     ordered_repos_json="$1" enabler_eligible_json="$2" \
       repo_slug_aliases_json="${3:-{\}}" \
       degraded_issues_excluded_json="${4:-[]}" latest_issues_excluded_json="${5:-{\}}" \
+      gh_live_json="${6:-{\}}" \
       union_log='/dev/null' logged="" logged_fields=""
     # shellcheck disable=SC2317
     guard_warn() { :; }
     # shellcheck disable=SC2317
     log_event() { logged="$logged$1 $2\n"; logged_fields="$2"; }
+    # Mocks the `gh api` reads the stale-expensive-gather-cache live
+    # re-check (issue #2709) can issue: `repos/<r>/issues/<n>` with a
+    # `--jq '.body // ""'` filter returns that candidate's own body (from
+    # `$gh_live_json`'s `"<r>#<n>".body`), the same shape with `--jq
+    # '[.[].body // ""] | join("\n")'` (the `/comments` path) returns its
+    # comments (`.comments`), and `--jq '.state'` — `issue_blocked_by_ref`'s
+    # own check of a *referenced* issue's live state — returns
+    # `.ref_state` (empty, i.e. fail-open to "still-open", when absent).
+    # Dispatched on the `--jq` filter text, not the path, since the
+    # candidate's own body/comments reads and a referenced issue's
+    # state read share the identical `repos/<r>/issues/<n>` path shape.
+    #
+    # The comments read also models REST's own paging, so the suite can pin
+    # the direction of truncation rather than assuming the whole thread
+    # arrives: where `.comments` is an *array* of bodies (rather than one
+    # pre-joined string, as the simpler cases below give it), the mock
+    # returns every element only under `--paginate`, and otherwise just the
+    # first `per_page` of them — defaulting, exactly as the real endpoint
+    # does, to the *oldest* 30. A `Blocked-by:` line in element 31 is
+    # therefore invisible to any call that does not page, which is what the
+    # 31-comment case further down asserts against.
+    #
+    # Argument scanning, not positional indexing: `--paginate` sits between
+    # the path and `--jq` on the comments read, so `$4` is not reliably the
+    # filter, and the path may now carry a `?per_page=` query string.
+    # shellcheck disable=SC2317
+    gh() {
+      local cmd="$1" path filter="" paginate=0 per_page=0 query="" repo item key
+      [[ "$cmd" == "api" ]] || return 1
+      shift; path="$1"; shift
+      while (( $# )); do
+        case "$1" in
+          --paginate) paginate=1 ;;
+          --jq) filter="${2:-}"; shift ;;
+        esac
+        shift
+      done
+      query="${path#*\?}"; [[ "$query" != "$path" ]] || query=""
+      path="${path%%\?*}"
+      [[ "$query" =~ per_page=([0-9]+) ]] && per_page="${BASH_REMATCH[1]}"
+      [[ "$path" =~ ^repos/(.+)/issues/([0-9]+)(/comments)?$ ]] || return 1
+      repo="${BASH_REMATCH[1]}"; item="${BASH_REMATCH[2]}"; key="$repo#$item"
+      case "$filter" in
+        *state*) jq -r --arg k "$key" '(.[$k].ref_state // "")' <<<"$gh_live_json" ;;
+        *join*)  jq -r --arg k "$key" --argjson pag "$paginate" --argjson pp "$per_page" '
+                   (.[$k].comments // "") as $c
+                   | if ($c | type) == "array"
+                     then (if $pag == 1 then $c
+                           else $c[0:(if $pp > 0 then $pp else 30 end)] end
+                           | join("\n"))
+                     else $c end' <<<"$gh_live_json" ;;
+        *)       jq -r --arg k "$key" '(.[$k].body // "")' <<<"$gh_live_json" ;;
+      esac
+    }
     eval "$open_blocked_by_block_src"
     jq -c -n --argjson e "$enabler_eligible_json" --arg l "$logged" --arg f "$logged_fields" \
       '{eligible: $e, logged: $l, fields: $f}'
@@ -250,6 +319,113 @@ no_prior_result="$(run_open_blocked_by_block "$degraded_ordered" "$degraded_elig
   "$degraded_list" '{}')"
 assert_eq "a degraded repo with no prior latest_issues_excluded reading is left eligible" "1" \
   "$(jq '[.eligible[] | select(.item == "2616")] | length' <<<"$no_prior_result")"
+
+# --- issue #2709: the stale-expensive-gather-cache live re-check ----------
+# A `Blocked-by:` line posted after a repo's expensive-gather cache was
+# written is invisible to the cached-sidecar filter above for the whole
+# gather rotation. These four cases are its own four acceptance criteria.
+
+# 1. A fresh-gather candidate is unaffected, even though the mocked `gh`
+#    reads would exclude it if the live re-check ran against it anyway —
+#    proving `expensive_gather.fresh == true` skips the re-check outright.
+fresh_ordered='[{"slug": "o/r", "expensive_gather": {"fresh": true, "gathered_at": "2026-10-27T10:53:38Z"}}]'
+fresh_eligible='[{"repo": "o/r", "item": "42", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+fresh_gh_live='{"o/r#42": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state": "open"}}'
+fresh_result="$(run_open_blocked_by_block "$fresh_ordered" "$fresh_eligible" '{}' '[]' '{}' "$fresh_gh_live")"
+assert_eq "a fresh-gather candidate is unaffected by the live re-check (issue #2709 AC 1)" "1" \
+  "$(jq '[.eligible[] | select(.item == "42")] | length' <<<"$fresh_result")"
+
+# 2. A stale-gather candidate blocked *before* the cache was written is
+#    unaffected too — same would-exclude mocked `gh` reads, proving the
+#    `blocked_ts <= gathered_at` guard, not the fresh flag, is what holds it
+#    back from the live re-check.
+before_ordered='[{"slug": "o/r", "expensive_gather": {"fresh": false, "gathered_at": "2026-10-27T11:00:00Z"}}]'
+before_eligible='[{"repo": "o/r", "item": "43", "reason": "threshold", "blocked_ts": "2026-10-27T10:00:00Z"}]'
+before_gh_live='{"o/r#43": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state": "open"}}'
+before_result="$(run_open_blocked_by_block "$before_ordered" "$before_eligible" '{}' '[]' '{}' "$before_gh_live")"
+assert_eq "a stale-gather candidate blocked before the cache was written is unaffected (issue #2709 AC 2)" "1" \
+  "$(jq '[.eligible[] | select(.item == "43")] | length' <<<"$before_result")"
+
+# 3. A stale-gather candidate blocked *after* the cache was written, whose
+#    live thread names a still-open Blocked-by reference, is excluded and
+#    the exclusion is logged under the shared `enabler-stale-refs-skipped`
+#    event (issue #2709's own "Logging" instruction).
+after_open_ordered='[{"slug": "o/r", "expensive_gather": {"fresh": false, "gathered_at": "2026-10-27T10:53:38Z"}}]'
+after_eligible='[{"repo": "o/r", "item": "2693", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+after_open_gh_live='{"o/r#2693": {"body": "Blocked-by: #2684"}, "o/r#2684": {"ref_state": "open"}}'
+after_open_result="$(run_open_blocked_by_block "$after_open_ordered" "$after_eligible" '{}' '[]' '{}' "$after_open_gh_live")"
+assert_eq "a stale-gather candidate blocked after the cache was written, still open live, is excluded (issue #2709 AC 3, item 2693's own reproduction)" "0" \
+  "$(jq '[.eligible[] | select(.item == "2693")] | length' <<<"$after_open_result")"
+assert_eq "  ... and the exclusion is logged under the shared enabler-stale-refs-skipped event" "true" \
+  "$(jq -r '.logged | test("enabler-stale-refs-skipped")' <<<"$after_open_result")"
+
+# 4. Same as 3, but the referenced issue is now closed: not excluded.
+after_closed_gh_live='{"o/r#2693": {"body": "Blocked-by: #2684"}, "o/r#2684": {"ref_state": "closed"}}'
+after_closed_result="$(run_open_blocked_by_block "$after_open_ordered" "$after_eligible" '{}' '[]' '{}' "$after_closed_gh_live")"
+assert_eq "  ... but survives once the referenced issue is closed live (issue #2709 AC 4)" "1" \
+  "$(jq '[.eligible[] | select(.item == "2693")] | length' <<<"$after_closed_result")"
+
+# --- a candidate whose repo carries no expensive_gather stamp at all is ---
+# --- read as fresh, the same convention issues_by_repo_json already -------
+# --- observes, and so is left alone by the live re-check too --------------
+no_stamp_ordered='[{"slug": "o/r"}]'
+no_stamp_eligible='[{"repo": "o/r", "item": "44", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+no_stamp_gh_live='{"o/r#44": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state": "open"}}'
+no_stamp_result="$(run_open_blocked_by_block "$no_stamp_ordered" "$no_stamp_eligible" '{}' '[]' '{}' "$no_stamp_gh_live")"
+assert_eq "a candidate whose repo carries no expensive_gather stamp is left eligible (no stamp reads as fresh)" "1" \
+  "$(jq '[.eligible[] | select(.item == "44")] | length' <<<"$no_stamp_result")"
+
+# --- a stale stamp carrying no gathered_at at all is left alone too ------
+# The node had no cache for that repo to load, so `lib/candidate-gather.sh`
+# stamped `gathered_at: null`. There is no timestamp to compare a
+# `blocked_ts` against, so there is no narrow set left to take — and the
+# `gathered_at != ""` guard is what holds the line: jq's own `"…" > null` is
+# *true*, so without it every eligible candidate in such a repo would be
+# live-re-checked, which is precisely the per-candidate check issue #2603
+# removed for cost. The mocked `gh` reads would exclude this candidate if the
+# re-check ran, so the surviving entry is what pins the guard.
+null_at_ordered='[{"slug": "o/r", "expensive_gather": {"fresh": false, "gathered_at": null}}]'
+null_at_eligible='[{"repo": "o/r", "item": "45", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+null_at_gh_live='{"o/r#45": {"body": "Blocked-by: #99"}, "o/r#99": {"ref_state": "open"}}'
+null_at_result="$(run_open_blocked_by_block "$null_at_ordered" "$null_at_eligible" '{}' '[]' '{}' "$null_at_gh_live")"
+assert_eq "a stale stamp with no gathered_at is left eligible, never live-re-checked" "1" \
+  "$(jq '[.eligible[] | select(.item == "45")] | length' <<<"$null_at_result")"
+assert_eq "  ... and nothing is logged for it" "" \
+  "$(jq -r '.logged' <<<"$null_at_result")"
+
+# --- the live re-check reads the *whole* comment thread, not REST's own ---
+# --- first page: the `Blocked-by:` line sits at the end of a thread ------
+# A 31-comment thread whose `Blocked-by:` line is the newest comment. REST's
+# own default is the oldest 30 ascending, so a read that does not page cannot
+# see element 31 at all — and the pipeline posts the line at the moment it
+# records the block, which is exactly what the `blocked_ts > gathered_at` gate
+# above selects for, so this is the common shape rather than a corner. The
+# mocked `gh` models that truncation (see its own comment), which is what lets
+# this assertion fail against a non-paging read.
+long_thread_comments="$(jq -nc '[range(0; 30) | "a routine pipeline comment, number \(.)"]
+  + ["Blocked-by: #2684"]')"
+long_thread_gh_live="$(jq -nc --argjson c "$long_thread_comments" \
+  '{"o/r#2693": {body: "no dependency named in the body", comments: $c},
+    "o/r#2684": {ref_state: "open"}}')"
+long_thread_result="$(run_open_blocked_by_block "$after_open_ordered" "$after_eligible" '{}' '[]' '{}' "$long_thread_gh_live")"
+assert_eq "a Blocked-by line in the 31st comment is still seen (the whole thread is read, not REST's oldest-30 default)" "0" \
+  "$(jq '[.eligible[] | select(.item == "2693")] | length' <<<"$long_thread_result")"
+
+# --- only a bare issue number is re-checked live -------------------------
+# `.item` is an issue number for the `issues` and `tech_debt` bands alone —
+# the only two either `_excluded` sidecar ever reports on. A surviving
+# `pr-<n>-conflict-<sha>` claim (requirement 35e's own stale-ref pass keeps a
+# *live* one) is not a path `repos/<slug>/issues/<item>` can resolve, so
+# re-checking it would spend two unconditional 404s on a question with no
+# answer. The mocked `gh` refuses the non-numeric path exactly as the real
+# endpoint 404s it, so the candidate survives either way — what this pins is
+# that it is never put to the question at all.
+pr_ref_eligible='[{"repo": "o/r", "item": "pr-2700-conflict-a1b2c3d", "reason": "threshold", "blocked_ts": "2026-10-27T11:00:00Z"}]'
+pr_ref_result="$(run_open_blocked_by_block "$after_open_ordered" "$pr_ref_eligible" '{}' '[]' '{}' '{}')"
+assert_eq "a non-issue-numbered item is left eligible and never live-re-checked" "1" \
+  "$(jq '[.eligible[] | select(.item == "pr-2700-conflict-a1b2c3d")] | length' <<<"$pr_ref_result")"
+assert_eq "  ... and nothing is logged for it" "" \
+  "$(jq -r '.logged' <<<"$pr_ref_result")"
 
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then
