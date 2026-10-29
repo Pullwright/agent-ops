@@ -1,0 +1,49 @@
+name: Docker toolchain drift check
+
+# Asks GitHub's own releases API and the npm registry whether the four
+# hand-pinned toolchain `ARG` defaults in deploy/docker/Dockerfile
+# (SUPERCRONIC_VERSION, SHELLCHECK_VERSION, CLAUDE_CODE_VERSION,
+# GROK_BUILD_VERSION) are still current (issue #2708's decide-tactical
+# decision: option 1, drift-report shape, modelled on this repository's own
+# .github/workflows/graphql-drift.yml). The check itself is
+# scripts/check-docker-toolchain-drift.sh; the file set — which four ARGs,
+# and which feed each resolves against — is discovered there rather than
+# listed here, for the same reason scripts/lint-shell.sh owns its own file
+# set: CI and a developer running it by hand have to be checking the same
+# thing.
+#
+# SCHEDULED, NOT PER-PULL-REQUEST, for the same reason graphql-drift.yml is:
+# the drift this catches does not arrive with a commit to this repository —
+# an upstream release does — so a pull request is the wrong place to look for
+# it, and putting the check there would make every merge depend on GitHub's
+# releases API and the npm registry both being up.
+#
+# issues: write, unlike graphql-drift.yml's own contents: read alone — this
+# check files or updates an ordinary GitHub issue on drift, never a pull
+# request, so its token needs no reach beyond that.
+#
+# Daily rather than weekly, for the same reason graphql-drift.yml gives: a
+# repository-internal change can afford a wider window because it lands in a
+# pull request someone reviews, while an upstream release is unannounced.
+
+on:
+  schedule:
+    - cron: "41 4 * * *" # daily, 04:41 UTC — offset from graphql-drift.yml's
+                          # own 04:23 so the two scheduled checks don't start
+                          # in the same minute
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the four hand-pinned toolchain versions against upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/check-docker-toolchain-drift.sh

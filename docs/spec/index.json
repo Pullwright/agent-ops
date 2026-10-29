@@ -127,6 +127,13 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
       "title": "Every GraphQL document this repository sends still validates"
     },
+    "IMPL AC 1g-iii": {
+      "kind": "impl-ac",
+      "label": "1g-iii",
+      "anchor": "impl-ac-1g-iii",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-01.md",
+      "title": "The four hand-pinned toolchain `ARG` defaults in"
+    },
     "IMPL AC 2m": {
       "kind": "impl-ac",
       "label": "2m",
@@ -1960,6 +1967,13 @@
       "anchor": "impl-c-24f",
       "file": "docs/spec/implementation/components/components-03.md",
       "title": "`lib/ci-trigger.sh` implementing requirement 69: given a repository"
+    },
+    "IMPL C 10b": {
+      "kind": "impl-c",
+      "label": "10b",
+      "anchor": "impl-c-10b",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "title": "`scripts/check-docker-toolchain-drift.sh` and"
     },
     "IMPL 40": {
       "kind": "impl",

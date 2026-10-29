@@ -1188,3 +1188,61 @@
    test/rebase-only-wiring.test.sh already uses for its own forge-facing
    functions, since a unit test must never dial a real forge. Requirement
    69. Acceptance check 79. Must pass `shellcheck`.
+
+10b. <a id="impl-c-10b"></a>`scripts/check-docker-toolchain-drift.sh` and
+   `.github/workflows/docker-toolchain-drift.yml` — the toolchain-pin
+   drift check and the nightly job that runs it (acceptance check 1g-iii,
+   issue #2708). `deploy/docker/Dockerfile` hand-pins four toolchain `ARG`
+   defaults no Dependabot ecosystem can see — `SUPERCRONIC_VERSION`,
+   `SHELLCHECK_VERSION`, `CLAUDE_CODE_VERSION`, `GROK_BUILD_VERSION` — because
+   each is a bare version string an install step substitutes into a URL or
+   an `npm install`, never a manifest entry an ecosystem parses the way
+   `.github/dependabot.yml`'s `docker`/`docker-compose`/`github-actions`
+   entries already do for the base image and the Action/compose pins
+   (issue #2697). This closes that remaining gap, as a scheduled issue
+   report rather than a bump: issue #2708's own decide-tactical decision
+   rejected both a drift-fixing pull request (the two GitHub-released pins
+   each sit beside two architecture-specific checksums,
+   `*_SHA1SUM_{AMD64,ARM64}`/`*_SHA256_{AMD64,ARM64}`, so a correct bump
+   recomputes three values, not one — implementer work, not safe template
+   substitution in a cron job) and accepting manual review as the permanent
+   model (a standing human obligation, owner-only under requirement 36a
+   condition 5).
+   `SUPERCRONIC_VERSION`/`SHELLCHECK_VERSION` resolve against GitHub's
+   releases API for `aptible/supercronic`/`koalaman/shellcheck`, the same
+   releases each pin's own install step in `deploy/docker/Dockerfile`
+   downloads from; `CLAUDE_CODE_VERSION`/`GROK_BUILD_VERSION` resolve
+   against the npm registry's own `latest` dist-tag for
+   `@anthropic-ai/claude-code`/`@xai-official/grok` — two feeds, two
+   resolvers, never one path reused for both. `lib/github-limit.sh`
+   (component 2a's own rate-limit module) is sourced first, exactly as
+   component 10a beside it, so a rate-limit refusal on a releases lookup or
+   on the filing call itself is waited out rather than read as unable — the
+   filing call gets that coverage only because the workflow's own `GH_TOKEN`
+   (`secrets.GITHUB_TOKEN`) is passed through as `techdebt_file_debt`'s
+   `TOKEN` argument. A GitHub Actions runner carries no stored `gh auth
+   login` identity, so the tokenless default every other `techdebt_file_debt`
+   caller's Enabler path relies on would run every dedup/comment/create call
+   this script makes unauthenticated, and — because `lib/tech-debt-file.sh`'s
+   tokenless branch execs `gh` via `env -u GH_TOKEN` rather than calling the
+   shadowed shell function — outside `lib/github-limit.sh`'s rate-limit
+   coverage too.
+   On drift, `lib/tech-debt-file.sh`'s `techdebt_file_debt` (component 23d)
+   files — or, under its own title-dedup, comments on — a `pw::type:
+   tech-debt`-labelled issue naming every stale pin, its pinned and upstream
+   versions, and, for the two GitHub-released pins, that a bump also needs
+   their checksums recomputed. That label is what lets
+   `scripts/gather-tech-debt.sh` (component 3t) serve the filed issue to
+   ordinary selection afterward — a human or a later Implementer bumps the
+   pin and its checksums from there; this script itself never does.
+   Exit 0 whether clean or filed; exit 1 only a failed filing; exit 2 an
+   unresolved upstream version, never read as clean or as drift, the same
+   convention component 10a's own script uses. `--list` prints every pin
+   against its resolved upstream version and files nothing.
+   Unit-tested (`test/docker-toolchain-drift.test.sh`) against a stubbed
+   `gh` and a stubbed `curl` — never the real GitHub releases API or the
+   real npm registry, for the same reason component 10a's own test stubs
+   `gh` — covering: no drift files nothing; a drifted pin with no open issue
+   opens one; a drifted pin with an open issue comments on it instead of
+   opening a second one; an unresolvable upstream version exits 2 and files
+   nothing; `--list` files nothing. Must pass `shellcheck`.
