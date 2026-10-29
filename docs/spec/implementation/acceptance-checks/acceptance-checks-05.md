@@ -722,7 +722,19 @@
     level — never `classifier-escape` either, asserted against a
     `config.json` whose own `merge_autonomy` reads `human`, so a detector
     that fell back to current configuration would fail the whole battery
-    rather than only this case; a pull request merged by an
+    rather than only this case; a pull request merged minutes ago (`ESCAPE_AUDIT_NOW_EPOCH`,
+    a test seam matching `lib/token-expiry.sh`'s own `NOW_EPOCH` convention)
+    with no `landing-armed` event in the log at all is deferred instead —
+    reported neither `"unverifiable"` nor anything else, and left able to be
+    read again on a later invocation of the same log, rather than
+    permanently recorded against a snapshot that may simply not have caught
+    up yet (agent-ops#2725) — while the identical pull request, merged an
+    hour ago by the same clock, is `outcome: "unverifiable"` once that
+    window passes, exactly as the immediate case above; a `landing-armed`
+    event genuinely present in the log, for a pull request merged long
+    enough ago that the deferral above cannot be the reason it was found, is
+    read back by its own `pr_url` round-trip, naming the source it recorded.
+    A pull request merged by an
     account other than the passed-in Approver login is `outcome:
     "not-approver"`, not an audit finding; and a `pr_url` already carrying a
     `classifier-escape`/`landing-audit`/`landing-audit-skip` event in the

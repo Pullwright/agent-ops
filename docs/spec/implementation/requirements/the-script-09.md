@@ -107,7 +107,21 @@
    field existed) — reports `outcome: "unverifiable"`, never
    `"clean"`: an audit that cannot answer must never be read as an audit
    that passed, and in particular an unrecorded level is never allowed to
-   become an escape. Otherwise, recomputed eligibility agrees with the fact
+   become an escape. A missing source or level is the one input this
+   detector defers rather than reports immediately, though (agent-ops#2725):
+   the fleet-log snapshot the sweep reads (requirement 2.5) is taken once, at
+   cycle start, from a peers directory that itself syncs only on
+   `state-sync.sh fetch`'s own cadence and is never refreshed again that
+   cycle, so a cycle that reaches this sweep late can read a snapshot older
+   than the merge it is auditing by more than the wall-clock gap between the
+   two alone would suggest. While the pull request's own `merged_at` is less
+   than three times `schedule.state_sync_fetch_minutes` old — the same
+   "three missed cycles" tolerance `node_stale_after_minutes` already applies
+   to replication lag elsewhere — a still-missing source or level is credited
+   to that lag and left unrecorded, never marked audited, so a later cycle
+   reading a fresher snapshot gets a real answer; only once that window has
+   passed does a still-missing source or level report `outcome:
+   "unverifiable"`. Otherwise, recomputed eligibility agrees with the fact
    that the pull request landed (`outcome: "clean"`) when the recorded
    effective level is `agent-merges-routine`/`agent-merges-all`, complexity
    is in the routine complexity list, the source is in the routine list, and

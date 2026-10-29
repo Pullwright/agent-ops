@@ -715,6 +715,64 @@ assert_contains "a landing with no recorded source at all is unverifiable, never
 assert_contains "  ... naming the missing source as the reason" \
   "$line1_3" "source"
 
+# --- A landing-armed event genuinely present in the log is found by pr_url,
+# round-trip (agent-ops#2725 AC3) — the detector's own join key, pinned
+# directly rather than only incidentally through fixtures #1/#2/#4/#6/#7
+# above, each of which also happens to carry a matching event. ------------
+jq -c '. + [{"number": 20, "pull_request": {"merged_at": "2026-08-20T10:00:00Z"}}]' \
+  "$STUB_DIR/issues.json" > "$STUB_DIR/issues.json.tmp" \
+  && mv "$STUB_DIR/issues.json.tmp" "$STUB_DIR/issues.json"
+pr_json 20 "$LOGIN" > "$STUB_DIR/pr-20.json"
+cat > "$STUB_DIR/commit-sha20.json" <<'EOF'
+{"files": [{"filename": "scripts/foo.sh"}]}
+EOF
+cat > "$STUB_DIR/events-20.json" <<'EOF'
+[{"event": "labeled", "label": {"name": "complexity:low"}, "created_at": "2026-08-20T09:00:00Z"}]
+EOF
+log_file_roundtrip="$tmp_dir/log-roundtrip.jsonl"
+echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/20\",\"source\":\"tech-debt\",\"complexity\":\"low\",\"level\":\"agent-merges-routine\"}" \
+  > "$log_file_roundtrip"
+out_roundtrip="$(ESCAPE_AUDIT_NOW_EPOCH=9999999999 \
+  "$DETECTOR" "$SLUG" "$LOGIN" "$log_file_roundtrip" --config "$config_file")"
+line_roundtrip="$(grep '"number":20,' <<<"$out_roundtrip")"
+assert_contains "a landing-armed event written into the log is found again by this pull request's own pr_url" \
+  "$line_roundtrip" '"outcome":"clean"'
+assert_contains "  ... carrying the source the event recorded" \
+  "$line_roundtrip" '"source":"tech-debt"'
+
+# --- A landing-armed event not yet in the snapshot, merged moments ago: the
+# audit defers rather than permanently recording a false unverifiable
+# (agent-ops#2725 AC1/AC2) — `ESCAPE_AUDIT_NOW_EPOCH` stands in for "this
+# cycle reached the sweep a few minutes after the merge", the case a stale,
+# once-per-cycle union-log snapshot cannot tell apart from a genuine gap on
+# its own. --------------------------------------------------------------
+jq -c '. + [{"number": 21, "pull_request": {"merged_at": "2026-08-20T10:00:00Z"}}]' \
+  "$STUB_DIR/issues.json" > "$STUB_DIR/issues.json.tmp" \
+  && mv "$STUB_DIR/issues.json.tmp" "$STUB_DIR/issues.json"
+pr_json 21 "$LOGIN" > "$STUB_DIR/pr-21.json"
+cat > "$STUB_DIR/commit-sha21.json" <<'EOF'
+{"files": [{"filename": "scripts/foo.sh"}]}
+EOF
+cat > "$STUB_DIR/events-21.json" <<'EOF'
+[{"event": "labeled", "label": {"name": "complexity:low"}, "created_at": "2026-08-20T09:00:00Z"}]
+EOF
+log_file_grace="$tmp_dir/log-grace.jsonl"
+: > "$log_file_grace"
+merged_epoch_21="$(date -u -d "2026-08-20T10:00:00Z" +%s)"
+
+out_grace_within="$(ESCAPE_AUDIT_NOW_EPOCH=$(( merged_epoch_21 + 300 )) \
+  "$DETECTOR" "$SLUG" "$LOGIN" "$log_file_grace" --config "$config_file")"
+assert_eq "5 minutes after the merge, with no landing-armed event yet, the candidate is deferred rather than reported" \
+  "" "$(grep '"number":21,' <<<"$out_grace_within")"
+
+out_grace_after="$(ESCAPE_AUDIT_NOW_EPOCH=$(( merged_epoch_21 + 3600 )) \
+  "$DETECTOR" "$SLUG" "$LOGIN" "$log_file_grace" --config "$config_file")"
+line_grace_after="$(grep '"number":21,' <<<"$out_grace_after")"
+assert_contains "  ... but an hour after the merge, still with no event, it is genuinely unverifiable" \
+  "$line_grace_after" '"outcome":"unverifiable"'
+assert_contains "  ... and is still never marked audited while only deferred — the retry above cost a fresh pulls/21 read, not a skip" \
+  "$(grep -c -xF "api repos/$SLUG/pulls/21" "$STUB_DIR/calls.log" 2>/dev/null)" "2"
+
 # --- A SIGTERM actually stops the sweep, and takes its temp files with it ---
 # `agent-cycle.sh` runs this script under `timeout 120`, which sends one
 # SIGTERM and then waits — there is no `--kill-after` at the call site. So
