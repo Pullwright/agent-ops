@@ -122,6 +122,16 @@ normalize_version() {
   printf '%s' "${v#v}"
 }
 
+# valid_version V — true iff V is a plausible version/tag string. A GitHub
+# release tag name or an npm `latest` version field is upstream-controlled
+# text, near-arbitrary under that maintainer's control, and is interpolated
+# verbatim into a filed issue body below — this allowlist keeps a compromised
+# or malicious upstream from injecting markdown or instruction-shaped text
+# into the pipeline's own work queue (issue #2726).
+valid_version() {
+  [[ "$1" =~ ^[A-Za-z0-9._+-]{1,40}$ ]]
+}
+
 # Name, upstream resolver, and upstream kind/ref — one row per pin, in the
 # order the issue #2708 spec itself lists them.
 names=(SUPERCRONIC_VERSION SHELLCHECK_VERSION CLAUDE_CODE_VERSION GROK_BUILD_VERSION)
@@ -148,6 +158,11 @@ for i in "${!names[@]}"; do
     latest="$(github_latest_tag "$ref")"
   else
     latest="$(npm_latest_version "$ref")"
+  fi
+
+  if [[ -n "$latest" ]] && ! valid_version "$latest"; then
+    printf '::error::%s''s upstream version from %s (%s) failed validation: %q\n' "$name" "$ref" "$kind" "$latest" >&2
+    latest=""
   fi
 
   if [[ -z "$latest" ]]; then

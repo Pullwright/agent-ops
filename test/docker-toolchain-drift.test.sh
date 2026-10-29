@@ -170,6 +170,29 @@ assert_eq "unable: exit 2" "2" "$rc"
 assert_eq "unable: names the unresolved pin" "yes" "$(saw 'SUPERCRONIC_VERSION' "$err")"
 assert_eq "unable: files nothing" "no" "$([[ -f "$tmp_dir/create_log" ]] && echo yes || echo no)"
 
+# --- 5a. GitHub-resolved version fails the allowlist: unable, files nothing
+printf '[]' > "$tmp_dir/issue_list_json"
+printf 'v0.2.51`](https://evil)\n' > "$tmp_dir/supercronic_tag"
+err="$(run_check 2>&1 1>/dev/null)"; rc=$?
+assert_eq "github invalid: exit 2" "2" "$rc"
+assert_eq "github invalid: names the unresolved pin" "yes" "$(saw 'SUPERCRONIC_VERSION' "$err")"
+assert_eq "github invalid: files nothing" "no" "$([[ -f "$tmp_dir/create_log" ]] && echo yes || echo no)"
+out="$(run_check --list)"
+assert_eq "github invalid: --list prints ? for the pin" "yes" "$(saw 'SUPERCRONIC_VERSION	v0.2.47	?' "$out")"
+assert_eq "github invalid: --list never leaks the raw tag" "no" "$(saw 'evil' "$out")"
+printf 'v0.2.47\n' > "$tmp_dir/supercronic_tag"
+
+# --- 5b. npm-resolved version fails the allowlist: unable, files nothing ---
+printf '2.1.312`](https://evil)\n' > "$tmp_dir/claude_version"
+err="$(run_check 2>&1 1>/dev/null)"; rc=$?
+assert_eq "npm invalid: exit 2" "2" "$rc"
+assert_eq "npm invalid: names the unresolved pin" "yes" "$(saw 'CLAUDE_CODE_VERSION' "$err")"
+assert_eq "npm invalid: files nothing" "no" "$([[ -f "$tmp_dir/create_log" ]] && echo yes || echo no)"
+out="$(run_check --list)"
+assert_eq "npm invalid: --list prints ? for the pin" "yes" "$(saw 'CLAUDE_CODE_VERSION	2.1.267	?' "$out")"
+assert_eq "npm invalid: --list never leaks the raw version" "no" "$(saw 'evil' "$out")"
+printf '2.1.267\n' > "$tmp_dir/claude_version"
+
 # --- 5. --list prints every pin and files nothing --------------------------
 printf 'v0.2.47\n' > "$tmp_dir/supercronic_tag"
 out="$(run_check --list)"; rc=$?

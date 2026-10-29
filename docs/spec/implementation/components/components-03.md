@@ -1227,6 +1227,17 @@
    tokenless branch execs `gh` via `env -u GH_TOKEN` rather than calling the
    shadowed shell function — outside `lib/github-limit.sh`'s rate-limit
    coverage too.
+   Each resolved version is validated against a conservative character
+   allowlist (`^[A-Za-z0-9._+-]{1,40}$`) before it is used for anything
+   else: a GitHub release tag name or an npm `latest` version field is
+   upstream-controlled text, near-arbitrary under that maintainer's
+   control, and is interpolated verbatim into the filed issue body and
+   into `--list`'s own output, so an unvalidated string would let a
+   compromised or malicious upstream inject markdown or instruction-shaped
+   text into the pipeline's own work queue (issue #2726). A version that
+   fails the allowlist is treated exactly as an already-unresolvable one —
+   logged and discarded, never forwarded — so the existing unable/exit-2
+   path is what fails closed on it, not a separate exit path.
    On drift, `lib/tech-debt-file.sh`'s `techdebt_file_debt` (component 23d)
    files — or, under its own title-dedup, comments on — a `pw::type:
    tech-debt`-labelled issue naming every stale pin, its pinned and upstream
@@ -1236,13 +1247,17 @@
    ordinary selection afterward — a human or a later Implementer bumps the
    pin and its checksums from there; this script itself never does.
    Exit 0 whether clean or filed; exit 1 only a failed filing; exit 2 an
-   unresolved upstream version, never read as clean or as drift, the same
-   convention component 10a's own script uses. `--list` prints every pin
-   against its resolved upstream version and files nothing.
+   unresolved or allowlist-failing upstream version, never read as clean or
+   as drift, the same convention component 10a's own script uses. `--list`
+   prints every pin against its resolved upstream version and files
+   nothing.
    Unit-tested (`test/docker-toolchain-drift.test.sh`) against a stubbed
    `gh` and a stubbed `curl` — never the real GitHub releases API or the
    real npm registry, for the same reason component 10a's own test stubs
    `gh` — covering: no drift files nothing; a drifted pin with no open issue
    opens one; a drifted pin with an open issue comments on it instead of
    opening a second one; an unresolvable upstream version exits 2 and files
-   nothing; `--list` files nothing. Must pass `shellcheck`.
+   nothing; a resolved version that fails the allowlist (one GitHub tag, one
+   npm version, each carrying markdown-shaped text) exits 2, files nothing,
+   and never appears in `--list`'s own output; `--list` files nothing. Must
+   pass `shellcheck`.
