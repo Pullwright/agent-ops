@@ -461,6 +461,31 @@ assert_eq "…one qualified id, wrapped in an array, for an ordinary key" \
 assert_eq "…and [] for empty (disabled)" \
   '[]' "$(model_key_qualified_ids enabler_model "")"
 
+# model_key_fingerprint_json (issue #2660) is what a no-op fingerprint
+# should embed in place of model_key_load_into's own VAR: a set's own
+# normalized member array rather than its bare handle, so editing the set's
+# membership or weights changes what gets embedded — restoring the
+# fingerprint's sensitivity a bare VAR loses, since the handle is a
+# constant (the config key's own name) unmoved by any edit to what it names.
+assert_eq "model_key_fingerprint_json embeds a set's own member array, not its bare handle" \
+  '[{"id":"anthropic/claude-sonnet-5","weight":2},{"id":"xai/grok-4.7","weight":1}]' \
+  "$(model_key_fingerprint_json "$mk1_var")"
+assert_eq "…and an ordinary key's bare id passes through as a JSON string, unchanged" \
+  '"claude-sonnet-5"' "$(model_key_fingerprint_json "$mk_bare")"
+assert_eq "…and empty (disabled) prints an empty JSON string" \
+  '""' "$(model_key_fingerprint_json "")"
+
+before_fp="$(model_key_fingerprint_json "$mk1_var")"
+model_key_load_into mk1_var mk1_key '{"models": [{"id": "claude-sonnet-5", "weight": 9}, {"id": "xai/grok-4.7", "weight": 1}]}'
+after_fp="$(model_key_fingerprint_json "$mk1_var")"
+if [[ "$before_fp" != "$after_fp" ]]; then
+  printf 'ok   - %s\n' "editing a set's weights changes model_key_fingerprint_json's own output for the same handle"
+else
+  printf 'FAIL - %s\n     before: %s\n     after:  %s\n' \
+    "editing a set's weights changes model_key_fingerprint_json's own output for the same handle" "$before_fp" "$after_fp"
+  failures=$(( failures + 1 ))
+fi
+
 # Leave providers_load back at the default state (no providers configured)
 # before any remaining assertion below, in case one is ever added that
 # relies on the no-op default.

@@ -391,6 +391,28 @@ model_key_load_into() {
   printf -v "$__mkl_var" '%s' "$__mkl_key"
 }
 
+# model_key_fingerprint_json VALUE
+# Prints the JSON a no-op fingerprint should embed for an already-resolved
+# model key VALUE (`model_key_load_into`'s own VAR): `MODEL_SET_JSON[VALUE]`'s
+# normalized member array when VALUE is a set's own handle
+# (`model_key_is_set`), or VALUE itself as a JSON string otherwise.
+#
+# A fingerprint that embeds VALUE directly sees only the set's own handle for
+# a set-configured key — the config key's own name, a constant — so editing
+# the set's membership or weights never changes the embedded value, and the
+# fleet-wide forced recheck a model change is meant to trigger never fires
+# (issue #2660). Routing through this instead keeps an ordinary (non-set) key
+# unchanged — VALUE itself, same as before — while a set-configured key's
+# fingerprint now moves with its members.
+model_key_fingerprint_json() {
+  local value="${1:-}"
+  if model_key_is_set "$value"; then
+    printf '%s\n' "${MODEL_SET_JSON[$value]}"
+  else
+    jq -cn --arg v "$value" '$v'
+  fi
+}
+
 # model_key_qualified_ids KEY VALUE
 # Prints a compact JSON array of every qualified id VALUE can resolve to —
 # `[]` for an empty VALUE (the "stage disabled" convention), the one

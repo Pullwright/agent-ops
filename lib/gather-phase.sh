@@ -500,10 +500,19 @@ fi
 # it did before this feature shipped: no fleet-wide spurious wake the day
 # this lands.
 repo_nice_json="$(repo_nice_selection_config "$all_repos_json")"
+# Each `--argjson` below routes through `model_key_fingerprint_json`
+# (lib/model-id.sh) rather than embedding the resolved variable as a bare
+# `--arg` string: for an ordinary key this prints the same string either
+# way, but for a key configured as a weighted set (issue #2247) the resolved
+# variable holds only the set's own handle — the config key's own name, a
+# constant — so a bare `--arg` would fingerprint identically before and
+# after a membership or weight edit. Folding in `MODEL_SET_JSON[key]`'s own
+# normalized member array instead restores the fingerprint's sensitivity to
+# those edits (issue #2660).
 selection_config_json="$(jq -nc \
-  --arg cm "$coordinator_model" \
-  --arg md "$implementer_model_default" \
-  --arg mt "$implementer_model_trivial" \
+  --argjson cm "$(model_key_fingerprint_json "$coordinator_model")" \
+  --argjson md "$(model_key_fingerprint_json "$implementer_model_default")" \
+  --argjson mt "$(model_key_fingerprint_json "$implementer_model_trivial")" \
   --argjson cmax "$candidates_max" \
   --argjson nice "$repo_nice_json" \
   '{coordinator_model: $cm, models: {default: $md, trivial: $mt}, candidates_max: $cmax}
@@ -516,8 +525,11 @@ coordinator_prompt_sha="$(stage_prompt_sha "$PROMPTS_DIR" "$state_dir" coordinat
 # without it the escalation path would come due during a quiet week and wait for
 # the forced recheck to be noticed. The set empties again once the engagement's
 # examined markers land, which is what lets the fleet go back to skipping.
+# `$m` routes through `model_key_fingerprint_json` for the same reason
+# `selection_config_json` above does (issue #2660): a bare `enabler_model`
+# fingerprints only its set's handle when configured as a weighted set.
 enabler_config_json="$(jq -nc \
-  --arg m "$enabler_model" \
+  --argjson m "$(model_key_fingerprint_json "$enabler_model")" \
   --arg n "$enabler_after_coordinator_cycles" \
   --arg rn "$refinement_after_coordinator_cycles" \
   --arg rh "$enabler_recheck_hours" \
@@ -537,8 +549,11 @@ enabler_prompt_sha=""
 # 39b): its candidate set turns on the same `refinements`/`blocked`/`void`
 # state the fingerprint already carries, but a `refinement_policy` edit moves
 # none of those and must still bust the no-op short-circuit on its own.
+# `$m` routes through `model_key_fingerprint_json` for the same reason
+# `selection_config_json` above does (issue #2660).
 refiner_config_json="$(jq -nc \
-  --arg m "$refiner_model" --arg lbl "$refined_label" --arg rmax "$refiner_max_per_engagement" \
+  --argjson m "$(model_key_fingerprint_json "$refiner_model")" \
+  --arg lbl "$refined_label" --arg rmax "$refiner_max_per_engagement" \
   --argjson policy "$refinement_policy_json" \
   '{refiner_model: $m, refined_label: $lbl, refiner_max_per_engagement: $rmax, refinement_policy: $policy}')"
 refiner_prompt_sha=""
