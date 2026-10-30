@@ -51,10 +51,23 @@
 #     clue why. Caught before `gh` is ever invoked. Unset or not "true",
 #     the tokenless path is unchanged; a non-empty TOKEN is unaffected
 #     either way.
+#   - **_techdebt_gh reaches `gh` through lib/github-limit.sh's own
+#     shell-function shadow on both branches** (agent-ops#2732): a
+#     secondary-rate-limit refusal is waited out and retried once on the
+#     tokenless path exactly as on the token one. This is the one behaviour
+#     in this file a second PATH stub cannot assert, since what it turns on
+#     is whether the bare `gh` word stays a function call or becomes an
+#     exec'd binary — so the real shadow is sourced ahead of
+#     lib/tech-debt-file.sh below, with its secondary wait shortened to a
+#     second (GITHUB_LIMIT_SECONDARY_WAIT_SECONDS) to keep the assertions
+#     fast.
 #
 # `gh` is stubbed through a fake executable on PATH, recording every
 # invocation to a file for assertions — the technique
-# test/merge-queue.test.sh's stub uses for its own `gh api` calls.
+# test/merge-queue.test.sh's stub uses for its own `gh api` calls. The
+# shadow sourced above wraps that stub rather than displacing it (it reaches
+# the binary by `command gh`, which PATH still resolves to the stub), so
+# every assertion below reads the same recorded invocations either way.
 #
 # No test framework is used (none exists elsewhere in this repo). Run it
 # directly:
