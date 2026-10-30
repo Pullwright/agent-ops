@@ -57,9 +57,9 @@
 #   the Enabler's eligible set (requirement 35b)         | repo|item|reason projection
 #   the Enabler's model and thresholds                   | enabler_config
 #   the Enabler's own rules                              | enabler_prompt_sha
-#   the Refiner's candidate set (requirement 39a/39b)     | repo|source|item projection
+#   the Refiner's candidate set (requirement 39a/39b)    | repo|source|item projection
 #   the Refiner's model, label and policy                | refiner_config
-#   the Refiner's own rules                               | refiner_prompt_sha
+#   the Refiner's own rules                              | refiner_prompt_sha
 #
 # `review_feedback` is hashed verbatim, like `findings`, and that gets the rule
 # right for free in both directions: its entries only exist while it is the

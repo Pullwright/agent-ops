@@ -475,9 +475,10 @@
    the unmodified shipped prompt every cycle — with, for a misspelled stage
    key, no fingerprint movement to betray it.
 
-   The Co-Ordinator's and Enabler's assembled prompts also feed the no-op
-   fingerprint (requirement 3b, 35b): `coordinator_prompt_sha` and
-   `enabler_prompt_sha` are `stage_prompt_sha`'s content-addressed digest of
+   The Co-Ordinator's, Enabler's and Refiner's assembled prompts also feed
+   the no-op fingerprint (requirement 3b, 35b, 39a/39b):
+   `coordinator_prompt_sha`, `enabler_prompt_sha` and `refiner_prompt_sha`
+   are `stage_prompt_sha`'s content-addressed digest of
    the stage's assembled prompt: the base file's content hash, then each
    configured `extend` entry's content hash keyed by its configured path,
    with a configured-but-unreadable entry recorded explicitly under that
@@ -485,7 +486,7 @@
    `prompts/<s>.md`. A changed, added, removed, or newly
    unreadable override therefore busts the fingerprint exactly as an edit to
    the shipped prompt does; without this, an installation's own extension
-   could change the Co-Ordinator's or Enabler's behaviour while the
+   could change one of those three stages' behaviour while the
    short-circuit went on citing a `none-selected` verdict reached under the
    old text. No resolved filesystem path enters the digest: `none-selected`
    fingerprints are compared fleet-wide across the shared log (requirement
