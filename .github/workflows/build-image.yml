@@ -351,7 +351,7 @@ jobs:
               [[ ! -w "$f" ]] || { echo "$f is writable by $(id -un)" >&2; exit 1; }
             done
             [[ "$(sudo -n -u stage /usr/local/libexec/agent-ops/stage-exec id -un)" == stage ]] || { echo "agent cannot start a process as the stage user" >&2; exit 1; }
-            shellcheck --version | grep -qx "version: 0.10.0" || { echo "shellcheck: expected version 0.10.0" >&2; exit 1; }
+            shellcheck --version | grep -qx "version: 0.11.0" || { echo "shellcheck: expected version 0.11.0" >&2; exit 1; }
           '
 
       - name: Verify the container crontab
