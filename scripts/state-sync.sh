@@ -229,6 +229,11 @@ updater_defer_stuck_after_seconds="$(cfg \
 # jq conversion as above, for the same `set -e` reason.
 push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
 
+# One fetch interval in seconds, for the same reason as push_interval_seconds
+# above: the bound a fetch's own lock wait (below) must never outlast
+# (agent-ops#2748).
+fetch_interval_seconds="$(cfg '.schedule.state_sync_fetch_minutes * 60 | floor')"
+
 # How long a fetch waits for a held mirror lock before giving up
 # (agent-ops#2745): unlike two pushes racing the same operation — where
 # `mirror_lock`'s own header reasons that the loser has nothing to add that
@@ -242,9 +247,17 @@ push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
 # push holds observed there run from roughly 100s to a little over 200s,
 # comfortably inside one push interval, so waiting that long lets fetch
 # ride out the same ordinary holds `mirror_lock` already calls routine
-# rather than skipping its own interval over them. `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS`
-# overrides it for tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS` below does.
-fetch_lock_wait_seconds="${STATE_SYNC_FETCH_LOCK_WAIT_SECONDS:-$push_interval_seconds}"
+# rather than skipping its own interval over them. The default is clamped to
+# `fetch_interval_seconds` too (agent-ops#2748): deriving the wait from
+# `push_interval_seconds` alone is only ever short enough on its own at
+# configurations where the push interval is already shorter than the fetch
+# interval — true of the shipped 5/7 split, but not of every
+# `schedule.state_sync_push_minutes`/`state_sync_fetch_minutes` pair the
+# schema allows, and without this clamp a longer push interval lets waiting
+# fetches pile up faster than cron starts new ones.
+# `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` overrides the whole computation for
+# tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS` below does.
+fetch_lock_wait_seconds="${STATE_SYNC_FETCH_LOCK_WAIT_SECONDS:-$(( push_interval_seconds < fetch_interval_seconds ? push_interval_seconds : fetch_interval_seconds ))}"
 
 # The redaction loop's own deadline (agent-ops#1679): the same one push
 # interval used above — long enough to cover an ordinary push (measured in

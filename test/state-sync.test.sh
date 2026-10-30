@@ -2153,6 +2153,59 @@ assert_lacks "…never reporting the lock as contended at all" \
   "another state-sync holds the mirror" "$out"
 kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
 
+# --- the default lock wait is clamped to the fetch interval (agent-ops#2748) --
+# Deriving the default purely from push_interval_seconds (above) is short
+# enough to fit inside fetch's own cadence only while the push interval is
+# already the shorter of the two — true of the shipped 5/7-minute split, but
+# the schema does not require it. At the shipped config the clamp is a
+# no-op: push stays the shorter interval, so `min()` picks the same value
+# the unclamped default already did — proven arithmetically rather than by
+# waiting 300s out, the same computation state-sync.sh itself performs.
+shipped_push_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
+  | jq -r '.schedule.state_sync_push_minutes * 60 | floor')"
+shipped_fetch_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
+  | jq -r '.schedule.state_sync_fetch_minutes * 60 | floor')"
+assert_eq "the shipped config's push interval is 300s" "300" "$shipped_push_s"
+assert_eq "the shipped config's fetch interval is 420s" "420" "$shipped_fetch_s"
+assert_eq "the clamp is a no-op at the shipped cadence — push stays the shorter interval" \
+  "$shipped_push_s" "$(( shipped_push_s < shipped_fetch_s ? shipped_push_s : shipped_fetch_s ))"
+
+# At a configuration where the push interval is the *longer* of the two, the
+# unclamped default (push_interval_seconds, 120s here) would let a fetch wait
+# past its own 60s interval — exactly the pile-up agent-ops#2748 describes.
+# Proven end to end, with no `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` override:
+# the hold below (90s) outlasts the clamped 60s default but not the
+# unclamped 120s one, so a fetch giving up within that window is the clamp
+# actually firing, not a coincidence of a short hold.
+cl_config="$tmp_dir/clamp-config.json"
+jq '.schedule.state_sync_push_minutes = 2 | .schedule.state_sync_fetch_minutes = 1' \
+  "$SCRIPT_DIR/config.json" > "$cl_config"
+
+cl_home="$(new_node clamp-node)"
+cl_state="$cl_home/.local/state/poetic-agents"
+cl_mirror="$cl_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-10-30T00:00:00Z","event":"cycle-start"}\n' > "$cl_state/log.jsonl"
+out="$(sync_as "$cl_home" active push AGENT_OPS_CONFIG="$cl_config")"
+assert_eq "the clamp node's first push exits 0" "0" "$?"
+
+jq -nc --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "push", pid: 1}' > "$cl_mirror.lock.holder"
+flock "$cl_mirror.lock" sleep 90 &
+cl_holder_parent=$!
+sleep 0.2
+cl_holder_child="$(pgrep -P "$cl_holder_parent" | head -1)"
+cl_start="$(date +%s)"
+out="$(sync_as "$cl_home" active fetch AGENT_OPS_CONFIG="$cl_config")"
+cl_rc=$?
+cl_elapsed=$(( $(date +%s) - cl_start ))
+kill "$cl_holder_parent" "$cl_holder_child" 2>/dev/null; wait "$cl_holder_parent" 2>/dev/null
+assert_eq "a fetch giving up against a hold outlasting both intervals still exits 0 — self-clearing" \
+  "0" "$cl_rc"
+assert_contains "…reporting the contention" \
+  "another state-sync holds the mirror — holding for" "$out"
+assert_eq "…giving up around the 60s fetch interval, not the longer 120s push interval" "1" \
+  "$(( cl_elapsed >= 45 && cl_elapsed < 100 ? 1 : 0 ))"
+
 # --- a single file's redaction failing does not wedge the whole push -----------
 # The root cause #1679 traced the incident to: a file `redact_file` cannot
 # rewrite used to abort the whole loop under `set -e`, abandoning `find`'s
