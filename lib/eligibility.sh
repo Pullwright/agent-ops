@@ -467,20 +467,32 @@ fi
 # carried-forward reading, already consulted above for a repo whose gather
 # merely *degraded*) would still miss this: that reading is only ever as
 # fresh as the last logged `issues-excluded` event, which can itself predate
-# the comment. Instead, this narrows to the one case that can actually flip
-# the verdict: an eligible candidate whose repo's `ordered_repos_json` entry
-# reports `expensive_gather.fresh == false` *and* whose own `blocked_ts`
-# (`ENABLER_ELIGIBLE_JQ`, lib/cycle-state.sh) is later than that entry's own
-# `expensive_gather.gathered_at` — blocked after the cache was written, so
-# neither sidecar could ever have seen it. For just that narrow set — never
-# every eligible candidate, which is exactly what issue #2603 removed for
-# cost and must not come back — the candidate's own live thread is re-read
-# directly (one `gh` read per candidate) and tested with the identical
-# `dependency_refs`/`issue_blocked_by_ref` (lib/dependency-gate.sh,
-# lib/issue-prefetch.sh) the gathers themselves use at gather time. An entry
-# with no `expensive_gather` stamp at all reads as fresh, the same
-# convention `issues_by_repo_json` (lib/candidate-gather.sh) already
-# observes, so it is left alone here too.
+# the comment. Instead, this narrows to the one class of candidate that can
+# actually flip the verdict: an eligible candidate whose repo's
+# `ordered_repos_json` entry reports `expensive_gather.fresh == false` with
+# a non-empty `expensive_gather.gathered_at` to compare against — the
+# thread may have moved since that cache was written, and neither sidecar
+# could ever have seen it either way. An entry with no `expensive_gather`
+# stamp at all reads as fresh, the same convention `issues_by_repo_json`
+# (lib/candidate-gather.sh) already observes, so it is left alone here too.
+#
+# For just that narrow repo-stale set — never every eligible candidate,
+# which is exactly what issue #2603 removed for cost and must not come
+# back — the candidate's own `updated_at` is read live (one `gh` call per
+# candidate) and compared against the repo's own `gathered_at`: `updated_at`
+# moves on any body edit or new comment, so this is an exact test of "the
+# thread changed after the cache was written", not a proxy for it. The
+# narrow set's own live thread (body plus comments) is re-read directly and
+# tested with the identical `dependency_refs`/`issue_blocked_by_ref`
+# (lib/dependency-gate.sh, lib/issue-prefetch.sh) the gathers themselves use
+# at gather time, but only for the subset `updated_at` says has actually
+# moved — paying the one cheap call per repo-stale candidate to avoid the
+# heavier body+comments read on the rest. An earlier version of this gate
+# compared the candidate's own `blocked_ts` (`ENABLER_ELIGIBLE_JQ`,
+# lib/cycle-state.sh) to `gathered_at` instead — sound only when a
+# `Blocked-by:` line is posted at the moment of blocking, and blind to one
+# added to an already-blocked item's thread afterwards (a human edit, a
+# later stage's recheck): issue #2720.
 #
 # Narrowed once more, to an `.item` that is a bare issue number: that is the
 # only shape either sidecar ever reports on (both are keyed by `.number`, off
@@ -505,20 +517,26 @@ stale_gather_candidates_json='[]'
       | (canon_repo($e.repo // "")) as $crepo
       | ($repomap[$crepo]) as $r
       | select($r != null and $r.fresh == false and $r.gathered_at != ""
-               and (($e.blocked_ts // "") > $r.gathered_at)
                and (($e.item // "") | test("^[0-9]+$")))
-      | {repo: ($e.repo // ""), canon_repo: $crepo, item: ($e.item // "")} ]
+      | {repo: ($e.repo // ""), canon_repo: $crepo, item: ($e.item // ""), gathered_at: $r.gathered_at} ]
   ' <<<"$ordered_repos_json" 2>/dev/null || true)"
 [[ -n "$stale_gather_candidates_json" ]] || stale_gather_candidates_json='[]'
 
 stale_gather_live_checked_json='[]'
-while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item; do
+while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item sglr_gathered_at; do
   [[ -n "$sglr_orig_repo" && -n "$sglr_canon_repo" && -n "$sglr_item" ]] || continue
+  # One cheap live read per candidate in the repo-stale set above, to test
+  # the exact fact requirement 35g needs (has this thread moved since the
+  # cache was written) before paying for the heavier body+comments read
+  # below. A read that fails or returns nothing is treated the same as an
+  # unreadable thread elsewhere in this block: left alone, never excluded.
+  sglr_updated_at="$(gh api "repos/$sglr_canon_repo/issues/$sglr_item" --jq '.updated_at // ""' 2>/dev/null || true)"
+  [[ -n "$sglr_updated_at" && "$sglr_updated_at" > "$sglr_gathered_at" ]] || continue
   sglr_thread="$(gh api "repos/$sglr_canon_repo/issues/$sglr_item" --jq '.body // ""' 2>/dev/null || true)"
   # `per_page=100` *and* `--paginate`, never the bare path: REST's own default
   # is the *first* 30 comments ascending by `created_at`, and a `Blocked-by:`
   # line sits at the end of a thread, not its start — the pipeline posts it at
-  # the moment it records the block, which is the very thing the `blocked_ts >
+  # the moment it records the block, which is the very thing the `updated_at >
   # gathered_at` gate above selects for. A bare read of this repository's own
   # PR #2437 (35 comments) returns 30 and drops the four newest days of it, so
   # on any thread past 30 comments the filter would be searching a window that
@@ -537,7 +555,7 @@ while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item; do
   stale_gather_live_checked_json="$(jq -c --arg r "$sglr_orig_repo" --arg i "$sglr_item" \
     '. + [{repo: $r, item: $i}]' <<<"$stale_gather_live_checked_json" 2>/dev/null \
     || printf '%s' "$stale_gather_live_checked_json")"
-done < <(jq -r '.[] | [(.repo // ""), (.canon_repo // ""), (.item // "")] | @tsv' \
+done < <(jq -r '.[] | [(.repo // ""), (.canon_repo // ""), (.item // ""), (.gathered_at // "")] | @tsv' \
   <<<"$stale_gather_candidates_json" 2>/dev/null || true)
 stale_gather_live_checked_n="$(jq 'length' <<<"$stale_gather_live_checked_json" 2>/dev/null || printf 0)"
 [[ "$stale_gather_live_checked_n" =~ ^[0-9]+$ ]] || stale_gather_live_checked_n=0
