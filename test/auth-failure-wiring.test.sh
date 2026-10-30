@@ -109,7 +109,7 @@ run_block() {
     # shellcheck disable=SC2034  # consumed by $auth_block below, invisible to a static reader
     cycle_id="20260101T000000Z-test-node-1"
 
-    # shellcheck disable=SC2317  # called from $auth_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $auth_block via eval, invisible to a static reader
     github_auth_probe() { printf '%s\t%s\n' "$AUTH_MODE" "$AUTH_DETAIL"; }
     export AUTH_MODE="$mode" AUTH_DETAIL="$detail"
 
@@ -117,7 +117,7 @@ run_block() {
     # (repo, item, label, title, body_file), plus the body file's own
     # contents, so the assertions below can check both the routing and the
     # message a human would actually read.
-    # shellcheck disable=SC2317  # called from $auth_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $auth_block via eval, invisible to a static reader
     create_escalation_issue() {
       { printf 'repo=%s\nitem=%s\nlabel=%s\ntitle=%s\n' "$1" "$2" "$3" "$4"
         echo "---body---"
@@ -128,7 +128,7 @@ run_block() {
     }
     export ESCALATION_FILE="$escalation_file"
 
-    # shellcheck disable=SC2317  # called from $auth_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $auth_block via eval, invisible to a static reader
     log_event() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
@@ -138,7 +138,7 @@ run_block() {
     # a no-op — this file's own subject is the stand-down's cause and
     # reason, not the node-state record test/node-time-state.test.sh covers
     # directly.
-    # shellcheck disable=SC2317  # called from $auth_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $auth_block via eval, invisible to a static reader
     set_node_state_terminal() { :; }
 
     eval "$auth_block"

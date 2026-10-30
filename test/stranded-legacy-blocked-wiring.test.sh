@@ -118,7 +118,7 @@ events_file="$tmp_dir/events"
 # `gh issue list` serves the fixture listing; `gh api …/timeline` runs the
 # block's own `--jq` filter — with real jq, so the filter itself is under test
 # — over the fixture timeline, once per page, exactly as `--paginate` does.
-# shellcheck disable=SC2317  # reached only from the lifted Route 2 block.
+# shellcheck disable=SC2317,SC2329  # reached only from the lifted Route 2 block.
 gh() {
   local a path="" filter="" want_jq=0 page num
   case "${1:-}" in
@@ -149,11 +149,11 @@ gh() {
 }
 
 # The three the lifted block calls into, all reached only from it.
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 log_event() { printf '%s %s\n' "$1" "${2:-}" >> "$events_file"; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 github_pr_list_truncated() { (( ${1:-0} >= GITHUB_PR_LIST_LIMIT )); }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 refinement_label_remove() {
   printf 'remove %s %s %s\n' "$1" "$2" "$3" >> "$label_calls_file"
 }
@@ -257,7 +257,7 @@ assert_eq "  ... and no label is touched" "" "$(cat "$label_calls_file")"
 {"ts":"2026-08-01T10:00:00Z","cycle":"c1","event":"unblocked","repo":"o/r","item":"300"}
 EOF
   rm -f "$timeline_dir/300.json" "$timeline_dir/300.page2.json"
-  # shellcheck disable=SC2317  # reached only from the lifted block, same as above.
+  # shellcheck disable=SC2317,SC2329  # reached only from the lifted block, same as above.
   gh() { printf 'list %s\n' "$slug" >> "$gh_calls"; return 1; }
   run_route2
 ) >/dev/null 2>&1

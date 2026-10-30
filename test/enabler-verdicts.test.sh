@@ -318,7 +318,7 @@ export VOID_GUARD_GH="$gh_stub"
 # `run_model_stage` for the lifted `run_enabler_decide`, and a later
 # definition of the same name is what makes the linter read this one as
 # dead. It is not: every scenario above that section runs through here.
-# shellcheck disable=SC2317  # shadowed only by the decide-gate section's own stub, far below
+# shellcheck disable=SC2317,SC2329  # shadowed only by the decide-gate section's own stub, far below
 run_model_stage() {
   local out_file="$5"
   jq -nc --argjson env "$STUB_EXAMINED_JSON" '{result: ($env | tostring), session_id: "stub-session"}' \
@@ -411,16 +411,16 @@ review_gate_unknown_streak_after=3
 # escalated", exactly what a fresh log gives the real functions, and are
 # overridden only by the checks-unreadable scenario below that needs
 # something else.
-# shellcheck disable=SC2317  # invoked only by the eval'd review_gate_escalate_unreadable_streak
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd review_gate_escalate_unreadable_streak
 review_gate_unknown_streak_verdict() { cat >/dev/null; printf ''; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 review_gate_degraded_since() { cat >/dev/null; return 1; }
 
 # handoff_complete_review is overridden per-scenario below (agent-ops#440's
 # complete_handoff gate); a default that fails loudly means a scenario that
 # forgets to define it is caught rather than silently exercising whatever the
 # previous scenario left behind.
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 handoff_complete_review() {
   echo "FAIL - handoff_complete_review was called but no scenario stub was set" >&2
   exit 98
@@ -435,7 +435,7 @@ handoff_complete_review() {
 # and what the escalate branch does with its answer are what this file
 # actually tests. Overridden per-scenario below; a default that fails loudly
 # means a scenario expecting it never called is not silently masking a bug.
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   echo "FAIL - run_enabler_adjudication was called but no scenario stub was set" >&2
   exit 97
@@ -446,7 +446,7 @@ run_enabler_adjudication() {
 # above — the live nested Claude engagement is out of scope for this file;
 # what it tests is the gating logic (escalation_autonomy_decide_pass_available,
 # real, sourced above) and what the escalate branch does with the verdict.
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   echo "FAIL - run_enabler_decide was called but no scenario stub was set" >&2
   exit 96
@@ -471,7 +471,7 @@ enabler_decision_comment() {
 # fixed number/url so decision-taken's own issue_number/issue_url are
 # checkable without a real filing. test/escalation-autonomy.test.sh covers
 # create_decision_log_issue itself (filing, dedup, label-missing fallback).
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_decision_log_issue() {
   record "create_decision_log_issue $1 $2 $3"
   printf '999\thttps://github.com/%s/issues/999' "$1"
@@ -701,7 +701,7 @@ assert_contains "  ... a warning explains why" \
 # escalate: success and a filing failure — the one outcome 36a exempts from
 # ordinary examination accounting
 # ============================================================================
-# shellcheck disable=SC2317  # called between here and its redefinition below, via the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # called between here and its redefinition below, via the eval'd maybe_run_enabler
 create_escalation_issue() { printf '42\thttps://github.com/acme/widgets/issues/42'; return 0; }
 examined='[{"repo":"acme/widgets","item":"TD001","verdict":"escalate","reason":"needs a human call",
             "issue":{"title":"Decide the retry budget","body":"Please decide the retry budget for TD001."}}]'
@@ -714,7 +714,7 @@ assert_eq "escalate: names the filed issue number" "42" "$(jq -r '.issue_number'
 xmn_evt="$(events_named "$calls" enabler-examined | head -n1)"
 assert_eq "escalate: enabler-examined outcome is escalate" "escalate" "$(jq -r '.outcome' <<<"$xmn_evt")"
 
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { return 1; }
 calls="$(run_case "escalate: filing failed" "$eligible" "$examined")"
 
@@ -743,7 +743,7 @@ examined='[{"repo":"acme/widgets","item":"TD26071901","verdict":"escalate","reas
 # shellcheck disable=SC2034
 DEFAULTED_CONFIG='{"escalation_autonomy": "adjudicate-first"}'
 
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   record "run_enabler_adjudication $1 $2"
   printf '{"verdict":"adequate","evidence":"the original spec already names the acceptance criteria"}'
@@ -776,11 +776,11 @@ xmn_evt="$(events_named "$calls" enabler-examined | head -n1)"
 assert_eq "adjudicate-first, adequate: enabler-examined outcome is unblocked, not escalate" \
   "unblocked" "$(jq -r '.outcome' <<<"$xmn_evt")"
 
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   printf '{"verdict":"inadequate","evidence":"the spec never names a concrete acceptance criterion"}'
 }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { record "issue_body: $(cat "$5")"; printf '43\thttps://github.com/acme/widgets/issues/43'; return 0; }
 calls="$(run_case "adjudicate-first: inadequate" "$eligible_disagreement" "$examined")"
 
@@ -822,7 +822,7 @@ assert_contains "agent-ops#681: ...and the adjudication's own evidence is folded
 adj_spent_evt="$(jq -nc '{ts: "2026-08-02T00:00:00Z", event: "enabler-adjudication",
   repo: "acme/widgets", item: "TD26071901", verdict: "adequate", evidence: "…", adjudication: true}')"
 printf '%s\n' "$adj_spent_evt" > "$log_file"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { printf '45\thttps://github.com/acme/widgets/issues/45'; return 0; }
 calls="$(run_case "adjudicate-first: the pass is already spent" "$eligible_disagreement" "$examined")"
 
@@ -840,7 +840,7 @@ assert_contains "pass spent: and says in the log why it did not adjudicate" \
 # item (requirement 35a), so the pass it authorises is the first since they
 # did — one per item, per human touch, not one per item ever.
 eligible_disagreement_closed="$(jq -c '[.[0] + {reason: "issue-closed"}]' <<<"$eligible_disagreement")"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   record "run_enabler_adjudication $1 $2"
   printf '{"verdict":"adequate","evidence":"the original spec already names the acceptance criteria"}'
@@ -858,7 +858,7 @@ assert_eq "human touch: exactly one enabler-adjudication event" "1" \
 # silently reusing what this section left behind.
 # shellcheck disable=SC2034
 DEFAULTED_CONFIG='{}'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   echo "FAIL - run_enabler_adjudication was called but no scenario stub was set" >&2
   exit 97
@@ -867,7 +867,7 @@ run_enabler_adjudication() {
 # always-escalate (the default) never adjudicates, even for the same
 # disagreement shape — no run_enabler_adjudication call, straight to the
 # ordinary escalate path, byte-for-byte today's behaviour.
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { printf '44\thttps://github.com/acme/widgets/issues/44'; return 0; }
 calls="$(run_case "always-escalate: a disagreement item still escalates directly" \
   "$eligible_disagreement" "$examined")"
@@ -908,7 +908,7 @@ examined_disagreement_issue='[{"repo":"acme/widgets","item":"221","verdict":"esc
   "issue":{"title":"Refinement disagreement for 221","body":"…draft escalation…"}}]'
 
 # --- settle, register record (no thread, kind "") ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"settle","evidence":"the impediment already cleared"}'
@@ -942,7 +942,7 @@ assert_eq "settle/TD: enabler-examined outcome is unblocked, not escalate" \
 # --- settle, issue item that is also a refinement disagreement: the
 # existing refinement is re-recorded, its label released, and the thread
 # gets the same correcting comment adjudicate-first's own "adequate" earns ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"settle","evidence":"the existing refinement already answers this"}'
@@ -985,7 +985,7 @@ assert_eq "settle/unrefined: no escalation issue is ever filed" "0" \
 
 # --- decide, register record: decision-taken carries no comment_url, since
 # there is no thread to post one on ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"decide","evidence":"a tactical trade-off","decision":"use option B",
@@ -1016,7 +1016,7 @@ assert_eq "decide/TD: no item-refined (ordinary item)" "0" "$(grep -cE '^event i
 # item unblocked), just without a durable log issue or a veto lever — a
 # warning names it, exactly the best-effort contract every other `gh` write
 # in this file keeps ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_decision_log_issue() { record "create_decision_log_issue $1 $2 $3"; return 1; }
 calls="$(run_case "decide-tactical: decide, decision-log filing fails" "$eligible_ordinary_td" "$examined_ordinary")"
 
@@ -1029,7 +1029,7 @@ assert_eq "decide/log-filing-failed: exactly one warning" "1" "$(grep -cE '^even
 warn_evt="$(events_named "$calls" warning | head -n1)"
 assert_contains "decide/log-filing-failed: the warning names the missing decision log" \
   "could not file the decision-log issue" "$(jq -r '.detail' <<<"$warn_evt")"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_decision_log_issue() {
   record "create_decision_log_issue $1 $2 $3"
   printf '999\thttps://github.com/%s/issues/999' "$1"
@@ -1051,7 +1051,7 @@ eligible_decide_disagreement_td='[{"repo":"acme/widgets","item":"TD26082901","bl
   "refined_before":{"ts":"2026-08-01T09:00:00Z","cycle":"c1","comment_url":"","spec":"the original spec"}}]'
 examined_decide_disagreement_td='[{"repo":"acme/widgets","item":"TD26082901","verdict":"escalate","reason":"still too vague",
   "issue":{"title":"Refinement disagreement for TD26082901","body":"…draft escalation…"}}]'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"decide","evidence":"a tactical trade-off","decision":"use option B",
@@ -1314,11 +1314,11 @@ enabler_model_critical=""
 # --- escalate: the pass could not settle it, and the escalation is filed
 # with the pass's own evidence folded in, same as adjudicate-first's own
 # inadequate path ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   printf '{"verdict":"escalate","evidence":"this touches approver_app_id — owner-only"}'
 }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { record "issue_body: $(cat "$5")"; printf '50\thttps://github.com/acme/widgets/issues/50'; return 0; }
 calls="$(run_case "decide-tactical: escalate" "$eligible_ordinary_td" "$examined_ordinary")"
 
@@ -1338,12 +1338,12 @@ prior_same_reason="$(jq -nc --arg r "acme/widgets" --arg i "TD26080001" --arg k 
   '{ts: "2026-08-02T00:00:00Z", event: "enabler-adjudication", repo: $r, item: $i,
     verdict: "escalate", evidence: "…", adjudication: true, pass: "decide-tactical", reason_key: $k}')"
 printf '%s\n' "$prior_same_reason" > "$log_file"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   echo "FAIL - run_enabler_decide was called but the bound should have refused a fresh pass" >&2
   exit 95
 }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { printf '51\thttps://github.com/acme/widgets/issues/51'; return 0; }
 calls="$(run_case "decide-tactical: same reason twice escalates without a fresh pass" \
   "$eligible_ordinary_td" "$examined_ordinary")"
@@ -1361,7 +1361,7 @@ other_reason_evt="$(jq -nc --arg r "acme/widgets" --arg i "TD26080001" \
   '{ts: "2026-08-02T00:00:00Z", event: "enabler-adjudication", repo: $r, item: $i,
     verdict: "settle", evidence: "…", adjudication: true, pass: "decide-tactical", reason_key: "some-other-reason"}')"
 printf '%s\n' "$other_reason_evt" > "$log_file"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"settle","evidence":"ok"}'
@@ -1385,12 +1385,12 @@ cap_evt_b="$(jq -nc --arg r "acme/widgets" --arg i "TD26080001" \
 { printf '%s\n' "$cap_evt_a"; printf '%s\n' "$cap_evt_b"; } > "$log_file"
 # shellcheck disable=SC2034
 escalation_adjudication_max_passes=2
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   echo "FAIL - run_enabler_decide was called but the cap should have refused a fresh pass" >&2
   exit 94
 }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { printf '52\thttps://github.com/acme/widgets/issues/52'; return 0; }
 calls="$(run_case "decide-tactical: the cap refuses even a genuinely new reason" \
   "$eligible_ordinary_td" "$examined_ordinary")"
@@ -1415,7 +1415,7 @@ cap_evt_touch="$(jq -nc --arg r "acme/widgets" --arg i "TD26080001" \
     verdict: "settle", evidence: "…", adjudication: true, pass: "decide-tactical",
     reason_key: "keyC", eligibility_reason: "issue-closed"}')"
 { printf '%s\n' "$cap_evt_a"; printf '%s\n' "$cap_evt_b"; printf '%s\n' "$cap_evt_touch"; } > "$log_file"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"settle","evidence":"ok"}'
@@ -1438,7 +1438,7 @@ escalation_adjudication_max_passes=3
 # --- the exemption: issue-closed authorises a pass regardless of history ---
 eligible_ordinary_td_closed="$(jq -c '[.[0] + {reason: "issue-closed"}]' <<<"$eligible_ordinary_td")"
 printf '%s\n' "$prior_same_reason" > "$log_file"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2"
   printf '{"verdict":"settle","evidence":"ok"}'
@@ -1455,7 +1455,7 @@ assert_contains "issue-closed: the pass is available again" \
 # reusing what this section left behind.
 # shellcheck disable=SC2034
 DEFAULTED_CONFIG='{}'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   echo "FAIL - run_enabler_decide was called but no scenario stub was set" >&2
   exit 96
@@ -1488,7 +1488,7 @@ examined_draft='[{"repo":"acme/widgets","item":"pr-363-abandoned-aaaaaaaaaaaa","
   "issue":{"title":"widgets: close the abandoned draft pr-363","body":"…draft escalation…"}}]'
 
 # --- decide + act: recorded as pending, the item stays blocked ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2 mandate=$7"
   printf '{"verdict":"decide","evidence":"the draft is unwanted","decision":"close the abandoned draft",
@@ -1533,7 +1533,7 @@ decision_veto_window_hours=24
 # --- decide without an act: a pure acceptance, unblocked at once, exactly as
 # at decide-tactical. This is the #1310 shape — accepting a residual, where
 # nothing irreversible happens and there is nothing for a window to hold. ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2 mandate=$7"
   printf '{"verdict":"decide","evidence":"the filer named a default","decision":"accept the residual tail",
@@ -1556,16 +1556,16 @@ assert_eq "veto/no act: enabler-examined records unblocked" "unblocked" "$(jq -r
 # taken: without the lever there is nothing to veto, so the item goes to a
 # person instead. The contrast with "decide/log-filing-failed" above — where
 # an actless decision still stands — is the whole assertion. ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2 mandate=$7"
   printf '{"verdict":"decide","evidence":"the draft is unwanted","decision":"close the abandoned draft",
            "rationale":"nothing on it is wanted","options_considered":"leave it open, close it",
            "act":{"kind":"corroborate-void"}}'
 }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_decision_log_issue() { record "create_decision_log_issue $1 $2 $3"; return 1; }
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { record "issue_body: $(cat "$5")"; printf '60\thttps://github.com/acme/widgets/issues/60'; return 0; }
 calls="$(run_case "decide-with-veto: a pending act with no veto lever" "$eligible_draft" "$examined_draft")"
 
@@ -1588,7 +1588,7 @@ create_decision_log_issue() {
 # --- the mandate discriminates: the rung below hands the pass `tactical` ---
 # shellcheck disable=SC2034
 DEFAULTED_CONFIG='{"escalation_autonomy": "decide-tactical"}'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_decide() {
   record "run_enabler_decide $1 $2 mandate=$7"
   printf '{"verdict":"settle","evidence":"ok"}'
@@ -1625,7 +1625,7 @@ eligible_issue='[{"repo":"acme/widgets","item":"125","blocked_ts":"2026-08-01T00
   "kind":"needs-refinement","reason":"threshold"}]'
 examined='[{"repo":"acme/widgets","item":"125","verdict":"escalate","reason":"needs a human call",
             "issue":{"title":"Decide something","body":"Please decide."}}]'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { printf '90\thttps://github.com/acme/widgets/issues/90'; return 0; }
 calls="$(run_case "escalation_thread_reconcile: filed" "$eligible_issue" "$examined")"
 
@@ -1635,7 +1635,7 @@ assert_contains "escalation_thread_reconcile, filed: outcome + the real number a
   "escalation_thread_reconcile acme/widgets 125 escalated 90 https://github.com/acme/widgets/issues/90" "$calls"
 
 # --- filing failed: a correcting "escalation-failed" call, no number ---
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 create_escalation_issue() { return 1; }
 calls="$(run_case "escalation_thread_reconcile: filing failed" "$eligible_issue" "$examined")"
 
@@ -1652,7 +1652,7 @@ eligible_issue_disagreement='[{"repo":"acme/widgets","item":"125","blocked_ts":"
   "refined_before":{"ts":"2026-08-01T09:00:00Z","cycle":"c1","comment_url":"","spec":"the original spec"}}]'
 # shellcheck disable=SC2034
 DEFAULTED_CONFIG='{"escalation_autonomy": "adjudicate-first"}'
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_enabler_adjudication() {
   printf '{"verdict":"adequate","evidence":"the original spec already names the acceptance criteria"}'
 }
@@ -1806,7 +1806,7 @@ pr_eligible_reviewer='[{"repo":"acme/widgets","item":"PR435","blocked_ts":"2026-
 examined='[{"repo":"acme/widgets","item":"PR435","verdict":"unblocked","reason":"the Reviewer stall is cleared",
             "complete_handoff":true}]'
 
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 handoff_complete_review() {
   jq -nc '{safe: false,
            gate: {word: "dirty", reason: "required check(s) not green: CI", checks_unreadable: false},
@@ -1843,7 +1843,7 @@ assert_eq "gate-refused: a readable-but-dirty gate earns no check-failure rework
 # unreadable-checks failures escalates the same way here too, rather than
 # only naming the fault per item as it did before that fix.
 # ============================================================================
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 handoff_complete_review() {
   jq -nc '{safe: false,
            gate: {word: "unknown", reason: "could not read required checks", checks_unreadable: true},
@@ -1884,13 +1884,13 @@ assert_eq "    ... carrying the item's repo/item/pr_url" \
   "$(jq -Sc '{repo, item, pr_url}' <<<"$rw_evt")"
 
 # --- The same gate, but this node's own streak has crossed the threshold ---
-# shellcheck disable=SC2317  # invoked only by the eval'd review_gate_escalate_unreadable_streak
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd review_gate_escalate_unreadable_streak
 review_gate_unknown_streak_verdict() {
   cat >/dev/null
   jq -nc '{node:"test-node",gate:"required-checks",count:3,
            first_ts:"2026-08-14T10:00:00Z",last_ts:"2026-08-14T10:30:00Z"}'
 }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 review_gate_degraded_since() { cat >/dev/null; return 1; }
 calls="$(run_case "complete_handoff: checks unreadable, streak escalated" "$pr_eligible_reviewer" "$examined")"
 
@@ -1918,7 +1918,7 @@ review_gate_degraded_since() { cat >/dev/null; return 1; }
 # ============================================================================
 gate_arg4="$tmp_dir/enabler-gate-arg4"
 : > "$gate_arg4"
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 handoff_complete_review() {
   printf '%s' "${4:-}" >"$gate_arg4"
   jq -nc '{safe: false,
@@ -1973,7 +1973,7 @@ assert_eq "  ... carrying the item's repo/item/pr_url" \
 # second, distinct warning: the pull request is not merely carrying an
 # unanswered comment, it is *still ready*, so a human could merge it without
 # ever seeing that the comment stands.
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 handoff_complete_review() {
   jq -nc '{safe: false,
            gate: {word: "clean", reason: "", checks_unreadable: false},
@@ -2064,7 +2064,7 @@ cycle_id="20260826T000000Z-test-1"
 reconcile_argv="$tmp_dir/reconcile-argv"
 reconcile_body="$tmp_dir/reconcile-body"
 FAKE_THREAD_COMMENTS_JSON=""
-# shellcheck disable=SC2317  # invoked only by the eval'd escalation_thread_reconcile / escalation_thread_failed_already_posted
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd escalation_thread_reconcile / escalation_thread_failed_already_posted
 gh() {
   if [[ "${1:-}" == "api" ]]; then
     printf '%s' "$FAKE_THREAD_COMMENTS_JSON"

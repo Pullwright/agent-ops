@@ -107,7 +107,7 @@ run_block() {
       cp "$record_file" "$state_dir/host-facts/node.json"
     fi
 
-    # shellcheck disable=SC2317  # called from $budget_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $budget_block via eval, invisible to a static reader
     host_budget_mem_verdict() {
       local declared="$1" total="$2" reserved="$3"
       [[ "$total" =~ ^[0-9]+$ ]] || { printf 'ok'; return 0; }
@@ -115,7 +115,7 @@ run_block() {
       [[ "$reserved" =~ ^[0-9]+$ ]] || reserved=0
       if (( declared + reserved > total )); then printf 'over'; else printf 'ok'; fi
     }
-    # shellcheck disable=SC2317  # called from $budget_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $budget_block via eval, invisible to a static reader
     host_budget_cpu_verdict() {
       local declared="$1" count="$2" reserved="$3" total=""
       [[ "$count" =~ ^[0-9]+$ ]] || { printf 'ok'; return 0; }
@@ -123,10 +123,10 @@ run_block() {
       total=$(( count * 1000000000 ))
       if (( declared > total )); then printf 'over'; else printf 'ok'; fi
     }
-    # shellcheck disable=SC2317  # called from $budget_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $budget_block via eval, invisible to a static reader
     host_budget_describe() { printf 'declared sums overcommit this fixture host'; }
 
-    # shellcheck disable=SC2317  # called from $budget_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $budget_block via eval, invisible to a static reader
     log_event() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
@@ -136,7 +136,7 @@ run_block() {
     # no-op — this file's own subject is the stand-down's cause and reason,
     # not the node-state record test/node-time-state.test.sh covers
     # directly.
-    # shellcheck disable=SC2317  # called from $budget_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $budget_block via eval, invisible to a static reader
     set_node_state_terminal() { :; }
 
     eval "$budget_block"

@@ -233,13 +233,13 @@ run_issues_excluded_cycle() {
     [[ -n "$latest_issues_excluded_json" ]] || latest_issues_excluded_json='{}'
     # The four stubs below are likewise invoked only from inside the eval'd
     # block.
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     emit_first_seen() { :; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     exclude_claimed_items() { printf '%s' "$1"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     gather_issues() { printf '[]'; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     gather_issues_excluded() { printf '%s' "$excluded_arg"; }
     # SCRIPT_DIR is unmodified here; shellcheck's SC2031 conflates this
     # subshell with run_gather_issues's unrelated one above, which does

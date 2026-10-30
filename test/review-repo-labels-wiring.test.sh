@@ -54,13 +54,13 @@ fi
 #     wrong one is called ---
 call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 labels_reconcile_role() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 labels_ensure_stamped() { echo "FAIL: labels_ensure_stamped was called; review_one must call labels_reconcile_role instead" >> "$call_log"; return 1; }
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 labels_reconcile_stamped() { echo "FAIL: labels_reconcile_stamped was called; review_one must call labels_reconcile_role instead" >> "$call_log"; return 1; }
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 log_event() { printf 'EVENT %s %s\n' "$1" "$2" >> "$call_log"; }
 
 run_block() {  # <slug> <pr_label> <stub_report>

@@ -140,33 +140,33 @@ run_check() {
     # shellcheck disable=SC2034
     DRY_RUN="$dry_run"
 
-    # shellcheck disable=SC2317  # called from the real memory_throttle_check, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from the real memory_throttle_check, invisible to a static reader
     memory_cgroup_parent_events_high() { printf '%s' "$EVENTS_HIGH"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_field() { printf '100'; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_parent_high() { printf '200'; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_throttle_rate_per_min() { printf '42'; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_throttle_verdict() { printf '%s' "$THROTTLE_VERDICT"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_throttle_describe() { printf 'the rate is too high'; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_headroom_verdict() { printf '%s' "$HEADROOM_VERDICT"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_cgroup_headroom_describe() { printf 'too close to the ceiling'; }
 
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     log_event() { printf 'log_event\t%s\t%s\n' "$1" "${2:-{\}}" >> "$CALLS_FILE"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     set_node_state_terminal() { printf 'set_node_state_terminal\t%s\t%s\n' "$1" "$2" >> "$CALLS_FILE"; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     create_escalation_issue() {
       printf 'create_escalation_issue\t%s\t%s\n' "$1" "$2" >> "$CALLS_FILE"
       printf '42\thttps://github.com/x/y/issues/42'
     }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     memory_throttle_retire_resolved() {
       printf 'memory_throttle_retire_resolved\t%s\t%s\n' "$1" "$2" >> "$CALLS_FILE"
       return "$RETIRE_RC"

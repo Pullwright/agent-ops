@@ -111,7 +111,7 @@ GH_RC=0
 # Counted via a file, not a variable: every call site below invokes this
 # function through `$( … )`, which forks a subshell — a plain variable
 # increment inside `gh` would be lost the moment that subshell exits.
-# shellcheck disable=SC2317  # reached only from the lifted refinement_traceability_fault block.
+# shellcheck disable=SC2317,SC2329  # reached only from the lifted refinement_traceability_fault block.
 gh() {
   printf 'x' >>"$GH_CALLS_FILE"
   [[ "$GH_RC" == "0" ]] || return "$GH_RC"
@@ -124,7 +124,7 @@ reset_gh_calls() { rm -f "$GH_CALLS_FILE"; }
 # — stubbed the same way `gh` is, so a fetch failure's warning is observable
 # without lifting the whole guard-degradation machinery into this harness.
 GUARD_WARN_CALLS_FILE="$T/guard_warn_calls"
-# shellcheck disable=SC2317  # reached only from the lifted refinement_traceability_fault block.
+# shellcheck disable=SC2317,SC2329  # reached only from the lifted refinement_traceability_fault block.
 guard_warn() { printf '%s\t%s\n' "$1" "$2" >>"$GUARD_WARN_CALLS_FILE"; }
 guard_warn_calls() { [[ -f "$GUARD_WARN_CALLS_FILE" ]] && wc -l <"$GUARD_WARN_CALLS_FILE" | tr -d ' ' || printf '0'; }
 reset_guard_warn_calls() { rm -f "$GUARD_WARN_CALLS_FILE"; }

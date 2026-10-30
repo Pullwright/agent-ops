@@ -100,43 +100,43 @@ chmod +x "$fake_root/lib/claim.sh"
 # maybe_run_enabler (or its own eval'd callees) — invisible to shellcheck's
 # reachability analysis, hence SC2317 on each.
 calls_log=""
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 record() { printf '%s\n' "$*" >> "$calls_log"; }
 
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 log_event() { record "event $1 $2"; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 stage_prompt_text() { printf 'stub prompt'; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 stage_budget_apply() { :; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 metering_fields() { printf '{}'; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 stage_watchdog_warning() { printf ''; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 fleet_limit_resume_at() { printf ''; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 release_refinement_label() { record "release-refinement-label $1 $2"; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 void_obsolete_ctx_json() { printf '{}'; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 handoff_complete_review() { echo "FAIL - unexpected handoff_complete_review call" >&2; exit 98; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 run_enabler_adjudication() { echo "FAIL - unexpected run_enabler_adjudication call" >&2; exit 97; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 create_escalation_issue() { echo "FAIL - unexpected create_escalation_issue call" >&2; return 1; }
 
 # techdebt_file_debt/techdebt_file_issue: recorders, overridden per scenario
 # below when a scenario needs a specific return value; the defaults record
 # the call and succeed with a canned id/url, which is what most scenarios
 # want.
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 techdebt_file_debt() {
   record "techdebt_file_debt $*"
   [[ "${STUB_FILE_DEBT_RC:-0}" -eq 0 ]] || return 1
   printf '501\thttps://github.com/acme/widgets/issues/501'
 }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 techdebt_file_issue() {
   record "techdebt_file_issue $*"
   [[ "${STUB_FILE_ISSUE_RC:-0}" -eq 0 ]] || return 1
@@ -190,12 +190,12 @@ log_file="$state_dir/log.jsonl"
 : > "$log_file"
 # shellcheck disable=SC2034
 review_gate_unknown_streak_after=3
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 review_gate_unknown_streak_verdict() { cat >/dev/null; printf ''; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 review_gate_degraded_since() { cat >/dev/null; return 1; }
 
-# shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd maybe_run_enabler
 run_model_stage() {
   local out_file="$5"
   jq -nc --argjson env "$STUB_EXAMINED_JSON" '{result: ($env | tostring), session_id: "stub-session"}' \

@@ -26,7 +26,7 @@ oblige anyone to edit a test.
    `python3`, `perl`, `flock`, `sha256sum`, `rsync`, `node`, `claude`, `gh`
    (≥ 2.60), `supercronic`, `shellcheck` and `squid` (the egress-proxy service's
    fence, requirement-checked at check 10) all resolve; `shellcheck
-   --version` prints `0.10.0`, the same version
+   --version` prints `0.11.0`, the same version
    `.github/workflows/shellcheck.yml` pins; `supercronic -test
    /app/deploy/docker/crontab` reports the crontab valid; the `test/` suite
    passes inside the container, save for the one narrower class of change

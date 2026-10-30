@@ -134,9 +134,9 @@ run_block() {
     export FOOTPRINT_BYTES="$footprint_bytes"
     export FOOTPRINT_REPO="$footprint_repo"
 
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_same_filesystem() { [[ "$SAME_FS" == "true" ]]; }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_free_kb() {
       printf 'free_kb_call\t%s\n' "$1" >> "$EVENT_FILE"
       case "$1" in
@@ -145,7 +145,7 @@ run_block() {
         *) printf '' ;;
       esac
     }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_verdict() {
       local free="$1" min="$2"
       [[ "$min" =~ ^[0-9]+$ ]] || min=0
@@ -153,15 +153,15 @@ run_block() {
       [[ "$free" =~ ^[0-9]+$ ]] || { printf 'ok'; return 0; }
       if (( free < min / 1024 )); then printf 'low'; else printf 'ok'; fi
     }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_describe() { printf '%s has only %s KiB free, below the %s bytes this cycle needs (governed_by=%s repo=%s)' "$1" "$2" "$3" "${4:-floor}" "${5:-}"; }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_largest_footprint() {
       printf 'largest_footprint_call\n' >> "$EVENT_FILE"
       [[ -n "$FOOTPRINT_BYTES" ]] && printf '%s\t%s' "$FOOTPRINT_BYTES" "$FOOTPRINT_REPO"
       return 0
     }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_effective_min_bytes() {
       local floor="${1:-0}" fac="${2:-0}" largest="${3:-}"
       [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
@@ -173,7 +173,7 @@ run_block() {
       fi
       printf '%s' "$floor"
     }
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     disk_space_governed_by() {
       local floor="${1:-0}" effective="${2:-0}"
       [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
@@ -181,7 +181,7 @@ run_block() {
       if (( effective > floor )); then printf 'derived'; else printf 'floor'; fi
     }
 
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     log_event() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
@@ -190,7 +190,7 @@ run_block() {
     # Stubbed to a no-op — this file's own subject is the stand-down's cause
     # and reason, not the node-state record test/node-time-state.test.sh
     # covers directly.
-    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $disk_block via eval, invisible to a static reader
     set_node_state_terminal() { :; }
 
     eval "$disk_block"
@@ -450,7 +450,7 @@ footprint_blocks_rc="$(
     fi
   done
 
-  # shellcheck disable=SC2317  # called from $review_block/$cycle_block via eval
+  # shellcheck disable=SC2317,SC2329  # called from $review_block/$cycle_block via eval
   disk_space_clone_footprint_bytes() { printf '4096000'; }
 
   log_dir="$tmp_dir/footprint-logs"
@@ -475,7 +475,7 @@ footprint_blocks_rc="$(
   # needs the whole cycle's state around it.
   cycle_events="$log_dir/cycle-events"
   : > "$cycle_events"
-  # shellcheck disable=SC2317  # called from $cycle_block via eval
+  # shellcheck disable=SC2317,SC2329  # called from $cycle_block via eval
   log_event() { printf '%s %s\n' "$1" "$2" >> "$cycle_events"; }
   # shellcheck disable=SC2034  # consumed by $cycle_block via eval
   repo_slug="owner/cloned-repo"

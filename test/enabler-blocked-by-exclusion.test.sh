@@ -100,9 +100,9 @@ run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [a
       degraded_issues_excluded_json="${4:-[]}" latest_issues_excluded_json="${5:-{\}}" \
       gh_live_json="${6:-{\}}" \
       union_log='/dev/null' logged="" logged_fields=""
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     guard_warn() { :; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     log_event() { logged="$logged$1 $2\n"; logged_fields="$2"; }
     # Mocks the `gh api` reads the stale-expensive-gather-cache live
     # re-check (issue #2709, re-keyed onto `updated_at` by issue #2720) can
@@ -133,7 +133,7 @@ run_open_blocked_by_block() {  # <ordered-repos-json> <enabler-eligible-json> [a
     # Argument scanning, not positional indexing: `--paginate` sits between
     # the path and `--jq` on the comments read, so `$4` is not reliably the
     # filter, and the path may now carry a `?per_page=` query string.
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     gh() {
       local cmd="$1" path filter="" paginate=0 per_page=0 query="" repo item key
       [[ "$cmd" == "api" ]] || return 1

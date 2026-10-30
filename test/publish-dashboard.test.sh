@@ -930,6 +930,7 @@ make_cycle "$nf" "${today_day}T093000Z-62" 0.25 model-a
 # union as `--rawfile events_raw`. The same exported-function seam the failed
 # assemble below uses, for the same reason — the publisher hardens its own PATH.
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() {
     # `_arg`, not `a`: the node homes above are held in `a`..`g`, and a loop
     # variable of the same name inside this subshell reads to shellcheck as a
@@ -1010,6 +1011,7 @@ make_cycle "$nl" "$nl_cid" 0.25 model-a
 printf '{"ts":"2026-01-01T09:50:00Z","cycle":"%s","node":"nodeNL","event":"cycle-start"}\n' "$nl_cid" \
   > "$nl/.local/state/poetic-agents/log.jsonl"
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() {
     local _arg
     # shellcheck disable=SC2016  # the jq text the stub matches, not a shell expansion.
@@ -1418,6 +1420,7 @@ count_file="$tmp_dir/jq-count"; : > "$count_file"
 
 start_s=$SECONDS
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() { printf 'x\n' >> "${JQ_COUNT_FILE:?}"; command jq "$@"; }
   export -f jq
   env HOME="$b" JQ_COUNT_FILE="$count_file" "$PUBLISH" --no-github >/dev/null 2>&1
@@ -3586,6 +3589,7 @@ printf '{"ts":"%s","cycle":"%sT040000Z-21","node":"nodeG","event":"note"}\n' \
 # the only way to reach a jq the publisher looks up on a PATH it hardens for
 # cron itself.
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() {
     local a
     for a in "$@"; do [[ "$a" == "generated_at" ]] && return 126; done
@@ -4317,12 +4321,14 @@ assert_eq "and writes the cache back for the next one" "1" \
 _c_full="$tmp_dir/jq-full-798"; _c_fast="$tmp_dir/jq-fast-798"
 : > "$_c_full"; : > "$_c_fast"
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() { printf 'x\n' >> "${JQ_COUNT_FILE:?}"; command jq "$@"; }
   export -f jq
   rm -f "$f798_state/.dashboard-fingerprint"
   env HOME="$f798" JQ_COUNT_FILE="$_c_full" "$PUBLISH" --no-github >/dev/null 2>&1
 )
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() { printf 'x\n' >> "${JQ_COUNT_FILE:?}"; command jq "$@"; }
   export -f jq
   rm -f "$f798_state/.dashboard-fingerprint"
@@ -4593,6 +4599,7 @@ assert_contains "the copied page references stamp.js" \
 sr="$(new_home nodeStampRenderFail)"
 make_cycle "$sr" "${today_day}T113000Z-1" 1 model-a
 (
+  # shellcheck disable=SC2329  # invoked only via export -f, inherited by the $PUBLISH subprocess env execs — invisible to any static reader
   jq() {
     local _arg
     for _arg in "$@"; do [[ "$_arg" == "events_raw" ]] && return 126; done

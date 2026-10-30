@@ -376,7 +376,7 @@ run_standdown() {
     ONCE="$6" chain_count="$7" max_chained_cycles="$8" ordered_repos_json="${9}"
     chain_eligible=0
     # Called only from inside the eval'd block, which shellcheck cannot see.
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     log_event() { printf 'EVENT %s %s chain=%s\n' "$1" "$2" "$chain_eligible"; }
     # shellcheck source=lib/chain.sh
     . "$SCRIPT_DIR/lib/chain.sh"

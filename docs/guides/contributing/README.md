@@ -348,7 +348,7 @@ The tests only *pass* in the environment CI uses. Some key traps:
 - **Straight from the checkout** — the host's `jq` version may differ from CI's. `jq` 1.6 and 1.7 disagree enough for roughly nine test files to fail, with no mention of `jq` in the error.
 - **Via `docker exec` into a running node** — that container's `/app` is whatever it was last built from, not your working tree, so a fix here is invisible to a suite run there. Use `docker run` instead, which copies the working tree in fresh.
 - **A new assertion that silently asserts nothing looks exactly like a pass.** To see per-assertion detail, run the file alone inside a container from the image, then revert the fix and confirm the assertion fails.
-- **`shellcheck` is pinned to v0.10.0 in CI**, while a developer host commonly has 0.8.0, which misses findings CI will fail on (e.g., SC2317 on a stub function called only from an `eval`ed block). Run `./scripts/lint-shell.sh` inside a container from the image before pushing.
+- **`shellcheck` is pinned to v0.11.0 in CI**, while a developer host commonly has 0.8.0, which misses findings CI will fail on (e.g., SC2317 on a stub function called only from an `eval`ed block). Run `./scripts/lint-shell.sh` inside a container from the image before pushing.
 
 To test against a locally built image instead of `ghcr.io`'s latest:
 

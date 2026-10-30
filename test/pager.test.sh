@@ -511,7 +511,7 @@ STUB_REMEDY_FAIL=""
 # lib/pager.sh probes for `labels_reconcile_role` with `declare -F` so the
 # rest of this file still runs without lib/labels.sh sourced at all.
 ENSURE_CALLS_FILE="$WORKDIR/ensure-calls"; : > "$ENSURE_CALLS_FILE"
-# shellcheck disable=SC2317  # invoked only by lib/pager.sh's _pager_ensure_label_role, behind its `declare -F` probe, which a static reader does not follow
+# shellcheck disable=SC2317,SC2329  # invoked only by lib/pager.sh's _pager_ensure_label_role, behind its `declare -F` probe, which a static reader does not follow
 labels_reconcile_role() { printf '%s\n' "$3 $4" >> "$ENSURE_CALLS_FILE"; }
 ensure_calls() { wc -l < "$ENSURE_CALLS_FILE" | tr -d ' '; }
 
