@@ -149,7 +149,13 @@
 # `https://github.com/SLUG/pull/N`, so an already-seen candidate is
 # recognised, and skipped, at zero further `gh` cost. A pull request's own
 # merged history is a fixed, past fact, so nothing about re-checking it
-# later could change the answer.
+# later could change the answer — with one exception: a candidate whose
+# only gap is a `landing-armed` event not yet visible in this node's own
+# union-log snapshot is deliberately left unrecorded, never marked audited,
+# while `_escape_audit_armed_event_in_grace` below still credits that to
+# replication lag rather than a genuine absence (agent-ops#2725) — it only
+# becomes a fixed fact, worth recording once and for all, once that window
+# has passed.
 #
 # A candidate merged by anyone other than the Approver identity is not
 # *audited* — there is nothing for this detector to recompute against a
@@ -231,6 +237,11 @@
 #                                rather than complete (default 300, GitHub's
 #                                own cap on `repos/SLUG/commits/SHA`'s
 #                                `files` array).
+#   ESCAPE_AUDIT_NOW_EPOCH       test seam only: the clock
+#                                `_escape_audit_armed_event_in_grace` measures
+#                                a landing's own age against (real wall clock
+#                                otherwise), matching lib/token-expiry.sh's
+#                                own NOW_EPOCH convention.
 
 set -uo pipefail
 
@@ -522,7 +533,35 @@ recorded_level_for() {
   jq -r --arg u "$url" 'select(.pr_url == $u) | .level' "$armed_file" 2>/dev/null | tail -1
 }
 
+# _escape_audit_armed_event_in_grace MERGED_AT CONFIG_JSON NOW_EPOCH
+#
+# True while a landing's own `landing-armed` event may simply not have
+# replicated to this node's union-log snapshot yet, rather than genuinely
+# missing (agent-ops#2725): `agent-cycle.sh` takes that snapshot once, at
+# cycle start (requirement 2.5), from a peers directory that itself syncs
+# only on `state-sync.sh fetch`'s own cadence, and never re-fetches it for
+# the rest of the cycle. A cycle that reaches this sweep late — this is one
+# of the last things a cycle does — can therefore read a snapshot older
+# than the merge it is auditing by as much as the cycle's own runtime,
+# which is not bounded by how long ago the merge itself happened. Scaled to
+# this repository's own fetch cadence rather than a second, independent
+# constant, and using the same "three missed cycles" reasoning
+# `node_stale_after_minutes` already applies to replication lag elsewhere
+# (`lib/fleet.sh`'s `fleet_peers_stale`). Once the window has passed, a
+# still-missing event is genuine, not lag — the `unverifiable` case below
+# is unchanged for that candidate.
+_escape_audit_armed_event_in_grace() {
+  local merged_at="$1" config_json="$2" now_epoch="$3" fetch_minutes merged_epoch
+  fetch_minutes="$(jq -r '.schedule.state_sync_fetch_minutes // 7' <<<"$config_json" 2>/dev/null)"
+  [[ "$fetch_minutes" =~ ^[0-9]+$ ]] || fetch_minutes=7
+  merged_epoch="$(date -u -d "$merged_at" +%s 2>/dev/null)" || return 1
+  (( now_epoch - merged_epoch < fetch_minutes * 3 * 60 ))
+}
+
 config_json="$(cat "$CONFIG_FILE" 2>/dev/null || printf '{}')"
+# Test seam only (matching the NOW_EPOCH convention lib/token-expiry.sh and
+# friends already use) — the live wall clock otherwise.
+now_epoch="${ESCAPE_AUDIT_NOW_EPOCH:-$(date +%s)}"
 routine_json="$(_escape_audit_routine_sources "$config_json" "$slug")"
 protected_json="$(_escape_audit_protected_paths "$config_json" "$slug")"
 routine_complexity_json="$(_escape_audit_routine_complexity "$config_json" "$slug")"
@@ -577,15 +616,16 @@ while IFS= read -r number; do
   sha="$(jq -r '.merge_commit_sha // ""' <<<"$pr_json" 2>/dev/null)"
 
   reasons=()
+  armed_reasons=()
 
   source="$(recorded_source_for "$pr_url")"
   if [[ -z "$source" ]]; then
-    reasons+=("no landing-armed event in the fleet log records this pull request's work source")
+    armed_reasons+=("no landing-armed event in the fleet log records this pull request's work source")
   fi
 
   armed_level="$(recorded_level_for "$pr_url")"
   if [[ -z "$armed_level" ]]; then
-    reasons+=("no landing-armed event in the fleet log records the effective merge_autonomy level this landing was armed under")
+    armed_reasons+=("no landing-armed event in the fleet log records the effective merge_autonomy level this landing was armed under")
   fi
 
   complexity=""
@@ -632,6 +672,19 @@ while IFS= read -r number; do
     elif [[ -z "$complexity" ]]; then
       reasons+=("no single complexity:* label was standing at merge time")
     fi
+  fi
+
+  if (( ${#armed_reasons[@]} > 0 )); then
+    if (( ${#reasons[@]} == 0 )) && [[ -n "$merged_at" ]] && \
+       _escape_audit_armed_event_in_grace "$merged_at" "$config_json" "$now_epoch"; then
+      # Nothing else is wrong with this candidate, and its own landing-armed
+      # event may simply not have replicated to this snapshot yet — leave it
+      # unrecorded (never marked audited) so a later cycle, reading a
+      # fresher snapshot, gets a real answer instead of a permanent false
+      # unverifiable (agent-ops#2725).
+      continue
+    fi
+    reasons+=("${armed_reasons[@]}")
   fi
 
   if (( ${#reasons[@]} > 0 )); then
