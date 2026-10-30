@@ -166,6 +166,29 @@
    stripped bare id, which would wrongly assume `anthropic` for any member
    whose provider was not the implicit one.
 
+   Requirement 3b's no-op fingerprint reads a set's members for the mirror-
+   image reason, through `lib/model-id.sh`'s `model_key_fingerprint_json`
+   (issue #2660): a fingerprint that embedded the key's own variable
+   directly would see only the handle — the config key's own name, a
+   constant — so editing which models a set draws from, or their weights,
+   would leave the fingerprint byte-identical and the fleet-wide forced
+   recheck a model change is meant to trigger would never fire. The
+   function embeds `MODEL_SET_JSON[handle]`'s normalized member array for a
+   set-configured key and the value itself as a JSON string otherwise, so
+   an ordinary key's contribution is byte-identical to a bare `--arg` and a
+   key no installation has turned into a set fingerprints exactly as it did
+   before sets existed. Every model key `lib/gather-phase.sh` builds into a
+   fingerprint-input config object routes through it — `coordinator_model`,
+   `implementer_model_default` and `implementer_model_trivial` in
+   `selection_config`, `enabler_model` in `enabler_config` and
+   `refiner_model` in `refiner_config` — which of those objects the canon
+   itself then carries being requirement 3b's own scope rather than this
+   one's. The keys that are in no such object at all — the Reviewer's and
+   Approver's tiers, `monitor_model`, and
+   `repository_review.defaults.model` and its per-repository override — have
+   nothing to fold into, since they are read per selected item or belong to
+   pipelines with no no-op short-circuit of their own.
+
    A provider's entry may also carry `lanes` (the credit mix, D30, issue
    #2240): an object naming at most the two credential paths `api` and
    `subscription`, each carrying `weight` (an integer >= 0; a lane's share of

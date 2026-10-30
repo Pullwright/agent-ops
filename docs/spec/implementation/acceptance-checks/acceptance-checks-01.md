@@ -575,7 +575,20 @@ oblige anyone to edit a test.
    recording; an empty value assigns empty, records nothing and succeeds,
    since the three cycle scripts call this under `set -e` and a disabled
    stage must not abort startup; and a rejected qualifier fails and records
-   nothing.
+   nothing. The same file covers `model_key_fingerprint_json`, the
+   fingerprint's own reader of a weighted set (requirement 1a, issue
+   #2660): a set-configured key's handle prints `MODEL_SET_JSON`'s
+   normalized member array, an ordinary key's value prints as that JSON
+   string unchanged, an empty (disabled) value prints `""`, and editing a
+   set's weights changes the function's own output for the *same* handle —
+   the property a bare handle cannot have, since it is a constant.
+   `test/selection-fingerprint-model-set.test.sh` passes, carrying that
+   through to the producers: lifting `selection_config_json`,
+   `enabler_config_json` and `refiner_config_json` verbatim out of
+   `lib/gather-phase.sh`, editing a weighted set's membership or its
+   weights changes `selection_config_json`'s value for that key, while an
+   ordinary key's value in all three objects is byte-identical to what a
+   bare `--arg` produced.
 1g. <a id="impl-ac-1g"></a>**Every shell script in the repository is shellcheck-clean, and a caller
    may lint a named subset instead of the whole tree.** `./scripts/lint-shell.sh`
    exits 0. Invoked with no arguments, it discovers the file set — every
