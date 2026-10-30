@@ -401,7 +401,12 @@ oblige anyone to edit a test.
    it on stderr rather than leaving the gap silent (agent-ops#1730);
    a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
-   includes the node itself, and prunes a peer whose branch is gone; the
+   includes the node itself, and prunes a peer whose branch is gone; a fetch
+   that loses the mirror lock to an ordinary, short-lived hold waits it out
+   and completes with no contention ever logged, while one still held past
+   `fetch_lock_wait_seconds` is reported exactly as a push's own lost race
+   already is — "holding for Ns", and "may be wedged" once that age passes
+   one push interval (requirement 2.5, agent-ops#2745); the
    union read (`lib/fleet.sh`) carries both nodes' events in time order; and
    pipeline events written through `log_event` carry the node's name. Over a
    union holding a spliced peer line whose head is older than the node's own

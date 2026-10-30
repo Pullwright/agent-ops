@@ -120,6 +120,10 @@ Environment:
   STATE_SYNC_PUSH_DEADLINE_SECONDS
                         override the redaction loop's deadline, normally one
                         push interval (tests use a small value).
+  STATE_SYNC_FETCH_LOCK_WAIT_SECONDS
+                        override how long `fetch` waits for a held mirror
+                        lock before giving up, normally one push interval
+                        (tests use a small value).
   STATE_SYNC_MIN_FREE_WORKSPACE_BYTES
                         override `min_free_workspace_bytes` (tests only).
   STATE_SYNC_FREE_KB    override the free-space reading `push` takes of
@@ -224,6 +228,23 @@ updater_defer_stuck_after_seconds="$(cfg \
 # is the only writer of that index, and it runs once per interval. The same
 # jq conversion as above, for the same `set -e` reason.
 push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
+
+# How long a fetch waits for a held mirror lock before giving up
+# (agent-ops#2745): unlike two pushes racing the same operation — where
+# `mirror_lock`'s own header reasons that the loser has nothing to add that
+# the winner will not, so giving up immediately is correct — a fetch that
+# loses the race has something nothing else supplies: the refreshed peer
+# view is its own, and the winning push's "nothing to add" does not apply.
+# Fetch runs every `schedule.state_sync_fetch_minutes` (7 by default) with
+# no retry of its own, so one lost race it gives up on instantly already
+# costs a whole fetch interval — measured on poetic-1/poetic-2 as the
+# dominant cause of `pager-evaluation-skipped`/`peer-view-stale`: ordinary
+# push holds observed there run from roughly 100s to a little over 200s,
+# comfortably inside one push interval, so waiting that long lets fetch
+# ride out the same ordinary holds `mirror_lock` already calls routine
+# rather than skipping its own interval over them. `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS`
+# overrides it for tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS` below does.
+fetch_lock_wait_seconds="${STATE_SYNC_FETCH_LOCK_WAIT_SECONDS:-$push_interval_seconds}"
 
 # The redaction loop's own deadline (agent-ops#1679): the same one push
 # interval used above — long enough to cover an ordinary push (measured in
@@ -566,7 +587,17 @@ require() {
 
 # One state-sync per mirror at a time: the every-few-minutes cron push and the
 # end-of-cycle push are the same operation racing on the same checkout, and
-# the loser of that race has nothing to add that the winner will not.
+# the loser of that race has nothing to add that the winner will not — so a
+# push gives up the instant it finds the lock held, the next one along five
+# minutes later.
+#
+# A fetch losing the same race is a different shape (agent-ops#2745): the
+# winning push never does a fetch's own work, so a fetch that gives up
+# instantly skips its entire interval for nothing a peer will ever see
+# published elsewhere. Fetch therefore waits up to `fetch_lock_wait_seconds`
+# for the lock rather than failing on the first attempt — long enough to
+# ride out an ordinary push, short enough to still give up within its own
+# interval against a genuinely wedged holder.
 #
 # "another state-sync holds the mirror" is only genuinely self-clearing for
 # an ordinary slow fetch — a push wedged inside the redaction loop looks
@@ -578,7 +609,13 @@ require() {
 mirror_lock() {
   mkdir -p "$(dirname "$mirror")"
   exec 9>"$mirror.lock"
-  if ! flock -n 9; then
+  local acquired=1
+  if [[ "$MODE" == "fetch" ]]; then
+    flock -w "$fetch_lock_wait_seconds" 9 || acquired=0
+  else
+    flock -n 9 || acquired=0
+  fi
+  if (( ! acquired )); then
     local holder_age
     holder_age="$(mirror_lock_holder_age_s "$mirror")"
     if [[ -n "$holder_age" ]] && (( holder_age > push_interval_seconds )); then

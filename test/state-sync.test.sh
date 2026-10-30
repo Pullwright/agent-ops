@@ -2087,6 +2087,11 @@ mirror_lock_clear_started "$ml_mirror"
 # has to be genuinely held, so a real `flock` does it — backgrounded directly
 # at the top level, never through a `$(...)` command substitution, which bash
 # would tear the job down along with once that subshell exits.
+#
+# Fetch now waits out an ordinary hold (agent-ops#2745) rather than giving up
+# on the first attempt, so these two cases pin `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS`
+# to 1 — short against the real 5s hold below — to keep exercising the give-up
+# path and its reporting; the wait itself is pinned separately further down.
 wl_home="$(new_node wedge-loser-node)"
 wl_state="$wl_home/.local/state/poetic-agents"
 wl_mirror="$wl_home/.cache/poetic-agents/workspaces/.agent-ops-state"
@@ -2103,8 +2108,8 @@ wl_holder_parent=$!
 sleep 0.2
 wl_holder_child="$(pgrep -P "$wl_holder_parent" | head -1)"
 
-out="$(sync_as "$wl_home" active fetch)"
-assert_eq "a fetch against a genuinely held lock still exits 0 — this stays self-clearing" "0" "$?"
+out="$(sync_as "$wl_home" active fetch STATE_SYNC_FETCH_LOCK_WAIT_SECONDS=1)"
+assert_eq "a fetch that gives up against a genuinely held lock still exits 0 — this stays self-clearing" "0" "$?"
 assert_contains "…but now names the holder's own age" \
   "another state-sync holds the mirror — holding for" "$out"
 assert_contains "…past one push interval, said explicitly" \
@@ -2120,10 +2125,32 @@ flock "$wl_mirror.lock" sleep 5 &
 wl_holder_parent=$!
 sleep 0.2
 wl_holder_child="$(pgrep -P "$wl_holder_parent" | head -1)"
-out="$(sync_as "$wl_home" active fetch)"
+out="$(sync_as "$wl_home" active fetch STATE_SYNC_FETCH_LOCK_WAIT_SECONDS=1)"
 assert_contains "a young hold still reports its age" \
   "another state-sync holds the mirror — holding for" "$out"
 assert_lacks "…but is never called a wedge" "may be wedged" "$out"
+kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
+
+# --- fetch waits out an ordinary hold instead of skipping its interval --------
+# agent-ops#2745: poetic-1/poetic-2 lost `pager-evaluation-skipped`/
+# `peer-view-stale` cycles to exactly this shape — a fetch that loses the
+# race against a push gave up instantly rather than waiting the push out,
+# even though the push (the other, genuine racer `mirror_lock`'s own header
+# already reasons about) finishes within one push interval in the ordinary
+# case. A fetch whose wait budget comfortably outlasts the hold must now
+# succeed — proven by the complete absence of the give-up message, not by
+# any success wording of its own, since the no-peers-yet bootstrap path and
+# the ordinary "holding N peer(s)" path are both legitimate successful exits.
+jq -nc --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "push", pid: 1}' > "$wl_mirror.lock.holder"
+flock "$wl_mirror.lock" sleep 2 &
+wl_holder_parent=$!
+sleep 0.2
+wl_holder_child="$(pgrep -P "$wl_holder_parent" | head -1)"
+out="$(sync_as "$wl_home" active fetch STATE_SYNC_FETCH_LOCK_WAIT_SECONDS=10)"
+assert_eq "a fetch that waits out an ordinary hold exits 0" "0" "$?"
+assert_lacks "…never reporting the lock as contended at all" \
+  "another state-sync holds the mirror" "$out"
 kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
 
 # --- a single file's redaction failing does not wedge the whole push -----------
