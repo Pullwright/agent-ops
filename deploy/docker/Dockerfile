@@ -37,26 +37,26 @@ ARG TARGETARCH
 # its SHA-1, one pin per architecture: it is the one binary not coming from a
 # signed apt repository.
 ARG NODE_MAJOR=26
-ARG SUPERCRONIC_VERSION=v0.2.47
-ARG SUPERCRONIC_SHA1SUM_AMD64=712d2ece75da6f6e530192a151488578153e4e96
-ARG SUPERCRONIC_SHA1SUM_ARM64=93323899ddca3f1198f1796a4bf4418ed1e7982e
+ARG SUPERCRONIC_VERSION=v0.2.51
+ARG SUPERCRONIC_SHA1SUM_AMD64=1692066e350a88ff4d7d6474fe3c7a6c41ec5e89
+ARG SUPERCRONIC_SHA1SUM_ARM64=9d4c2000493215a1898502b2fc2dada3e8ea8c7a
 # shellcheck, pinned to the same release .github/workflows/shellcheck.yml
 # installs on the CI runner, so a cycle running scripts/lint-shell.sh inside
 # this image sees exactly what CI will see. The amd64 checksum is
 # byte-identical to that workflow's; CI only ever runs on amd64, so the arm64
 # checksum is this image's own pin of the same release.
-ARG SHELLCHECK_VERSION=v0.10.0
-ARG SHELLCHECK_SHA256_AMD64=6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87
-ARG SHELLCHECK_SHA256_ARM64=324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22af665ed1a09bb
+ARG SHELLCHECK_VERSION=v0.11.0
+ARG SHELLCHECK_SHA256_AMD64=8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+ARG SHELLCHECK_SHA256_ARM64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
 # Pinned, like supercronic/shellcheck above: it is the dependency with the
 # deepest reach on a node (the same tool/token access the pipeline itself
 # has), so a bad release must not reach every subsequently-built node with no
 # local pin to fall back to. Bump deliberately, in its own PR.
-ARG CLAUDE_CODE_VERSION=2.1.267
+ARG CLAUDE_CODE_VERSION=2.1.314
 # Grok Build (issue #2134), pinned under the same policy and for the same
 # reason: docs/reviews/2026-10-06-grok-build-evaluation.md evaluated 1.0.46,
 # the npm `latest` dist-tag on 2026-10-06.
-ARG GROK_BUILD_VERSION=1.0.46
+ARG GROK_BUILD_VERSION=1.0.70
 # The container user's ids. They matter because the state, workspace and
 # Claude-config volumes outlive the container: mounting a host directory owned
 # by a different uid is the classic way to make a persistent volume read-only
