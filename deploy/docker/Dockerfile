@@ -22,7 +22,7 @@
 # supercronic/shellcheck's risk (a binary with no package-manager-provided
 # integrity check). `claude-code` below is pinned instead, since a bad
 # release there reaches every subsequently-built node with no local fallback.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 
 # TARGETARCH is one of buildx's predefined build args (amd64, arm64, ...) for
 # whichever platform in --platform is currently building; it must be declared
