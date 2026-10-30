@@ -379,10 +379,24 @@ model_key_load_into() {
     return $?
   fi
   local __mkl_id __mkl_weight __mkl_bare __mkl_qualified __mkl_rows="[]"
+  local -A __mkl_seen_bare=()
   while IFS=$'\t' read -r __mkl_id __mkl_weight; do
     [[ -n "$__mkl_id" ]] || continue
     [[ "$__mkl_weight" =~ ^[0-9]+$ ]] || __mkl_weight=1
     resolve_model_id_into __mkl_bare "$__mkl_key" "$__mkl_id" || return 1
+    # A set that lets two members strip to the same bare id (most often the
+    # same model split across two providers, e.g. "anthropic/claude-sonnet-5"
+    # and "openrouter/claude-sonnet-5") would have the second member's
+    # MODEL_PROVIDER[bare] write silently overwrite the first's — the
+    # launcher resolves every draw to whichever provider resolved last,
+    # never the configured split (issue #2677). Refused here, before
+    # MODEL_SET_JSON ever sees the set, rather than shipped as a split that
+    # cannot actually happen.
+    if [[ -n "${__mkl_seen_bare[$__mkl_bare]+set}" ]]; then
+      echo "model-id: $__mkl_key: model set names bare id '$__mkl_bare' more than once ('${__mkl_seen_bare[$__mkl_bare]}' and '$__mkl_id' both resolve to it) — each member must resolve to a distinct model" >&2
+      return 1
+    fi
+    __mkl_seen_bare["$__mkl_bare"]="$__mkl_id"
     __mkl_qualified="$(resolve_model_qualified "$__mkl_key" "$__mkl_id")" || return 1
     __mkl_rows="$(jq -c --argjson rows "$__mkl_rows" --arg id "$__mkl_qualified" \
       --argjson w "$__mkl_weight" -n '$rows + [{id: $id, weight: $w}]')"

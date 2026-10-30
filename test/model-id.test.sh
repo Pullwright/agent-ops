@@ -449,6 +449,34 @@ esac
 assert_false "…and the set is never half-recorded" \
   model_key_is_set mk2_key
 
+# A set with two members that strip to the same bare id under different
+# providers (e.g. "anthropic/claude-sonnet-5" and "xai/claude-sonnet-5") is
+# refused: the second member's MODEL_PROVIDER[bare] write would silently
+# overwrite the first's, so a launch always lands on whichever provider
+# resolved last, never the configured split (issue #2677).
+assert_false "a set with two members resolving to the same bare id is refused" \
+  model_key_load_into mk3_var mk3_key '{"models": [{"id": "anthropic/claude-sonnet-5", "weight": 1}, {"id": "xai/claude-sonnet-5", "weight": 1}]}'
+err="$(model_key_load_into mk3_var mk3_key '{"models": [{"id": "anthropic/claude-sonnet-5", "weight": 1}, {"id": "xai/claude-sonnet-5", "weight": 1}]}' 2>&1 >/dev/null)"
+case "$err" in
+  *"mk3_key"*"claude-sonnet-5"*) printf 'ok   - %s\n' "…naming the key and the colliding bare id" ;;
+  *)
+    printf 'FAIL - …naming the key and the colliding bare id\n     actual: %s\n' "$err"
+    failures=$(( failures + 1 ))
+    ;;
+esac
+assert_false "…and the set is never half-recorded" \
+  model_key_is_set mk3_key
+
+# A set whose members all have distinct bare ids, even across different
+# providers, continues to load exactly as before — no regression from the
+# collision check above.
+assert_true "a set with distinct bare ids across providers still loads" \
+  model_key_load_into mk4_var mk4_key '{"models": [{"id": "anthropic/claude-sonnet-5", "weight": 1}, {"id": "xai/grok-4.7", "weight": 1}]}'
+# shellcheck disable=SC2154  # mk4_var: assigned by model_key_load_into above, the assigning form
+assert_eq "…normalizing every member unchanged" \
+  '[{"id":"anthropic/claude-sonnet-5","weight":1},{"id":"xai/grok-4.7","weight":1}]' \
+  "${MODEL_SET_JSON[$mk4_var]}"
+
 # model_key_qualified_ids is requirement 1c's own reader: every member for a
 # set, the one qualified id wrapped in an array for an ordinary key, and []
 # for empty (disabled).
