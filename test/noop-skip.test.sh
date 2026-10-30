@@ -86,7 +86,10 @@ base_input() {
   "coordinator_prompt_sha": "deadbeef",
   "enabler_config": {"enabler_model": "claude-opus-5", "after_coordinator_cycles": "3", "recheck_hours": "72", "escalation_label": "enabler-escalation"},
   "enabler_prompt_sha": "cafebabe",
-  "coordinator_work_sources_table": "| Repo | Work sources, in priority order |\n|---|---|\n| `o/one` | 1. `security` |\n"
+  "coordinator_work_sources_table": "| Repo | Work sources, in priority order |\n|---|---|\n| `o/one` | 1. `security` |\n",
+  "refiner_candidates": [{"repo": "o/one", "source": "tech-debt", "item": "TD-PPtest-26071501"}],
+  "refiner_config": {"refiner_model": "claude-opus-5", "refined_label": "refined", "refiner_max_per_engagement": "5", "refinement_policy": {}},
+  "refiner_prompt_sha": "f00dbabe"
 }
 EOF
 }
@@ -102,7 +105,8 @@ assert_eq "a clean cycle is fingerprintable" "64" "${#base_fp}"
 assert_eq "the same inputs give the same fingerprint" "$base_fp" "$(base_input | noop_fingerprint)"
 assert_eq "key order does not change the fingerprint" "$base_fp" \
   "$(base_input | jq -c '{enabler_prompt_sha, coordinator_prompt_sha, enabler_config, selection_config,
-                          enabler_eligible, void, blocked, repos, coordinator_work_sources_table}' | noop_fingerprint)"
+                          enabler_eligible, void, blocked, repos, coordinator_work_sources_table,
+                          refiner_prompt_sha, refiner_config, refiner_candidates}' | noop_fingerprint)"
 assert_eq "repo order does not change the fingerprint" "$base_fp" \
   "$(fp_with '.repos |= reverse')"
 # A blocked item re-recorded with a fresh timestamp and reworded detail is the
@@ -124,6 +128,13 @@ assert_eq "an eligible entry's blocked_ts and detail are not part of the fingerp
 assert_eq "an input predating the Enabler keys matches one carrying them empty" \
   "$(fp_with 'del(.enabler_eligible, .enabler_config, .enabler_prompt_sha)')" \
   "$(fp_with '.enabler_eligible = [] | .enabler_config = {} | .enabler_prompt_sha = ""')"
+# Same stability property for the Refiner's three keys (issue #2742): an input
+# recorded before they existed must canonicalise exactly as one that carries
+# them empty, or every replayed cycle would appear to have changed the moment
+# they landed.
+assert_eq "an input predating the Refiner keys matches one carrying them empty" \
+  "$(fp_with 'del(.refiner_candidates, .refiner_config, .refiner_prompt_sha)')" \
+  "$(fp_with '.refiner_candidates = [] | .refiner_config = {} | .refiner_prompt_sha = ""')"
 assert_eq "an input predating the work-sources table matches one carrying it empty" \
   "$(fp_with 'del(.coordinator_work_sources_table)')" \
   "$(fp_with '.coordinator_work_sources_table = ""')"
@@ -317,6 +328,31 @@ assert_ne "changing the Enabler's threshold changes the fingerprint" \
   "$(fp_with '.enabler_config.after_coordinator_cycles = "5"')"
 assert_ne "editing prompts/enabler.md changes the fingerprint" \
   "$(fp_with '.enabler_prompt_sha = "0ddba11"')"
+
+# The Refiner's inputs (requirement 39a/39b, issue #2742). Its candidate set is
+# a fourth array whose candidacy turns on something no repo signal carries: an
+# issue losing its `Priority` band becomes a (triage_only) candidate for any
+# other reason that moves no commit, issue, alert or PR. Without these the
+# Refiner's own cadence would come due during a quiet week and wait for the
+# forced recheck to be noticed — exactly the gap the Enabler's own three lines
+# above already close for the Enabler's half of the pipeline.
+assert_ne "a second item becoming a Refiner candidate changes the fingerprint" \
+  "$(fp_with '.refiner_candidates += [{"repo": "o/two", "source": "issues", "item": "9"}]')"
+# Same item, different source, is a different candidate (an item can be both an
+# issue and, separately, tech-debt).
+assert_ne "the same item id a candidate under a different source changes the fingerprint" \
+  "$(fp_with '.refiner_candidates[0].source = "issues"')"
+assert_ne "the candidate set emptying after an engagement changes the fingerprint" \
+  "$(fp_with '.refiner_candidates = []')"
+assert_ne "changing the Refiner's model changes the fingerprint" \
+  "$(fp_with '.refiner_config.refiner_model = "claude-sonnet-5"')"
+# requirement 39a: a `refinement_policy` edit moves none of `refinements`/
+# `blocked`/`void`/`claimed` on its own — only which sources the candidate set
+# draws from — so it must still bust the fingerprint by its own bytes.
+assert_ne "changing the Refiner's refinement_policy changes the fingerprint" \
+  "$(fp_with '.refiner_config.refinement_policy = {"security": "exempt"}')"
+assert_ne "editing prompts/refiner.md changes the fingerprint" \
+  "$(fp_with '.refiner_prompt_sha = "0ddba12"')"
 
 # --- A cycle that could not be sampled is not fingerprintable ---
 #

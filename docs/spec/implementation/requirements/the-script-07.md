@@ -341,7 +341,12 @@
      than left to the `unblocked` that always accompanies it, because "covered
      by something else" is how a source ends up covered by nothing; the Enabler's eligible
      set projected to `repo|item|reason` together with its config and prompt
-     hash (requirement 35b); and — the three everyone
+     hash (requirement 35b); the Refiner's candidate set projected to
+     `repo|source|item` — mirroring requirement 39b's own engagement set,
+     which sorts by that same triple — together with its config (carrying
+     `refinement_policy` verbatim, so a policy edit that moves none of
+     `refinements`/`blocked`/`void`/`claimed` still busts the fingerprint on
+     its own) and prompt hash (requirement 39a/39b); and — the three everyone
      forgets — the selection config, a hash of `prompts/coordinator.md`
      **and any `prompt_overrides.coordinator` files configured for it**
      (requirement 4a), and the rendered repo/work-sources table itself

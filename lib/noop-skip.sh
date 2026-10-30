@@ -57,6 +57,9 @@
 #   the Enabler's eligible set (requirement 35b)         | repo|item|reason projection
 #   the Enabler's model and thresholds                   | enabler_config
 #   the Enabler's own rules                              | enabler_prompt_sha
+#   the Refiner's candidate set (requirement 39a/39b)     | repo|source|item projection
+#   the Refiner's model, label and policy                | refiner_config
+#   the Refiner's own rules                               | refiner_prompt_sha
 #
 # `review_feedback` is hashed verbatim, like `findings`, and that gets the rule
 # right for free in both directions: its entries only exist while it is the
@@ -197,6 +200,23 @@
 # but it does not re-open items already examined — those are gated by
 # `enabler_recheck_hours`, which is the lever for "read this one again".
 #
+# `refiner_candidates` is hashed for the same class of reason as
+# `enabler_eligible` (requirement 39a/39b): an item becomes a Refiner candidate
+# for any reason that moves no commit, issue, alert or PR — an issue losing its
+# `Priority` band is the sharpest example (requirement 39g's `triage_only`) —
+# so without this line a quiet fleet would skip straight through the cycle the
+# candidate appeared and go on skipping until the forced recheck. The
+# projection is `repo|source|item`, mirroring requirement 39b's own engagement
+# set, which sorts by that same triple. `refiner_config` and
+# `refiner_prompt_sha` are the Refiner's own half of the Enabler's pair above:
+# `refiner_config` carries `refinement_policy` verbatim, so a policy edit that
+# moves no candidate in or out of the set — only which sources it draws
+# from — still busts the fingerprint on its own, and editing prompts/refiner.md
+# (or a configured `prompt_overrides.refiner` fragment, requirement 4a) does
+# the same via `refiner_prompt_sha`. Closing this gap is a real change in
+# cadence, not only a correctness fix: the Refiner's candidate set now wakes a
+# quiet fleet on its own, the same way `enabler_eligible` already does.
+#
 # `coordinator_work_sources_table` is hashed verbatim, and it is not the same
 # claim as `repos[].sources` above (issue #78). That array is `ordered_repos_
 # json`'s view, which back-pressure (requirement 2.2a) narrows to just the
@@ -245,11 +265,11 @@
 # order or the timestamps and prose that ride along on a log event. `jq -S` then
 # sorts every object key, making the serialisation canonical.
 #
-# The three `enabler_*` keys, `refinements`, `claimed`, and
-# `coordinator_work_sources_table` all default to empty, so an input that
-# predates them canonicalises exactly as one that carries them empty:
-# replaying an older cycle's input yields its original fingerprint, and a
-# node whose config sets no Enabler keys agrees with itself.
+# The three `enabler_*` keys, the three `refiner_*` keys, `refinements`,
+# `claimed`, and `coordinator_work_sources_table` all default to empty, so an
+# input that predates them canonicalises exactly as one that carries them
+# empty: replaying an older cycle's input yields its original fingerprint, and
+# a node whose config sets no Enabler or Refiner keys agrees with itself.
 # shellcheck disable=SC2016  # jq's syntax, not the shell's.
 NOOP_CANON_JQ='
   if ([.repos[]?.state.ok] | all) | not then empty
@@ -287,7 +307,12 @@ NOOP_CANON_JQ='
       coordinator_prompt_sha: (.coordinator_prompt_sha // ""),
       enabler_config: (.enabler_config // {}),
       enabler_prompt_sha: (.enabler_prompt_sha // ""),
-      coordinator_work_sources_table: (.coordinator_work_sources_table // "")
+      coordinator_work_sources_table: (.coordinator_work_sources_table // ""),
+      refiner_candidates: ([.refiner_candidates[]?
+                            | ((.repo // "") + "|" + (.source // "") + "|" + (.item // ""))]
+                           | sort | unique),
+      refiner_config: (.refiner_config // {}),
+      refiner_prompt_sha: (.refiner_prompt_sha // "")
     }
   end
 '
