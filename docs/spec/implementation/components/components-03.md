@@ -789,10 +789,19 @@
       (`approver_token_get`, `lib/approver-token.sh`, component 14b), the
       same one `approver_post_review` (component 14c) already posts its
       review under. Omitted, every call runs under the
-      ordinary pipeline login, explicitly (`env -u GH_TOKEN`) rather than
+      ordinary pipeline login, explicitly unset rather than
       merely left alone, so a `GH_TOKEN` this process happens to have
       inherited can never leak into a call asked to run under the ordinary
       login — the Enabler's own case, which holds no App identity of its own.
+      The strip is a subshell (`( unset GH_TOKEN; gh "$@" )`), never `env -u
+      GH_TOKEN` (agent-ops#2732): `env` is an external binary, so it would
+      exec the `gh` *binary* straight from `PATH` and never
+      `lib/github-limit.sh`'s own `gh` shell-function shadow,
+      silently losing that library's rate-limit wait on the one path the
+      Enabler — which always omits `TOKEN` — exclusively takes. The subshell
+      leaves the bare `gh` word resolving to whichever `gh`, function or
+      binary, is in scope where this library was sourced, exactly as the
+      token branch above already does.
       `TOKEN` omitted under `GITHUB_ACTIONS=true` (agent-ops#2722) is refused
       outright rather than run that way: a GitHub Actions runner carries no
       stored `gh auth login` identity for the ordinary-login path to fall
@@ -1227,16 +1236,16 @@
    resolvers, never one path reused for both. `lib/github-limit.sh`
    (component 2a's own rate-limit module) is sourced first, exactly as
    component 10a beside it, so a rate-limit refusal on a releases lookup or
-   on the filing call itself is waited out rather than read as unable — the
-   filing call gets that coverage only because the workflow's own `GH_TOKEN`
-   (`secrets.GITHUB_TOKEN`) is passed through as `techdebt_file_debt`'s
-   `TOKEN` argument. A GitHub Actions runner carries no stored `gh auth
-   login` identity, so the tokenless default every other `techdebt_file_debt`
-   caller's Enabler path relies on would run every dedup/comment/create call
-   this script makes unauthenticated, and — because `lib/tech-debt-file.sh`'s
-   tokenless branch execs `gh` via `env -u GH_TOKEN` rather than calling the
-   shadowed shell function — outside `lib/github-limit.sh`'s rate-limit
-   coverage too.
+   on the filing call itself is waited out rather than read as unable —
+   `_techdebt_gh` reaches `gh` by an unqualified word on both its branches
+   (agent-ops#2732), so the filing call is covered under either identity.
+   The workflow's own `GH_TOKEN` (`secrets.GITHUB_TOKEN`) is passed through
+   as `techdebt_file_debt`'s `TOKEN` argument for the identity instead: a
+   GitHub Actions runner carries no stored `gh auth login` identity, so the
+   tokenless default every other `techdebt_file_debt` caller's Enabler path
+   relies on would run every dedup/comment/create call this script makes
+   unauthenticated — which component 23d refuses outright rather than
+   allowing (agent-ops#2722).
    Each resolved version is validated against a conservative character
    allowlist (`^[A-Za-z0-9._+-]{1,40}$`) before it is used for anything
    else: a GitHub release tag name or an npm `latest` version field is

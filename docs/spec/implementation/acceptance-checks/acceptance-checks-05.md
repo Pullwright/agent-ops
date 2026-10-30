@@ -831,9 +831,17 @@
     that fails is retried once unlabelled and still succeeds, while an
     unlabelled create that fails returns 1 with no output. A `TOKEN` argument
     reaches every `gh` call; its absence explicitly unsets `GH_TOKEN`
-    (`env -u GH_TOKEN`) rather than merely omitting an override, so a value
+    — in a subshell (`( unset GH_TOKEN; gh "$@" )`), never `env -u GH_TOKEN`
+    — rather than merely omitting an override, so a value
     this process happened to inherit cannot leak into a call meant to run
-    under the ordinary login. No call ever touches `git/refs` or `pr create` —
+    under the ordinary login. With `lib/github-limit.sh` sourced ahead of
+    `lib/tech-debt-file.sh` — the real shadow, which the suite's own `PATH`
+    stub cannot stand in for — a `gh` that refuses once with a
+    secondary-rate-limit-shaped diagnostic and then succeeds is waited out
+    and retried, on the tokenless path exactly as on the token one
+    (agent-ops#2732): the subshell keeps the bare `gh` word a function call,
+    where `env` would have exec'd the binary and lost the wait.
+    No call ever touches `git/refs` or `pr create` —
     there is no id reservation, no branch, and no pull request left in this
     path, so there is nothing to clean up on any failure. `techdebt_file_issue`
     (unchanged) returns an existing issue whose body already quotes the item
