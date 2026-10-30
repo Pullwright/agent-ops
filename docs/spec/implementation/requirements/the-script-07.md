@@ -341,7 +341,12 @@
      than left to the `unblocked` that always accompanies it, because "covered
      by something else" is how a source ends up covered by nothing; the Enabler's eligible
      set projected to `repo|item|reason` together with its config and prompt
-     hash (requirement 35b); and — the three everyone
+     hash (requirement 35b); the Refiner's candidate set projected to
+     `repo|source|item` — mirroring requirement 39b's own engagement set,
+     which sorts by that same triple — together with its config (carrying
+     `refinement_policy` verbatim, so a policy edit that moves none of
+     `refinements`/`blocked`/`void`/`claimed` still busts the fingerprint on
+     its own) and prompt hash (requirement 39a/39b); and — the three everyone
      forgets — the selection config, a hash of `prompts/coordinator.md`
      **and any `prompt_overrides.coordinator` files configured for it**
      (requirement 4a), and the rendered repo/work-sources table itself
@@ -470,9 +475,10 @@
    the unmodified shipped prompt every cycle — with, for a misspelled stage
    key, no fingerprint movement to betray it.
 
-   The Co-Ordinator's and Enabler's assembled prompts also feed the no-op
-   fingerprint (requirement 3b, 35b): `coordinator_prompt_sha` and
-   `enabler_prompt_sha` are `stage_prompt_sha`'s content-addressed digest of
+   The Co-Ordinator's, Enabler's and Refiner's assembled prompts also feed
+   the no-op fingerprint (requirement 3b, 35b, 39a/39b):
+   `coordinator_prompt_sha`, `enabler_prompt_sha` and `refiner_prompt_sha`
+   are `stage_prompt_sha`'s content-addressed digest of
    the stage's assembled prompt: the base file's content hash, then each
    configured `extend` entry's content hash keyed by its configured path,
    with a configured-but-unreadable entry recorded explicitly under that
@@ -480,7 +486,7 @@
    `prompts/<s>.md`. A changed, added, removed, or newly
    unreadable override therefore busts the fingerprint exactly as an edit to
    the shipped prompt does; without this, an installation's own extension
-   could change the Co-Ordinator's or Enabler's behaviour while the
+   could change one of those three stages' behaviour while the
    short-circuit went on citing a `none-selected` verdict reached under the
    old text. No resolved filesystem path enters the digest: `none-selected`
    fingerprints are compared fleet-wide across the shared log (requirement
