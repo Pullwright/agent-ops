@@ -334,7 +334,7 @@ else
     # shellcheck disable=SC2034
     lock_stale_after_sec=14400
     lock_acquired=0
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     log_event() { printf 'event %s %s\n' "$1" "$2" >> "$capture/calls.log"; }
     eval "$acquire_fn"
     acquire_lock

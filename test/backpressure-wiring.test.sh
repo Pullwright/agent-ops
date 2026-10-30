@@ -593,7 +593,7 @@ fi
 
 run_approver_escalate() {
   eval "$approver_escalate_fn"
-  # shellcheck disable=SC2317  # Stubbed: this covers only the "adjudication could not settle,
+  # shellcheck disable=SC2317,SC2329  # Stubbed: this covers only the "adjudication could not settle,
   # and the escalation issue could not be filed either" warning path — the
   # dedup/success path is create_escalation_issue's own test, not this one's.
   create_escalation_issue() { return 1; }
@@ -612,7 +612,7 @@ run_approver_escalate() {
   selected_repo="acme/widgets"
   log_calls="$tmp_dir/approver-escalate-log-calls"
   : > "$log_calls"
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   log_event() { printf '%s\t%s\n' "$1" "$2" >> "$log_calls"; }
   approver_escalate "https://github.com/acme/widgets/pull/42" '["reason one","reason two"]'
   cat "$log_calls"

@@ -228,7 +228,7 @@ rm -f "$tmp_dir/missing-labels"
 # calling labels_ensure_one) actually creates the label, and the retried add
 # lands — the exact case this system used to just fail on.
 ensure_calls="$tmp_dir/ensure-calls"
-# shellcheck disable=SC2317  # invoked only indirectly, as "$REFINEMENT_LABEL_ENSURE"
+# shellcheck disable=SC2317,SC2329  # invoked only indirectly, as "$REFINEMENT_LABEL_ENSURE"
 fake_ensure() {  # REPO LABEL — "creates" the label by clearing it from missing-labels
   printf '%s %s\n' "$1" "$2" >> "$ensure_calls"
   sed -i "/^$2\$/d" "$tmp_dir/missing-labels" 2>/dev/null || true
@@ -253,7 +253,7 @@ rm -f "$tmp_dir/missing-labels"
 # array in *this* shell, and a command substitution would run it in a subshell
 # whose writes to that array never reach back here.)
 rm -f "$ensure_calls"
-# shellcheck disable=SC2317  # invoked only indirectly, as "$REFINEMENT_LABEL_ENSURE"
+# shellcheck disable=SC2317,SC2329  # invoked only indirectly, as "$REFINEMENT_LABEL_ENSURE"
 fake_ensure_stuck() { printf '%s %s\n' "$1" "$2" >> "$ensure_calls"; }  # never clears the label
 export REFINEMENT_LABEL_ENSURE=fake_ensure_stuck
 printf 'stuck-label\n' > "$tmp_dir/missing-labels"
@@ -1577,7 +1577,7 @@ fi
 # not what this section asserts (the argument-defaulting and the gh calls
 # that follow are), so a no-op is enough here.
 DRY_RUN=0
-# shellcheck disable=SC2317  # invoked only by the eval'd release_refinement_label
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd release_refinement_label
 log_event() { :; }
 eval "$release_refinement_label_fn"
 
@@ -1652,7 +1652,7 @@ assert_eq "the extracted block is the fold alone, not the rest of the file" "1" 
 # `number` because the message names the issue that dropped out.
 run_hand_flag_fold() {  # <out-json> <entry-json>
   (
-    # shellcheck disable=SC2317  # reached only from the eval'd block below.
+    # shellcheck disable=SC2317,SC2329  # reached only from the eval'd block below.
     warn() { echo "gather-hand-flagged-refinements: o/r: $*" >&2; }
     number=4242 out="$1" entry="$2"
     eval "$hand_flag_fold_block"

@@ -64,9 +64,9 @@ fi
 # --- Stub: labels_reconcile_stamped, recording every call's argv --------------
 call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 labels_reconcile_stamped() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
-# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd labels_block
 log_event() { printf 'EVENT %s %s\n' "$1" "$2" >> "$call_log"; }
 
 run_block() {  # <slug> <state_dir> <config_file> <schema_file> <interval> <stub_report>
@@ -133,9 +133,9 @@ if [[ -z "$hook_block" ]]; then
 fi
 
 # Stubs: the catalogue carries one label, and labels_ensure_one records argv.
-# shellcheck disable=SC2317  # invoked only by the eval'd hook_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd hook_block
 labels_catalogue() { printf 'refined\t0e8a16\tThe Refiner has written this a specification\n'; }
-# shellcheck disable=SC2317  # invoked only by the eval'd hook_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd hook_block
 labels_ensure_one() { printf '%s\n' "$*" >> "$call_log"; printf 'created'; }
 # Read only by the eval'd hook_block, invisible to shellcheck.
 # shellcheck disable=SC2034

@@ -262,13 +262,13 @@ else
     chain_eligible=0
     # Called only from the eval'd cleanup, which shellcheck cannot see into,
     # so each stub reads as unreachable to it.
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     maybe_run_enabler() { :; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     maybe_run_refiner() { :; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     issue_priority_cache_cleanup() { :; }
-    # shellcheck disable=SC2317
+    # shellcheck disable=SC2317,SC2329
     log_event() { :; }
     # docs/reference/flow-schema.md, requirement 50, issue #597: cleanup's own last act
     # is finalize_node_state_for_cycle. Sourced for real (it is pure, cheap,

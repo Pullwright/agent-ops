@@ -173,14 +173,14 @@ eval "$(extract_block '^coordinator_blocked_view\(\) \{' '^\}$' "$SCRIPT_DIR/lib
 # outage it was written for was more than every other unsheddable term put
 # together.
 eval "$(extract_block '^coordinator_refinements_view\(\) \{' '^\}$' "$SCRIPT_DIR/lib/candidate-select.sh")"
-# shellcheck disable=SC2317  # Called from the lifted base-prompt render below.
+# shellcheck disable=SC2317,SC2329  # Called from the lifted base-prompt render below.
 stage_prompt_text() { cat "$PROMPTS_DIR/coordinator.md"; }
 
 events="$tmp_dir/events"
 : > "$events"
-# shellcheck disable=SC2317  # Called from the lifted block, on each of its three logging paths.
+# shellcheck disable=SC2317,SC2329  # Called from the lifted block, on each of its three logging paths.
 log_event() { printf '%s\t%s\n' "$1" "$2" >> "$events"; }
-# shellcheck disable=SC2317  # Called from the lifted block, on its own jq-failure guard path.
+# shellcheck disable=SC2317,SC2329  # Called from the lifted block, on its own jq-failure guard path.
 guard_warn() { printf 'guard\t%s\t%s\n' "$1" "$2" >> "$events"; }
 
 mk_repos() {  # <num> <body-bytes> <ncomments> <comment-bytes>

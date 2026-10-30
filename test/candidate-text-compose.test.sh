@@ -114,7 +114,7 @@ GH_META_JSON=""
 GH_COMMENT_PAGES=""
 GH_RC=0      # `gh issue view` — the title/body read
 GH_API_RC=0  # `gh api …/comments` — the paginated thread read
-# shellcheck disable=SC2317  # reached only from the lifted item_live_entry block.
+# shellcheck disable=SC2317,SC2329  # reached only from the lifted item_live_entry block.
 gh() {
   printf 'x' >>"$GH_CALLS_FILE"
   if [[ "$1" == "api" ]]; then
@@ -139,7 +139,7 @@ reset_gh_calls() { rm -f "$GH_CALLS_FILE" "$GH_API_ARGS_FILE"; }
 gh_api_args() { [[ -f "$GH_API_ARGS_FILE" ]] || return 0; cat "$GH_API_ARGS_FILE"; }
 
 GUARD_WARN_CALLS_FILE="$T/guard_warn_calls"
-# shellcheck disable=SC2317  # reached only from the lifted compose block.
+# shellcheck disable=SC2317,SC2329  # reached only from the lifted compose block.
 guard_warn() { printf '%s\t%s\n' "$1" "$2" >>"$GUARD_WARN_CALLS_FILE"; }
 guard_warn_calls() { [[ -f "$GUARD_WARN_CALLS_FILE" ]] && wc -l <"$GUARD_WARN_CALLS_FILE" | tr -d ' ' || printf '0'; }
 

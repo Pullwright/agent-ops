@@ -123,11 +123,11 @@ run_block() {
     # shellcheck disable=SC2034
     implementer_model_trivial="claude-haiku-4-5-20251001"
 
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     _updater_health_own_started() { printf '%s\n' "$BOOT_ID"; }
     export BOOT_ID="$boot_id"
 
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     run_model_stage() {
       echo "call" >> "$PROBE_COUNT_FILE"
       local out_file="$5"
@@ -159,7 +159,7 @@ run_block() {
     }
     export PROBE_COUNT_FILE="$probe_count_file" STUB_CRED_MODE="$mode"
 
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     create_escalation_issue() {
       { printf 'repo=%s\nitem=%s\nlabel=%s\ntitle=%s\n' "$1" "$2" "$3" "$4"
         echo "---body---"
@@ -170,17 +170,17 @@ run_block() {
     }
     export ESCALATION_FILE="$escalation_file"
 
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     credential_refused_retire_resolved() {
       printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$RETIRE_FILE"
       return "$RETIRE_RC"
     }
     export RETIRE_FILE="$retire_file" RETIRE_RC="$retire_rc"
 
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"; }
     export EVENT_FILE="$event_file"
-    # shellcheck disable=SC2317  # called from $cred_block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $cred_block via eval
     set_node_state_terminal() { printf 'set_node_state_terminal\t%s\t%s\n' "$1" "$2" >> "$EVENT_FILE"; }
 
     eval "$cred_block"

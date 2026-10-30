@@ -405,7 +405,7 @@ run_stale_ref_block() {  # run_stale_ref_block <ordered-repos-json> <enabler-eli
     repo_slug_aliases_json='{}'
   # shellcheck disable=SC2317
   guard_warn() { :; }
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   log_event() { logged="$logged$1 $2\n"; logged_fields="$2"; }
   compute_band_eligibility
   eval "$stale_ref_block_src"

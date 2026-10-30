@@ -90,7 +90,7 @@ run_either() {
     stage_gaps_json="null"
     # shellcheck disable=SC2034
     stage_lane_json="null"
-    # shellcheck disable=SC2317  # called from $block via eval
+    # shellcheck disable=SC2317,SC2329  # called from $block via eval
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"; }
     export EVENT_FILE="$event_file"
     eval "$block"

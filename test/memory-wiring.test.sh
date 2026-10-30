@@ -78,12 +78,12 @@ run_block() {
     # shellcheck disable=SC2034  # consumed by $memory_block below, invisible to a static reader
     min_free_memory_bytes="$min_bytes"
 
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     memory_available_kb() { printf '%s' "$AVAIL_KB"; }
     export AVAIL_KB="$avail_kb"
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     memory_total_kb() { printf '6072776'; }
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     memory_verdict() {
       local free="$1" min="$2"
       [[ "$min" =~ ^[0-9]+$ ]] || min=0
@@ -91,10 +91,10 @@ run_block() {
       [[ "$free" =~ ^[0-9]+$ ]] || { printf 'ok'; return 0; }
       if (( free < min / 1024 )); then printf 'low'; else printf 'ok'; fi
     }
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     memory_describe() { printf 'the host has only %s KiB available, below the %s bytes this cycle needs' "$1" "$2"; }
 
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     log_event() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
@@ -104,7 +104,7 @@ run_block() {
     # a no-op — this file's own subject is the stand-down's cause and
     # reason, not the node-state record test/node-time-state.test.sh covers
     # directly.
-    # shellcheck disable=SC2317  # called from $memory_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $memory_block via eval, invisible to a static reader
     set_node_state_terminal() { :; }
 
     eval "$memory_block"

@@ -75,7 +75,7 @@ fi
 # lifting the block rather than copying it.
 run_block() {
   local ordered="$1" counted="$2" adjusted="$3" max="$4" tripped="$5" composition="$6"
-  # shellcheck disable=SC2317  # Called from the lifted block, on its failure-guard path.
+  # shellcheck disable=SC2317,SC2329  # Called from the lifted block, on its failure-guard path.
   guard_warn() { :; }
   # shellcheck disable=SC2034  # Read by the lifted block: this cycle's gathered candidates...
   ordered_repos_json="$ordered"

@@ -268,7 +268,7 @@ render_hint() {
 # flight runs in a process group of its own (see docs_benchmark_launch), which
 # a Ctrl-C at the terminal never reaches, so it is stopped here, and waited
 # for so that its transcript is whole; then the run says what it leaves.
-# shellcheck disable=SC2317  # invoked only through the traps below, which a static reader does not follow
+# shellcheck disable=SC2317,SC2329  # invoked only through the traps below, which a static reader does not follow
 stop_run() {
   trap '' INT TERM HUP
   local pid

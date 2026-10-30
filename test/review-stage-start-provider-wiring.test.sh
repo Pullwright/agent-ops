@@ -51,11 +51,11 @@ fi
 # --- Stub: log_event, and the helpers the block calls to build the event ----
 call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
-# shellcheck disable=SC2317  # invoked only by the eval'd start_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd start_block
 log_event() { printf 'EVENT %s %s\n' "$1" "$2" >> "$call_log"; }
-# shellcheck disable=SC2317  # invoked only by the eval'd start_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd start_block
 stage_budget_resolve() { printf '{"backstop_min": 150, "inactivity_min": 10}\n'; }
-# shellcheck disable=SC2317  # invoked only by the eval'd start_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd start_block
 metering_intended_lane() { printf 'default\n'; }
 
 run_block() {  # <slug> <model> <provider>

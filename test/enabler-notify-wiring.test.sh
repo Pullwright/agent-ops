@@ -142,13 +142,13 @@ run_case() {
     # shellcheck disable=SC2034  # consumed by $create_src below, invisible to a static reader
     SCHEMA_FILE=""
 
-    # shellcheck disable=SC2317  # called from the extracted sources below
+    # shellcheck disable=SC2317,SC2329  # called from the extracted sources below
     labels_reconcile_role() { return 0; }
 
-    # shellcheck disable=SC2317  # called from the extracted sources below
+    # shellcheck disable=SC2317,SC2329  # called from the extracted sources below
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$tmp_dir/events"; }
 
-    # shellcheck disable=SC2317  # called from the extracted sources below
+    # shellcheck disable=SC2317,SC2329  # called from the extracted sources below
     gh() {
       printf '%s\n' "$*" >> "$tmp_dir/gh_calls"
       case "$1 $2" in
@@ -166,7 +166,7 @@ run_case() {
     }
     export GH_LIST_JSON="$gh_list_json" GH_CREATE_MODE="$gh_create_mode"
 
-    # shellcheck disable=SC2317  # called from lib/notify.sh below
+    # shellcheck disable=SC2317,SC2329  # called from lib/notify.sh below
     curl() {
       printf '%s\n' "$*" >> "$tmp_dir/curl_calls"
       local args=("$@") i

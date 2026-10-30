@@ -388,7 +388,7 @@ assert_eq "the union carrier still reads the governing hit past a spliced line" 
 assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard_events | jq -s 'length')"
 
 : > "$log_file"; reset_guard_counts
-# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
 out="$(limit_union_state() { echo "jq: killed" >&2; return 137; }; run_union_block)"
 assert_eq "a union read that fails outright leaves the carrier empty" "" "$(head -n1 <<<"$out")"
 assert_eq "…marks the union's answers unknown, not empty" "0" "$(tail -n1 <<<"$out")"
@@ -402,7 +402,7 @@ assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | 
 union_build_ok=0
 union_reads="$tmp_dir/union-reads"
 : > "$union_reads"
-# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
 out="$(limit_union_state() { echo read >> "$union_reads"; return 1; }; run_union_block)"
 assert_eq "a union that could not be built is not read" "" "$(cat "$union_reads")"
 assert_eq "…leaves the carrier empty, so the flag decides alone" "" "$(head -n1 <<<"$out")"
@@ -420,7 +420,7 @@ union_build_ok=1
   cycle_dir="$tmp_dir"
 }
 filed="$tmp_dir/filed"
-# shellcheck disable=SC2317  # called from $freeze_block_src via eval, invisible to a static reader
+# shellcheck disable=SC2317,SC2329  # called from $freeze_block_src via eval, invisible to a static reader
 create_escalation_issue() { printf '%s\n' "$2" >> "$filed"; printf '42\thttps://example.invalid/o/ops/issues/42'; }
 run_freeze_block() {  # run_freeze_block <now_epoch> <governing record>
   # now_epoch and governing are read by the eval'd blocks; the union block
@@ -471,7 +471,7 @@ assert_eq "an escalation already in the union past a spliced line is not filed a
 # anyway would rest on the open-issue guard alone, which a closed escalation
 # passes, so every such cycle would file it again.
 printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
-# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+# shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
 (limit_union_state() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
 assert_eq "a failed union read files no escalation" "" "$(cat "$filed")"
 assert_eq "…reports the read under its own site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"

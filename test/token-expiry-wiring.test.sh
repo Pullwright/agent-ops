@@ -98,7 +98,7 @@ run_block() {
     # parameters above, and this subshell inherits them — nothing to
     # reassign.
 
-    # shellcheck disable=SC2317  # called from $te_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $te_block via eval, invisible to a static reader
     create_escalation_issue() {
       { printf 'repo=%s\nitem=%s\nlabel=%s\ntitle=%s\n' "$1" "$2" "$3" "$4"
         echo "---body---"
@@ -109,13 +109,13 @@ run_block() {
     }
     export ESCALATION_FILE="$escalation_file"
 
-    # shellcheck disable=SC2317  # called from $te_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $te_block via eval, invisible to a static reader
     log_event() {
       printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"
     }
     export EVENT_FILE="$event_file"
 
-    # shellcheck disable=SC2317  # called from $te_block via eval, invisible to a static reader
+    # shellcheck disable=SC2317,SC2329  # called from $te_block via eval, invisible to a static reader
     run_standdown_checks() { :; }
 
     eval "$te_block"

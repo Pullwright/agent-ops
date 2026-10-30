@@ -95,7 +95,7 @@ fi
 # print nothing, the same "does not fire" shape the real function returns
 # whenever refinements_json (defined below, always "{}" here) carries no
 # prior refinement for the item.
-# shellcheck disable=SC2317  # invoked only by the eval'd record_needs_refinement_block
+# shellcheck disable=SC2317,SC2329  # invoked only by the eval'd record_needs_refinement_block
 rework_refinement_bounce_back_fields() { :; }
 eval "$record_needs_refinement_block_fn"
 
@@ -145,7 +145,7 @@ blocked_json="[]"
 # events_of collects every event this run's stubbed log_event recorded, one
 # "name payload" line per call.
 events_log=""
-# shellcheck disable=SC2317  # called only from the eval'd record_needs_refinement_block
+# shellcheck disable=SC2317,SC2329  # called only from the eval'd record_needs_refinement_block
 log_event() { events_log+="$1 $2"$'\n'; }
 
 run_block() {  # run_block ENTRY STAGE -> rc on stdout as "rc N", then the event log
