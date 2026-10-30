@@ -780,6 +780,15 @@ oblige anyone to edit a test.
    other `techdebt_file_debt` caller relies on execs `gh` directly (`env -u
    GH_TOKEN gh`) rather than the shadowed shell function, and would bypass
    this coverage entirely.
+   Each resolved version is validated against a conservative character
+   allowlist before it is used for anything else — interpolated into the
+   filed issue body or into `--list`'s own output — since a GitHub release
+   tag name or an npm `latest` version field is upstream-controlled text
+   that could otherwise carry injected markdown or instruction-shaped
+   content into the pipeline's own work queue (issue #2726). A version
+   that fails the allowlist is treated exactly like an unresolvable one:
+   logged, discarded, and never forwarded, so it exits the same way an
+   unresolved pin already does rather than opening a new exit path.
    On any drift, filing goes through `lib/tech-debt-file.sh`'s
    `techdebt_file_debt` (component 23d) under a stable title, so a second
    scheduled run that finds the same or further drift comments on the issue
@@ -807,5 +816,8 @@ oblige anyone to edit a test.
    with no existing open issue opens one naming the stale pin, its pinned
    and upstream versions, and the checksum-recompute note; a drifted pin
    with an existing open issue comments on it instead of opening a second
-   one; an unresolvable upstream version exits 2 and files nothing; and
-   `--list` prints every pin without filing. Must pass `shellcheck`.
+   one; an unresolvable upstream version exits 2 and files nothing; a
+   resolved version that fails the allowlist (one GitHub tag, one npm
+   version, each carrying markdown-shaped text) exits 2, files nothing, and
+   never appears in `--list`'s own output; and `--list` prints every pin
+   without filing. Must pass `shellcheck`.
