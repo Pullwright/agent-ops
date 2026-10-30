@@ -477,6 +477,47 @@ strict_probe="$(
 assert_eq "a failing call under set -e returns to its caller instead of aborting it" \
   "STRICT_MODE_SURVIVED:" "$strict_probe"
 
+# A rate-limited call that *succeeds* on retry exercises a different line
+# than the probe above: github_limit_record_wait's own debit, called as a
+# bare statement from inside gh(). A `$(...)` capture (like strict_probe's
+# own, and like `out="$(gh ...)"` generally) does not actually prove this
+# line safe, because entering a command substitution clears `set -e` for
+# everything inside it regardless of what the enclosing shell had — the
+# exact reason `_techdebt_gh`'s tokenless branch uses a bare `( )` subshell
+# instead, which *does* inherit the caller's current `-e` state faithfully.
+# This probe matches that real shape: a fresh `bash -c` process (so this
+# script's own non-`-e` `set -uo pipefail` above is irrelevant to it) that
+# turns `-e` on and then calls `gh` bare, inside a plain subshell, with no
+# capture at all until after it returns. Before the BASHPID-mirror branch
+# always returned 0 explicitly, its exit status was whatever that mirror
+# condition evaluated to (false here, since this is a subshell) — and a
+# bare failing statement is exactly what `set -e` aborts on, silently, with
+# nothing after it — including the eventual debit this process is supposed
+# to have made — ever running.
+# shellcheck disable=SC2031  # false positive: the env-prefix below hands
+# this value to a genuinely separate `bash -c` process, never this shell's
+# own copy — nothing here reads it back afterward.
+sete_wait_secs="$GITHUB_LIMIT_SECONDARY_WAIT_SECONDS"
+sete_retry_probe="$(
+  GH_STUB_MODE=secondary GH_STUB_COUNT="$GH_STUB_COUNT" \
+  GITHUB_LIMIT_SECONDARY_WAIT_SECONDS="$sete_wait_secs" \
+  PATH="$PATH" \
+  bash -c "
+    set -e
+    . '$SCRIPT_DIR/lib/github-limit.sh'
+    rm -f \"\$(github_limit_waited_file)\" 2>/dev/null || true
+    : > \"\$GH_STUB_COUNT\"
+    (
+      set -e
+      gh pr list -R owner/repo >/dev/null 2>/dev/null
+    )
+    echo \"SURVIVED_PLAIN_SUBSHELL_UNDER_SET_E:\$(github_limit_waited_total)\"
+  "
+)"
+assert_eq "a rate-limited retry inside a bare ( ) subshell survives real set -e, debit included" \
+  "1" "$(if [[ "$sete_retry_probe" =~ ^SURVIVED_PLAIN_SUBSHELL_UNDER_SET_E:([0-9]+)$ ]] \
+    && (( BASH_REMATCH[1] >= sete_wait_secs )); then echo 1; else echo 0; fi)"
+
 # --- github_auth_probe (requirement 2.0b, agent-ops#691) ---
 #
 # The live incident this guards: a node's `GH_TOKEN` expired, and every cycle

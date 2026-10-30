@@ -205,11 +205,22 @@ github_limit_waited_total() {
 # because it is never called inside a subshell, and deliberately left reading
 # the bare variable rather than switched to this function) keeps seeing
 # exactly what it always has.
+#
+# Always returns 0, even when the mirror is skipped: this is called as a bare
+# statement (never inside an `if`/`&&`) from `gh()`, which every real caller
+# reaches through a `$(...)` capture — a function whose own last command is a
+# condition that is false there (BASHPID != $$, the common case) would return
+# that condition's failing status as its own, and a bare failing command is
+# exactly what `set -e` aborts on, in the gh() wrapper this is written
+# specifically to be safe inside (see its own header).
 github_limit_record_wait() {
   local wait="${1:-0}"
   (( wait > 0 )) || return 0
   printf '%s\n' "$wait" >>"$(github_limit_waited_file)"
-  [[ "$BASHPID" == "$$" ]] && GITHUB_LIMIT_WAITED_SECONDS=$(( GITHUB_LIMIT_WAITED_SECONDS + wait ))
+  if [[ "$BASHPID" == "$$" ]]; then
+    GITHUB_LIMIT_WAITED_SECONDS=$(( GITHUB_LIMIT_WAITED_SECONDS + wait ))
+  fi
+  return 0
 }
 
 # github_limit_kind TEXT
