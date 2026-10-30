@@ -122,8 +122,9 @@ Environment:
                         push interval (tests use a small value).
   STATE_SYNC_FETCH_LOCK_WAIT_SECONDS
                         override how long `fetch` waits for a held mirror
-                        lock before giving up, normally one push interval
-                        (tests use a small value).
+                        lock before giving up, normally the shorter of one
+                        push interval and one fetch interval (tests use a
+                        small value).
   STATE_SYNC_MIN_FREE_WORKSPACE_BYTES
                         override `min_free_workspace_bytes` (tests only).
   STATE_SYNC_FREE_KB    override the free-space reading `push` takes of

@@ -879,18 +879,18 @@
    requiring any single fetch attempt to be slow or failing outright. So
    `mirror_lock` now takes its non-blocking `flock -n` only for `push`;
    for `fetch` it takes `flock -w fetch_lock_wait_seconds` instead — the
-   shorter of one push interval and one fetch interval by default
-   (agent-ops#2748; one push interval alone, unclamped, is long enough to
-   ride out the ordinary holds just measured only at a configuration where
-   the push interval is already the shorter of the two, true of the shipped
-   5/7-minute split but not of every `state_sync_push_minutes`/
-   `state_sync_fetch_minutes` pair the schema allows — past that point the
-   wait can outlast the very fetch interval it is meant to fit inside,
-   letting waiting fetches pile up faster than cron starts new ones), long
+   shorter of one push interval and one fetch interval by default, long
    enough to ride out the ordinary holds just measured, short enough that a
    fetch still gives up, reporting exactly as before (the same "holding for
    Ns"/"may be wedged" lines, since the underlying holder-age marker and its
-   threshold are unchanged), against a hold long enough to call a wedge.
+   threshold are unchanged), against a hold long enough to call a wedge. The
+   clamp against one fetch interval is what makes that "short enough"
+   unconditional (agent-ops#2748): one push interval on its own is shorter
+   than fetch's own cadence only where `state_sync_push_minutes <
+   state_sync_fetch_minutes` — true of the shipped 5/7-minute split, but not
+   of every pair the schema's two independent `1..59` keys allow, and past
+   that point the wait outlasts the very interval it is meant to fit inside,
+   letting waiting fetches pile up faster than cron starts new ones.
    `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` overrides the whole computation for
    tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS` above does. Neither
    `fleet_peers_stale`'s threshold formula nor `pager_evaluate`'s own
