@@ -188,6 +188,7 @@ reset_stub() {
   echo "https://github.com/o/r/issues/77" > "$tmp_dir/issue-url"
   echo '[]' > "$tmp_dir/issue-list-response"
   GITHUB_LIMIT_WAITED_SECONDS=0
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
 }
 
 last_issue_body() {
@@ -246,6 +247,14 @@ assert_eq "  ... gh was invoked twice (the refusal, then the retry)" "2" \
   "$(grep -c '^<none> issue list -R o/r$' "$tmp_dir/calls")"
 assert_eq "  ... the shadow's own retry notice was printed" "1" \
   "$(grep -c 'secondary rate limit; waiting' "$tmp_dir/stderr")"
+# agent-ops#2739: that wait ran inside _techdebt_gh's own tokenless
+# `( unset GH_TOKEN; gh "$@" )` subshell — folded into agent-ops#2011's own
+# chosen fix (debit through a file, github_limit_record_wait) rather than a
+# second mechanism, per this item's own default. Read from outside both the
+# `( )` block and the `$(...)` that captured `out` above, which is exactly
+# where the bare GITHUB_LIMIT_WAITED_SECONDS was losing it before the fix.
+assert_eq "  ... and the process-wide wait budget was debited for it, not lost with the subshell" \
+  "1" "$(( $(github_limit_waited_total) >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
 
 # --- The token path goes through the same shadow -- a companion case ------
 # showing no regression there.

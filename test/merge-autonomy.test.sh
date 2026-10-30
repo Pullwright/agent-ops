@@ -373,6 +373,11 @@ reset_ratelimit_stub() {  # <fail-count>
   printf '%s' "$1" > "$rl_state/ratelimit-fail-count"
   rm -f "$rl_state/ratelimit-calls"
   GITHUB_LIMIT_WAITED_SECONDS=0
+  # Also clear the file-backed total (agent-ops#2011): merge_autonomy_kill_state
+  # runs inside the very $(...) every real caller captures it with below, so its
+  # own debit never reaches GITHUB_LIMIT_WAITED_SECONDS back out of that
+  # subshell — github_limit_waited_total is what actually carries it.
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
 }
 
 # Primed genuinely set (rather than clear) so the successful retry's GET
@@ -392,6 +397,12 @@ assert_eq "  ... carrying the real manual kind, not the fail-closed synthesis" "
 assert_eq "  ... exactly two fetch attempts were made" "2" "$(cat "$rl_state/ratelimit-calls")"
 assert_eq "  ... and the document reports the retry was actually taken" "true" \
   "$(jq -r '.retried' <<<"$rl_ok")"
+# agent-ops#2011: the wait just taken above ran inside this call's own
+# $(...) capture (rl_ok="$(... merge_autonomy_kill_state ...)"), exactly the
+# shape every real caller uses — so the module variable alone could never
+# show it. github_limit_waited_total, read here outside that subshell, must.
+assert_eq "  ... and the process-wide wait budget was debited for it, not lost with the subshell" \
+  "1" "$(( $(github_limit_waited_total) >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
 merge_autonomy_kill_clear "$slug" "$fs" >/dev/null
 
 fs_retry_fail="$tmp_dir/fleet-state-retry-fail"

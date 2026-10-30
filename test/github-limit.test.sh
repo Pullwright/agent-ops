@@ -364,10 +364,19 @@ GITHUB_LIMIT_SECONDARY_WAIT_SECONDS=1
 GITHUB_LIMIT_MAX_WAIT_SECONDS=5
 GITHUB_LIMIT_TOTAL_WAIT_SECONDS=10
 
+# Resets both the in-shell total and its file-backed mirror (github_limit_waited_total's
+# own store, agent-ops#2011/#2739) — gh() itself now reads the file, not the bare
+# variable, so a reset that only cleared the variable would leave a prior case's
+# debit still counting against this one's budget.
+reset_waited() {
+  GITHUB_LIMIT_WAITED_SECONDS=0
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
+}
+
 run_wrapped() {  # <mode> — resets the counter, returns "<rc>|<stdout>|<calls>"
   local mode="$1" out rc
   : > "$GH_STUB_COUNT"
-  GITHUB_LIMIT_WAITED_SECONDS=0
+  reset_waited
   out="$(GH_STUB_MODE="$mode" gh pr list -R owner/repo 2>/dev/null)" && rc=0 || rc=$?
   printf '%s|%s|%s' "$rc" "$(tr '\n' ',' <<<"$out")" "$(cat "$GH_STUB_COUNT" 2>/dev/null || echo 0)"
 }
@@ -399,21 +408,56 @@ assert_eq "…the caller's gh was called exactly once" \
 # repository either shows it or redirects it to a named file, and a wrapper
 # that swallowed it would turn each of those into a silent failure.
 : > "$GH_STUB_COUNT"
-GITHUB_LIMIT_WAITED_SECONDS=0
+reset_waited
 notfound_err="$(GH_STUB_MODE=notfound gh pr list -R owner/repo 2>&1 >/dev/null)"
 assert_eq "gh's stderr reaches the caller verbatim" \
   "yes" "$(if [[ "$notfound_err" == *"HTTP 404: Not Found"* ]]; then echo yes; else echo no; fi)"
 
 # A process that has already spent its patience stops waiting, which is the
 # clamp asserted purely above, observed here through the wrapper: the call is
-# made once and the refusal returned.
+# made once and the refusal returned. Seeded through the file-backed total
+# (github_limit_record_wait), not the bare variable directly — gh() itself
+# now reads github_limit_waited_total, so this is the real seeding path a
+# caller spread across subshells would have actually produced.
 : > "$GH_STUB_COUNT"
-GITHUB_LIMIT_WAITED_SECONDS="$GITHUB_LIMIT_TOTAL_WAIT_SECONDS"
+reset_waited
+github_limit_record_wait "$GITHUB_LIMIT_TOTAL_WAIT_SECONDS"
 GH_STUB_MODE=primary gh pr list -R owner/repo >/dev/null 2>&1 && spent_rc=0 || spent_rc=$?
 assert_eq "a process out of patience returns the refusal instead of waiting" \
   "1" "$spent_rc"
 assert_eq "…having called gh exactly once" \
   "1" "$(cat "$GH_STUB_COUNT" 2>/dev/null || echo 0)"
+
+# --- agent-ops#2011/#2739: the debit survives a subshell -------------------
+# The defect both issues describe: gh()'s own increment of
+# GITHUB_LIMIT_WAITED_SECONDS, made inside a subshell (a `$(...)` capture —
+# every real caller's shape, needed to capture gh's own stdout at all, or a
+# tokenless `( unset GH_TOKEN; gh ... )` block), never reaches the calling
+# process back. github_limit_waited_total must see the debit from outside
+# the subshell regardless.
+reset_waited
+: > "$GH_STUB_COUNT"
+(
+  # A bare `( )` block, mirroring _techdebt_gh's own tokenless subshell shape
+  # exactly, rather than $(...) — proving the fix holds for both subshell
+  # forms the two issues name.
+  GH_STUB_MODE=secondary gh pr list -R owner/repo >/dev/null 2>&1
+)
+waited_after_subshell="$(github_limit_waited_total)"
+assert_eq "a wait recorded inside a bare subshell still debits the total this process reads" \
+  "1" "$(( waited_after_subshell >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
+assert_eq "…the module variable itself is unchanged by a subshelled debit (it cannot be)" \
+  "0" "$GITHUB_LIMIT_WAITED_SECONDS"
+
+# A direct (non-subshell) call still mirrors into the plain module variable
+# too, exactly as before this fix — nothing regresses for a caller that
+# still reads GITHUB_LIMIT_WAITED_SECONDS directly (approver_post_or_warn).
+reset_waited
+: > "$GH_STUB_COUNT"
+GH_STUB_MODE=secondary gh pr list -R owner/repo >/dev/null 2>&1
+assert_eq "a direct (non-subshell) call still mirrors the debit into the plain module variable" \
+  "1" "$(( GITHUB_LIMIT_WAITED_SECONDS >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
+reset_waited
 
 # The wrapper is sourced into scripts running under `set -e`. A bare failing
 # `command gh` inside it would abort the *caller* mid-wrapper — before the temp

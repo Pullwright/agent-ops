@@ -149,8 +149,68 @@ GITHUB_LIMIT_SECONDARY_WAIT_SECONDS="${GITHUB_LIMIT_SECONDARY_WAIT_SECONDS:-20}"
 # Wall-clock seconds this process has already spent waiting on rate limits.
 # Module state, deliberately: the budget is per process, so a gatherer that
 # meets a limit on its first call cannot spend the whole cycle's patience on
-# its remaining fifty.
+# its remaining fifty. Kept in sync with github_limit_waited_file's own total
+# only for a caller running in this shell with no subshell between it and the
+# debit (see github_limit_record_wait) — a caller that wants the true total
+# regardless of subshell depth calls github_limit_waited_total instead.
 GITHUB_LIMIT_WAITED_SECONDS=0
+
+# github_limit_waited_file
+# Where this process's rate-limit debits live on disk — `$$` rather than any
+# in-shell variable, because the real callers that need this (agent-ops#2011's
+# `merge_autonomy_kill_state`, agent-ops#2739's `_techdebt_gh` tokenless
+# branch) both run their wait-and-retry inside a subshell — a `$(...)`
+# capture or a `( )` block — and a plain variable set inside one dies with it.
+# `$$` is the one thing bash guarantees stays the invoking process's PID
+# through any depth of subshell nesting, the same guarantee
+# `_fleet_flag_memo_root` (lib/toggle.sh) already relies on for the identical
+# problem; this mirrors that mechanism rather than inventing a second one.
+github_limit_waited_file() {
+  printf '%s/agent-ops-github-limit-waited.%s' "${TMPDIR:-/tmp}" "$$"
+}
+
+# A file that already exists when this module is first sourced is not this
+# process's — `$$` is unique among processes running *now*, but `$TMPDIR`
+# outlives them all and PIDs are recycled, so a long-lived node chaining
+# cycle after cycle eventually starts one whose PID a dead process's debits
+# are still filed under. Dropped once, here, before anything can read it —
+# the same guard shape lib/toggle.sh uses for `_fleet_flag_memo_root`.
+if [[ -z "${_GITHUB_LIMIT_WAITED_PURGED:-}" ]]; then
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
+  _GITHUB_LIMIT_WAITED_PURGED=1
+fi
+
+# github_limit_waited_total
+# The process-wide wait total, read from the file so a debit recorded at any
+# subshell depth still counts — not merely the in-shell GITHUB_LIMIT_WAITED_SECONDS,
+# which a subshell's own write can never reach back out of. Every debit is
+# recorded here exactly once (github_limit_record_wait), so this is the sum of
+# the file alone — never added to the module variable, which would double-count
+# whatever a non-subshell debit already wrote to both.
+github_limit_waited_total() {
+  local file total
+  file="$(github_limit_waited_file)"
+  total=0
+  [[ -s "$file" ]] && total="$(awk '{s += $1} END {print s + 0}' "$file" 2>/dev/null)"
+  printf '%s' "${total:-0}"
+}
+
+# github_limit_record_wait WAIT
+# Debit WAIT seconds against the process-wide budget. Appended to the file
+# unconditionally — the one representation that survives any subshell depth —
+# and mirrored into the plain module variable only when this call is running
+# in the process's own top-level shell (BASHPID == $$, never true inside a
+# subshell), so a caller that still reads GITHUB_LIMIT_WAITED_SECONDS directly
+# (`approver_post_or_warn`, lib/approver.sh, agent-ops#1082 — already correct
+# because it is never called inside a subshell, and deliberately left reading
+# the bare variable rather than switched to this function) keeps seeing
+# exactly what it always has.
+github_limit_record_wait() {
+  local wait="${1:-0}"
+  (( wait > 0 )) || return 0
+  printf '%s\n' "$wait" >>"$(github_limit_waited_file)"
+  [[ "$BASHPID" == "$$" ]] && GITHUB_LIMIT_WAITED_SECONDS=$(( GITHUB_LIMIT_WAITED_SECONDS + wait ))
+}
 
 # github_limit_kind TEXT
 # Which class of rate-limit refusal a `gh` diagnostic describes: `secondary`,
@@ -639,11 +699,11 @@ gh() {
       reset_epoch=0
       # shellcheck disable=SC2119  # the default (now-relative) NOW_EPOCH, deliberately
       [[ "$kind" == "primary" ]] && reset_epoch="$(github_limit_primary_reset_epoch)"
-      wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$(date +%s)" "$GITHUB_LIMIT_WAITED_SECONDS")"
+      wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$(date +%s)" "$(github_limit_waited_total)")"
       if [[ -n "$wait" ]]; then
         printf 'gh: %s rate limit; waiting %ss and retrying once\n' "$kind" "$wait" >&2
         sleep "$wait"
-        GITHUB_LIMIT_WAITED_SECONDS=$(( GITHUB_LIMIT_WAITED_SECONDS + wait ))
+        github_limit_record_wait "$wait"
         : >"$out_file"; : >"$err_file"
         command gh "$@" >"$out_file" 2>"$err_file" && rc=0 || rc=$?
       fi

@@ -133,7 +133,14 @@ fi
 # own `gh` shell-function shadow, losing that library's rate-limit wait
 # (agent-ops#2732). The subshell keeps the bare `gh` word resolving to
 # whichever `gh` — function or binary — is in scope where this function is
-# sourced, exactly as the token branch above already does.
+# sourced, exactly as the token branch above already does. The wait itself
+# still debits the process-wide `GITHUB_LIMIT_WAITED_SECONDS` budget even
+# though it runs inside this subshell: `gh`'s own shadow records it through
+# `github_limit_record_wait`, which writes to a file keyed by `$$` rather
+# than the in-shell variable a subshell's own write could never carry back
+# out of (agent-ops#2739, same subshell-visibility fix as agent-ops#2011's
+# `merge_autonomy_kill_state`) — a caller reads the true total with
+# `github_limit_waited_total`, not the bare variable.
 #
 # Under GitHub Actions (GITHUB_ACTIONS=true) there is no stored `gh auth
 # login` identity to fall back to — GH_TOKEN is the only credential a
