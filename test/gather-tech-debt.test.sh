@@ -34,8 +34,9 @@
 #     every comment — plus `source`, `ref` (the bare issue number, as a
 #     string), `number`, `url`, `title`, `labels`, `author`, `created_at` and
 #     `updated_at`.
-#   - **Sorted by issue number ascending** — "the oldest item is kept first"
-#     (lib/coordinator-input.sh's own `keep_order_tech_debt`).
+#   - **Sorted by band, then by freshness (newest first)** — when entries are
+#     dropped for size, `keep_order_tech_debt` in lib/coordinator-input.sh
+#     prioritises freshest threads within each band (agent-ops#1379, #2422).
 #   - **Degrades to `{"candidates":[],"excluded":null}` (exit 0) on any
 #     failure**, silently for none of the old register-specific cases (there
 #     is no register left to read) but always loudly on stderr for a genuine
@@ -124,8 +125,8 @@ export PATH="$tmp_dir/bin:$PATH"
 # #20 is clean, labelled `pw::type:tech-debt` plus an extra label, with a
 # two-comment thread; #21 is assigned; #22 is labelled `Blocked` (upper case,
 # proving the drop case-insensitive); #23 names an unresolved `Blocked-by:
-# #24` (still open); #19 is clean and commentless, unbanded, qualifying solely
-# on the `pw::type:tech-debt` label; #18 is open but carries no
+# #24` (still open); #19 is clean, commentless, and unbanded (the stalest
+# unbanded entry), qualifying solely on the `pw::type:tech-debt` label; #18 is open but carries no
 # `pw::type:tech-debt` label at all, proving the label filter (now this
 # script's own `select`, since
 # `issue_prefetch_open_issues` returns every open issue — agent-ops#1085)
