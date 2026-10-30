@@ -34,8 +34,12 @@
 #     every comment — plus `source`, `ref` (the bare issue number, as a
 #     string), `number`, `url`, `title`, `labels`, `author`, `created_at` and
 #     `updated_at`.
-#   - **Sorted by issue number ascending** — "the oldest item is kept first"
-#     (lib/coordinator-input.sh's own `keep_order_tech_debt`).
+#   - **Sorted by issue number ascending** — this gatherer's own order
+#     (`sort_by(.number)`), unaffected by a prose-only fit.
+#     `keep_order_tech_debt` (lib/coordinator-input.sh) reorders by freshest
+#     thread alone — no Priority band for tech-debt, unlike
+#     `keep_order_issues` — and only when requirement 4i's entry caps
+#     actually drop entries (agent-ops#1379).
 #   - **Degrades to `{"candidates":[],"excluded":null}` (exit 0) on any
 #     failure**, silently for none of the old register-specific cases (there
 #     is no register left to read) but always loudly on stderr for a genuine
