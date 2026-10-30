@@ -854,6 +854,46 @@
    line's own note, on and off the wedge threshold, and under each of the
    same three mode cases.
 
+   **A fetch that loses the lock waits for it rather than giving up on the
+   spot (agent-ops#2745).** `mirror_lock`'s header reasons that a push losing
+   the race to another push has nothing to add that the winner will not — a
+   second push five minutes later covers the same ground — but that reasoning
+   does not hold for a fetch: the winning push never refreshes the peers
+   directory, so a fetch that gives up instantly skips its entire cadence for
+   nothing any other node's own work replaces. On poetic-1/poetic-2 this was
+   the dominant cause of `pager-evaluation-skipped`/`peer-view-stale`
+   (`lib/pager.sh`): cron.log showed the embedded end-of-cycle push and the
+   standalone cron push losing the mirror lock to each other on the order of
+   a thousand times over several days, almost always for 100–230 seconds —
+   comfortably inside one push interval — while `state-sync(fetch)` never
+   once logged a successful "holding N peer(s)" or a contention line in that
+   same window, the two having been routed to different log files
+   (`cron.log` for a push invoked through `agent-cycle.sh`,
+   `state-sync.log` — excluded from what replicates — for the dedicated
+   `state-sync.sh fetch` cron line); a fetch losing that same race, with
+   `schedule.state_sync_fetch_minutes` giving it no second attempt for
+   another seven minutes and `fleet_peers_stale`'s own threshold
+   (`min(3 × fetch_minutes × 60, LABEL_OWN_GRACE_SECONDS)`, 21 minutes at the
+   shipped cadence) already tighter than that one lost race plus the time
+   to the next tick, accounts for the reported 24–45 minute gaps without
+   requiring any single fetch attempt to be slow or failing outright. So
+   `mirror_lock` now takes its non-blocking `flock -n` only for `push`;
+   for `fetch` it takes `flock -w fetch_lock_wait_seconds` instead — one push
+   interval by default, long enough to ride out the ordinary holds just
+   measured, short enough that a fetch still gives up, reporting exactly as
+   before (the same "holding for Ns"/"may be wedged" lines, since the
+   underlying holder-age marker and its threshold are unchanged), against a
+   hold long enough to call a wedge. `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS`
+   overrides it for tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS`
+   above does. Neither `fleet_peers_stale`'s threshold formula nor
+   `pager_evaluate`'s own skip-while-stale gate changes: the fix is to the
+   odds that a fetch needs either of them at all, not to either's own
+   calibration. `test/state-sync.test.sh` covers a fetch that waits out an
+   ordinary, short-lived hold and succeeds without ever logging contention,
+   alongside the pre-existing give-up cases (now pinned to a short
+   `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` so a real hold longer than the test's
+   own wait still exercises that path and its wedge/non-wedge wording).
+
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
    .agent-ops-peers/<node>/`), on its own schedule: `git archive` into a
