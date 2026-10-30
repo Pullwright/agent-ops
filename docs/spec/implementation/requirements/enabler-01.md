@@ -447,42 +447,58 @@
     (alias-resolved) repo: an entry whose repo's `expensive_gather.fresh`
     is `false` (an entry carrying no `expensive_gather` stamp at all reads
     as fresh, the same convention `lib/candidate-gather.sh`'s own
-    `issues_by_repo_json` reshape already observes) *and* whose own
-    `blocked_ts` (`ENABLER_ELIGIBLE_JQ`, `lib/cycle-state.sh`) is later than
-    that repo's own `gathered_at` is blocked after the cache was written,
-    so neither sidecar could ever have seen it — narrowed once more to an
+    `issues_by_repo_json` reshape already observes) with a non-empty
+    `gathered_at` to compare against is in the narrow repo-stale set this
+    requirement can flip the verdict for — narrowed once more to an
     `.item` that is a bare issue number, the only shape either sidecar
     reports on (both are keyed by `.number`) and the only one
     `repos/<slug>/issues/<item>` can resolve, so a surviving
     `pr-<n>-conflict-<sha>` claim or a `review-<date>-R-NN` finding is
-    never put to a question that would 404 either way. For just that narrow
-    set — never every eligible candidate, which is exactly what issue
-    #2603 removed for cost and must not come back — the candidate's own
-    live thread is re-read directly and tested with the identical
-    `dependency_refs`/`issue_blocked_by_ref` (`lib/dependency-gate.sh`,
-    `lib/issue-prefetch.sh`) the gathers themselves use at gather time.
-    The thread is read *whole* — its body, plus its comments at
-    `per_page=100` under `--paginate`, one call for any thread of 100 or
-    fewer — never the bare comments path, whose own default is the *oldest*
-    30 ascending by `created_at`: a `Blocked-by:` line accumulates at the
-    end of a thread rather than its start (the same reasoning
-    `lib/issue-prefetch.sh`'s own `comments(last:100)` gather walk records),
-    and the stage posts it at the moment it records the block, which is the
-    very thing the `blocked_ts` gate above selects for.
+    never put to a question that would 404 either way.
+
+    For just that narrow set — never every eligible candidate, which is
+    exactly what issue #2603 removed for cost and must not come back —
+    the candidate's own `updated_at` is read live (issue #2720) and
+    compared against its repo's own `gathered_at`: `updated_at` moves on
+    any body edit or new comment, so this is an exact test of whether the
+    thread has changed since the cache was written, where an earlier
+    version of this requirement compared the candidate's own `blocked_ts`
+    (`ENABLER_ELIGIBLE_JQ`, `lib/cycle-state.sh`) instead — sound only when
+    a `Blocked-by:` line is posted at the moment of blocking, and blind to
+    one added to an already-blocked item's thread afterwards (a human edit,
+    a later stage noticing the dependency on a recheck round). Only a
+    candidate whose `updated_at` is later than its repo's own `gathered_at`
+    proceeds to the next, heavier step: its own live thread is re-read
+    directly and tested with the identical `dependency_refs`/
+    `issue_blocked_by_ref` (`lib/dependency-gate.sh`, `lib/issue-prefetch.sh`)
+    the gathers themselves use at gather time. The thread is read *whole*
+    — its body, plus its comments at `per_page=100` under `--paginate`,
+    one call for any thread of 100 or fewer — never the bare comments
+    path, whose own default is the *oldest* 30 ascending by `created_at`:
+    a `Blocked-by:` line accumulates at the end of a thread rather than its
+    start (the same reasoning `lib/issue-prefetch.sh`'s own
+    `comments(last:100)` gather walk records), and the stage posts it at
+    the moment it records the block, which is the very thing the
+    `updated_at` gate above selects for.
 
     A stamp reporting `fresh` as `false` with no `gathered_at` at all — the
     node had no cache for that repo to load, so `lib/candidate-gather.sh`
     stamped the timestamp `null` — is left alone too, despite being the
-    most stale reading of the three: with no timestamp to compare a
-    `blocked_ts` against there is no narrow set left to take, and testing
+    most stale reading of the three: with no timestamp to compare a live
+    `updated_at` against there is no narrow set left to take, and testing
     every eligible candidate in that repo is the per-candidate live check
     issue #2603 removed for cost. The omission costs what this requirement
     already bounds — one Enabler engagement — and stands only until that
     repo's own next expensive gather writes a cache to compare against.
 
-    The two ways a live read can fail here go in opposite directions, and
-    both match what `issue_blocked_by_ref` already does at gather time:
+    The three ways a live read can fail here do not all go the same
+    direction, though the two inherited from issue #2709 both match what
+    `issue_blocked_by_ref` already does at gather time:
 
+    - **The candidate's own live `updated_at` cannot be read at all.** An
+      empty read is never treated as "later than `gathered_at`", so the
+      candidate is left eligible without ever reaching the heavier thread
+      read — the same fail-open direction as an unreadable thread below.
     - **The candidate's own thread cannot be read at all.** It yields no
       text, so `dependency_refs` finds no reference and the candidate is
       left eligible — the optimisation simply does not fire, and the
