@@ -1391,9 +1391,9 @@ run_model_stage() {
   # readable answer (killed before its first byte, or an adapter — or test
   # fixture — that never emits one), the same degradation every other
   # `metering_fields` input gets when it cannot be read.
-  local stage_lane
-  if stage_lane="$(stage_lane_of "$stream_file" "$substrate")"; then
-    stage_lane_json="$(jq -nc --arg l "$stage_lane" '$l')"
+  local metering_lane
+  if metering_lane="$(stage_lane_of "$stream_file" "$substrate")"; then
+    stage_lane_json="$(jq -nc --arg l "$metering_lane" '$l')"
   else
     # shellcheck disable=SC2034
     stage_lane_json="null"
