@@ -200,11 +200,12 @@ github_limit_waited_total() {
 # unconditionally — the one representation that survives any subshell depth —
 # and mirrored into the plain module variable only when this call is running
 # in the process's own top-level shell (BASHPID == $$, never true inside a
-# subshell), so a caller that still reads GITHUB_LIMIT_WAITED_SECONDS directly
-# (`approver_post_or_warn`, lib/approver.sh, agent-ops#1082 — already correct
-# because it is never called inside a subshell, and deliberately left reading
-# the bare variable rather than switched to this function) keeps seeing
-# exactly what it always has.
+# subshell), so anything still reading GITHUB_LIMIT_WAITED_SECONDS directly
+# keeps seeing exactly what it always has. Every debit in this repository goes
+# through this function — `gh()`'s own wrapper below, `merge_autonomy_kill_state`
+# (lib/merge-autonomy.sh) and `approver_post_or_warn` (lib/approver.sh,
+# agent-ops#1082) — which is what makes github_limit_waited_total's file the
+# whole budget rather than one of two half-ledgers that cannot see each other.
 #
 # Always returns 0, even when the mirror is skipped: this is called as a bare
 # statement (never inside an `if`/`&&`) from `gh()`, which every real caller
