@@ -55,7 +55,10 @@ claude.ai
 claude.com
 # Read-only documentation traffic — a stage checking whether an observed
 # Claude Code behaviour is also documented upstream (issue #2768) — not a
-# runtime dependency of any stage.
+# runtime dependency of any stage. Not confirmed reachable from a built
+# image behind this fence: no stage here has a Docker daemon to build and
+# probe against (#1706), so this entry rests on the same squid dstdomain
+# exact-match reasoning as claude.ai/claude.com above, not on a live fetch.
 docs.claude.com
 
 # --- xAI: the Grok Build substrate's API-key path (issue #2134) -----------
