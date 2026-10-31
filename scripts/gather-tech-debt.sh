@@ -253,7 +253,7 @@ while IFS= read -r candidate; do
   # already removed from the `tech_debt` band.
   thread_text="$(jq -r '.body' <<<"$candidate")
 $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
-  ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+  ref_display="$(issue_blocked_by_ref "$slug" "$n" "$thread_text")"
   if [[ -n "$ref_display" ]]; then
     excl_entry="$(jq -nc --argjson n "$n" --arg ref "$ref_display" \
       '{number: $n, reason: ("blocked-by: " + $ref)}')" || degrade "excluded entry assembly failed for issue #$n"

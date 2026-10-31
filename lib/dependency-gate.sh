@@ -231,3 +231,34 @@ dependency_refusal_reason() {
     "$matched" "$repo" "$item"
   return 1
 }
+
+# dependency_native_blocked_by SLUG NUMBER
+# Read SLUG#NUMBER's native Issue Dependencies from GitHub's `/dependencies/blocked_by` endpoint.
+# Returns a JSON array of {number, state, repo} objects (repo absent for same-repo refs).
+dependency_native_blocked_by() {
+  local slug="${1:-}" number="${2:-}"
+  [[ -n "$slug" && -n "$number" ]] || { echo "[]"; return 0; }
+  gh api "repos/$slug/issues/$number/dependencies/blocked_by" --jq '.[] | {number, state}' 2>/dev/null \
+    | jq -s . || echo "[]"
+}
+
+# dependency_native_open_ref SLUG NUMBER
+# Read SLUG#NUMBER's native Issue Dependencies, and print the first one still open
+# (state != "closed") — the same behavior as `dependency_refs` / `issue_blocked_by_ref`
+# for text references. Returns empty (prints nothing) if all are closed or none exist.
+dependency_native_open_ref() {
+  local slug="${1:-}" number="${2:-}" blockers entry b_number b_state display
+  blockers="$(dependency_native_blocked_by "$slug" "$number")"
+  [[ "$(jq 'length' <<<"$blockers" 2>/dev/null || echo 0)" != "0" ]] || return 0
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    b_number="$(jq -r '.number // ""' <<<"$entry" 2>/dev/null || true)"
+    b_state="$(jq -r '.state // "open"' <<<"$entry" 2>/dev/null || true)"
+    [[ -n "$b_number" ]] || continue
+    if [[ "$b_state" != "closed" ]]; then
+      printf '%s\n' "#$b_number"
+      return 0
+    fi
+  done < <(jq -c '.[]' <<<"$blockers" 2>/dev/null || true)
+  return 0
+}

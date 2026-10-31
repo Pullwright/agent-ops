@@ -287,6 +287,53 @@ assert_eq "the pre-extract release clears the already-blocked item the same cycl
 assert_eq "naming the resolved reference" \
   "true" "$(jq -r '.[0].reason | test("#195")' <<<"$released")"
 
+# --- issue_blocked_by_ref (text/native precedence) -----------------------
+# A text reference in the thread decides the block where both text and native
+# conventions are present — the same field that issue_prefetch reads for
+# candidates now drives a separate live `issue_blocked_by_ref` check against
+# two sources (requirement 34j; agent-ops#2422).
+
+# shellcheck source=lib/issue-prefetch.sh
+. "$SCRIPT_DIR/lib/issue-prefetch.sh"
+
+native_state_file2="$tmp_dir/native-200-state"
+echo "open" > "$native_state_file2"
+mkdir -p "$tmp_dir/bin-native2"
+cat >"$tmp_dir/bin-native2/gh" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+[[ "\${1:-}" == "api" ]] || { echo "stub gh: unexpected command: \$*" >&2; exit 1; }
+path="\$2"; shift 2
+filter='.'
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in --jq) filter="\$2"; shift 2;; *) shift;; esac
+done
+case "\$path" in
+  repos/o/r/issues/200/dependencies/blocked_by)
+    state="\$(cat "$native_state_file2")"
+    body="[{\\"number\\": 55, \\"state\\": \\"\$state\\"}]"
+    ;;
+  repos/o/r/issues/201/dependencies/blocked_by) body="[{\\"number\\": 55, \\"state\\": \\"open\\"}]" ;;
+  repos/o/r/issues/9) body="{\\"state\\": \\"open\\"}" ;;
+  *) echo "stub gh: unexpected path: \$path" >&2; exit 1;;
+esac
+jq -c "\$filter" <<<"\$body"
+STUB
+chmod +x "$tmp_dir/bin-native2/gh"
+
+export DEPENDENCY_GATE_GH="$tmp_dir/bin-native2/gh"
+export PATH="$tmp_dir/bin-native2:$PATH"
+assert_eq "issue_blocked_by_ref falls through to the native check when the thread names no Blocked-by: line" \
+  "#55" "$(issue_blocked_by_ref o/r 200 "An ordinary thread, no text convention at all.")"
+echo "closed" > "$native_state_file2"
+assert_eq "...and stops reporting a block once the native dependency closes" \
+  "" "$(issue_blocked_by_ref o/r 200 "An ordinary thread, no text convention at all.")"
+assert_eq "a text Blocked-by: reference still wins when both are present" \
+  "#9" "$(issue_blocked_by_ref o/r 201 "Blocked-by: #9")"
+assert_eq "an empty NUMBER skips the native check entirely" \
+  "" "$(issue_blocked_by_ref o/r "" "No text reference here either.")"
+unset DEPENDENCY_GATE_GH
+
 echo
 if (( failures == 0 )); then
   echo "All dependency-gate assertions passed."
