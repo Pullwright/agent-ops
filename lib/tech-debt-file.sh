@@ -66,6 +66,16 @@
 #   TOKEN — see _techdebt_gh below for why an omitted TOKEN fails loudly
 #   there instead of running unauthenticated.
 #
+#   When PROVENANCE names a pull request (_techdebt_extract_pr_url,
+#   below) — the Approver's and Reviewer's own shape, never the Enabler's —
+#   the filed or commented body also carries a `Blocked-by: <owner/repo>#<n>`
+#   line naming that same pull request (_techdebt_blocked_by_line,
+#   agent-ops#2721), so the record is held out of the tech-debt band by
+#   requirement 34j's existing live check (issue_blocked_by_ref,
+#   lib/issue-prefetch.sh) for as long as that pull request stays open, and
+#   released automatically once it closes — a still-open pull request is the
+#   normal case here, since the Approver runs because one is in front of it.
+#
 #   Retired by this move (agent-ops#874): the `td/<id>` reservation
 #   (scripts/reserve-tech-debt-id.pl), the `td-record/<id>` filing branch,
 #   the filing pull request, and `_techdebt_unfile`'s rollback of both —
@@ -270,6 +280,24 @@ _techdebt_extract_pr_url() {
   fi
 }
 
+# _techdebt_blocked_by_line PR_URL
+# Print a `Blocked-by: <owner>/<repo>#<n>\n` line derived from PR_URL (as
+# _techdebt_extract_pr_url prints it), so a record whose provenance names a
+# still-open pull request is held out of the tech-debt band by requirement
+# 34j's existing live check (issue_blocked_by_ref, lib/issue-prefetch.sh)
+# until that pull request closes (agent-ops#2721) -- the same hold a
+# Reviewer applied to #2652 by hand after the fact, now the default at
+# filing time. Prints nothing when PR_URL is empty (the Enabler's own
+# provenance shape, which names no PR), leaving that caller a no-op exactly
+# as before this existed.
+_techdebt_blocked_by_line() {
+  local pr_url="$1"
+  [[ -n "$pr_url" ]] || return 0
+  if [[ "$pr_url" =~ ^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+) ]]; then
+    printf 'Blocked-by: %s#%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+  fi
+}
+
 # _techdebt_pr_dedup_match PR_URL LIST_JSON
 # PR_URL is a pull-request URL as _techdebt_extract_pr_url prints it;
 # LIST_JSON is a JSON array of `{number, url, title, body}`. Prints the
@@ -380,6 +408,7 @@ techdebt_file_debt() {
         combined_file="$(mktemp)"
         printf '%s\n\n%s\n%s\n' "$body" "$(techdebt_default_section "$default_fix" "$owner_decision")" \
           "$provenance" > "$combined_file"
+        _techdebt_blocked_by_line "$pr_url_needle" >> "$combined_file"
         _techdebt_gh "$token" issue comment "$match_number" -R "$repo" \
           --body-file "$combined_file" >/dev/null 2>>"$errlog" || true
         rm -f "$combined_file"
@@ -394,6 +423,7 @@ techdebt_file_debt() {
   combined_file="$(mktemp)"
   printf '%s\n\n%s\n%s\n' "$body" "$(techdebt_default_section "$default_fix" "$owner_decision")" \
     "$provenance" > "$combined_file"
+  _techdebt_blocked_by_line "$pr_url_needle" >> "$combined_file"
   # A repository whose `pw::type:tech-debt` label the ensure pass (lib/labels.sh)
   # has not reached yet fails the whole labelled create -- `gh` resolves a
   # label name to an id as part of it -- so `issue_create_with_retry` retries
