@@ -181,9 +181,22 @@ stage_lane_managed_key_detected=""
 # runs itself, while `enabledPlugins` and `extraKnownMarketplaces` fetch code.
 # A stage runs in a checkout of a pull-request head as often as of `main`, so
 # any of these would run whatever the head says, before the stage's prompt
-# is read and with the stage's credentials. Measured against 2.1.267 with
-# every one planted in a checkout: `apiKeyHelper` and the AWS helpers ran
-# commands, and `env` switched the runner onto another provider.
+# is read and with the stage's credentials. Measured against 2.1.314, every
+# one planted in a checkout and run as a stage runs it
+# (`--dangerously-skip-permissions`, no workspace ever trusted): `apiKeyHelper`,
+# `awsAuthRefresh` and `awsCredentialExport` still ran commands, and `env`
+# still switched the runner onto another provider, reconfirming the 2.1.267
+# measurement that named only those (as "the AWS helpers") and `env`.
+# `gcpAuthRefresh`, tested directly for the first time here, ran a command
+# too, switching the runner onto Vertex the same way `env` switches it onto
+# Bedrock. `otelHeadersHelper` and `proxyAuthHelper`, also tested directly
+# for the first time, did not run: each refuses to fire without a trust that
+# `--dangerously-skip-permissions` does not confer on a checkout nobody has
+# trusted interactively, so a planted one sits inert rather than firing the
+# way the other four do. That is a fact about this CLI version, not a safety
+# margin this allowlist leans on — issue #2761 tracks it as a question for a
+# human, not a reason to narrow the refusal here. `processWrapper` was not
+# re-planted; nothing here attests to its behaviour at 2.1.314.
 #
 # The image's managed policy (`deploy/docker/claude-managed-settings.json`,
 # installed root-owned at /etc/claude-code/managed-settings.json) switches off
@@ -196,14 +209,20 @@ stage_lane_managed_key_detected=""
 # file holding anything else, or one that is not a JSON object `jq` can read,
 # means the stage is not launched.
 #
-# `permissions` is allowed for its `allow` list and nothing else. Measured
-# against 2.1.267 under `--dangerously-skip-permissions`: `allow` is ignored
-# in a workspace nobody has trusted interactively, which no stage's is;
-# `deny` takes the named tool away from the stage, so a head could narrow
-# what its own Reviewer can see; and `disableBypassPermissionsMode` silently
-# drops the run into the default permission mode. `ask`, `defaultMode` and
-# `additionalDirectories` set what the stage may do as well, so they are
-# refused with them.
+# `permissions` is allowed for its `allow` list and nothing else. Re-measured
+# against 2.1.314 under `--dangerously-skip-permissions`, same as at 2.1.267:
+# `allow` is still ignored in a workspace nobody has trusted interactively,
+# which no stage's is; `deny` still takes the named tool away from the
+# stage, so a head could narrow what its own Reviewer can see; and
+# `disableBypassPermissionsMode` still silently drops the run into the
+# default permission mode even though the stage passed
+# `--dangerously-skip-permissions` on its own command line. `ask`,
+# `defaultMode` and `additionalDirectories` could not be re-measured the
+# same way — each only changes what happens once a tool call is actually
+# weighed against it, and a planted setting with no such call to weigh
+# never exercises that — so they are refused on the same rationale as
+# before: like `allow`, `deny` and `disableBypassPermissionsMode` above,
+# they set what the stage may do.
 #
 # Only the working directory matters: Claude reads project settings from
 # there and not from a parent or the repository root (measured likewise).
