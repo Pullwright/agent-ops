@@ -53,6 +53,10 @@ platform.claude.com
 # beyond the pair above. Runtime stages do not use them.
 claude.ai
 claude.com
+# Read-only documentation traffic — a stage checking whether an observed
+# Claude Code behaviour is also documented upstream (issue #2768) — not a
+# runtime dependency of any stage.
+docs.claude.com
 
 # --- xAI: the Grok Build substrate's API-key path (issue #2134) -----------
 # Model calls, and everything else Grok Build's optional traffic
