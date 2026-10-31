@@ -2157,19 +2157,14 @@ kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent
 # Deriving the default purely from push_interval_seconds (above) is short
 # enough to fit inside fetch's own cadence only while the push interval is
 # already the shorter of the two — true of the shipped 5/7-minute split, but
-# the schema does not require it. At the shipped config the clamp is a
-# no-op: push stays the shorter interval, so `min()` picks the same value
-# the unclamped default already did — proven arithmetically rather than by
-# waiting 300s out, the same computation state-sync.sh itself performs.
-shipped_push_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
-  | jq -r '.schedule.state_sync_push_minutes * 60 | floor')"
-shipped_fetch_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
-  | jq -r '.schedule.state_sync_fetch_minutes * 60 | floor')"
-assert_eq "the shipped config's push interval is 300s" "300" "$shipped_push_s"
-assert_eq "the shipped config's fetch interval is 420s" "420" "$shipped_fetch_s"
-assert_eq "the clamp is a no-op at the shipped cadence — push stays the shorter interval" \
-  "$shipped_push_s" "$(( shipped_push_s < shipped_fetch_s ? shipped_push_s : shipped_fetch_s ))"
-
+# the schema does not require it: `state_sync_push_minutes` and
+# `state_sync_fetch_minutes` are independent `integer, 1..59` keys. That the
+# clamp is therefore a no-op at the shipped cadence is a property of
+# config.json rather than of this code, so it is stated here rather than
+# asserted — a routine change to either key must not fail a test, least of
+# all one covering the very push >= fetch configurations this clamp exists
+# to make safe.
+#
 # At a configuration where the push interval is the *longer* of the two, the
 # unclamped default (push_interval_seconds, 120s here) would let a fetch wait
 # past its own 60s interval — exactly the pile-up agent-ops#2748 describes.

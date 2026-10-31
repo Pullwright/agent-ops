@@ -897,10 +897,12 @@
    skip-while-stale gate changes: the fix is to the odds that a fetch needs
    either of them at all, not to either's own calibration. `test/state-sync.test.sh`
    covers a fetch that waits out an ordinary, short-lived hold and succeeds
-   without ever logging contention, the default clamp computing to the same
-   300s at the shipped 5/7-minute config and to the fetch interval rather
-   than the push interval at a configuration where the push interval is the
-   longer of the two, alongside the pre-existing give-up cases (now pinned to
+   without ever logging contention, and a fetch with no override giving up at
+   the fetch interval rather than the longer push interval at a configuration
+   where the push interval is the longer of the two — the clamp's own no-op
+   at the shipped cadence is a property of `config.json` rather than of the
+   code, so it is left unasserted there, alongside the pre-existing give-up
+   cases (now pinned to
    a short `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` so a real hold longer than the test's
    own wait still exercises that path and its wedge/non-wedge wording).
 
