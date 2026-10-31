@@ -878,20 +878,32 @@
    to the next tick, accounts for the reported 24–45 minute gaps without
    requiring any single fetch attempt to be slow or failing outright. So
    `mirror_lock` now takes its non-blocking `flock -n` only for `push`;
-   for `fetch` it takes `flock -w fetch_lock_wait_seconds` instead — one push
-   interval by default, long enough to ride out the ordinary holds just
-   measured, short enough that a fetch still gives up, reporting exactly as
-   before (the same "holding for Ns"/"may be wedged" lines, since the
-   underlying holder-age marker and its threshold are unchanged), against a
-   hold long enough to call a wedge. `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS`
-   overrides it for tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS`
-   above does. Neither `fleet_peers_stale`'s threshold formula nor
-   `pager_evaluate`'s own skip-while-stale gate changes: the fix is to the
-   odds that a fetch needs either of them at all, not to either's own
-   calibration. `test/state-sync.test.sh` covers a fetch that waits out an
-   ordinary, short-lived hold and succeeds without ever logging contention,
-   alongside the pre-existing give-up cases (now pinned to a short
-   `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` so a real hold longer than the test's
+   for `fetch` it takes `flock -w fetch_lock_wait_seconds` instead — the
+   shorter of one push interval and one fetch interval by default, long
+   enough to ride out the ordinary holds just measured, short enough that a
+   fetch still gives up, reporting exactly as before (the same "holding for
+   Ns"/"may be wedged" lines, since the underlying holder-age marker and its
+   threshold are unchanged), against a hold long enough to call a wedge. The
+   clamp against one fetch interval is what makes that "short enough"
+   unconditional (agent-ops#2748): one push interval on its own is shorter
+   than fetch's own cadence only where `state_sync_push_minutes <
+   state_sync_fetch_minutes` — true of the shipped 5/7-minute split, but not
+   of every pair the schema's two independent `1..59` keys allow, and past
+   that point the wait outlasts the very interval it is meant to fit inside,
+   letting waiting fetches pile up faster than cron starts new ones.
+   `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` overrides the whole computation for
+   tests, the same way `STATE_SYNC_PUSH_DEADLINE_SECONDS` above does. Neither
+   `fleet_peers_stale`'s threshold formula nor `pager_evaluate`'s own
+   skip-while-stale gate changes: the fix is to the odds that a fetch needs
+   either of them at all, not to either's own calibration. `test/state-sync.test.sh`
+   covers a fetch that waits out an ordinary, short-lived hold and succeeds
+   without ever logging contention, and a fetch with no override giving up at
+   the fetch interval rather than the longer push interval at a configuration
+   where the push interval is the longer of the two — the clamp's own no-op
+   at the shipped cadence is a property of `config.json` rather than of the
+   code, so it is left unasserted there, alongside the pre-existing give-up
+   cases (now pinned to
+   a short `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` so a real hold longer than the test's
    own wait still exercises that path and its wedge/non-wedge wording).
 
    **Fetch.** Every node materialises every *other* node's branch, whole,
