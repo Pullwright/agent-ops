@@ -22,7 +22,9 @@
       as requirement 35's;
     - the cycle's own exit code is 0;
     - no usage limit was detected during this cycle, and a live read of
-      `fleet/limit.json` does not stand the fleet down right now;
+      `fleet/limit.json`, scoped to `refiner_model`'s own resolved provider
+      (issue #2135), does not stand that provider down right now — a
+      different provider's own freeze does not idle it;
     - `refiner_model` is set and `prompts/refiner.md` exists;
     - at least one candidate was claimed (requirement 39b).
 

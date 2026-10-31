@@ -30,9 +30,12 @@
     - the cycle's own exit code is 0. A cycle that ended badly is not the moment
       to spend the most expensive model in the system;
     - no usage limit was detected during this cycle (requirement 10), *and* a
-      live read of `fleet/limit.json` (requirement 2.1) does not stand the fleet
-      down right now — a limit a peer hit while this cycle was working is
-      precisely the news that should stop this stage starting;
+      live read of `fleet/limit.json` (requirement 2.1), scoped to
+      `enabler_model`'s own resolved provider (issue #2135), does not stand
+      that provider down right now — a limit a peer hit against this same
+      provider's account while this cycle was working is precisely the news
+      that should stop this stage starting; a different provider's own
+      freeze does not idle it;
     - `enabler_model` is set and `prompts/enabler.md` exists;
     - at least one eligible item was claimed (requirement 35c).
 

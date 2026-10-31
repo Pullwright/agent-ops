@@ -1446,8 +1446,11 @@ maybe_run_enabler() {
   # The fleet limit file, read live rather than from the union snapshot taken at
   # the start of the cycle (requirement 2.1's second carrier): a limit a peer hit
   # while this cycle was working is exactly the news that should stop the most
-  # expensive stage in the system from starting.
-  live_resume="$(fleet_limit_resume_at "$state_repo" "$state_dir" 2>/dev/null || true)"
+  # expensive stage in the system from starting. Scoped to the Enabler's own
+  # provider (issue #2135): a limit against a different provider's account
+  # does not idle this one.
+  live_resume="$(fleet_limit_resume_at_for "$state_repo" "$state_dir" \
+    "${MODEL_PROVIDER[$enabler_model]:-anthropic}" 2>/dev/null || true)"
   if [[ -n "$live_resume" ]]; then
     live_epoch="$(date -d "$live_resume" +%s 2>&1)" \
       || { guard_warn "live_epoch" "$live_epoch"; live_epoch=0; }

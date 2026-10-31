@@ -40,6 +40,12 @@
 #   degradation       every reader returns its empty shape for a missing
 #                     file. A monitor run over a fleet whose peers have not
 #                     synced is a run with less to say, never a failed one.
+#   currently frozen  providers (issue #2135): a live-state read, not a
+#                     windowed one — a provider whose own `limit-hit` is still
+#                     ahead of "now" is listed once, two providers frozen at
+#                     the same time are two entries, and a cleared or lapsed
+#                     hit is simply absent, the same "right now" reading
+#                     `monitor_digest_pager`'s own open-pages list gives.
 #
 # No network. Run directly: ./test/monitor-digest.test.sh — exit 0 iff all
 # passed.
@@ -156,6 +162,70 @@ assert_eq "an open page carries its assignees, so an owner-only page is visible 
   "warwickallen" "$(jq -r '.open_pages[0].assignees[0]' <<<"$pager")"
 assert_eq "a malformed open-pages argument degrades to none rather than failing" \
   "0" "$(jq '.open_pages | length' <<<"$(monitor_digest_pager "$union" "$SINCE" 'not json')")"
+
+# --- Currently frozen providers (issue #2135) --------------------------------
+# A live-state read, like `monitor_digest_pager`'s own open-pages list — not
+# windowed by SINCE, since a stand-down that has run since yesterday is still
+# as much "right now" as one that started a minute ago. Each scenario below
+# gets its own tiny fixture log rather than sharing $union, so the fold under
+# test is never entangled with another scenario's own records.
+LIMITS_NOW_EPOCH="$NOW_EPOCH"
+
+limits_two="$tmp_dir/limits-two.jsonl"
+cat > "$limits_two" <<'EOF'
+{"ts":"2026-09-10T00:00:00Z","event":"limit-hit","provider":"anthropic","class":"weekly","resume_at":"2026-09-12T00:00:00Z","reset_known":true}
+{"ts":"2026-09-10T01:00:00Z","event":"limit-hit","provider":"xai","class":"other","resume_at":"2026-09-11T18:00:00Z","reset_known":false}
+EOF
+limits_two_out="$(monitor_digest_limits "$limits_two" "$LIMITS_NOW_EPOCH")"
+assert_eq "one provider frozen is one entry" \
+  "1" "$(jq '[.[] | select(.provider == "anthropic")] | length' <<<"$limits_two_out")"
+assert_eq "two providers frozen at once are two entries, not folded into one" \
+  "2" "$(jq 'length' <<<"$limits_two_out")"
+assert_eq "each entry keeps its own resume_at" \
+  "2026-09-11T18:00:00Z" "$(jq -r '.[] | select(.provider == "xai") | .resume_at' <<<"$limits_two_out")"
+assert_eq "each entry keeps its own reset_known" \
+  "false" "$(jq -r '.[] | select(.provider == "xai") | .reset_known' <<<"$limits_two_out")"
+assert_contains "an unknown-reset entry's description names the estimate, not a deadline" \
+  "estimated upper bound" "$(jq -r '.[] | select(.provider == "xai") | .description' <<<"$limits_two_out")"
+assert_eq "a known-reset entry's description is the plain until-clause" \
+  "until 2026-09-12T00:00:00Z" "$(jq -r '.[] | select(.provider == "anthropic") | .description' <<<"$limits_two_out")"
+
+limits_cleared="$tmp_dir/limits-cleared.jsonl"
+cat > "$limits_cleared" <<'EOF'
+{"ts":"2026-09-10T00:00:00Z","event":"limit-hit","provider":"openai","class":"weekly","resume_at":"2026-09-20T00:00:00Z"}
+{"ts":"2026-09-10T02:00:00Z","event":"limit-cleared","provider":"openai"}
+EOF
+assert_eq "a provider whose hit was superseded by a clear is not listed" \
+  "0" "$(jq 'length' <<<"$(monitor_digest_limits "$limits_cleared" "$LIMITS_NOW_EPOCH")")"
+
+limits_lapsed="$tmp_dir/limits-lapsed.jsonl"
+cat > "$limits_lapsed" <<'EOF'
+{"ts":"2026-09-10T00:00:00Z","event":"limit-hit","provider":"grok-legacy","class":"other","resume_at":"2026-09-01T00:00:00Z"}
+EOF
+assert_eq "a provider whose resume_at has already passed is not listed, even though the union still names a record for it" \
+  "0" "$(jq 'length' <<<"$(monitor_digest_limits "$limits_lapsed" "$LIMITS_NOW_EPOCH")")"
+
+# A pre-#2133 `limit-hit` carries no `provider` field at all — the wildcard
+# bucket `limit_union_state_for`/`limit_union_frozen_providers` fold "every
+# provider" into. This digest renders it as its own named entry
+# (`provider: ""`, rendered "every provider") rather than omitting it:
+# a fleet-wide freeze is exactly the kind of thing "currently frozen
+# providers" exists to surface, and a silent wildcard would read as "nothing
+# is frozen" while every provider actually was.
+limits_wildcard="$tmp_dir/limits-wildcard.jsonl"
+cat > "$limits_wildcard" <<'EOF'
+{"ts":"2026-09-10T00:00:00Z","event":"limit-hit","class":"monthly","resume_at":"2026-09-30T00:00:00Z"}
+EOF
+limits_wildcard_out="$(monitor_digest_limits "$limits_wildcard" "$LIMITS_NOW_EPOCH")"
+assert_eq "a pre-#2133 wildcard hit is carried as its own entry" \
+  "1" "$(jq 'length' <<<"$limits_wildcard_out")"
+assert_eq "...with an empty provider, the wildcard's own key" \
+  "" "$(jq -r '.[0].provider' <<<"$limits_wildcard_out")"
+
+assert_eq "a missing log yields the empty shape, not a failure" \
+  "[]" "$(monitor_digest_limits "$tmp_dir/does-not-exist.jsonl" "$LIMITS_NOW_EPOCH")"
+assert_eq "an unparseable now falls back to a real clock rather than empty" \
+  "1" "$([[ -n "$(monitor_digest_limits "$limits_two" "not-a-number")" ]] && echo 1 || echo 0)"
 
 # --- Nodes ------------------------------------------------------------------
 state="$tmp_dir/state"
@@ -287,7 +357,7 @@ digest="$(monitor_digest_build \
        "$SCRIPT_DIR/docs/spec/monitor.md")" \
   "$promoted")"
 
-for section in window peers events pager nodes work forge gotchas promoted; do
+for section in window peers events pager nodes work forge gotchas promoted limits; do
   assert_eq "the digest carries its $section section" "1" \
     "$(jq --arg s "$section" 'has($s) | if . then 1 else 0 end' <<<"$digest")"
 done
@@ -306,6 +376,8 @@ assert_contains "the none-selected reason survives into the text" \
   "budget: 1 resolves to a negative allowance" "$rendered"
 assert_contains "every open page is flagged as owed a triage verdict" \
   "owed a triage verdict" "$rendered"
+assert_contains "no LIMITS_JSON argument: the frozen-providers section renders _none_" \
+  $'## Currently frozen providers\n\n_none_' "$rendered"
 assert_contains "the node table names a failing stage" "implementer" "$rendered"
 assert_contains "and carries that stage's own detail, not just its name" \
   "implementer (clone refused" "$rendered"
@@ -323,6 +395,21 @@ assert_contains "a promoted key is named, so the model does not restate it" \
 assert_contains "with its tracking issue" "https://github.com/o/r/issues/42" "$rendered"
 assert_eq "no PEERS_JSON argument: the opening line says nothing about staleness (agent-ops#2266)" \
   "0" "$(grep -c "peer view" <<<"$rendered")"
+
+# --- Currently frozen providers render into the digest (issue #2135) -------
+digest_with_limits="$(monitor_digest_build \
+  "$(jq -nc --arg f "$SINCE" --arg t "$NOW_ISO" '{from: $f, to: $t, hours: 24, node: "n1"}')" \
+  "$events" "$pager" "$nodes" "$work" "$forge" \
+  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
+       "$SCRIPT_DIR/docs/spec/monitor.md")" \
+  "$promoted" null "$limits_two_out")"
+out_with_limits="$tmp_dir/digest-with-limits.md"
+monitor_digest_render "$digest_with_limits" 0 "$out_with_limits" > /dev/null
+rendered_with_limits="$(cat "$out_with_limits")"
+assert_contains "a frozen provider with a known reset is named under the new heading" \
+  "**anthropic** until 2026-09-12T00:00:00Z" "$rendered_with_limits"
+assert_contains "a second, simultaneously frozen provider gets its own line" \
+  "**xai** with no stated reset" "$rendered_with_limits"
 
 # --- A stale peers view opens the digest saying so (agent-ops#2266) --------
 # The digest otherwise carries every section in full even when the peers

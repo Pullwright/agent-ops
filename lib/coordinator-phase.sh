@@ -702,9 +702,47 @@ if [[ -n "$preflight_defer" ]]; then
   exit 0
 fi
 
+# --- 5d. Usage-limit stand-down, scoped to this item's own provider (issue
+# #2135) ---
+# The top-of-cycle gate (lib/standdown.sh's 2.1) only ever checked the
+# Co-Ordinator's own provider — the Co-Ordinator always runs first, so that
+# check decides whether this cycle can start at all, but a work order's own
+# `model` (and so its provider) is chosen per item, after the Co-Ordinator has
+# already run. A limit against a *different* provider's account, hit by a peer
+# while this cycle was working, is exactly the news that should stop this
+# specific item's Implementer from starting — the same reasoning
+# lib/enabler.sh's and lib/refinement.sh's own late re-checks already rest on
+# for their own stage, extended to the one stage whose provider varies by
+# item rather than by node config. Read live, the fast carrier
+# (`fleet_limit_resume_at_for`), the same scope the Enabler/Refiner checks use
+# rather than the heavier union-log read the top-of-cycle gate makes: a
+# limit missed here for lack of a union fetch is caught at worst a fetch
+# interval later, by this same check on a future cycle, or by
+# `detect_and_log_limit_hit` the moment this very Implementer attempt hits it.
+#
+# Deferred exactly like 5c's stale-open-PR signal above, not voided: the item
+# itself is not done and not wrong, only untimely, and the provider's own
+# freeze is the one fact here that can become false again. The claim is
+# released so a fresh digest re-judges the item once this provider's account
+# recovers, rather than this cycle forcing an attempt it already knows will
+# re-hit the same limit.
+impl_model="$(jq -r '.model' <<<"$work_order_json")"
+impl_provider="${MODEL_PROVIDER[$impl_model]:-anthropic}"
+impl_live_resume="$(fleet_limit_resume_at_for "$state_repo" "$state_dir" "$impl_provider" 2>/dev/null || true)"
+if [[ -n "$impl_live_resume" ]]; then
+  impl_live_epoch="$(date -d "$impl_live_resume" +%s 2>&1)" \
+    || { guard_warn "coordinator:impl_live_epoch" "$impl_live_epoch"; impl_live_epoch=0; }
+  if (( impl_live_epoch > $(date +%s) )); then
+    log_event "warning" "$(jq -nc \
+      --arg d "pre-flight deferred $selected_repo $selected_item — the $impl_provider provider is standing down until $impl_live_resume; claim released, the item is re-judged against a fresh digest next cycle" \
+      '{detail: $d}')"
+    release_claim no-pr
+    exit 0
+  fi
+fi
+
 # --- 6. Workspace ---
 repo_slug="$(jq -r '.repo' <<<"$work_order_json")"
-impl_model="$(jq -r '.model' <<<"$work_order_json")"
 
 clone_dir="$workspace_root/$cycle_id"
 assert_in_workspace "$clone_dir"
