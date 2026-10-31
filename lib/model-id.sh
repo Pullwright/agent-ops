@@ -60,7 +60,11 @@ declare -gA PROVIDER_SUBSTRATE=()
 # Last-write-wins on a bare id two different keys both resolve to: a known,
 # acceptable narrowing, and one it takes two providers whose own model ids
 # collide with the qualifier stripped to reach at all — see
-# `lib/stage-run.sh`'s own `stage_model_substrate`.
+# `lib/stage-run.sh`'s own `stage_model_substrate`. The narrowing stops at
+# the key boundary: a collision *within* one key — two members of the same
+# weighted set stripping to the same bare id — is refused outright by
+# `model_key_load_into` below rather than narrowed, since there the overwrite
+# would defeat a split the configuration explicitly asked for (issue #2677).
 declare -gA MODEL_PROVIDER=()
 
 # Populated by providers_load alongside PROVIDER_SUBSTRATE. The environment
@@ -364,7 +368,13 @@ model_key_is_set() {
 # unresolvable member fails fast, naming KEY and the offending member's own
 # id, the identical message an ordinary key's bad value already prints —
 # before this returns 1 without touching MODEL_SET_JSON at all; a set this
-# function refuses is never half-recorded. A member's own `weight` defaults
+# function refuses is never half-recorded. Two members that strip to the
+# same bare id under different providers are refused the same way, naming
+# KEY and the colliding bare id (issue #2677): MODEL_PROVIDER is keyed by
+# bare id, so the second such member's write would overwrite the first's and
+# every launch would land on whichever provider resolved last whichever
+# member the draw picked — a split the launcher cannot deliver, refused here
+# rather than loaded silently. A member's own `weight` defaults
 # to 1 (requirement 1b's schema floors it at 0, which this treats as "never
 # drawn" rather than refusing — a zero-weight member configured today but
 # switched on by raising it tomorrow without edits elsewhere). On success,

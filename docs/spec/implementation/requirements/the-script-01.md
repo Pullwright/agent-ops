@@ -145,9 +145,9 @@
    actually picked, defeating the configured split without any error ever
    surfacing (agent-ops#2677) — and normalizes the set into
    `MODEL_SET_JSON`, keyed by the config key's own name, which becomes the
-   "handle" value the key's own variable holds in
-   place of a single bare id. A member is drawn from the set once per
-   launch, by weight, *before* the lane requirement 4d's own draw chooses
+   "handle" value the key's own variable holds in place of a single bare id.
+   A member is drawn from the set once per launch, by weight, *before* the
+   lane requirement 4d's own draw chooses
    (`lib/stage-run.sh`'s `stage_model_resolve_into`/`stage_model_draw_into`):
    the same seeded `cksum`-mod-total-weight-then-bucket rule D30's lane
    weights already use, reused rather than duplicated with a rule of its
