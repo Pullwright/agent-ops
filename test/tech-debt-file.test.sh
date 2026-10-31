@@ -566,6 +566,98 @@ rc=$?
 assert_eq "file_issue: an unlabelled create that fails is not retried" "1" "$rc"
 assert_eq "  ... exactly one create attempted" "1" "$(grep -c 'issue create' "$tmp_dir/calls")"
 
+# ============================================================================
+# PRIORITY (agent-ops#2422, requirement 1) — applied through
+# issue_priority_apply's own ratchet, a fresh create only.
+# ============================================================================
+priority_gh_dir="$tmp_dir/priority-gh"
+mkdir -p "$priority_gh_dir"
+cat > "$priority_gh_dir/gh" <<'STUB'
+#!/usr/bin/env bash
+d="$(dirname "$0")"
+if [[ "$1" == "api" && "$2" == "graphql" ]]; then
+  shift 2
+  query="" jqfilter="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) case "$2" in query=*) query="${2#query=}" ;; esac; shift 2 ;;
+      --jq) jqfilter="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [[ "$query" == *setIssueFieldValue* ]]; then
+    printf '1\n' >> "$d/mutation-calls"
+    exit 0
+  fi
+  jq -c "$jqfilter" "$d/fields-response.json" 2>/dev/null
+  exit 0
+fi
+if [[ "$1" == "api" ]]; then
+  path="$2"; shift 2
+  jqfilter="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --jq) jqfilter="$2"; shift 2 ;; *) shift ;; esac
+  done
+  case "$path" in
+    */issues/*)
+      jq -c "$jqfilter" "$d/current-response.json" 2>/dev/null
+      exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+exit 1
+STUB
+chmod +x "$priority_gh_dir/gh"
+cat > "$priority_gh_dir/fields-response.json" <<'EOF'
+{"data":{"repository":{"issueFields":{"nodes":[
+  {"id":"IFSS_priority","name":"Priority","options":[
+    {"id":"OPT_URGENT","name":"Urgent"},{"id":"OPT_HIGH","name":"High"},
+    {"id":"OPT_MEDIUM","name":"Medium"},{"id":"OPT_LOW","name":"Low"}]}
+]}}}}
+EOF
+jq -nc --arg n "I_node_77" '{node_id: $n, issue_field_values: []}' \
+  > "$priority_gh_dir/current-response.json"
+export ISSUE_PRIORITY_GH="$priority_gh_dir/gh"
+export ISSUE_PRIORITY_CACHE_DIR="$tmp_dir/priority-cache"
+mkdir -p "$ISSUE_PRIORITY_CACHE_DIR"
+
+reset_stub
+out="$(techdebt_file_debt "o/r" "A finding worth filing" "The body." "while reviewing PR #618" "" "" "false" "High")"
+assert_eq "file_debt: PRIORITY on a fresh create reaches the ratchet" "1" \
+  "$([[ -f "$priority_gh_dir/mutation-calls" ]] && wc -l < "$priority_gh_dir/mutation-calls" || echo 0)"
+rm -f "$priority_gh_dir/mutation-calls"
+
+reset_stub
+out="$(techdebt_file_debt "o/r" "A finding worth filing" "The body." "while reviewing PR #618")"
+assert_eq "file_debt: an empty PRIORITY never reaches the ratchet" "0" \
+  "$([[ -f "$priority_gh_dir/mutation-calls" ]] && wc -l < "$priority_gh_dir/mutation-calls" || echo 0)"
+rm -f "$priority_gh_dir/mutation-calls"
+
+reset_stub
+out="$(techdebt_file_debt "o/r" "A finding worth filing" "The body." "while reviewing PR #618" "" "" "false" "Critical")"
+assert_eq "file_debt: an unrecognised PRIORITY never reaches the ratchet" "0" \
+  "$([[ -f "$priority_gh_dir/mutation-calls" ]] && wc -l < "$priority_gh_dir/mutation-calls" || echo 0)"
+rm -f "$priority_gh_dir/mutation-calls"
+
+# A dedup hit never touches the matched issue's own band.
+reset_stub
+echo '[{"number": 42, "url": "https://github.com/o/r/issues/42", "title": "A finding worth filing"}]' \
+  > "$tmp_dir/issue-list-response"
+out="$(techdebt_file_debt "o/r" "A finding worth filing" "More evidence." "noticed again" "" "" "false" "Urgent")"
+assert_eq "file_debt: a dedup hit returns the existing issue" \
+  "42	https://github.com/o/r/issues/42" "$out"
+assert_eq "  ... and never applies PRIORITY to it" "0" \
+  "$([[ -f "$priority_gh_dir/mutation-calls" ]] && wc -l < "$priority_gh_dir/mutation-calls" || echo 0)"
+rm -f "$priority_gh_dir/mutation-calls"
+
+reset_stub
+out="$(techdebt_file_issue "o/r" "TD26082201" "A gap worth noting" <(echo "body") "" "" "false" "Low")"
+assert_eq "file_issue: PRIORITY on a fresh create reaches the ratchet" "1" \
+  "$([[ -f "$priority_gh_dir/mutation-calls" ]] && wc -l < "$priority_gh_dir/mutation-calls" || echo 0)"
+rm -f "$priority_gh_dir/mutation-calls"
+
+unset ISSUE_PRIORITY_GH ISSUE_PRIORITY_CACHE_DIR
+
 echo
 if [[ "$failures" -eq 0 ]]; then
   echo "All tests passed."

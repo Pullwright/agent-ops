@@ -3970,6 +3970,13 @@
       "file": "docs/spec/monitor.md",
       "title": "Promotion spends the M12 budget (M12/M13a)."
     },
+    "MON AC 5d": {
+      "kind": "mon-ac",
+      "label": "5d",
+      "anchor": "mon-ac-5d",
+      "file": "docs/spec/monitor.md",
+      "title": "Both banded filings actually write their band (M14a/M13a)."
+    },
     "MON AC 6": {
       "kind": "mon-ac",
       "label": "6",
