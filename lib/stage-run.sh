@@ -227,11 +227,12 @@ stage_lane_managed_key_detected=""
 # never exercises that — so they are refused on the same rationale as
 # before: like `allow`, `deny` and `disableBypassPermissionsMode` above,
 # they set what the stage may do. `deny` and `disableBypassPermissionsMode`
-# turn out to be unreachable the same way: `scripts/claude-policy-probe.sh`'s
+# are out of the probe's reach the same way: `scripts/claude-policy-probe.sh`'s
 # placeholder-API-key technique (above) never reaches a tool call to weigh
 # either of them against, so — unlike the paragraph above it — this one
 # stays a manual, point-in-time measurement that a future
-# `CLAUDE_CODE_VERSION` bump can still re-stale (issue #2771).
+# `CLAUDE_CODE_VERSION` bump can still re-stale. Issue #2775 tracks that
+# residual gap and the technique that would close it.
 #
 # Only the working directory matters: Claude reads project settings from
 # there and not from a parent or the repository root (measured likewise).

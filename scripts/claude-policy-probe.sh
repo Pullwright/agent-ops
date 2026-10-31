@@ -35,7 +35,7 @@
 # actual tool call is weighed against it, which no run this probe makes ever
 # reaches (every run fails on the placeholder API key before any tool use),
 # so they stay a manually re-measured claim in that comment rather than one
-# this probe can re-exercise.
+# this probe can re-exercise (issue #2775).
 #
 # No model is reached and nothing is billed: each run carries a placeholder
 # API key that the API refuses, and everything above fires before any model
