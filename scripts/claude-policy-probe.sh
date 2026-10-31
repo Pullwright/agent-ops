@@ -13,9 +13,36 @@
 # invoking the command and once the skill. It reports which of the four ran
 # and whether the skill still loaded.
 #
+# The same checkout also plants every other key `lib/stage-run.sh`'s
+# project-settings allowlist refuses outright rather than leaning on the
+# managed policy for (issue #2771): `apiKeyHelper`, `awsAuthRefresh` and
+# `awsCredentialExport` (a planted `env` switches the runner onto Bedrock so
+# the AWS helpers are actually asked for); `otelHeadersHelper`;
+# `proxyAuthHelper`; and `processWrapper`. A second, minimal checkout plants
+# `gcpAuthRefresh` behind an `env` that switches onto Vertex instead, since
+# Bedrock and Vertex cannot both be the active provider in one checkout. None
+# of these seven are gated by the managed policy — that is the whole reason
+# the allowlist refuses them outright rather than relying on a policy key to
+# neutralise them — so each must behave the same whether the policy is
+# present or removed, unlike the four above. This re-exercises, on every
+# image build, the plant-and-observe measurement `lib/stage-run.sh`'s
+# project-settings-allowlist provenance comment (the `env`/`apiKeyHelper`/
+# helpers block) once took by hand against a single Claude Code version
+# (issue #2758); a `CLAUDE_CODE_VERSION` bump can no longer re-stale it
+# silently. `permissions`' own refused sub-keys (`deny`,
+# `disableBypassPermissionsMode`, `ask`, `defaultMode`,
+# `additionalDirectories`) are not planted here: each only matters once an
+# actual tool call is weighed against it, which no run this probe makes ever
+# reaches (every run fails on the placeholder API key before any tool use),
+# so they stay a manually re-measured claim in that comment rather than one
+# this probe can re-exercise.
+#
 # No model is reached and nothing is billed: each run carries a placeholder
-# API key that the API refuses, and all four fire before any model call would
-# be made. Run it with no network (as the image build does) or on a node,
+# API key that the API refuses, and everything above fires before any model
+# call would be made — including the credential helpers, which Claude Code
+# asks for while resolving how to authenticate, and `env`, observable in the
+# `cloud_credential_error` the run fails with once a cloud provider is
+# active. Run it with no network (as the image build does) or on a node,
 # where the request is refused. `CLAUDE_CODE_MAX_RETRIES=0` ends a run at its
 # first failed request; with no network the client's own back-off would
 # otherwise hold each run to the 60-second timeout.
@@ -43,12 +70,15 @@
 #
 # Usage: scripts/claude-policy-probe.sh [--expect blocked|ran]
 #   --expect blocked (the default): exit 0 iff none of the four checkout-
-#     planted things ran, the skill loaded, and the planted user-level
-#     apiKeyHelper did not run — the managed policy is in force.
+#     planted things ran, the skill loaded, the planted user-level
+#     apiKeyHelper did not run, and the seven allowlist-refused keys above
+#     behaved as lib/stage-run.sh's provenance comment claims — the managed
+#     policy is in force.
 #   --expect ran: exit 0 iff all four checkout-planted things ran (the
-#     control that shows the probe can see what it is looking for) and the
-#     user-level apiKeyHelper still did not run — removing the managed
-#     policy does not touch that control.
+#     control that shows the probe can see what it is looking for), the
+#     user-level apiKeyHelper still did not run, and the seven
+#     allowlist-refused keys still behave the same way — removing the
+#     managed policy does not touch any of those three controls.
 
 set -uo pipefail
 
@@ -83,7 +113,17 @@ printf -- '---\nname: policy-probe\ndescription: A skill the probe checks still 
   "$marks" >"$work/.claude/skills/policy-probe/SKILL.md"
 jq -n --arg m "$marks" \
   '{hooks: {SessionStart: [{hooks: [{type: "command", command: "touch \($m)/hook"}]}]},
-    enableAllProjectMcpServers: true, enabledMcpjsonServers: ["policy-probe"]}' \
+    enableAllProjectMcpServers: true, enabledMcpjsonServers: ["policy-probe"],
+    env: {CLAUDE_CODE_USE_BEDROCK: "1", HTTPS_PROXY: "http://127.0.0.1:1/",
+          CLAUDE_CODE_ENABLE_TELEMETRY: "1", OTEL_METRICS_EXPORTER: "otlp",
+          OTEL_EXPORTER_OTLP_PROTOCOL: "http/json",
+          OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:1/"},
+    apiKeyHelper: "touch \($m)/apiKeyHelper; echo sk-ant-api03-project-placeholder",
+    awsAuthRefresh: "touch \($m)/awsAuthRefresh",
+    awsCredentialExport: "touch \($m)/awsCredentialExport",
+    otelHeadersHelper: "touch \($m)/otelHeadersHelper; echo X-Policy-Probe=1",
+    proxyAuthHelper: "touch \($m)/proxyAuthHelper; echo Basic cG9saWN5OnByb2Jl",
+    processWrapper: "touch \($m)/processWrapper"}' \
   >"$work/.claude/settings.json"
 jq -n --arg m "$marks" \
   '{mcpServers: {"policy-probe": {command: "sh", args: ["-c", "touch \($m)/mcp; exec cat"]}}}' \
@@ -92,6 +132,17 @@ jq -n --arg m "$marks" \
 printf 'Policy probe.\n!`touch %s/inline-command`\n' "$marks" >"$work/.claude/commands/policyprobe.md"
 jq -n --arg m "$marks" '{apiKeyHelper: "touch \($m)/user-apikeyhelper; echo sk-ant-api03-x"}' \
   >"$user_config/settings.json"
+
+# gcpAuthRefresh needs a provider switched onto Vertex, and Bedrock (planted
+# in $work above) wins when both are set in the same checkout — so it gets
+# its own, minimal one.
+gcp_work="$probe/checkout-gcp"
+mkdir -p "$gcp_work/.claude"
+git -C "$gcp_work" init -q
+printf '# Policy probe (GCP)\n' >"$gcp_work/CLAUDE.md"
+jq -n --arg m "$marks" \
+  '{env: {CLAUDE_CODE_USE_VERTEX: "1"}, gcpAuthRefresh: "touch \($m)/gcpAuthRefresh"}' \
+  >"$gcp_work/.claude/settings.json"
 
 stage_workspace_share "$probe" \
   || { printf 'claude-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
@@ -127,6 +178,34 @@ else
   [[ ${#ran[@]} -eq 4 ]] || main_ok=1
 fi
 
+# The seven allowlist-refused keys above (issue #2771): unlike `ran`'s four,
+# none of these are gated by the managed policy, so what each must do does
+# not depend on $expect — a planted `env`/apiKeyHelper/AWS-GCP-OTel-proxy
+# helper/processWrapper must behave identically whether the policy is
+# present or removed, which is exactly why the allowlist in
+# lib/stage-run.sh refuses them outright rather than leaning on the policy.
+settings_ran=()
+for m in apiKeyHelper awsAuthRefresh awsCredentialExport; do
+  [[ -e "$marks/$m" ]] && settings_ran+=("$m")
+done
+settings_refused=()
+for m in otelHeadersHelper proxyAuthHelper processWrapper; do
+  [[ -e "$marks/$m" ]] || settings_refused+=("$m")
+done
+(
+  cd "$gcp_work" || exit 1
+  timeout 60 env DISABLE_AUTOUPDATER=1 CLAUDE_CODE_MAX_RETRIES=0 ANTHROPIC_API_KEY=sk-ant-api03-policy-probe-placeholder \
+    claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
+    <<<"hello" >"$probe/gcp.jsonl" 2>"$probe/gcp.stderr"
+) || true
+[[ -e "$marks/gcpAuthRefresh" ]] && settings_ran+=("gcpAuthRefresh")
+
+printf 'project-settings helpers ran: %s\n' "${settings_ran[*]:-none}"
+printf 'project-settings helpers refused to run: %s\n' "${settings_refused[*]:-none}"
+
+settings_ok=0
+[[ ${#settings_ran[@]} -eq 4 && ${#settings_refused[@]} -eq 3 ]] || settings_ok=1
+
 # The fifth, independent case: through run_model_stage itself (requirement
 # 4d), the one launcher every real stage goes through, with CLAUDE_CONFIG_DIR
 # pointed at the scratch directory above rather than the real one, and a
@@ -146,4 +225,4 @@ printf 'user-level apiKeyHelper ran: %s\n' "$user_ran"
 user_ok=0
 [[ "$user_ran" == "no" && "$user_rc" == "1" ]] || user_ok=1
 
-exit $(( main_ok || user_ok ))
+exit $(( main_ok || settings_ok || user_ok ))
