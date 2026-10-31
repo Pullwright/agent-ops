@@ -60,7 +60,11 @@ declare -gA PROVIDER_SUBSTRATE=()
 # Last-write-wins on a bare id two different keys both resolve to: a known,
 # acceptable narrowing, and one it takes two providers whose own model ids
 # collide with the qualifier stripped to reach at all — see
-# `lib/stage-run.sh`'s own `stage_model_substrate`.
+# `lib/stage-run.sh`'s own `stage_model_substrate`. The narrowing stops at
+# the key boundary: a collision *within* one key — two members of the same
+# weighted set stripping to the same bare id — is refused outright by
+# `model_key_load_into` below rather than narrowed, since there the overwrite
+# would defeat a split the configuration explicitly asked for (issue #2677).
 declare -gA MODEL_PROVIDER=()
 
 # Populated by providers_load alongside PROVIDER_SUBSTRATE. The environment
@@ -364,7 +368,13 @@ model_key_is_set() {
 # unresolvable member fails fast, naming KEY and the offending member's own
 # id, the identical message an ordinary key's bad value already prints —
 # before this returns 1 without touching MODEL_SET_JSON at all; a set this
-# function refuses is never half-recorded. A member's own `weight` defaults
+# function refuses is never half-recorded. Two members that strip to the
+# same bare id under different providers are refused the same way, naming
+# KEY and the colliding bare id (issue #2677): MODEL_PROVIDER is keyed by
+# bare id, so the second such member's write would overwrite the first's and
+# every launch would land on whichever provider resolved last whichever
+# member the draw picked — a split the launcher cannot deliver, refused here
+# rather than loaded silently. A member's own `weight` defaults
 # to 1 (requirement 1b's schema floors it at 0, which this treats as "never
 # drawn" rather than refusing — a zero-weight member configured today but
 # switched on by raising it tomorrow without edits elsewhere). On success,
@@ -379,10 +389,24 @@ model_key_load_into() {
     return $?
   fi
   local __mkl_id __mkl_weight __mkl_bare __mkl_qualified __mkl_rows="[]"
+  local -A __mkl_seen_bare=()
   while IFS=$'\t' read -r __mkl_id __mkl_weight; do
     [[ -n "$__mkl_id" ]] || continue
     [[ "$__mkl_weight" =~ ^[0-9]+$ ]] || __mkl_weight=1
     resolve_model_id_into __mkl_bare "$__mkl_key" "$__mkl_id" || return 1
+    # A set that lets two members strip to the same bare id (most often the
+    # same model split across two providers, e.g. "anthropic/claude-sonnet-5"
+    # and "openrouter/claude-sonnet-5") would have the second member's
+    # MODEL_PROVIDER[bare] write silently overwrite the first's — the
+    # launcher resolves every draw to whichever provider resolved last,
+    # never the configured split (issue #2677). Refused here, before
+    # MODEL_SET_JSON ever sees the set, rather than shipped as a split that
+    # cannot actually happen.
+    if [[ -n "${__mkl_seen_bare[$__mkl_bare]+set}" ]]; then
+      echo "model-id: $__mkl_key: model set names bare id '$__mkl_bare' more than once ('${__mkl_seen_bare[$__mkl_bare]}' and '$__mkl_id' both resolve to it) — each member must resolve to a distinct model" >&2
+      return 1
+    fi
+    __mkl_seen_bare["$__mkl_bare"]="$__mkl_id"
     __mkl_qualified="$(resolve_model_qualified "$__mkl_key" "$__mkl_id")" || return 1
     __mkl_rows="$(jq -c --argjson rows "$__mkl_rows" --arg id "$__mkl_qualified" \
       --argjson w "$__mkl_weight" -n '$rows + [{id: $id, weight: $w}]')"
