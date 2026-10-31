@@ -50,7 +50,10 @@
     is prose naming what the owner must decide; the tracking issue is
     assigned to `enabler_assignee`, the load-bearing half that excludes it
     from the `issues` source, requirement 16.4, exactly as an ordinary
-    Enabler escalation).
+    Enabler escalation). Every tracking issue's own body also carries a
+    link to that KEY's entry in `docs/reference/reasons.md` (issue #2098),
+    built by `reason_code_url` (`lib/reason-url.sh`, sourced by `lib/pager.sh`
+    itself).
 
     `pager_evaluate` runs every registered invariant once, from
     `scripts/publish-dashboard.sh`'s own `WITH_GITHUB` tick of the Publisher

@@ -435,7 +435,9 @@
    persistent refusal
    posts or updates, in place, one pipeline-marked comment on the pull
    request (`_landing_notice_upsert`) naming the class and the reason in
-   words; a refusal whose cause touches `landing_cool_off_hours` states the
+   words, with a link to the class's own `docs/reference/reasons.md` entry
+   (issue #2098); a refusal whose cause touches
+   `landing_cool_off_hours` states the
    absolute wall-clock time the pull request becomes eligible
    (`_landing_notice_eligible_at`), computed from the standing review's own
    `submitted_at` plus the configured cool-off, never the embedded "N hours

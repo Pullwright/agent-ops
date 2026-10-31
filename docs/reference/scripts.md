@@ -104,6 +104,8 @@ directly.
 | `lib/preflight.sh` | the done-check the Script runs on the item a cycle just claimed, before it pays for an Implementer engagement (issue #245). |
 | `lib/preview-config.sh` | resolves a repository's `preview` config block (D19 Phase 1, agent-ops#586, requirement 24a). |
 | `lib/prompt-overrides.sh` | per-installation prompt overrides (issue #79, docs/spec/implementation/requirements requirement 4a). |
+| `lib/reason-codes.sh` | extract reason codes from the codebase for docs/reference/reasons.md's own coverage check (issue #2098's first acceptance criterion). |
+| `lib/reason-url.sh` | generate URLs for reason code documentation |
 | `lib/rebase-only.sh` | the diff-identity primitive requirement 31e/46a build on (agent-ops#1806): whether a push changed anything about a pull request's own net content, regardless of whether it authored a new commit. |
 | `lib/reconciliation-gate.sh` | script-side confirmation that every standing human comment on a pull request has actually been answered before that pull request is taken out of draft (requirement 31c, agent-ops#533). |
 | `lib/redact.sh` | the token/home-path patterns scripts/publish-dashboard.sh and scripts/state-sync.sh both need before they hand content to a less-trusted destination: the dashboard's own published payload (a semi-public, Tailscale-exposed surface) and whatever this node pushes to the private state-mirror repository (agent-ops#966) — the second destination is lower-risk than the first, but carries far more raw content (whole transcripts, never rotated), so it gets the same pass rather than none at all. |

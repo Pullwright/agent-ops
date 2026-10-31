@@ -374,6 +374,8 @@ assert_eq "tick 2 (hysteresis 0, still firing): exactly one pager-fired" \
 assert_eq "  ... the remedy function ran exactly once" "1" "$(remedy_calls)"
 assert_eq "  ... its return value rode into the issue body" "1" \
   "$(grep -c "$STUB_REMEDY_OUTPUT" "$STUB_GH_LAST_BODY_FILE")"
+assert_eq "  ... and the body links this kind's own catalogue entry (issue #2098)" "1" \
+  "$(grep -c "$(reason_code_url demo)" "$STUB_GH_LAST_BODY_FILE")"
 
 # The tracking issue now "exists" on the fake GitHub — the close attempt
 # below must find it via `gh issue list`, exactly as the real one would.
