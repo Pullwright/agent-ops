@@ -174,7 +174,13 @@ merge_autonomy_resolution_source() {
 # `fleet_flag_fetch_status` left in `$cache.err` via `github_limit_kind`
 # (lib/github-limit.sh — reused, not reclassified) and, only when the cause
 # was rate-limiting, waits out `github_limit_wait_plan`'s own wait/backoff
-# and asks GitHub once more. Empty (the default) preserves this function's
+# and asks GitHub once more. The wait is debited against the process-wide
+# budget through `github_limit_record_wait`/`github_limit_waited_total`
+# (agent-ops#2011) rather than by mutating `GITHUB_LIMIT_WAITED_SECONDS`
+# directly — this function, like every real caller, runs inside the `$(...)`
+# its own return value needs, and a plain variable write inside that subshell
+# would die with it exactly as the `retried` global the next paragraph
+# rejects would have. Empty (the default) preserves this function's
 # exact prior behaviour for every caller that does not pass it —
 # `scripts/doctor.sh`, `lib/manage.sh`, `scripts/publish-dashboard.sh` and
 # `landing_autonomy_refusal_reason`'s own diagnostic re-read all leave this
@@ -229,11 +235,17 @@ merge_autonomy_kill_state() {
       if [[ "$kind" == "primary" ]] && declare -F github_limit_primary_reset_epoch >/dev/null 2>&1; then
         reset_epoch="$(github_limit_primary_reset_epoch "$now")"
       fi
-      wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$now" "${GITHUB_LIMIT_WAITED_SECONDS:-0}")"
+      local waited="${GITHUB_LIMIT_WAITED_SECONDS:-0}"
+      declare -F github_limit_waited_total >/dev/null 2>&1 && waited="$(github_limit_waited_total)"
+      wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$now" "$waited")"
       if [[ -n "$wait" ]]; then
         retried_bool="true"
         sleep "$wait"
-        GITHUB_LIMIT_WAITED_SECONDS=$(( ${GITHUB_LIMIT_WAITED_SECONDS:-0} + wait ))
+        if declare -F github_limit_record_wait >/dev/null 2>&1; then
+          github_limit_record_wait "$wait"
+        else
+          GITHUB_LIMIT_WAITED_SECONDS=$(( ${GITHUB_LIMIT_WAITED_SECONDS:-0} + wait ))
+        fi
         combined="$(fleet_flag_fetch_status "$repo" "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG" probe-404 "$fresh")"
         status="${combined%%$'\t'*}"
         raw="${combined#*$'\t'}"
