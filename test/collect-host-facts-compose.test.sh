@@ -203,7 +203,7 @@ assert_eq "so its digest_match is null, never a permanent false" "null" \
 
 updater="$(host_facts_updater_json "$tmp_dir" "$(jq -r '.watchtower_log_tail' <<<"$section")")"
 assert_eq "last_session parses Failed/Scanned/Updated from the log" \
-  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0}' \
+  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0,"conflict_failed":0}' \
   "$(jq -c '.last_session' <<<"$updater")"
 
 # --- Registry digest: a header the fixture curl actually answers --------

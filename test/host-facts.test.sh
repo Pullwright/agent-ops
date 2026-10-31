@@ -139,11 +139,35 @@ assert_eq "a missing ledger directory degrades to an empty array" \
 log_text='time="2026-09-08T09:00:00Z" level=info msg="Session done" Failed=0 Scanned=3 Updated=1
 time="2026-09-08T10:00:00Z" level=info msg="Session done" Failed=2 Scanned=3 Updated=0'
 assert_eq "the newest Session-done line wins, not the first" \
-  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0}' \
+  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0,"conflict_failed":0}' \
   "$(host_facts_parse_last_session "$log_text")"
 assert_eq "no Session-done line at all reads null" "null" \
   "$(host_facts_parse_last_session 'nothing relevant here')"
 assert_eq "no log text at all reads null" "null" "$(host_facts_parse_last_session)"
+
+# A Failed count fully explained by the *other* compose project's own roll
+# window on a shared host (agent-ops#1099/#1944) — each Conflict line
+# counted, and conflict_failed lands equal to failed.
+conflict_log_text='time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"abc123\"."
+time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-scheduler-1\" is already in use by container \"def456\"."
+time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-egress-proxy-1\" is already in use by container \"ghi789\"."
+time="2026-09-03T21:06:56Z" level=info msg="Session done" Failed=3 Scanned=6 Updated=0'
+assert_eq "a Failed count matching its own Conflict lines reads conflict_failed equal to failed" \
+  '{"ts":"2026-09-03T21:06:56Z","failed":3,"scanned":6,"updated":0,"conflict_failed":3}' \
+  "$(host_facts_parse_last_session "$conflict_log_text")"
+
+# A prior session's own Conflict lines must not inflate the newest
+# session's count: the tail can span several polling cycles, and this
+# session's own Failed=1 is explained by its own single Conflict line, not
+# by the two left over from the session before it.
+multi_session_conflict_log_text='time="2026-09-08T09:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"abc123\"."
+time="2026-09-08T09:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-scheduler-1\" is already in use by container \"def456\"."
+time="2026-09-08T09:00:00Z" level=info msg="Session done" Failed=2 Scanned=6 Updated=0
+time="2026-09-08T10:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"ghi789\"."
+time="2026-09-08T10:00:00Z" level=info msg="Session done" Failed=1 Scanned=6 Updated=0'
+assert_eq "a prior session's own Conflict lines are not counted against this one's Failed" \
+  '{"ts":"2026-09-08T10:00:00Z","failed":1,"scanned":6,"updated":0,"conflict_failed":1}' \
+  "$(host_facts_parse_last_session "$multi_session_conflict_log_text")"
 
 # --- updater section ----------------------------------------------------------
 assert_eq "no ledger dir and no log text: the whole updater section is null" \

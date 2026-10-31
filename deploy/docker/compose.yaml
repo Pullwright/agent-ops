@@ -348,6 +348,14 @@ x-agent-ops: &agent-ops
     # name — noisy in watchtower's log (a Failed count and a name-conflict
     # error every poll), but the cycle survives, and the roll lands on the
     # first poll after it ends.
+    #
+    # That noise is expected, non-fatal, and pages nobody: a non-zero Failed
+    # count coincident with the *other* compose project's own roll window on
+    # this shared-host layout is this exact disagreement, not a genuine
+    # update failure (confirmed on the ockham host, #1099/#1944). A reader
+    # does not have to redo that correlation by hand — `host_facts_parse_last_session`
+    # in lib/host-facts.sh reports a `conflict_failed` count alongside `failed`,
+    # and `conflict_failed == failed` is this case fully explained.
     com.centurylinklabs.watchtower.lifecycle.pre-update: /app/deploy/docker/watchtower-pre-update.sh
     # Minutes (watchtower's unit here), and also its default — stated because
     # the value is load-bearing and a reader should not have to know the
