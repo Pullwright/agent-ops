@@ -244,6 +244,27 @@ probe_json="$(host_facts_viewer_probe_json $'node-a\nnode-b' 'http://{node}/data
 assert_eq "the probe object is keyed by every node in the list" \
   '["node-a","node-b"]' "$(jq -c 'keys' <<<"$probe_json")"
 
+# --- Viewer probe URL template (agent-ops#2779/#2528) --------------------------
+# Regression: bash's `${VAR:-default}` expansion treats the first unescaped
+# `}` inside the default text as closing the expansion, so an unescaped
+# `{node}` placeholder in the default template used to be silently
+# truncated to `{node` whenever the override was unset or empty — curl's
+# own URL globbing then expanded that to the literal hostname `node` for
+# every target, which is exactly what made every probe fail 100% of the
+# time against every node.
+unset AGENT_OPS_VIEWER_URL_TEMPLATE
+assert_eq "the default template keeps its {node} placeholder intact when the override is unset" \
+  "https://{node}/data.js" "$(host_facts_viewer_url_template)"
+
+AGENT_OPS_VIEWER_URL_TEMPLATE=""
+assert_eq "an empty override also falls through to the same intact default" \
+  "https://{node}/data.js" "$(host_facts_viewer_url_template)"
+
+AGENT_OPS_VIEWER_URL_TEMPLATE="http://{node}:9999/viewer.js"
+assert_eq "a non-empty override is used verbatim" \
+  "http://{node}:9999/viewer.js" "$(host_facts_viewer_url_template)"
+unset AGENT_OPS_VIEWER_URL_TEMPLATE
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

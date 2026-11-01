@@ -320,7 +320,7 @@ host_facts_viewer_probe_one() {
   local stderr_file="" stderr_text=""
   stderr_file="$(mktemp 2>/dev/null || printf '/dev/null')"
   start="$(date +%s.%N 2>/dev/null || date +%s)"
-  raw="$($curl_cmd -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" -w '\n%{http_code}' "$url" 2>"$stderr_file")"
+  raw="$($curl_cmd -g -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" -w '\n%{http_code}' "$url" 2>"$stderr_file")"
   rc=$?
   end="$(date +%s.%N 2>/dev/null || date +%s)"
   if [[ "$stderr_file" != /dev/null ]]; then
@@ -350,6 +350,21 @@ host_facts_viewer_probe_one() {
   fi
   jq -nc --argjson bytes "${#body}" --argjson seconds "$seconds" \
     '{ok:true, bytes:$bytes, seconds:$seconds, reason:null}'
+}
+
+# host_facts_viewer_url_template — the viewer-probe URL template,
+# AGENT_OPS_VIEWER_URL_TEMPLATE-overridable, scripts/collect-host-facts.sh's
+# only caller. Kept as its own function, rather than inlined at the call
+# site, because bash's `${VAR:-default}` expansion treats the first
+# unescaped `}` inside the *default* text as closing the expansion — the
+# embedded `{node}` placeholder's own `}` would otherwise close it early and
+# silently mangle the default to `https://{node/data.js}` whenever the env
+# var is unset or empty, which curl's own URL globbing then expands to the
+# literal hostname `node` for every target (agent-ops#2779/#2528). The
+# escaped `\}` below is what keeps the placeholder intact; do not "simplify"
+# it back to a bare `}`.
+host_facts_viewer_url_template() {
+  printf '%s' "${AGENT_OPS_VIEWER_URL_TEMPLATE:-https://{node\}/data.js}"
 }
 
 # host_facts_viewer_probe_json NODE-LIST URL-TEMPLATE [CURL-CMD] — the whole
