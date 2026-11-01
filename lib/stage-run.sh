@@ -181,22 +181,26 @@ stage_lane_managed_key_detected=""
 # runs itself, while `enabledPlugins` and `extraKnownMarketplaces` fetch code.
 # A stage runs in a checkout of a pull-request head as often as of `main`, so
 # any of these would run whatever the head says, before the stage's prompt
-# is read and with the stage's credentials. Measured against 2.1.314, every
-# one planted in a checkout and run as a stage runs it
-# (`--dangerously-skip-permissions`, no workspace ever trusted): `apiKeyHelper`,
-# `awsAuthRefresh` and `awsCredentialExport` still ran commands, and `env`
-# still switched the runner onto another provider, reconfirming the 2.1.267
-# measurement that named only those (as "the AWS helpers") and `env`.
-# `gcpAuthRefresh`, tested directly for the first time here, ran a command
-# too, switching the runner onto Vertex the same way `env` switches it onto
-# Bedrock. `otelHeadersHelper` and `proxyAuthHelper`, also tested directly
-# for the first time, did not run: each refuses to fire without a trust that
+# is read and with the stage's credentials. `scripts/claude-policy-probe.sh`
+# plants every one of these seven in a checkout and runs it as a stage runs
+# it (`--dangerously-skip-permissions`, no workspace ever trusted), and
+# `.github/workflows/build-image.yml` runs that probe against every built
+# image (issue #2771) — so, unlike the `permissions` paragraph below, this is
+# no longer a one-off version measurement a `CLAUDE_CODE_VERSION` bump can
+# re-stale the way it did once already (issue #2758). Last confirmed at
+# 2.1.314 and continuously re-exercised since: `apiKeyHelper`,
+# `awsAuthRefresh`, `awsCredentialExport` and `gcpAuthRefresh` still run
+# their planted command, and `env` still switches the runner onto another
+# provider (Bedrock or Vertex — a checkout cannot be both at once, so the
+# probe plants a second, Vertex-only checkout for `gcpAuthRefresh`),
+# observable in the `cloud_credential_error` the run then fails with.
+# `otelHeadersHelper`, `proxyAuthHelper` and `processWrapper` still do not
+# run: each refuses to fire without a trust that
 # `--dangerously-skip-permissions` does not confer on a checkout nobody has
 # trusted interactively, so a planted one sits inert rather than firing the
-# way the other four do. That is a fact about this CLI version, not a safety
-# margin this allowlist leans on — issue #2761 tracks it as a question for a
-# human, not a reason to narrow the refusal here. `processWrapper` was not
-# re-planted; nothing here attests to its behaviour at 2.1.314.
+# way the other four do. That remains a fact about this CLI, not a safety
+# margin this allowlist leans on — issue #2761 tracks the OTel/proxy half of
+# it as a question for a human, not a reason to narrow the refusal here.
 #
 # The image's managed policy (`deploy/docker/claude-managed-settings.json`,
 # installed root-owned at /etc/claude-code/managed-settings.json) switches off
@@ -222,7 +226,13 @@ stage_lane_managed_key_detected=""
 # weighed against it, and a planted setting with no such call to weigh
 # never exercises that — so they are refused on the same rationale as
 # before: like `allow`, `deny` and `disableBypassPermissionsMode` above,
-# they set what the stage may do.
+# they set what the stage may do. `deny` and `disableBypassPermissionsMode`
+# are out of the probe's reach the same way: `scripts/claude-policy-probe.sh`'s
+# placeholder-API-key technique (above) never reaches a tool call to weigh
+# either of them against, so — unlike the paragraph above it — this one
+# stays a manual, point-in-time measurement that a future
+# `CLAUDE_CODE_VERSION` bump can still re-stale. Issue #2775 tracks that
+# residual gap and the technique that would close it.
 #
 # Only the working directory matters: Claude reads project settings from
 # there and not from a parent or the repository root (measured likewise).

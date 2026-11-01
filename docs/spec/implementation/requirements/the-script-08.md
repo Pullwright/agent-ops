@@ -418,7 +418,17 @@
      executes itself (`apiKeyHelper`, `awsAuthRefresh`,
      `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
      `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
-     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_model_stage`
+     (`enabledPlugins`, `extraKnownMarketplaces`). `scripts/claude-policy-probe.sh`'s
+     acceptance step plants `env` and all seven of those command-naming
+     keys in a checkout too (a second, Vertex-only checkout for
+     `gcpAuthRefresh`, since a checkout
+     cannot be switched onto both Bedrock and Vertex at once) and asserts
+     each still behaves as `lib/stage-run.sh`'s own provenance comment
+     claims — `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` and
+     `gcpAuthRefresh` run their planted command and `env` switches the
+     provider, while `otelHeadersHelper`, `proxyAuthHelper` and
+     `processWrapper` stay inert — in both `--expect` runs alike, since none
+     of the seven are gated by the managed policy either. So `run_model_stage`
      (requirement 4d) vets `.claude/settings.json` and
      `.claude/settings.local.json` in its working directory, the only place
      Claude reads project settings from, against an allowlist before it
