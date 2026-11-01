@@ -1214,7 +1214,7 @@ do_push() {
   # simply absent from the fleet's resource picture, the same "no evidence
   # is not evidence" degradation the doctor/updater fields above already
   # hold for a record that has not been written yet.
-  heartbeat_resources_window_hours="$(jq -r '.resources.report_window_hours // 24' <<<"$DEFAULTED_CONFIG")"
+  heartbeat_resources_window_hours="$(cfg_int '.resources.report_window_hours // 24')"
   [[ "$heartbeat_resources_window_hours" =~ ^[0-9]+$ ]] || heartbeat_resources_window_hours=24
   heartbeat_resources_samples=""
   if [[ -r "$state_dir/.resource-samples.jsonl" ]]; then

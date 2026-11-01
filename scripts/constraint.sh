@@ -121,9 +121,9 @@ fi
 
 min_share="$(cfg '.constraint_min_share')"
 [[ "$min_share" =~ ^[0-9.]+$ ]] || min_share=0.3
-min_sample_seconds="$(cfg '.constraint_min_sample_seconds')"
+min_sample_seconds="$(cfg_int '.constraint_min_sample_seconds')"
 [[ "$min_sample_seconds" =~ ^[0-9]+$ ]] || min_sample_seconds=14400
-cadence_bound_minutes="$(cfg '.schedule.cycle_interval_minutes')"
+cadence_bound_minutes="$(cfg_int '.schedule.cycle_interval_minutes')"
 [[ "$cadence_bound_minutes" =~ ^[0-9]+$ ]] || cadence_bound_minutes=null
 
 account_json="$(

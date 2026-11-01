@@ -105,9 +105,9 @@ else
 fi
 mkdir -p "$state_dir"
 
-retention_hours="$(jq -r '.resources.sample_retention_hours // 48' <<<"$DEFAULTED_CONFIG")"
+retention_hours="$(cfg_int '.resources.sample_retention_hours // 48')"
 [[ "$retention_hours" =~ ^[0-9]+$ ]] || retention_hours=48
-disk_interval_minutes="$(jq -r '.resources.disk_sample_interval_minutes // 60' <<<"$DEFAULTED_CONFIG")"
+disk_interval_minutes="$(cfg_int '.resources.disk_sample_interval_minutes // 60')"
 [[ "$disk_interval_minutes" =~ ^[0-9]+$ ]] || disk_interval_minutes=60
 
 samples_file="$state_dir/.resource-samples.jsonl"
