@@ -202,18 +202,35 @@ host_facts_updater_ledger_tail() {
     || printf '[]'
 }
 
-# host_facts_parse_last_session LOG-TEXT — {"ts","failed","scanned","updated"}
-# from the newest `Session done Failed=<n> Scanned=<n> Updated=<n>` line in
-# LOG-TEXT (a watchtower container's own log), `null` when no such line is
-# present. `ts` is whatever ISO-ish timestamp the log line itself leads
-# with, verbatim, `null` when the line carries none this can recognise —
-# never guessed from the collector's own clock, which describes when this
-# ran, not when the session finished.
+# host_facts_parse_last_session LOG-TEXT —
+# {"ts","failed","scanned","updated","conflict_failed"} from the newest
+# `Session done Failed=<n> Scanned=<n> Updated=<n>` line in LOG-TEXT (a
+# watchtower container's own log), `null` when no such line is present.
+# `ts` is whatever ISO-ish timestamp the log line itself leads with,
+# verbatim, `null` when the line carries none this can recognise — never
+# guessed from the collector's own clock, which describes when this ran,
+# not when the session finished. `conflict_failed` is how many of that
+# session's own `failed` are explained by a *different* compose project on
+# the same shared host trying to recreate a container it does not own —
+# counted from LOG-TEXT's `Conflict. The container name "..." is already in
+# use` lines, watchtower's own wording for that case (see the "One
+# disagreement no hook can close" comment in deploy/docker/compose.yaml and
+# agent-ops#1099/#1944). `conflict_failed == failed` means the whole count
+# is this known, non-paging noise; `conflict_failed < failed` leaves some
+# unexplained and worth a closer look. Only counted when `failed>0`; `0`
+# otherwise — never omitted, so a reader can always compare it to `failed`
+# without first checking whether the field is present. Counted only across
+# the newest session's own lines — from just after the *previous*
+# `Session done` line (if any) through the newest one — never the whole of
+# LOG-TEXT: a 200-line tail can span several polling cycles, and counting a
+# prior session's own Conflict lines against this one's `failed` is exactly
+# how `conflict_failed` ends up exceeding `failed`, which breaks the
+# `conflict_failed <= failed` invariant this field exists to provide.
 host_facts_parse_last_session() {
   local line=""
   line="$(grep -aF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 1)"
   [[ -n "$line" ]] || { printf 'null'; return 0; }
-  local ts="" failed="" scanned="" updated=""
+  local ts="" failed="" scanned="" updated="" conflict_failed=0
   # logrus's default text formatter fronts every line with `time="<ts>"
   # level=..."` — the timestamp watchtower itself stamped the session with,
   # never this collector's own clock.
@@ -222,10 +239,19 @@ host_facts_parse_last_session() {
   scanned="$(grep -aoE 'Scanned=[0-9]+' <<<"$line" | head -n 1 | cut -d= -f2)"
   updated="$(grep -aoE 'Updated=[0-9]+' <<<"$line" | head -n 1 | cut -d= -f2)"
   [[ "$failed" =~ ^[0-9]+$ && "$scanned" =~ ^[0-9]+$ && "$updated" =~ ^[0-9]+$ ]] || { printf 'null'; return 0; }
+  if (( failed > 0 )); then
+    local session_lines="" last_n="" prev_n=0
+    last_n="$(grep -anF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 1 | cut -d: -f1)"
+    prev_n="$(grep -anF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 2 | head -n 1 | cut -d: -f1)"
+    [[ "$prev_n" =~ ^[0-9]+$ && "$prev_n" != "$last_n" ]] || prev_n=0
+    session_lines="$(sed -n "$((prev_n + 1)),${last_n}p" <<<"${1:-}")"
+    conflict_failed="$(grep -acF 'Conflict. The container name' <<<"$session_lines" 2>/dev/null)"
+  fi
   jq -nc \
     --argjson ts "$( [[ -n "$ts" ]] && jq -nc --arg t "$ts" '$t' || printf 'null' )" \
     --argjson failed "$failed" --argjson scanned "$scanned" --argjson updated "$updated" \
-    '{ts:$ts, failed:$failed, scanned:$scanned, updated:$updated}'
+    --argjson conflict_failed "$conflict_failed" \
+    '{ts:$ts, failed:$failed, scanned:$scanned, updated:$updated, conflict_failed:$conflict_failed}'
 }
 
 # host_facts_updater_json STATE_DIR [LOG-TEXT] — the `updater` section: the
