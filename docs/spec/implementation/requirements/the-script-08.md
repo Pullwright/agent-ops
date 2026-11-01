@@ -419,8 +419,9 @@
      `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
      `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
      (`enabledPlugins`, `extraKnownMarketplaces`). `scripts/claude-policy-probe.sh`'s
-     acceptance step plants the first seven of these in a checkout too (a
-     second, Vertex-only checkout for `gcpAuthRefresh`, since a checkout
+     acceptance step plants `env` and all seven of those command-naming
+     keys in a checkout too (a second, Vertex-only checkout for
+     `gcpAuthRefresh`, since a checkout
      cannot be switched onto both Bedrock and Vertex at once) and asserts
      each still behaves as `lib/stage-run.sh`'s own provenance comment
      claims — `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` and
