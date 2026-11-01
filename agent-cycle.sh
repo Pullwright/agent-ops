@@ -1199,7 +1199,7 @@ schedule_json="$(cfg_json '.schedule')"
 # How long a draft PR this system raised may sit untouched before it counts as
 # abandoned and finishing it becomes selectable work (requirement 3e). Comfortably
 # beyond a whole cycle, so a draft merely being worked never qualifies.
-abandoned_draft_after_hours="$(cfg '.abandoned_draft_after_hours')"
+abandoned_draft_after_hours="$(cfg_int '.abandoned_draft_after_hours')"
 state_repo="$(cfg '.state_repo')"
 all_repos_json="$(cfg_json '.repos')"
 # The implementation-plan source has no path of its own in the prompt or the

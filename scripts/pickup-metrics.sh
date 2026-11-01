@@ -183,7 +183,7 @@ else
   peers_dir="$(fleet_peers_dir "$(expand_home "$(cfg '.workspace_root')")")"
 fi
 
-cadence_bound_minutes="$(cfg '.schedule.cycle_interval_minutes')"
+cadence_bound_minutes="$(cfg_int '.schedule.cycle_interval_minutes')"
 [[ "$cadence_bound_minutes" =~ ^[0-9]+$ ]] || cadence_bound_minutes=null
 
 # The log travels through a temp file, read twice below: once for this
