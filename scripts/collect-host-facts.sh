@@ -138,7 +138,7 @@ if [[ -d "$peers_dir" ]]; then
     [[ "$peer" == "$node" ]] || node_list="$node_list"$'\n'"$peer"
   done
 fi
-url_template="${AGENT_OPS_VIEWER_URL_TEMPLATE:-https://{node}/data.js}"
+url_template="$(host_facts_viewer_url_template)"
 viewer_probe_json="$(host_facts_viewer_probe_json "$node_list" "$url_template")"
 
 driver_section="{}"
