@@ -43,7 +43,7 @@ starter="$SCRIPT_DIR/deploy/docker/egress-proxy-start.sh"
 # ghcr.io: lib/image-drift.sh runs in the scheduler, not just watchtower).
 for domain in \
   github.com api.github.com codeload.github.com .githubusercontent.com \
-  api.anthropic.com platform.claude.com claude.ai claude.com \
+  api.anthropic.com platform.claude.com claude.ai claude.com docs.claude.com \
   api.x.ai auth.x.ai \
   api.vercel.com .vercel.app vercel.com \
   registry.npmjs.org fonts.googleapis.com fonts.gstatic.com ghcr.io
