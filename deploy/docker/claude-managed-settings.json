@@ -1,5 +1,18 @@
 {
   "allowManagedHooksOnly": true,
   "allowedMcpServers": [],
-  "disableSkillShellExecution": true
+  "disableSkillShellExecution": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/app/scripts/background-wait-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

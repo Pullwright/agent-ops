@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 7 of 13; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)
+### The Script — requirements, continued (part 7 of 13; 3w–4m: Verdict quality is a rate, and every verdict pays for its …)
 
 3w. <a id="impl-3w"></a>**Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict
@@ -1282,4 +1282,31 @@
    the stage, the process is being stopped forcibly and whatever work already
    sits in its working directory is exactly as worth keeping regardless of
    which of the three stopped it.
+
+4m. <a id="impl-4m"></a>**A stage cannot end its own turn on a backgrounded wait (issue #2778).**
+   Every stage prompt states, in prose, that it must wait out a slow command
+   or subagent in the foreground rather than end its turn expecting a
+   background completion notification this single-invocation harness has no
+   later turn to deliver — but prose restated three times and still
+   disobeyed once (`claude-code` cycle `20261031T221414Z-poetic-2-897852`,
+   PR #2776: a Reviewer ended its turn on `gh pr checks --watch` launched with
+   `run_in_background: true`, idled until the watchdog (requirement 4e)
+   killed it, and the review it had already finished was recorded as nothing)
+   is an unenforced invariant, not a prompt gap a fourth restatement fixes.
+   `deploy/docker/claude-managed-settings.json`'s `hooks.PreToolUse` registers
+   `scripts/background-wait-guard.sh` (logic in `lib/background-wait-guard.sh`)
+   against the matcher `Bash|Agent`, and `allowManagedHooksOnly` (requirement
+   4k) is what makes this the one `PreToolUse` hook that can ever fire, ahead
+   of anything a checkout's own settings file might add. It denies — exit
+   code 2, Claude Code's own documented "show stderr to model and block tool
+   call" contract, with the stderr naming the exact foreground retry — a
+   `Bash` call whose `tool_input.run_in_background` is `true`, and an `Agent`
+   call whose `tool_input.run_in_background` is `true` or absent (the `Agent`
+   tool backgrounds by default when the key is omitted, which is the harness's
+   own default working against it here). Every other tool call, and a `Bash`
+   or `Agent` call with `run_in_background` explicitly `false`, passes through
+   unexamined. The denial is the mechanical backstop; the prose ban in every
+   stage prompt stays in place as defence in depth, since a stage that reads
+   the denial reason and retries in the foreground never needed the hook to
+   begin with.
 
