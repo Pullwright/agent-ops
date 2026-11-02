@@ -437,7 +437,7 @@ pager_remedy_verdict_unanimous() {
   # its label — the tech-debt register is the human's own filter, and this
   # function's dedup narrows on the body's `ref:` line regardless.
   if created="$(_pager_create_issue "$repo" "$item" "pw::type:tech-debt" \
-        "Pager: verdict-unanimous fired ($evidence)" "$body_file" "")" && [[ -n "$created" ]]; then
+        "Pager: $key fired ($evidence)" "$body_file" "")" && [[ -n "$created" ]]; then
     number="${created%%$'\t'*}"
     rm -f "$body_file"
     printf 'filed %s#%s (pw::type:tech-debt)' "$repo" "$number"
