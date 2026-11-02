@@ -2039,6 +2039,36 @@ assert_eq "...config_documented_value_mismatches's own [warn] output is unchange
 assert_eq "...and config_documented_value_coverage_gaps reports mykey as covered too, not lost — its own stop condition matches the fixed leaf_paths" \
   "" "$(config_documented_value_coverage_gaps "$coverage_schema_mutated")"
 
+# issue #2687: every assertion above expects "" — nothing yet exercises the
+# guard actually reporting a gap. A gap is still constructible: a child
+# carrying both x-docs.value and default, nested under a parent that has
+# both properties and its own default. leaf_paths' has("default") exception
+# stops at the parent (a leaf), but documented_paths recurses into
+# properties regardless and reaches the child, so the child's path is
+# documented but never visited.
+gap_schema="$tmp/coverage-gap-schema.json"
+cat > "$gap_schema" <<'EOF'
+{
+  "type": "object",
+  "properties": {
+    "parent": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "child": {
+          "type": "string",
+          "default": "foo",
+          "x-docs": {"value": "`foo`"}
+        }
+      }
+    }
+  }
+}
+EOF
+
+assert_eq "config_documented_value_coverage_gaps reports a child's path when its parent's own has(\"default\") exception stops leaf_paths from reaching it" \
+  "parent.child" "$(config_documented_value_coverage_gaps "$gap_schema")"
+
 # Over the shipped schema itself: refinement_policy and revert_rate_baseline
 # (issue #2674) each carry their own x-docs.value/default (a single
 # documented JSON object) the same way scripts/render-config-table.sh's own
