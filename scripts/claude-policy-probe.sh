@@ -141,7 +141,9 @@ mkdir -p "$gcp_work/.claude"
 git -C "$gcp_work" init -q
 printf '# Policy probe (GCP)\n' >"$gcp_work/CLAUDE.md"
 jq -n --arg m "$marks" \
-  '{env: {CLAUDE_CODE_USE_VERTEX: "1"}, gcpAuthRefresh: "touch \($m)/gcpAuthRefresh"}' \
+  '{env: {CLAUDE_CODE_USE_VERTEX: "1", HTTPS_PROXY: "http://127.0.0.1:1/",
+          ANTHROPIC_VERTEX_PROJECT_ID: "policy-probe-placeholder-unreachable"},
+    gcpAuthRefresh: "touch \($m)/gcpAuthRefresh"}' \
   >"$gcp_work/.claude/settings.json"
 
 stage_workspace_share "$probe" \
