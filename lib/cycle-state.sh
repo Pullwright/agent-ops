@@ -348,9 +348,26 @@ void_items() {
 # ordinary block (a red check, an unmerged dependency) is not this shape, and
 # must keep its ordinary re-check — only a `detail` carrying the literal
 # "void refused (" prefix every `void_guard_reason` refusal site writes
-# (`lib/coordinator-phase.sh`'s and `lib/candidate-select.sh`'s own
-# Co-Ordinator-sourced refusal, `lib/enabler.sh`'s Enabler-sourced one) joins
-# a run.
+# (`lib/coordinator-phase.sh`'s Implementer-sourced refusal,
+# `lib/candidate-select.sh`'s Co-Ordinator-sourced one, `lib/enabler.sh`'s
+# Enabler-sourced one) joins a run.
+#
+# A clearing event that names no repo breaks the run in *every* repo, the
+# identical rule `LATEST_UNRESOLVED_JQ` above states for `blocked`/`void` and
+# for the identical reason: `unblocked` is reported by the Co-Ordinator as a
+# bare item id (requirement 18 — `log_unblocked_items`, lib/candidate-
+# select.sh, logs `{item}` and nothing else), and both clears may be appended
+# by hand by a human (requirements 34, 34c), so neither source has a repo to
+# match on. That is why the clears are matched against each run's own repo+
+# item key rather than grouped by it: grouping a repo-less `unblocked` under
+# its own `"|<item>"` key would leave it unable to break the repo-scoped run
+# it was written to clear, which would make requirement 34p's own documented
+# escape hatch — "a hand-appended `unblocked`/`item-void` frees it for an
+# ordinary re-check again" — unreachable, and the exclusion below permanent
+# in every case but a human closing the item outright. Over-clearing is the
+# safe direction here exactly as it is there: the item merely becomes a
+# candidate again, and re-pins on the next refusal if the reason is still
+# there.
 #
 # This is deliberately *not* a change to `void_guard_reason`'s own
 # corroboration bar — that bar is what stands between this pipeline and the
@@ -364,15 +381,23 @@ VOID_REFUSAL_STREAK_EVENTS="attempt-failed unblocked item-void"
 VOID_REFUSAL_STREAK_JQ='
   def canon_repo($r): ($aliases[$r] // $r);
   def is_void_refused: ((.detail // "") | test("^void refused \\("));
+  def no_run: {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null};
   [ .[] | select((.event == "attempt-failed" or .event == "unblocked" or .event == "item-void")
-                 and (.item // "") != "") ]
+                 and (.item // "") != "") ] as $all
+  | ([ $all[] | select(.event == "unblocked" or .event == "item-void") ]) as $clears
+  | [ $all[] | select(.event == "attempt-failed") ]
   | group_by(canon_repo(.repo // "") + "|" + .item)
   | map(
-      (sort_by(.ts)) as $seq
+      .[0] as $k
+      | (. + [ $clears[]
+               | select(.item == $k.item
+                        and ((.repo // "") == ""
+                             or canon_repo(.repo // "") == canon_repo($k.repo // ""))) ]) as $merged
+      | ($merged | sort_by(.ts)) as $seq
       | (reduce $seq[] as $e (
-          {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null};
+          no_run;
           if ($e.event == "unblocked" or $e.event == "item-void") then
-            {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null}
+            no_run
           elif ($e.event == "attempt-failed" and ($e | is_void_refused)) then
             {count: (.count + 1),
              first_ts: (if .count == 0 then ($e.ts // null) else .first_ts end),
@@ -380,7 +405,7 @@ VOID_REFUSAL_STREAK_JQ='
              detail: ($e.detail // ""),
              repo: canon_repo($e.repo // ""), item: $e.item}
           else
-            {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null}
+            no_run
           end
         )) as $run
       | select($run.count > 0)

@@ -555,6 +555,42 @@ EOF
 assert_eq "an intervening item-void breaks the run too" \
   "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
 
+# A repo-less clearing event breaks the run in every repo, the same rule
+# LATEST_UNRESOLVED_JQ already applies to blocked/void — and the only rule
+# under which requirement 34p's own escape hatch works at all: the
+# Co-Ordinator's own `unblocked` report carries a bare item id and no repo
+# (`log_unblocked_items`, lib/candidate-select.sh), and so does a human's
+# hand-appended one (requirements 34, 34c).
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-11-01T00:00:00Z","event":"unblocked","item":"5"}
+EOF
+assert_eq "a repo-less unblocked breaks the repo-scoped run it was written to clear" \
+  "[]" "$(void_refusal_streaks "$log")"
+assert_eq "...so the item is no longer an escalation candidate" \
+  "[]" "$(void_refusal_escalation_candidates 2 "$log")"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"item-void","item":"5","detail":"a human corroborated it by hand"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "a repo-less item-void breaks it the identical way, and a later failure starts a fresh run" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+assert_eq "...whose first_ts is the post-clear failure's" \
+  "2026-11-01T00:00:00Z" "$(void_refusal_streaks "$log" | jq -r '.[0].first_ts')"
+
+# A clear that predates every failure in the log clears nothing: the run
+# after it is a run, not a suppressed one.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-29T00:00:00Z","event":"unblocked","item":"5"}
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "a clear predating every failure suppresses no run" \
+  "2" "$(void_refusal_escalation_candidates 2 "$log" | jq -r '.[0].count')"
+
 # An ordinary (non-void-refusal) attempt-failed never joins a run: a red
 # check or an unmerged dependency must keep its ordinary re-check, unaffected
 # by this circuit breaker.

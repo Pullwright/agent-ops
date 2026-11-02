@@ -891,18 +891,25 @@
     **Detection.** `void_refusal_streaks` (`lib/cycle-state.sh`) walks the
     log for the most recent run of consecutive `attempt-failed` events
     whose `detail` carries the literal `void refused (` prefix every refusal
-    site writes (`lib/coordinator-phase.sh`'s and `lib/candidate-select.sh`'s
-    own Co-Ordinator-sourced refusal, `lib/enabler.sh`'s Enabler-sourced
-    one), for one repo+item, with no `unblocked` or `item-void` event
-    breaking the run — the identical set/clear discipline requirement 34a's
-    `_latest_unresolved` already applies to `blocked`/`void`, extended here
-    to count a run's length rather than only its latest member. An ordinary
-    block (a red check, an unmerged dependency) never joins a run: only a
-    `detail` carrying that literal prefix does, so every other block keeps
-    its ordinary re-check untouched. `void_refusal_escalation_candidates
-    THRESHOLD` narrows that to the runs whose own count has reached
-    THRESHOLD — fixed at 2, "before paying for a 3rd wasted engagement": a
-    run of one is still the ordinary case.
+    site writes (`lib/coordinator-phase.sh`'s Implementer-sourced refusal,
+    `lib/candidate-select.sh`'s Co-Ordinator-sourced one, `lib/enabler.sh`'s
+    Enabler-sourced one), for one repo+item, with no `unblocked` or
+    `item-void` event breaking the run — the identical set/clear discipline
+    requirement 34a's `_latest_unresolved` already applies to
+    `blocked`/`void`, extended here to count a run's length rather than only
+    its latest member. An ordinary block (a red check, an unmerged
+    dependency) never joins a run: only a `detail` carrying that literal
+    prefix does, so every other block keeps its ordinary re-check untouched.
+    A clearing event that names no repo breaks the run in *every* repo —
+    requirement 34a's own over-clearing rule, applied here for the reason it
+    exists there: the Co-Ordinator's own `unblocked` report carries a bare
+    item id and no repo (requirement 18), and so does a human's hand-appended
+    `unblocked`/`item-void` (requirements 34, 34c), so matching a clear
+    against a run's repo alone would leave this requirement's own escape
+    hatch (below) unreachable. `void_refusal_escalation_candidates THRESHOLD`
+    narrows that to the runs whose own count has reached THRESHOLD — fixed at
+    2, "before paying for a 3rd wasted engagement": a run of one is still the
+    ordinary case.
 
     **Exclusion.** An item whose run has reached the threshold is dropped
     from both actors' eligible sets, unconditionally — never returned by a

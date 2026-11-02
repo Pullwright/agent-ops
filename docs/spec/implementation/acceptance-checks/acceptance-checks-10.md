@@ -732,7 +732,11 @@
    clearing the block in between streak at `2`, carry the run's own
    `first_ts`/`last_ts`/`detail`, and are a candidate at threshold 2 (not yet
    at 3); an intervening `unblocked` or `item-void` breaks the run back to
-   `1`; an ordinary (non-void-refusal) `attempt-failed` never joins a run; a
+   `1`; a *repo-less* `unblocked` or `item-void` — the Co-Ordinator's own
+   report form and a human's hand-appended one — breaks the repo-scoped run
+   it was written to clear, so requirement 34p's own escape hatch is
+   reachable, while a clear predating every failure suppresses no run; an
+   ordinary (non-void-refusal) `attempt-failed` never joins a run; a
    repo+item pair counts independently of the same id in another repo, and
    resolves through the slug-rename alias map; a threshold of `0` or a
    non-numeric one is the off switch; `void_refusal_escalated_since` dedups a
