@@ -960,11 +960,12 @@ function receives, as its `UNION_LOG_FILE`, the implementation union
 reduced to the event types its registration declares
 (`pager_declare_events`, `PAGER_EVAL_EVENTS`; `union_prefilter` makes the
 file under the working set before the evaluation and removes it after): a
-key declared with no types — `verdict-unanimous`, `page-outlived-item`,
-`node-stale`, `updater-stuck`, `dashboard-unreadable`, `memory-cgroup` and
-`review-pipeline-failing`, which read the heartbeats, GitHub or the review
-union — receives an empty file, a key with no declaration receives the
-whole union, and a prefilter that fails leaves the whole union in place.
+key declared with no types — `verdict-unanimous`, `viewer-probe-unanimous`,
+`page-outlived-item`, `node-stale`, `updater-stuck`, `dashboard-unreadable`,
+`memory-cgroup` and `review-pipeline-failing`, which read the heartbeats,
+GitHub or the review union — receives an empty file, a key with no
+declaration receives the whole union, and a prefilter that fails leaves the
+whole union in place.
 The remedy variables (`PAGER_REMEDY_UNION_LOG_FILE`) keep the whole union.
 The block also reads the two config keys agent-ops#1282 added —
 `pager_stale_file_after_minutes`, passed to

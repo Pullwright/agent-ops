@@ -377,6 +377,61 @@ assert_reduced_verdict_eq() {  # assert_reduced_verdict_eq KEY NODES_JSON LOG_FI
 }
 assert_reduced_verdict_eq verdict-unanimous "$fleet3_all_failing" /dev/null
 
+# --- viewer-probe-unanimous (agent-ops#2781) --------------------------------
+
+vp_row() {  # vp_row NAME STALE PROBE_SPEC
+  # PROBE_SPEC: "NOHOST" for a node whose host-facts record has not arrived
+  # yet (.host == null — the collector hasn't run, or hasn't replicated
+  # here); "EMPTY" for a node whose host-facts record carries an empty
+  # viewer_probe object; otherwise "target:ok,target:ok,..." (ok is
+  # "true"/"false") naming every target this node probed. `viewer_probe` is
+  # embedded as a top-level sibling field of the host-facts record, the way
+  # scripts/publish-dashboard.sh lays it out — never nested under that
+  # record's own, differently-shaped `host` sub-object of disk/mem facts.
+  local n="$1" stale="$2" probe_spec="$3" host
+  case "$probe_spec" in
+    NOHOST) host=null ;;
+    EMPTY) host='{"viewer_probe":{}}' ;;
+    *) host="$(jq -nc --arg s "$probe_spec" \
+         '{viewer_probe: ($s | split(",") | map(split(":")) | map({(.[0]): {ok: (.[1] == "true")}}) | add)}')" ;;
+  esac
+  jq -nc --arg n "$n" --argjson stale "$stale" --argjson host "$host" \
+    '{node: $n, stale: $stale, host: $host}'
+}
+
+fleet_vp_all_failing="$(fleet_rows "$(vp_row n1 false t1:false,t2:false)" \
+  "$(vp_row n2 false t1:false,t2:false)" "$(vp_row n3 false t1:false,t2:false)")"
+verdict="$(pager_eval_viewer_probe_unanimous "$fleet_vp_all_failing" /dev/null)"
+assert_eq "every target on every active node reads ok:false: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... evidence names the #1071 signature" "1" "$(grep -c '#1071' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+fleet_vp_one_ok="$(fleet_rows "$(vp_row n1 false t1:false,t2:true)" \
+  "$(vp_row n2 false t1:false,t2:false)" "$(vp_row n3 false t1:false,t2:false)")"
+assert_eq "one target ok:true on one node: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_viewer_probe_unanimous "$fleet_vp_one_ok" /dev/null)")"
+
+fleet_vp_one_active="$(fleet_rows "$(vp_row n1 false t1:false)" \
+  "$(vp_row n2 true t1:false)" "$(vp_row n3 true t1:false)")"
+assert_eq "fewer than two active nodes: never unanimous, even if all named nodes agree" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_viewer_probe_unanimous "$fleet_vp_one_active" /dev/null)")"
+
+fleet_vp_nohost="$(fleet_rows "$(vp_row n1 false NOHOST)" \
+  "$(vp_row n2 false t1:false)" "$(vp_row n3 false t1:false)")"
+assert_eq "a node whose host-facts record has not replicated yet is no evidence, not a hit" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_viewer_probe_unanimous "$fleet_vp_nohost" /dev/null)")"
+
+fleet_vp_empty="$(fleet_rows "$(vp_row n1 false EMPTY)" \
+  "$(vp_row n2 false t1:false)" "$(vp_row n3 false t1:false)")"
+assert_eq "an empty viewer_probe object is no evidence either, not vacuously all-failing" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_viewer_probe_unanimous "$fleet_vp_empty" /dev/null)")"
+
+fleet_vp_healthy="$(fleet_rows "$(vp_row n1 false t1:true,t2:true)" \
+  "$(vp_row n2 false t1:true,t2:true)" "$(vp_row n3 false t1:true,t2:true)")"
+assert_eq "a healthy fleet does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_viewer_probe_unanimous "$fleet_vp_healthy" /dev/null)")"
+
+assert_reduced_verdict_eq viewer-probe-unanimous "$fleet_vp_all_failing" /dev/null
+
 # --- page-outlived-item ---------------------------------------------------------
 
 : > "$GH_CALLS_FILE"

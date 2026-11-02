@@ -447,6 +447,51 @@ pager_remedy_verdict_unanimous() {
   return 1
 }
 
+# pager_eval_viewer_probe_unanimous FLEET_NODES_JSON UNION_LOG_FILE
+# The #1071 signature again, this time for the viewer-vantage probe
+# (docs/reference/host-facts-schema.md's `viewer_probe`) rather than for a
+# stage_health/updater/doctor verdict: issues #2779/#2528 both describe every
+# node's probe of every target failing identically for weeks with nothing
+# paging on it, because nothing compared one node's "every target is down"
+# against its peers'.
+#
+# Reads fleet_nodes_json alone, like `pager_eval_verdict_unanimous` itself.
+# A fleet row's host-facts record sits under the row's own `host` key
+# (scripts/publish-dashboard.sh), and `viewer_probe` is a top-level sibling
+# field of that record (sibling to the record's own, differently-shaped
+# `host` sub-object of disk/mem facts) — so the field this invariant reads is
+# `.host.viewer_probe`, never the bare `.viewer_probe` this invariant's own
+# issue text abbreviates it as.
+#
+# Fires iff every live node (`pager_row_live`; fewer than two live nodes can
+# never be unanimous, same floor as verdict-unanimous) has a non-null,
+# non-empty `viewer_probe` object whose every entry reads `.ok == false`. A
+# node whose `.host` is null (the collector hasn't run, or hasn't replicated
+# here yet) or whose `viewer_probe` object is empty does not count as "all
+# failing" by vacuous truth — exactly as `pager_eval_verdict_unanimous`
+# treats an absent `.doctor`/`.stage_health` as no evidence rather than as a
+# hit, a node with no viewer_probe data simply fails this node's own
+# all-false test, which is enough to keep the fleet-wide `all` from firing
+# without singling that node out as a special case.
+pager_eval_viewer_probe_unanimous() {
+  local fleet_nodes_json="$1"
+  jq -c -n --argjson nodes "$fleet_nodes_json" "$PAGER_JQ_ROW_PREDICATES"'
+    ($nodes | map(select(pager_row_live))) as $active
+    | if ($active | length) < 2 then {firing: false}
+      else
+        ( $active | map(
+            (.host.viewer_probe // {}) as $vp
+            | ($vp | length) > 0 and ($vp | all(.[]; .ok == false))
+          ) ) as $node_all_failing
+        | if ($node_all_failing | length > 0 and all(.[]; . == true))
+          then {firing: true,
+                evidence: "viewer_probe.ok=false on every target probed by every active node (\($active | map(.node) | join(", "))) — the #1071 signature: a uniform fleet-wide failure is almost always the reader being wrong, not every node failing alike at once"}
+          else {firing: false}
+          end
+      end
+  ' 2>/dev/null || printf '{"firing":false}'
+}
+
 # _pager_open_page_issues -> number\turl\tbody(TSV, newlines squashed to spaces)
 # per open issue carrying PAGER_EVAL_ESCALATION_LABEL or pw::pager in
 # PAGER_EVAL_REPO. Shared by the eval and remedy functions below so both walk
@@ -2076,6 +2121,12 @@ pager_register_builtin_invariants() {
   pager_register verdict-unanimous pager_eval_verdict_unanimous \
     pipeline-act pager_remedy_verdict_unanimous
   pager_declare_events verdict-unanimous
+  # Reads fleet_nodes_json alone, same remedy as verdict-unanimous — both
+  # file a pw::type:tech-debt issue against the reader, and the remedy
+  # function is already generic over KEY/EVIDENCE.
+  pager_register viewer-probe-unanimous pager_eval_viewer_probe_unanimous \
+    pipeline-act pager_remedy_verdict_unanimous
+  pager_declare_events viewer-probe-unanimous
   # Reads GitHub alone (PAGER_EVAL_REPO, lib/pager.sh's documented exception).
   pager_register page-outlived-item pager_eval_page_outlived_item \
     pipeline-act pager_remedy_page_outlived_item

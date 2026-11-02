@@ -222,6 +222,16 @@
     or `unlimited`, on a row carrying no `memory_cgroup` field at all, or on
     an otherwise-matching row that is stale.
 
+    The same file also drives agent-ops#2781's `viewer-probe-unanimous`
+    invariant: it fires when every live node's `host.viewer_probe` object is
+    non-empty and every entry in it reads `ok: false`; it does not fire when
+    one target on one node reads `ok: true`, when fewer than two nodes are
+    live, when a node's `host` is `null` or its `viewer_probe` object is
+    empty (missing data never counts as "all failing" by vacuous truth), or
+    on an otherwise-healthy fleet. The whole-fixture-vs-declared-reduction
+    comparison (`assert_reduced_verdict_eq`) covers this key too, alongside
+    `verdict-unanimous`'s own.
+
     `scripts/render-config-table.sh --check` passes with
     `pager_stale_file_after_minutes`/`pager_dashboard_fetch_seconds`/
     `pager_idle_cycles`/`pager_repair_rate_percent`/`pager_escalation_burst`/

@@ -833,6 +833,32 @@
     configuration: the invariant reads `fleet_nodes_json` alone, declared
     with no event types, on `node-stale`/`updater-stuck`'s own terms.
 
+    Issues #2779/#2528 both describe the same shape going undetected for
+    weeks on the viewer-vantage probe (`docs/reference/host-facts-schema.md`'s
+    `viewer_probe`): every node's probe of every target failed identically,
+    indistinguishable from a legitimate but unlucky result since nothing
+    compared one node's reading against its peers'. Issue #2781 adds
+    `verdict-unanimous`'s own shape for that field: **`viewer-probe-unanimous`**
+    (pipeline-act). Fires when every *live* node's embedded host-facts
+    record — a fleet row's `host` key (`scripts/publish-dashboard.sh`) — has
+    a non-null, non-empty `viewer_probe` object (a *top-level sibling* field
+    of that record, not nested under the record's own, differently-shaped
+    `host` sub-object of disk/mem facts, so the path read is
+    `.host.viewer_probe`, never the bare `.viewer_probe`) whose every entry
+    reads `.ok == false`. A node whose `.host` is null (the collector hasn't
+    run, or hasn't replicated here yet) or whose `viewer_probe` object is
+    empty does not count as "all failing" by vacuous truth — it fails that
+    node's own all-false test exactly as an absent `.doctor`/`.stage_health`
+    fails `verdict-unanimous`'s own per-node test, which is enough to keep
+    the fleet-wide `all` from firing without a separate missing-data branch.
+    The pipeline-act remedy reuses `pager_remedy_verdict_unanimous` unchanged
+    — it is already generic over KEY/EVIDENCE and files a `pw::type:tech-debt`
+    issue against this pipeline's own repository, the reader living here
+    (`lib/stage-health.sh`/`lib/updater-health.sh`/`scripts/doctor.sh`'s own
+    rules being the thing most likely wrong), never in a target repo. No new
+    configuration: the invariant reads `fleet_nodes_json` alone, declared
+    with no event types, on `verdict-unanimous`'s own terms.
+
     `docs/spec/dashboard/publisher.md`'s "The Publisher" section documents the
     evaluation site and the `WITH_GITHUB`-not-merely-`FULL` gate; its own
     page-rendering section documents the `pager-firing` banner and node-card
