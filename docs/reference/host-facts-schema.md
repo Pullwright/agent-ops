@@ -200,6 +200,18 @@ section's whole answer, exactly as it was before the fold existed.
 `HOST_FACTS_CURL_CMD` govern the fetch itself identically on both
 vantages, since both run the same `host_facts_viewer_probe_json`.
 
+A route is necessary but not sufficient, and the second half is a node's
+own configuration rather than anything either vantage can derive.
+`deploy/docker/ts-serve.json` publishes a node's dashboard on
+`${TS_CERT_DOMAIN}` alone — that node's `<name>.<tailnet>.ts.net` — so
+`AGENT_OPS_VIEWER_URL_TEMPLATE`'s own default, naming the bare `{node}`
+short name, matches neither that handler nor the certificate Tailscale
+serves for it, and every entry reports `ok: false` with a TLS or
+name-resolution `reason` however good the vantage's route is. A `tailnet`
+node sets the template to the `https://{node}.<tailnet>.ts.net/data.js`
+form (`deploy/docker/.env.example`) for this section to carry a real
+measurement.
+
 ## Degradation
 
 Every field in this document is `null` (or the array it belongs to is
