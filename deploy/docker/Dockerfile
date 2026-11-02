@@ -52,7 +52,7 @@ ARG SHELLCHECK_SHA256_ARM64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261
 # deepest reach on a node (the same tool/token access the pipeline itself
 # has), so a bad release must not reach every subsequently-built node with no
 # local pin to fall back to. Bump deliberately, in its own PR.
-ARG CLAUDE_CODE_VERSION=2.1.314
+ARG CLAUDE_CODE_VERSION=2.1.316
 # Grok Build (issue #2134), pinned under the same policy and for the same
 # reason: docs/reviews/2026-10-06-grok-build-evaluation.md evaluated 1.0.46,
 # the npm `latest` dist-tag on 2026-10-06.
