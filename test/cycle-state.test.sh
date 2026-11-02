@@ -624,16 +624,22 @@ if [[ "$vre_fn_src" != *"void_refusal_escalate()"* ]]; then
 fi
 
 (
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
   cycle_dir="$tmp_dir/cycle"
   mkdir -p "$cycle_dir"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
   union_log="$tmp_dir/nonexistent-union.jsonl"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
   enabler_escalation_label="enabler-escalation"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
   enabler_assignee="maintainer"
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
   create_escalation_issue() {  # stub: record its own args, fabricate a result
     printf '%s\n' "$*" > "$tmp_dir/create_escalation_issue.argv"
     cat "$5" > "$tmp_dir/create_escalation_issue.body" 2>/dev/null || true
     printf '42\thttps://github.com/Poetic-Poems/poetic/issues/42'
   }
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
   log_event() {  # stub: record what got logged
     printf '%s\t%s\n' "$1" "$2" >> "$tmp_dir/log_event.jsonl"
   }
@@ -644,6 +650,7 @@ fi
 ) >/dev/null 2>&1
 assert_eq "void_refusal_escalate files via create_escalation_issue, labelled" \
   "1" "$(grep -c "enabler-escalation" "$tmp_dir/create_escalation_issue.argv" 2>/dev/null || echo 0)"
+# shellcheck disable=SC2016  # The backtick is literal Markdown in the escalation body, not an expansion.
 assert_eq "...naming the item ref in the body footer" \
   "1" "$(grep -c 'Item: `void-refusal:Poetic-Poems/poetic#297`' "$tmp_dir/create_escalation_issue.body" 2>/dev/null || echo 0)"
 assert_eq "...quoting the most recent refusal's own detail" \
@@ -656,13 +663,18 @@ assert_eq "...and logs void-refusal-escalated with the issue it created" \
 # A run already escalated (its own first_ts covered by a void-refusal-escalated
 # event on $union_log) costs no create_escalation_issue call at all.
 (
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
   cycle_dir="$tmp_dir/cycle2"
   mkdir -p "$cycle_dir"
   union_log="$tmp_dir/already-escalated.jsonl"
   printf '{"ts":"2026-11-02T00:00:00Z","event":"void-refusal-escalated","repo":"Poetic-Poems/poetic","item":"297"}\n' > "$union_log"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below, on the path this dedup never reaches.
   enabler_escalation_label="enabler-escalation"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below, on the path this dedup never reaches.
   enabler_assignee="maintainer"
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below — never reached once the dedup short-circuits.
   create_escalation_issue() { printf 'CALLED' > "$tmp_dir/create_escalation_issue.called"; printf '1\thttps://x'; }
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
   log_event() { :; }
   eval "$vre_fn_src"
   rm -f "$tmp_dir/create_escalation_issue.called"
