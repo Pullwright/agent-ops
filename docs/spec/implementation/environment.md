@@ -57,7 +57,11 @@ a node updates by pulling a new image rather than by pulling a branch.
   policy (requirement 4k): no hook runs, no MCP server starts, and no inline
   shell in a skill or command is executed, whichever settings file, checkout or
   plugin asks. It outranks the seeded `settings.json` below and anything an
-  operator adds to the `claude-config` volume.
+  operator adds to the `claude-config` volume. The policy's own `hooks.PreToolUse`
+  entry is the one hook that can run (requirement 4m): `scripts/background-wait-guard.sh`
+  denies a `Bash` or `Agent` call a stage tries to background, mechanically
+  enforcing the "wait in the foreground" rule every stage prompt also states
+  in prose.
 - `deploy/docker/entrypoint.sh` runs as `agent` on every container start and is
   idempotent: it gives `$CLAUDE_CONFIG_DIR` to group `stage` (group-writable,
   setgid directories; requirement 45e) where an older image created it as
