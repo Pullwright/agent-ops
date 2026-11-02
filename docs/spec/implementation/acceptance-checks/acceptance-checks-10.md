@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 10 of 10; items 2j-i–7j)
+### Acceptance checks — continued (part 10 of 10; items 2j-i–34p)
 
 2j-i. <a id="impl-ac-2j-i"></a>**The merge reconciles repositories correctly, and a rejected verdict
    costs a mechanical pick, never the cycle (requirements 15z, 3v; issue
@@ -721,3 +721,43 @@
    `PreToolUse` command hook, so the policy that makes `hooks` inert for a
    checkout's own settings file (requirement 4k) is also the one that ships
    this hook.
+34p. <a id="impl-ac-34p"></a>**A repeated void-refusal is escalated once and stops re-selecting
+   (requirement 34p, issue #2789).** `test/cycle-state.test.sh` passes,
+   against `void_refusal_streaks`/`void_refusal_escalation_candidates`/
+   `void_refusal_escalated_since` (`lib/cycle-state.sh`) and
+   `void_refusal_escalate` (`lib/enabler.sh`), lifted verbatim: a single
+   void-refusal streaks at `1` and is not yet an escalation candidate at
+   threshold 2, so it stays the ordinary ``blocked`` item requirement 18/18a's
+   re-check already covers; two consecutive void-refusals with nothing
+   clearing the block in between streak at `2`, carry the run's own
+   `first_ts`/`last_ts`/`detail`, and are a candidate at threshold 2 (not yet
+   at 3); an intervening `unblocked` or `item-void` breaks the run back to
+   `1`; an ordinary (non-void-refusal) `attempt-failed` never joins a run; a
+   repo+item pair counts independently of the same id in another repo, and
+   resolves through the slug-rename alias map; a threshold of `0` or a
+   non-numeric one is the off switch; `void_refusal_escalated_since` dedups a
+   run already escalated at or after its own `first_ts` and does not dedup a
+   fresh run or a different item; and `void_refusal_escalate` (`create_
+   escalation_issue`/`log_event` stubbed) files through `create_escalation_
+   issue` — never a second, independent `gh issue create` call — labelled,
+   naming the item ref in the body's `` Item: `…` `` footer, quoting the most
+   recent refusal's own detail, naming the "Done-ness inferred from one
+   channel" gotcha, and logging `void-refusal-escalated` with the filed
+   issue's number; a run already escalated calls `create_escalation_issue`
+   not at all. `test/verdict-corroboration.test.sh` passes,
+   against `coordinator_eligible_items`'s own third, `escalated` argument,
+   lifted verbatim: an escalated issue is excluded from the eligible `issues`
+   band the same way a blocked one is, a repo-less escalated entry suppresses
+   that issue in every repo, and an omitted or malformed argument excludes
+   nothing new. `test/cycle-state.test.sh` additionally passes, against
+   `exclude_blocked_or_void_items`/`exclude_blocked_or_void_issues`'s own
+   fifth, `escalated` argument, lifted verbatim: an escalated item is dropped
+   unconditionally, the same as a void one, in every band — including an
+   issue whose thread has moved and would otherwise be due requirement 18a's
+   live re-read — and an omitted or malformed argument changes nothing for
+   every existing caller. `test/enabler-void-refusal-exclusion.test.sh`
+   passes, against the inline filter lifted out of `lib/eligibility.sh`'s
+   `compute_enabler_eligible_set`: an escalated repo+item is dropped from
+   `enabler_eligible_json` and logged as `enabler-void-refusal-escalated-
+   skipped`, a different repo's identically-numbered item survives, and an
+   empty, malformed or unset escalated set changes nothing.

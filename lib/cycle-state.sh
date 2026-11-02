@@ -321,6 +321,135 @@ void_items() {
   ' <<<"$out" 2>/dev/null || printf '%s' "$out"
 }
 
+# Requirement 34p (issue #2789): a `void` verdict `void_guard_reason`
+# refuses is recorded `blocked` (requirement 32a), on purpose — it leaves the
+# item open to the ordinary re-check every other block gets, on the theory
+# that the refusal was itself mistaken, or that it will one day pick up
+# evidence (a merged PR, a commit) the guard can corroborate. Neither ever
+# happens for an item whose underlying work landed by some other route a PR
+# or commit can never name again — a direct commit predating a required-PR
+# policy, work folded into an unrelated PR, a GitHub settings act — so the
+# re-check keeps reaching the identical verdict ("this is already done")
+# forever, and `void_guard_reason` keeps refusing it for the identical
+# reason forever: the "Done-ness inferred from one channel" gotcha
+# (docs/spec/implementation/gotchas.md), still live because nothing ever
+# proves the refusal wrong. `Poetic-Poems/poetic#297` paid for this three
+# times (2026-10-30, 2026-11-01, 2026-11-02) before anything noticed the
+# shape rather than the individual attempt.
+#
+# `void_refusal_streaks` is the fleet-wide detector, read the same way
+# `blocked_items`/`void_items` above are: the most recent **run** of
+# consecutive void-refused `attempt-failed` events for one repo+item, with
+# no `unblocked` or `item-void` in between to break it. A run of one is the
+# ordinary, unremarkable case every other block already handles — this
+# exists only to notice the *second* run-mate, the point at which "re-check
+# it" has already cost one full engagement for nothing and is about to cost
+# a second. Deliberately narrower than `blocked_items`' own match: an
+# ordinary block (a red check, an unmerged dependency) is not this shape, and
+# must keep its ordinary re-check — only a `detail` carrying the literal
+# "void refused (" prefix every `void_guard_reason` refusal site writes
+# (`lib/coordinator-phase.sh`'s and `lib/candidate-select.sh`'s own
+# Co-Ordinator-sourced refusal, `lib/enabler.sh`'s Enabler-sourced one) joins
+# a run.
+#
+# This is deliberately *not* a change to `void_guard_reason`'s own
+# corroboration bar — that bar is what stands between this pipeline and the
+# false-void incidents its own header documents, and loosening it is a
+# trust-boundary decision for a human, never a tech-debt item (see the
+# Refiner's own comment on issue #2789). This is a circuit breaker on top of
+# an unchanged bar: it stops paying for the re-check, it never relaxes what
+# the re-check would have accepted.
+VOID_REFUSAL_STREAK_EVENTS="attempt-failed unblocked item-void"
+# shellcheck disable=SC2016  # jq's $e/$aliases, not the shell's.
+VOID_REFUSAL_STREAK_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
+  def is_void_refused: ((.detail // "") | test("^void refused \\("));
+  [ .[] | select((.event == "attempt-failed" or .event == "unblocked" or .event == "item-void")
+                 and (.item // "") != "") ]
+  | group_by(canon_repo(.repo // "") + "|" + .item)
+  | map(
+      (sort_by(.ts)) as $seq
+      | (reduce $seq[] as $e (
+          {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null};
+          if ($e.event == "unblocked" or $e.event == "item-void") then
+            {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null}
+          elif ($e.event == "attempt-failed" and ($e | is_void_refused)) then
+            {count: (.count + 1),
+             first_ts: (if .count == 0 then ($e.ts // null) else .first_ts end),
+             last_ts: ($e.ts // .last_ts),
+             detail: ($e.detail // ""),
+             repo: canon_repo($e.repo // ""), item: $e.item}
+          else
+            {count: 0, first_ts: null, last_ts: null, detail: "", repo: null, item: null}
+          end
+        )) as $run
+      | select($run.count > 0)
+      | $run
+    )
+'
+
+# void_refusal_streaks [LOG_FILE] [ALIASES_JSON]
+# Print, as a JSON array of {repo, item, count, first_ts, last_ts, detail},
+# every repo+item whose most recent run of void-refused `attempt-failed`
+# events (VOID_REFUSAL_STREAK_JQ, above) is non-empty — `count` is the run's
+# own length, `first_ts`/`last_ts` the run's first and newest failure, and
+# `detail` the newest failure's own refusal text, carried for an escalation
+# body to quote. Reads LOG_FILE, or stdin if it is omitted or "-".
+#
+# Always succeeds, printing [] for a missing, empty or unreadable log, on the
+# same "unreadable is not evidence of anything" terms as `blocked_items`/
+# `void_items` above.
+void_refusal_streaks() {
+  local src="${1:--}" aliases="${2:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_fold "$src" "$VOID_REFUSAL_STREAK_JQ" "$VOID_REFUSAL_STREAK_EVENTS" \
+      --argjson aliases "$aliases" 2>/dev/null || true)"
+  fi
+  [[ -n "$out" ]] || out='[]'
+  printf '%s' "$out"
+}
+
+# void_refusal_escalation_candidates THRESHOLD [LOG_FILE] [ALIASES_JSON]
+# `void_refusal_streaks` above, narrowed to the entries whose own `count` has
+# reached THRESHOLD — requirement 34p's own escalation trigger, "before
+# paying for a 3rd wasted engagement" meaning a THRESHOLD of 2: a run of one
+# is still the ordinary case every other block already handles (requirement
+# 18/18a/35a's re-check), and only a run that has already repeated once
+# without anything clearing it in between is worth a human's one-time look.
+# A THRESHOLD that is not a positive integer prints []: 0 (or an unset key
+# upstream) is the feature's off switch, the same convention
+# `crash_loop_verdict` uses for its own THRESHOLD.
+void_refusal_escalation_candidates() {
+  local threshold="${1:-0}" src="${2:--}" aliases="${3:-{\}}" out
+  if ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold < 1 )); then
+    printf '[]'
+    return 0
+  fi
+  out="$(void_refusal_streaks "$src" "$aliases")"
+  jq -c --argjson t "$threshold" '[.[] | select(.count >= $t)]' <<<"$out" 2>/dev/null || printf '[]'
+}
+
+# void_refusal_escalated_since FIRST_TS REPO ITEM < union.jsonl
+# Exit 0 when a `void-refusal-escalated` event for REPO/ITEM already exists
+# at or after FIRST_TS — this exact run has already been escalated, by this
+# node or a peer — and 1 otherwise. Keyed on the run's own first failure, the
+# same reason `crash_loop_escalated_since` (lib/crash-loop.sh) keys on one:
+# a *new* run against the same item, long after the old one's escalation
+# issue closed, has a fresh `first_ts` that postdates every old event, so it
+# escalates afresh rather than reading as already handled forever.
+void_refusal_escalated_since() {
+  local first_ts="$1" repo="$2" item="$3" hits
+  hits="$(jq -r -R -n --arg ts "$first_ts" --arg repo "$repo" --arg item "$item" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "void-refusal-escalated"
+               and (.repo // "") == $repo and ((.item // "") | tostring) == $item
+               and (.ts // "") >= $ts) ]
+    | length
+  ' 2>/dev/null || echo 0)"
+  [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
+}
+
 # void_object_closed_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array of {repo, item}, every void item requirement 34k's
 # act-on-void sweep has already handled — closed the GitHub object for, or

@@ -449,7 +449,7 @@ fi
 # and an eligible set counted before that would hold items this cycle forbids
 # it to select (see that block's own comment, and
 # `coordinator_eligible_items`').
-eligible_items_json="$(coordinator_eligible_items "$ordered_repos_json" "$blocked_json")"
+eligible_items_json="$(coordinator_eligible_items "$ordered_repos_json" "$blocked_json" "${void_refusal_escalated_json:-[]}")"
 eligible_items_total="$(jq 'length' <<<"$eligible_items_json" 2>&1)" \
   || { guard_warn "eligible_items_total" "$eligible_items_total"; eligible_items_total=0; }
 
