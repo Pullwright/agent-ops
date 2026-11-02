@@ -692,6 +692,14 @@ services:
       # absent or stale, which on a `local`/bare node (no sidecar, so no
       # file) is always.
       AGENT_OPS_VIEWER_URL_TEMPLATE: ${AGENT_OPS_VIEWER_URL_TEMPLATE:-}
+      # Optional: how stale the `viewer-probe` service's own file may be
+      # before this container stops folding it in and falls back to its own
+      # direct fetch. Named here for the same allowlist reason every other
+      # variable in this file is — there is no `env_file:` anywhere, so a
+      # variable an operator sets in .env and that no service names reaches
+      # no container at all, however it is spelled there. Left unset, the
+      # script's own default (three times the interval above) applies.
+      HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS: ${HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS:-}
       # Matches the cgroup mount below: this is where *this* container's
       # copy of the host's cgroup tree lands.
       HOST_FACTS_CGROUP_ROOT: /host/sys/fs/cgroup
@@ -932,6 +940,13 @@ services:
       # the same way collector's own loop reads it (see that service's own
       # comment on the `$$`-escaping).
       AGENT_OPS_COLLECTOR_INTERVAL_SECONDS: ${AGENT_OPS_COLLECTOR_INTERVAL_SECONDS:-300}
+      # A route is necessary but not sufficient: this service has one, and
+      # the probe still needs an address the route can carry. `ts-serve.json`
+      # publishes each node's dashboard on `${TS_CERT_DOMAIN}` alone, so the
+      # template's own default — a bare `{node}` — matches neither that
+      # handler nor the certificate served for it, and a node must set this
+      # to the `https://{node}.<tailnet>.ts.net/data.js` form for the probe
+      # to report anything but a failure. See .env.example's own entry.
       AGENT_OPS_VIEWER_URL_TEMPLATE: ${AGENT_OPS_VIEWER_URL_TEMPLATE:-}
     volumes:
       # Read-write, like `collector`'s own mount of the same volume: this
