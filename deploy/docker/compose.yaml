@@ -681,10 +681,16 @@ services:
       HOST_FACTS_IMAGE_REPO: ${HOST_FACTS_IMAGE_REPO:-}
       # Optional: where the viewer-vantage probe (agent-ops#1286) fetches
       # each peer's dashboard data.js. Left unset, the script's own default
-      # (https://{node}/data.js) applies — which this service cannot
-      # currently reach: it carries no tailnet route (see the note below),
-      # so viewer_probe entries degrade to an honest failed-fetch rather
-      # than a wrong success until that wiring exists.
+      # (https://{node}/data.js) applies — which this container cannot
+      # itself reach, carrying no tailnet route of its own. On a `tailnet`
+      # node, the `viewer-probe` service below runs this same probe from
+      # inside the `tailscale` sidecar's namespace and writes its result to
+      # the shared `state` volume; this container folds that file in
+      # instead (`host_facts_viewer_probe_fold_json`,
+      # docs/reference/host-facts-schema.md) and only falls back to its own
+      # direct fetch — the honest failed-fetch below — when that file is
+      # absent or stale, which on a `local`/bare node (no sidecar, so no
+      # file) is always.
       AGENT_OPS_VIEWER_URL_TEMPLATE: ${AGENT_OPS_VIEWER_URL_TEMPLATE:-}
       # Matches the cgroup mount below: this is where *this* container's
       # copy of the host's cgroup tree lands.
@@ -895,6 +901,68 @@ services:
     depends_on:
       - tailscale
       - scheduler
+
+  # Shares the `tailscale` sidecar's namespace, the same way `dashboard`
+  # above does — no new tailnet identity, no new auth key, no credential of
+  # its own (owner decision #1358, agent-ops#2788). `collector` runs on
+  # every node under every profile and can never join this namespace; this
+  # service exists only to give its own `viewer_probe` half a vantage that
+  # actually has a route, writing its result for `collector` to fold in
+  # (see that service's own AGENT_OPS_VIEWER_URL_TEMPLATE comment above).
+  viewer-probe:
+    image: ${AGENT_OPS_IMAGE:-ghcr.io/pullwright/agent-ops:latest}
+    profiles: [tailnet]
+    # Same reasoning as `dashboard`'s own `on-failure:5` above: this
+    # container cannot start at all without `tailscale`'s namespace to
+    # join, and a credential no restart can fix would otherwise retry
+    # forever under `unless-stopped`.
+    restart: on-failure:5
+    command:
+      - bash
+      - -c
+      - |
+        while true; do
+          /app/scripts/collect-viewer-probe.sh || true
+          sleep "$$AGENT_OPS_COLLECTOR_INTERVAL_SECONDS"
+        done
+    environment:
+      NODE_NAME: ${NODE_NAME:-unnamed}
+      AGENT_OPS_SERVICE: viewer-probe
+      # Same interval `collector` re-collects on, read by the loop above
+      # the same way collector's own loop reads it (see that service's own
+      # comment on the `$$`-escaping).
+      AGENT_OPS_COLLECTOR_INTERVAL_SECONDS: ${AGENT_OPS_COLLECTOR_INTERVAL_SECONDS:-300}
+      AGENT_OPS_VIEWER_URL_TEMPLATE: ${AGENT_OPS_VIEWER_URL_TEMPLATE:-}
+    volumes:
+      # Read-write, like `collector`'s own mount of the same volume: this
+      # is the one container that writes state_dir/viewer-probe/<node>.json,
+      # which `collector`'s own collect-host-facts.sh then folds in —
+      # keeping host-facts/<node>.json itself single-writer.
+      - state:/home/agent/.local/state/poetic-agents
+      # entrypoint.sh's own require_writable refuses to start *any* service
+      # whose workspace_root mount it cannot write, so this cannot be
+      # `:ro` even though this container only ever reads the peer
+      # directory under it, to build the probe's own target list (the same
+      # enumeration `collect-host-facts.sh`'s direct-probe fallback uses).
+      - workspaces:/home/agent/.cache/poetic-agents/workspaces
+    # No network stack of its own, like `dashboard` above: it reaches the
+    # tailnet, and the peers it is checking, only through the sidecar.
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    # Small and bursty, the same shape as `collector`'s own ceiling above:
+    # a handful of curl+jq calls per tick, no docker socket, no cgroup
+    # mount.
+    mem_limit: ${AGENT_OPS_VIEWER_PROBE_MEMORY:-256m}
+    cpus: ${AGENT_OPS_VIEWER_PROBE_CPUS:-0.5}
+    pids_limit: ${AGENT_OPS_SIDECAR_PIDS_LIMIT:-256}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${AGENT_OPS_LOG_MAX_SIZE:-10m}
+        max-file: ${AGENT_OPS_LOG_MAX_FILE:-5}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
 
   # --- local profile -----------------------------------------------------
   # The same dashboard for a node with no tailnet, published on the host's
