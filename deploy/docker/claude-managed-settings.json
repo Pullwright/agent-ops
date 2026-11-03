@@ -5,7 +5,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Agent",
+        "matcher": "Bash|Agent|Workflow",
         "hooks": [
           {
             "type": "command",

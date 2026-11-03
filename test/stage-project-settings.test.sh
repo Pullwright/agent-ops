@@ -134,14 +134,14 @@ assert_eq "a policy that does not pin a control does not unlock its keys" \
   "$(STAGE_CLAUDE_MANAGED_SETTINGS="$tmp_dir/weak-policy.json" stage_project_settings_allowed_keys)"
 
 # The shipped policy's own hooks.PreToolUse content (requirement 4m, issue
-# #2778): this is what makes the `hooks` key above inert for anything a
-# checkout's own settings file might add — the managed policy registers the
-# one PreToolUse hook that can ever run, on both tool names the backgrounded-
-# wait ban covers. test/background-wait-guard.test.sh covers the hook
-# script's own deny/allow behaviour; this just pins that the shipped policy
-# still wires it in.
-assert_eq "the shipped policy's PreToolUse matcher covers Bash and Agent" \
-  "Bash|Agent" "$(jq -r '.hooks.PreToolUse[0].matcher' "$policy")"
+# #2778, #2800): this is what makes the `hooks` key above inert for anything
+# a checkout's own settings file might add — the managed policy registers
+# the one PreToolUse hook that can ever run, on every tool name the
+# backgrounded-wait ban covers. test/background-wait-guard.test.sh covers
+# the hook script's own deny/allow behaviour; this just pins that the
+# shipped policy still wires it in.
+assert_eq "the shipped policy's PreToolUse matcher covers Bash, Agent and Workflow" \
+  "Bash|Agent|Workflow" "$(jq -r '.hooks.PreToolUse[0].matcher' "$policy")"
 assert_eq "...pointed at the installed background-wait-guard hook" \
   "/app/scripts/background-wait-guard.sh" \
   "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$policy")"

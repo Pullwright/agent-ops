@@ -1294,7 +1294,7 @@
       "label": "7j",
       "anchor": "impl-ac-7j",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
-      "title": "The backgrounded-wait ban is mechanical, not just prose (requirement"
+      "title": "The backgrounded-wait ban is mechanical, not just prose, for `Bash`,"
     },
     "IMPL C 1": {
       "kind": "impl-c",
@@ -3268,7 +3268,7 @@
       "label": "4m",
       "anchor": "impl-4m",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
-      "title": "A stage cannot end its own turn on a backgrounded wait (issue #2778)."
+      "title": "A stage cannot end its own turn on a backgrounded `Bash`, `Agent` or"
     },
     "IMPL 4i": {
       "kind": "impl",
