@@ -1283,7 +1283,8 @@
    sits in its working directory is exactly as worth keeping regardless of
    which of the three stopped it.
 
-4m. <a id="impl-4m"></a>**A stage cannot end its own turn on a backgrounded wait (issue #2778).**
+4m. <a id="impl-4m"></a>**A stage cannot end its own turn on a backgrounded `Bash`, `Agent` or
+   `Workflow` call (issues #2778, #2800).**
    Every stage prompt states, in prose, that it must wait out a slow command
    or subagent in the foreground rather than end its turn expecting a
    background completion notification this single-invocation harness has no
@@ -1295,18 +1296,24 @@
    is an unenforced invariant, not a prompt gap a fourth restatement fixes.
    `deploy/docker/claude-managed-settings.json`'s `hooks.PreToolUse` registers
    `scripts/background-wait-guard.sh` (logic in `lib/background-wait-guard.sh`)
-   against the matcher `Bash|Agent`, and `allowManagedHooksOnly` (requirement
-   4k) is what makes this the one `PreToolUse` hook that can ever fire, ahead
-   of anything a checkout's own settings file might add. It denies — exit
-   code 2, Claude Code's own documented "show stderr to model and block tool
-   call" contract, with the stderr naming the exact foreground retry — a
-   `Bash` call whose `tool_input.run_in_background` is `true`, and an `Agent`
-   call whose `tool_input.run_in_background` is `true` or absent (the `Agent`
-   tool backgrounds by default when the key is omitted, which is the harness's
-   own default working against it here). Every other tool call, and a `Bash`
-   or `Agent` call with `run_in_background` explicitly `false`, passes through
-   unexamined. The denial is the mechanical backstop; the prose ban in every
-   stage prompt stays in place as defence in depth, since a stage that reads
-   the denial reason and retries in the foreground never needed the hook to
-   begin with.
+   against the matcher `Bash|Agent|Workflow`, and `allowManagedHooksOnly`
+   (requirement 4k) is what makes this the one `PreToolUse` hook that can
+   ever fire, ahead of anything a checkout's own settings file might add. It
+   denies — exit code 2, Claude Code's own documented "show stderr to model
+   and block tool call" contract, with the stderr naming the exact foreground
+   retry — a `Bash` call whose `tool_input.run_in_background` is `true`; an
+   `Agent` call whose `tool_input.run_in_background` is `true` or absent (the
+   `Agent` tool backgrounds by default when the key is omitted, which is the
+   harness's own default working against it here) or whose
+   `tool_input.isolation` is `"remote"` (that mode always backgrounds, so it
+   denies even an explicit `run_in_background: false` — issue #2800); and
+   every `Workflow` call unconditionally, since that tool backgrounds by
+   construction with no `run_in_background` key to set at all. Every other
+   tool call, and a `Bash` or non-`isolation: "remote"` `Agent` call with
+   `run_in_background` explicitly `false`, passes through unexamined. The
+   denial is the mechanical backstop; the prose ban in every stage prompt
+   stays in place as defence in depth, since a stage that reads the denial
+   reason and retries in the foreground never needed the hook to begin with.
+   This covers exactly the three shapes named above — `CronCreate`,
+   `RemoteTrigger` and `Monitor` are not examined by this hook.
 

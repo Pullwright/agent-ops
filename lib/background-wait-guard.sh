@@ -10,10 +10,13 @@
 # `.claude/settings.json` hooks key is loaded but inert once that policy bit
 # is set, so a checkout under review cannot add, remove or shadow this one.
 #
-# Denies a `Bash` call carrying `run_in_background: true`, and an `Agent`
-# call carrying `run_in_background` true or absent (the Agent tool
-# backgrounds by default when the key is omitted) — the two shapes this
-# single-invocation harness can never be woken back up from: there is no
+# Denies a `Bash` call carrying `run_in_background: true`; an `Agent` call
+# carrying `run_in_background` true or absent (the Agent tool backgrounds by
+# default when the key is omitted) or carrying `isolation: "remote"`
+# (`isolation: "remote"` always backgrounds regardless of `run_in_background`
+# — issue #2800); and every `Workflow` call (that tool backgrounds by
+# construction, with no `run_in_background` key to set at all) — the shapes
+# this single-invocation harness can never be woken back up from: there is no
 # later turn here to receive the background completion notification an
 # interactive session would deliver. Every other call is let through
 # unexamined.
@@ -36,7 +39,11 @@ background_wait_guard_reason() {
       ;;
     Agent)
       printf '%s\n' \
-        "Denied: this harness has no later turn to receive an Agent call's background completion notification, so a backgrounded one would idle until the inactivity watchdog kills the stage with nothing recorded — the Agent tool backgrounds by default when run_in_background is omitted, which is exactly the trap. Re-run this exact Agent call with run_in_background: false and wait for it to finish in this same turn."
+        "Denied: this harness has no later turn to receive an Agent call's background completion notification, so a backgrounded one would idle until the inactivity watchdog kills the stage with nothing recorded — the Agent tool backgrounds by default when run_in_background is omitted, and isolation: \"remote\" always backgrounds regardless of run_in_background, which is exactly the trap. Re-run this exact Agent call with run_in_background: false and isolation omitted (or set to a non-remote value), and wait for it to finish in this same turn."
+      ;;
+    Workflow)
+      printf '%s\n' \
+        "Denied: the Workflow tool always runs in the background by construction, with no run_in_background key to set, and this harness has no later turn to receive its completion notification. Do not use the Workflow tool here; use Agent with run_in_background: false (or direct tool calls) and wait for it to finish in this same turn instead."
       ;;
     *)
       printf '%s\n' \
@@ -48,21 +55,34 @@ background_wait_guard_reason() {
 # background_wait_guard_should_deny TOOL_NAME TOOL_INPUT_JSON
 # Exit 0 (deny) or 1 (allow). TOOL_INPUT_JSON is the tool call's own
 # `tool_input` object, as a jq-readable JSON document. A TOOL_INPUT_JSON jq
-# cannot parse is treated as absent (Bash: allow; Agent: deny), since a
-# malformed payload is never evidence that the call is safe to let through.
+# cannot parse is treated as absent (Bash: allow; Agent: deny; Workflow
+# denies whatever its input says), since a malformed payload is never
+# evidence that the call is safe to let through.
 background_wait_guard_should_deny() {
-  local tool_name="$1" tool_input_json="$2" rib
+  local tool_name="$1" tool_input_json="$2" rib isolation
   case "$tool_name" in
     Bash)
       rib="$(jq -r '.run_in_background == true' <<<"$tool_input_json" 2>/dev/null)" || rib=false
       [[ "$rib" == "true" ]]
       ;;
     Agent)
+      # isolation: "remote" always backgrounds regardless of
+      # run_in_background (issue #2800) — checked first since it denies
+      # even an explicit run_in_background: false.
+      isolation="$(jq -r '.isolation // ""' <<<"$tool_input_json" 2>/dev/null)" || isolation=""
+      if [[ "$isolation" == "remote" ]]; then
+        return 0
+      fi
       # `//` cannot tell "false" from "absent" (jq treats `false` itself as
       # the falsy side), so this is spelled as an explicit `if`: deny unless
       # the field is literally `false`.
       rib="$(jq -r 'if .run_in_background == false then false else true end' <<<"$tool_input_json" 2>/dev/null)" || rib=true
       [[ "$rib" == "true" ]]
+      ;;
+    Workflow)
+      # Always backgrounds, by construction, with no run_in_background key
+      # to set — there is no foreground shape to allow.
+      return 0
       ;;
     *)
       return 1
@@ -83,7 +103,7 @@ background_wait_guard_main() {
   tool_input_json="$(jq -c '.tool_input // {}' <<<"$payload" 2>/dev/null)" || tool_input_json="{}"
 
   case "$tool_name" in
-    Bash|Agent) ;;
+    Bash|Agent|Workflow) ;;
     *) return 0 ;;
   esac
 

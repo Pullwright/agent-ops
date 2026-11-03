@@ -699,19 +699,25 @@
    `1` even though requirement 2.2's own count left it untripped; and an
    already-tripped cycle with nothing left to fold in stays tripped without
    its composition line changing.
-7j. <a id="impl-ac-7j"></a>**The backgrounded-wait ban is mechanical, not just prose (requirement
-   4m, issue #2778).** `test/background-wait-guard.test.sh` passes:
-   `background_wait_guard_should_deny` denies `Bash` only when
-   `tool_input.run_in_background` is `true`, and denies `Agent` whenever it
-   is `true` or the key is absent, allowing both only on an explicit
-   `false`, and never denies any other tool name; `background_wait_guard_main`
-   reads a synthetic `{"tool_name":…, "tool_input":…}` PreToolUse payload
-   from stdin and returns 2 with a stderr reason naming a foreground retry
-   for a denied call, 0 with no output otherwise, and 0 for stdin that is not
-   valid JSON; and the installed `scripts/background-wait-guard.sh` behaves
-   identically end to end, as the real hook runner invokes it. The same test
-   and `test/stage-project-settings.test.sh` both pass an assertion that the
-   shipped `deploy/docker/claude-managed-settings.json` registers this hook's
-   installed path against the matcher `Bash|Agent` as a `PreToolUse` command
-   hook, so the policy that makes `hooks` inert for a checkout's own settings
-   file (requirement 4k) is also the one that ships this hook.
+7j. <a id="impl-ac-7j"></a>**The backgrounded-wait ban is mechanical, not just prose, for `Bash`,
+   `Agent` and `Workflow` (requirement 4m, issues #2778, #2800).**
+   `test/background-wait-guard.test.sh` passes: `background_wait_guard_should_deny`
+   denies `Bash` only when `tool_input.run_in_background` is `true`; denies
+   `Agent` whenever `tool_input.run_in_background` is `true` or the key is
+   absent, or whenever `tool_input.isolation` is `"remote"` regardless of
+   `run_in_background` (including an explicit `false`), allowing `Agent`
+   only when `run_in_background` is explicitly `false` and `isolation` is
+   not `"remote"`; denies `Workflow` unconditionally, tool input ignored;
+   and never denies any other tool name. `background_wait_guard_main` reads
+   a synthetic `{"tool_name":…, "tool_input":…}` PreToolUse payload from
+   stdin and returns 2 with a stderr reason naming a foreground retry (or,
+   for `Workflow`, naming that there is none) for a denied call, 0 with no
+   output otherwise, and 0 for stdin that is not valid JSON; and the
+   installed `scripts/background-wait-guard.sh` behaves identically end to
+   end, as the real hook runner invokes it. The same test and
+   `test/stage-project-settings.test.sh` both pass an assertion that the
+   shipped `deploy/docker/claude-managed-settings.json` registers this
+   hook's installed path against the matcher `Bash|Agent|Workflow` as a
+   `PreToolUse` command hook, so the policy that makes `hooks` inert for a
+   checkout's own settings file (requirement 4k) is also the one that ships
+   this hook.
