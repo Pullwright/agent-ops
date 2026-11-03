@@ -321,6 +321,23 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
 
+      # Report-only (issue #2696): findings are logged for a human to read,
+      # but neither a scanner failure nor a found vulnerability fails this
+      # step or the job it's in, so nothing here yet blocks a merge or a
+      # publish. Converting it into a required check is deliberately
+      # deferred until report-only runs have proven the signal isn't noise.
+      # `continue-on-error: true` on top of the scanner's own non-failing
+      # exit code means a transient failure to reach Trivy's vulnerability
+      # database can't block the build either.
+      - name: Scan the image for known vulnerabilities
+        if: env.DOCS_ONLY != 'true'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: agent-ops:ci
+          format: table
+          exit-code: '0'
+
       # The acceptance checks of docs/spec/implementation/acceptance-checks/acceptance-checks-01.md (1b), run
       # here so a broken image cannot reach a node. `docker run` goes through
       # the entrypoint, which is itself part of what is being tested: it must
