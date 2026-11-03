@@ -1298,7 +1298,13 @@
    `scripts/background-wait-guard.sh` (logic in `lib/background-wait-guard.sh`)
    against the matcher `Bash|Agent|Workflow`, and `allowManagedHooksOnly`
    (requirement 4k) is what makes this the one `PreToolUse` hook that can
-   ever fire, ahead of anything a checkout's own settings file might add. It
+   ever fire, ahead of anything a checkout's own settings file might add.
+   Both files are installed root-owned at
+   `/etc/claude-code/background-wait-guard/{scripts,lib}/background-wait-guard.sh`,
+   outside `/app` (which `agent` owns), in the same `RUN` block that installs
+   the policy itself — otherwise a stage could disarm this hook by editing
+   its own checkout even though it could never touch the root-owned policy
+   that invokes it (issue #2801). It
    denies — exit code 2, Claude Code's own documented "show stderr to model
    and block tool call" contract, with the stderr naming the exact foreground
    retry — a `Bash` call whose `tool_input.run_in_background` is `true`; an

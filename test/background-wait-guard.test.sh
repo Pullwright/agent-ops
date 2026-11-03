@@ -161,7 +161,7 @@ assert_eq "the shipped policy's PreToolUse matcher covers Bash, Agent and Workfl
   "Bash|Agent|Workflow" \
   "$(jq -r '.hooks.PreToolUse[0].matcher' "$policy")"
 assert_eq "...and points at this installed hook" \
-  "/app/scripts/background-wait-guard.sh" \
+  "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh" \
   "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$policy")"
 assert_eq "...as a command-type hook" \
   "command" \
