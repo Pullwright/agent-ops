@@ -55,8 +55,9 @@ background_wait_guard_reason() {
 # background_wait_guard_should_deny TOOL_NAME TOOL_INPUT_JSON
 # Exit 0 (deny) or 1 (allow). TOOL_INPUT_JSON is the tool call's own
 # `tool_input` object, as a jq-readable JSON document. A TOOL_INPUT_JSON jq
-# cannot parse is treated as absent (Bash: allow; Agent: deny), since a
-# malformed payload is never evidence that the call is safe to let through.
+# cannot parse is treated as absent (Bash: allow; Agent: deny; Workflow
+# denies whatever its input says), since a malformed payload is never
+# evidence that the call is safe to let through.
 background_wait_guard_should_deny() {
   local tool_name="$1" tool_input_json="$2" rib isolation
   case "$tool_name" in
