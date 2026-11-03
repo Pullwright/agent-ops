@@ -202,6 +202,22 @@ assert_eq "the plain issues token admits every band" '["11","12","13"]' \
   "$(jq -c '[.[] | select(.source == "issues") | .item]' \
      <<<"$(coordinator_eligible_items "$(jq -c 'map(.sources = ["issues"])' <<<"$eligible_repos")" '[]')")"
 
+# escalated (requirement 34p, issue #2789): identical treatment to blocked —
+# an escalated issue is never offered to the Co-Ordinator either, so it must
+# not owe an account.
+assert_eq "an escalated issue is not eligible, same as a blocked one" \
+  '["11"]' "$(jq -c '[.[] | select(.source == "issues") | .item]' \
+     <<<"$(coordinator_eligible_items "$eligible_repos" '[]' '[{"repo":"org/a","item":"13"}]')")"
+assert_eq "a repo-less escalated entry suppresses that issue in every repo too" \
+  '["13"]' "$(jq -c '[.[] | select(.source == "issues") | .item]' \
+     <<<"$(coordinator_eligible_items "$eligible_repos" '[]' '[{"item":"11"}]')")"
+assert_eq "with no escalated argument at all, the default ([]) excludes nothing" \
+  '["11","13"]' "$(jq -c '[.[] | select(.source == "issues") | .item]' \
+     <<<"$(coordinator_eligible_items "$eligible_repos" '[]')")"
+assert_eq "malformed escalated degrades to unfiltered, excluding nothing" \
+  '["11","13"]' "$(jq -c '[.[] | select(.source == "issues") | .item]' \
+     <<<"$(coordinator_eligible_items "$eligible_repos" '[]' 'not json')")"
+
 # Back-pressure (requirement 2.2a) narrows `sources` to lib/handoff.sh's four
 # finishing bands (sourced above, issue #431) and empties `issues`/`tech_debt`,
 # but leaves `findings` and `human_visibility` populated.

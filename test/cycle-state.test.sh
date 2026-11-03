@@ -494,6 +494,232 @@ printf '7\n' >> "$log"
 assert_eq "a non-object record aborts the fold, as the whole-array read did" "[]" "$(void_items "$log")"
 assert_eq "  ... from stdin too" "[]" "$(void_items - < "$log")"
 
+# --- void_refusal_streaks / void_refusal_escalation_candidates / -------------
+# --- void_refusal_escalated_since (requirement 34p, issue #2789) -------------
+#
+# The exact shape issue #2789 reports: a void verdict void_guard_reason
+# refuses is recorded blocked with a detail carrying the literal "void
+# refused (" prefix every refusal site writes (lib/coordinator-phase.sh,
+# lib/candidate-select.sh, lib/enabler.sh).
+
+assert_eq "missing log yields no void-refusal streaks" "[]" "$(void_refusal_streaks "$tmp_dir/nonexistent.jsonl")"
+
+: > "$log"
+assert_eq "empty log yields no void-refusal streaks" "[]" "$(void_refusal_streaks "$log")"
+
+# A single void-refusal is still the ordinary case every other block already
+# handles — acceptance criterion 2: unaffected, not an escalation candidate.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"Poetic-Poems/poetic","item":"297","detail":"void refused (not corroborated: ...). The Implementer's stated reason was: already done"}
+EOF
+assert_eq "a single void-refusal streaks at 1" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+assert_eq "a single void-refusal is still an ordinary blocked item" \
+  "297" "$(blocked_items "$log" | jq -r '.[].item')"
+assert_eq "...and is not yet an escalation candidate at threshold 2" \
+  "[]" "$(void_refusal_escalation_candidates 2 "$log")"
+
+# Acceptance criterion 1: two consecutive void-refusals, nothing clearing the
+# block in between, is an escalation candidate.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"Poetic-Poems/poetic","item":"297","detail":"void refused (not corroborated: ...). The Implementer's stated reason was: already done"}
+{"ts":"2026-11-01T19:25:18Z","event":"attempt-failed","stage":"implementer","repo":"Poetic-Poems/poetic","item":"297","detail":"void refused (not corroborated: ...). The Implementer's stated reason was: already done"}
+EOF
+assert_eq "two consecutive void-refusals streak at 2" \
+  "2" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+assert_eq "...the run's own first_ts is the first failure's" \
+  "2026-10-30T00:00:00Z" "$(void_refusal_streaks "$log" | jq -r '.[0].first_ts')"
+assert_eq "...and is an escalation candidate at threshold 2" \
+  "297" "$(void_refusal_escalation_candidates 2 "$log" | jq -r '.[0].item')"
+assert_eq "...but not yet at threshold 3" \
+  "[]" "$(void_refusal_escalation_candidates 3 "$log")"
+
+# An intervening unblocked breaks the run: the next failure starts a fresh
+# count of 1, not 2 — a different run, not a continuation.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"unblocked","repo":"o/r","item":"5"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "an intervening unblocked breaks the run" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+assert_eq "...so the run's first_ts is the post-unblock failure's" \
+  "2026-11-01T00:00:00Z" "$(void_refusal_streaks "$log" | jq -r '.[0].first_ts')"
+
+# An intervening item-void breaks the run the identical way.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"item-void","repo":"o/r","item":"5","detail":"a human corroborated it directly"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "an intervening item-void breaks the run too" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+
+# A repo-less clearing event breaks the run in every repo, the same rule
+# LATEST_UNRESOLVED_JQ already applies to blocked/void — and the only rule
+# under which requirement 34p's own escape hatch works at all: the
+# Co-Ordinator's own `unblocked` report carries a bare item id and no repo
+# (`log_unblocked_items`, lib/candidate-select.sh), and so does a human's
+# hand-appended one (requirements 34, 34c).
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-11-01T00:00:00Z","event":"unblocked","item":"5"}
+EOF
+assert_eq "a repo-less unblocked breaks the repo-scoped run it was written to clear" \
+  "[]" "$(void_refusal_streaks "$log")"
+assert_eq "...so the item is no longer an escalation candidate" \
+  "[]" "$(void_refusal_escalation_candidates 2 "$log")"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"item-void","item":"5","detail":"a human corroborated it by hand"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "a repo-less item-void breaks it the identical way, and a later failure starts a fresh run" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+assert_eq "...whose first_ts is the post-clear failure's" \
+  "2026-11-01T00:00:00Z" "$(void_refusal_streaks "$log" | jq -r '.[0].first_ts')"
+
+# A clear that predates every failure in the log clears nothing: the run
+# after it is a run, not a suppressed one.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-29T00:00:00Z","event":"unblocked","item":"5"}
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"5","detail":"void refused (x). reason"}
+EOF
+assert_eq "a clear predating every failure suppresses no run" \
+  "2" "$(void_refusal_escalation_candidates 2 "$log" | jq -r '.[0].count')"
+
+# An ordinary (non-void-refusal) attempt-failed never joins a run: a red
+# check or an unmerged dependency must keep its ordinary re-check, unaffected
+# by this circuit breaker.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"6","detail":"dependency unmerged"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"6","detail":"void refused (x). reason"}
+EOF
+assert_eq "an ordinary failure does not join a void-refusal run" \
+  "1" "$(void_refusal_streaks "$log" | jq -r '.[0].count')"
+
+# An item id is only unique within its repo, the same discipline blocked_items
+# already observes above.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"9","detail":"void refused (x). reason"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"9","detail":"void refused (x). reason"}
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/b","item":"9","detail":"void refused (x). reason"}
+EOF
+assert_eq "a repo+item pair counts independently of the same id in another repo" \
+  "1" "$(void_refusal_escalation_candidates 2 "$log" | jq 'length')"
+assert_eq "...naming the right repo" \
+  "o/a" "$(void_refusal_escalation_candidates 2 "$log" | jq -r '.[0].repo')"
+
+# The slug-rename alias map (issue #2064/#2359), the same convention
+# blocked_items/void_items already observe above.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"old/slug","item":"9","detail":"void refused (x). reason"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"new/slug","item":"9","detail":"void refused (x). reason"}
+EOF
+assert_eq "an aliased repo-rename joins the same run" \
+  "2" "$(void_refusal_streaks "$log" '{"old/slug":"new/slug"}' | jq -r '.[0].count')"
+assert_eq "...and is reported under the current slug" \
+  "new/slug" "$(void_refusal_streaks "$log" '{"old/slug":"new/slug"}' | jq -r '.[0].repo')"
+
+assert_eq "a threshold of 0 is the off switch" "[]" \
+  "$(void_refusal_escalation_candidates 0 "$log")"
+assert_eq "a non-numeric threshold is also the off switch" "[]" \
+  "$(void_refusal_escalation_candidates not-a-number "$log")"
+
+# --- void_refusal_escalated_since (the escalation filer's own dedup) ---
+cat > "$log" <<'EOF'
+{"ts":"2026-11-02T06:00:00Z","event":"void-refusal-escalated","repo":"Poetic-Poems/poetic","item":"297"}
+EOF
+assert_eq "a run already escalated at or after its own first_ts dedups" \
+  "0" "$(void_refusal_escalated_since "2026-10-30T00:00:00Z" "Poetic-Poems/poetic" "297" < "$log"; echo $?)"
+assert_eq "a fresh run (first_ts after the old escalation) does not dedup" \
+  "1" "$(void_refusal_escalated_since "2026-11-03T00:00:00Z" "Poetic-Poems/poetic" "297" < "$log"; echo $?)"
+assert_eq "a different item is never matched by another item's escalation" \
+  "1" "$(void_refusal_escalated_since "2026-10-30T00:00:00Z" "Poetic-Poems/poetic" "298" < "$log"; echo $?)"
+
+# --- void_refusal_escalate (requirement 34p's action, lib/enabler.sh) --------
+# Lifted the same way the exclude_blocked_or_void_* functions are below: a
+# change to the real function is what this exercises. `create_escalation_
+# issue` and `log_event` are stubbed so no network call is made and the
+# escalation's own effect (what it logs, what body it composes) is what gets
+# asserted.
+extract_enabler_function() {  # extract_enabler_function <name>
+  awk -v fn="$1" '
+    $0 ~ ("^" fn "\\(\\) \\{") { on = 1 }
+    on                          { print }
+    on && /^}$/                 { exit }
+  ' "$SCRIPT_DIR/lib/enabler.sh"
+}
+vre_fn_src="$(extract_enabler_function void_refusal_escalate)"
+if [[ "$vre_fn_src" != *"void_refusal_escalate()"* ]]; then
+  printf 'FAIL - could not extract void_refusal_escalate from lib/enabler.sh (renamed or moved?)\n'
+  exit 1
+fi
+
+(
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
+  cycle_dir="$tmp_dir/cycle"
+  mkdir -p "$cycle_dir"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
+  union_log="$tmp_dir/nonexistent-union.jsonl"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
+  enabler_escalation_label="enabler-escalation"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
+  enabler_assignee="maintainer"
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
+  create_escalation_issue() {  # stub: record its own args, fabricate a result
+    printf '%s\n' "$*" > "$tmp_dir/create_escalation_issue.argv"
+    cat "$5" > "$tmp_dir/create_escalation_issue.body" 2>/dev/null || true
+    printf '42\thttps://github.com/Poetic-Poems/poetic/issues/42'
+  }
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
+  log_event() {  # stub: record what got logged
+    printf '%s\t%s\n' "$1" "$2" >> "$tmp_dir/log_event.jsonl"
+  }
+  eval "$vre_fn_src"
+  : > "$tmp_dir/log_event.jsonl"
+  void_refusal_escalate '{"repo":"Poetic-Poems/poetic","item":"297","count":2,"first_ts":"2026-10-30T00:00:00Z","last_ts":"2026-11-01T19:25:18Z","detail":"void refused (not corroborated). The Implementer'"'"'s stated reason was: already done"}'
+  exit 0
+) >/dev/null 2>&1
+assert_eq "void_refusal_escalate files via create_escalation_issue, labelled" \
+  "1" "$(grep -c "enabler-escalation" "$tmp_dir/create_escalation_issue.argv" 2>/dev/null || echo 0)"
+# shellcheck disable=SC2016  # The backtick is literal Markdown in the escalation body, not an expansion.
+assert_eq "...naming the item ref in the body footer" \
+  "1" "$(grep -c 'Item: `void-refusal:Poetic-Poems/poetic#297`' "$tmp_dir/create_escalation_issue.body" 2>/dev/null || echo 0)"
+assert_eq "...quoting the most recent refusal's own detail" \
+  "1" "$(grep -qF "not corroborated). The Implementer's stated reason was: already done" "$tmp_dir/create_escalation_issue.body" 2>/dev/null && echo 1 || echo 0)"
+assert_eq "...naming the gotcha" \
+  "1" "$(grep -c "Done-ness inferred from one channel" "$tmp_dir/create_escalation_issue.body" 2>/dev/null || echo 0)"
+assert_eq "...and logs void-refusal-escalated with the issue it created" \
+  "1" "$(grep -c 'void-refusal-escalated.*"issue_number":42' "$tmp_dir/log_event.jsonl" 2>/dev/null || echo 0)"
+
+# A run already escalated (its own first_ts covered by a void-refusal-escalated
+# event on $union_log) costs no create_escalation_issue call at all.
+(
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below.
+  cycle_dir="$tmp_dir/cycle2"
+  mkdir -p "$cycle_dir"
+  union_log="$tmp_dir/already-escalated.jsonl"
+  printf '{"ts":"2026-11-02T00:00:00Z","event":"void-refusal-escalated","repo":"Poetic-Poems/poetic","item":"297"}\n' > "$union_log"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below, on the path this dedup never reaches.
+  enabler_escalation_label="enabler-escalation"
+  # shellcheck disable=SC2034  # Read by the eval'd void_refusal_escalate below, on the path this dedup never reaches.
+  enabler_assignee="maintainer"
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below — never reached once the dedup short-circuits.
+  create_escalation_issue() { printf 'CALLED' > "$tmp_dir/create_escalation_issue.called"; printf '1\thttps://x'; }
+  # shellcheck disable=SC2317,SC2329  # invoked only by the real void_refusal_escalate, eval'd below.
+  log_event() { :; }
+  eval "$vre_fn_src"
+  rm -f "$tmp_dir/create_escalation_issue.called"
+  void_refusal_escalate '{"repo":"Poetic-Poems/poetic","item":"297","count":2,"first_ts":"2026-10-30T00:00:00Z","last_ts":"2026-11-01T19:25:18Z","detail":"void refused (x)"}'
+  exit 0
+) >/dev/null 2>&1
+assert_eq "an already-escalated run never calls create_escalation_issue again" \
+  "0" "$([[ -f "$tmp_dir/create_escalation_issue.called" ]] && echo 1 || echo 0)"
+
 # --- void_object_closed_items (requirement 34k) ---
 
 assert_eq "missing log yields no closed-void items" "[]" \
@@ -1249,6 +1475,22 @@ out="$(exclude_blocked_or_void_items "$finding_cands" "org/b" "$finding_blocked"
 assert_eq "the same block/void does not reach a different repo's findings" \
   "3" "$(jq 'length' <<<"$out")"
 
+# --- exclude_blocked_or_void_items: a 5th, escalated argument (requirement ---
+# --- 34p, issue #2789) drops unconditionally, the same as void -------------
+finding_escalated='[{"repo":"org/a","item":"code-scanning-alert-4","ts":"2026-11-02T00:00:00Z"}]'
+out="$(exclude_blocked_or_void_items "$finding_cands" "org/a" "$finding_blocked" "$finding_void" "$finding_escalated")"
+assert_eq "an escalated item is dropped alongside the blocked/void ones" \
+  "0" "$(jq 'length' <<<"$out")"
+out="$(exclude_blocked_or_void_items "$finding_cands" "org/b" "$finding_blocked" "$finding_void" "$finding_escalated")"
+assert_eq "...but not for a different repo" \
+  "3" "$(jq 'length' <<<"$out")"
+assert_eq "an omitted 5th argument excludes nothing new (unchanged for existing callers)" \
+  '["code-scanning-alert-4"]' \
+  "$(jq -c 'map(.ref)' <<<"$(exclude_blocked_or_void_items "$finding_cands" "org/a" "$finding_blocked" "$finding_void")")"
+assert_eq "malformed escalated degrades to excluding nothing new" \
+  '["code-scanning-alert-4"]' \
+  "$(jq -c 'map(.ref)' <<<"$(exclude_blocked_or_void_items "$finding_cands" "org/a" "$finding_blocked" "$finding_void" 'not json')")"
+
 # --- exclude_decision_pending_items: a pending decision withholds the item ---
 # --- from Co-Ordinator ranking entirely, but only where some actor — a    ---
 # --- Refiner engagement — can later lift it (requirement 36d,            ---
@@ -1335,6 +1577,20 @@ assert_eq "  ... and exclude_blocked_or_void_issues drops it too" \
 assert_eq "a fresh blocked issue (per needs_mandatory_reread) is due a re-read" \
   "true" "$(needs_mandatory_reread "2026-07-30T00:00:00Z" "$block_52")"
 assert_eq "  ... and exclude_blocked_or_void_issues keeps it, for that re-read" \
+  '["52"]' "$(jq -c 'map(.ref)' <<<"$(exclude_blocked_or_void_issues "$fresh_cands" "o/r" "$blocked_52" '[]')")"
+
+# --- exclude_blocked_or_void_issues: an escalated issue gets none of ----------
+# --- requirement 18a's live-re-read allowance (requirement 34p, issue #2789) --
+# A `fresh_cands` entry (thread moved since the block, ordinarily due a
+# re-read) is dropped outright once it is also escalated — the whole point of
+# the circuit breaker is that this item's own history is what proves a fresh
+# thread will never settle it, so it must not get the allowance back.
+iss_escalated='[{"repo":"o/r","item":"52","ts":"2026-11-02T00:00:00Z"}]'
+assert_eq "an escalated issue is dropped even though its thread moved" \
+  "0" "$(jq 'length' <<<"$(exclude_blocked_or_void_issues "$fresh_cands" "o/r" "$blocked_52" '[]' "$iss_escalated")")"
+assert_eq "...but not for a different repo" \
+  '["52"]' "$(jq -c 'map(.ref)' <<<"$(exclude_blocked_or_void_issues "$fresh_cands" "o/other" "$blocked_52" '[]' "$iss_escalated")")"
+assert_eq "an omitted escalated argument changes nothing for existing callers" \
   '["52"]' "$(jq -c 'map(.ref)' <<<"$(exclude_blocked_or_void_issues "$fresh_cands" "o/r" "$blocked_52" '[]')")"
 
 # --- exclude_blocked_or_void_issues: the general fail-safe terms --------------

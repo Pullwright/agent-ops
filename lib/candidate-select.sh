@@ -374,21 +374,31 @@ emit_first_seen() {  # <repo> <source> <candidates-json>
 # largest and its "heavily voided" misreading most tempting. A here-string
 # rather than a pipe, for requirement 4c's reason: under `pipefail` a
 # producer's SIGPIPE must not become this call's status.
-exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <void-json>
-  local candidates="$1" repo="$2" blocked="${3:-[]}" void="${4:-[]}" docs
+exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <void-json> [escalated-json]
+  local candidates="$1" repo="$2" blocked="${3:-[]}" void="${4:-[]}" escalated="${5:-[]}" docs
   jq -e 'type == "array"' <<<"$blocked" >/dev/null 2>&1 || blocked='[]'
   jq -e 'type == "array"' <<<"$void" >/dev/null 2>&1 || void='[]'
-  docs="$(printf '%s\n' "$candidates" "$blocked" "$void")"
+  jq -e 'type == "array"' <<<"$escalated" >/dev/null 2>&1 || escalated='[]'
+  docs="$(printf '%s\n' "$candidates" "$blocked" "$void" "$escalated")"
   # TD-PPagop-26081407: the `|| printf` below passes test 2 — it falls back to
   # the pre-filter $candidates, a value the caller already accepted, not a
   # fabricated empty.
+  #
+  # `escalated` (requirement 34p, issue #2789) drops exactly like `void`: a
+  # repeated void-refusal that reached its own threshold is excluded
+  # unconditionally, never offered back once a human's escalation issue
+  # closes the loop — `void_refusal_escalation_candidates` (lib/cycle-
+  # state.sh) is the one source of this array, so an empty default here
+  # changes nothing for every existing caller that does not pass one.
   jq -nc --arg repo "$repo" '
-    input as $candidates | input as $blocked | input as $void
+    input as $candidates | input as $blocked | input as $void | input as $escalated
     | [ $candidates[] | select(((.ref // null) as $r
                      | $r != null
                        and ($blocked | any(((.item // "") | tostring) == $r
                                            and ((.repo // "") == "" or (.repo // "") == $repo))) == false
                        and ($void | any(((.item // "") | tostring) == $r
+                                        and ((.repo // "") == "" or (.repo // "") == $repo))) == false
+                       and ($escalated | any(((.item // "") | tostring) == $r
                                         and ((.repo // "") == "" or (.repo // "") == $repo))) == false)) ]
   ' <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
 }
@@ -1170,20 +1180,30 @@ compose_selected_candidate_text() {  # <cand-json> <ordered-repos-json> <refinem
 # stdin, never in argv, for requirement 4g's reason (see
 # exclude_blocked_or_void_items's own comment): this function shares that
 # call's oversized-void exposure exactly.
-exclude_blocked_or_void_issues() {  # <candidates-json> <repo> <blocked-json> <void-json>
-  local candidates="$1" repo="$2" blocked="${3:-[]}" void="${4:-[]}" docs
+exclude_blocked_or_void_issues() {  # <candidates-json> <repo> <blocked-json> <void-json> [escalated-json]
+  local candidates="$1" repo="$2" blocked="${3:-[]}" void="${4:-[]}" escalated="${5:-[]}" docs
   jq -e 'type == "array"' <<<"$blocked" >/dev/null 2>&1 || blocked='[]'
   jq -e 'type == "array"' <<<"$void" >/dev/null 2>&1 || void='[]'
-  docs="$(printf '%s\n' "$candidates" "$blocked" "$void")"
+  jq -e 'type == "array"' <<<"$escalated" >/dev/null 2>&1 || escalated='[]'
+  docs="$(printf '%s\n' "$candidates" "$blocked" "$void" "$escalated")"
   # TD-PPagop-26081407: the `|| printf` below passes test 2 — it falls back to
   # the pre-filter $candidates, a value the caller already accepted, not a
   # fabricated empty.
+  #
+  # `escalated` (requirement 34p, issue #2789) drops unconditionally, like
+  # `void` just below it and unlike `blocked`: a repeated void-refusal that
+  # reached its own threshold gets none of requirement 18a's live-re-read
+  # allowance, because that allowance exists to let fresh thread evidence
+  # unblock an item, and this item's own repeated history is exactly what
+  # proves fresh thread evidence will never settle it — only a human closing
+  # the escalation issue this run raised does.
   jq -nc --arg repo "$repo" '
     def in_repo($e): ($e.repo // "") == "" or ($e.repo // "") == $repo;
-    input as $candidates | input as $blocked | input as $void
+    input as $candidates | input as $blocked | input as $void | input as $escalated
     | [ $candidates[] | . as $c | (($c.ref // null) as $r
         | select($r != null)
         | select(($void | any(((.item // "") | tostring) == $r and in_repo(.))) == false)
+        | select(($escalated | any(((.item // "") | tostring) == $r and in_repo(.))) == false)
         | ([ $blocked[] | select(((.item // "") | tostring) == $r and in_repo(.)) ]) as $matches
         | select(
             ($matches | length) == 0
@@ -1364,14 +1384,23 @@ coordinator_unassessable_items() {  # <eligible-json> <trimmed-json>
 # candidate test", which is the prompt's own words for all five of them. A jq
 # failure yields `[]` — no corroboration rather than a false one — on the same
 # fail-open terms as every exclusion above.
-coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
-  local repos="${1:-[]}" blocked="${2:-[]}" out
+coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json> [escalated-json]
+  local repos="${1:-[]}" blocked="${2:-[]}" escalated="${3:-[]}" out
   jq -e 'type == "array"' <<<"$repos" >/dev/null 2>&1 || repos='[]'
   jq -e 'type == "array"' <<<"$blocked" >/dev/null 2>&1 || blocked='[]'
+  jq -e 'type == "array"' <<<"$escalated" >/dev/null 2>&1 || escalated='[]'
   # TD-PPagop-26081407: like unaccounted_items, this is the Co-Ordinator's own
   # eligible-set denominator (requirement 3x) -- a jq failure here reading as
   # `[]` would silently tell the fleet nothing was ever selectable.
-  out="$(printf '%s\n%s\n' "$repos" "$blocked" | jq -nc '
+  #
+  # `escalated` (requirement 34p, issue #2789) is folded into the `issues`
+  # band's own exclusion the identical way `blocked` already is, below: an
+  # escalated issue is never offered to the Co-Ordinator, by construction
+  # (`exclude_blocked_or_void_issues` drops it unconditionally before this
+  # function ever sees `.issues`), so demanding an account for it here would
+  # be exactly the "account for an item the Script did not offer" mistake
+  # `blocked`'s own comment above already rules out.
+  out="$(printf '%s\n%s\n%s\n' "$repos" "$blocked" "$escalated" | jq -nc '
     def listed($srcs; $s): (($srcs // []) | index($s)) != null;
     def band($r; $srcs; $arr; $src):
       if (listed($srcs; $src) | not) then empty
@@ -1379,12 +1408,17 @@ coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
            | {repo: $r, item: ((.ref // "") | tostring), source: $src}
            | select(.item != "")
       end;
-    input as $repos | input as $blocked
+    input as $repos | input as $blocked | input as $escalated
     | ([ $blocked[]? | {key: ((.repo // "") + "\u0000" + ((.item // "") | tostring)), value: true} ]
        | from_entries) as $blocked_here
     | ([ $blocked[]? | select((.repo // "") == "")
                      | {key: ((.item // "") | tostring), value: true} ]
        | from_entries) as $blocked_anywhere
+    | ([ $escalated[]? | {key: ((.repo // "") + "\u0000" + ((.item // "") | tostring)), value: true} ]
+       | from_entries) as $escalated_here
+    | ([ $escalated[]? | select((.repo // "") == "")
+                       | {key: ((.item // "") | tostring), value: true} ]
+       | from_entries) as $escalated_anywhere
     | [ $repos[]
         | . as $e | (.slug // "") as $r | (.sources // []) as $srcs
         | ( band($r; $srcs; [($e.findings // [])[] | select((.source // "") == "security")]; "security"),
@@ -1407,7 +1441,9 @@ coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
               | {repo: $r, item: ((.ref // "") | tostring), source: "issues"}
               | select(.item != "")
               | select((($blocked_here[(.repo + "\u0000" + .item)] // false) | not)
-                       and (($blocked_anywhere[.item] // false) | not)) ) ) ]
+                       and (($blocked_anywhere[.item] // false) | not)
+                       and (($escalated_here[(.repo + "\u0000" + .item)] // false) | not)
+                       and (($escalated_anywhere[.item] // false) | not)) ) ) ]
     ' 2>&1)" || { guard_warn "coordinator_eligible_items" "$out"; out='[]'; }
   printf '%s' "$out"
 }

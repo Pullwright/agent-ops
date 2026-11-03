@@ -1296,6 +1296,13 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
       "title": "The backgrounded-wait ban is mechanical, not just prose, for `Bash`,"
     },
+    "IMPL AC 34p": {
+      "kind": "impl-ac",
+      "label": "34p",
+      "anchor": "impl-ac-34p",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
+      "title": "A repeated void-refusal is escalated once and stops re-selecting"
+    },
     "IMPL C 1": {
       "kind": "impl-c",
       "label": "1",
@@ -2751,6 +2758,13 @@
       "anchor": "impl-34o",
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
       "title": "A refined specification is exactly what a `needs-refinement` block was"
+    },
+    "IMPL 34p": {
+      "kind": "impl",
+      "label": "34p",
+      "anchor": "impl-34p",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "title": "A void `void_guard_reason` refuses twice in a row, with nothing clearing"
     },
     "IMPL 39": {
       "kind": "impl",
