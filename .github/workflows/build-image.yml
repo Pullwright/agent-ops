@@ -420,6 +420,11 @@ jobs:
       # so its ownership and the write refusal are asserted here too. The
       # Dockerfile's own `test -x` cannot stand in for this: it runs as root
       # at build time and would pass just as happily on an agent-owned copy.
+      #
+      # The policy's own parent directory has to stay root-owned too (issue
+      # #2816): write access to /etc/claude-code would let a stage delete and
+      # recreate the policy even though the file's own mode and ownership,
+      # checked just above, read correctly on their own.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |
@@ -430,6 +435,8 @@ jobs:
             if touch /etc/claude-code/managed-settings.json 2>/dev/null; then
               echo "agent can write the managed policy" >&2; exit 1
             fi
+            owner="$(stat -c %U:%a /etc/claude-code)"
+            [ "$owner" = "root:755" ] || { echo "/etc/claude-code is $owner, not root:755" >&2; exit 1; }
             guard=/etc/claude-code/background-wait-guard
             for hook in "$guard/scripts/background-wait-guard.sh" "$guard/lib/background-wait-guard.sh"; do
               owner="$(stat -c %U:%a "$hook")"
