@@ -391,6 +391,12 @@ jobs:
       # policy; the probe's `claude` runs as the stage user through the shim,
       # as every stage's does. The control run removes the policy first and
       # must see all four planted commands run, or the check proves nothing.
+      #
+      # The hook the policy names (requirement 4m) is only as tamper-proof as
+      # the policy itself if `agent` cannot rewrite it either (issue #2801),
+      # so its ownership and the write refusal are asserted here too. The
+      # Dockerfile's own `test -x` cannot stand in for this: it runs as root
+      # at build time and would pass just as happily on an agent-owned copy.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |
@@ -401,6 +407,14 @@ jobs:
             if touch /etc/claude-code/managed-settings.json 2>/dev/null; then
               echo "agent can write the managed policy" >&2; exit 1
             fi
+            guard=/etc/claude-code/background-wait-guard
+            for hook in "$guard/scripts/background-wait-guard.sh" "$guard/lib/background-wait-guard.sh"; do
+              owner="$(stat -c %U:%a "$hook")"
+              [ "$owner" = "root:755" ] || { echo "$hook is $owner, not root:755" >&2; exit 1; }
+              if touch "$hook" 2>/dev/null; then
+                echo "agent can write $hook" >&2; exit 1
+              fi
+            done
             /app/scripts/claude-policy-probe.sh --expect blocked
           '
           docker run --rm --network none --user root --entrypoint bash agent-ops:ci -c '

@@ -5,11 +5,13 @@
 # All of the logic lives in lib/background-wait-guard.sh, which this only
 # sources and calls; see that file's own header for what it denies and why.
 #
-# Installed in the image at the fixed path /app/scripts/background-wait-guard.sh
-# (deploy/docker/Dockerfile's COPY --chown=agent:agent . /app), which is what
-# the managed policy's hooks.PreToolUse command names — independent of
-# whatever repository a stage's own working directory happens to be a
-# checkout of.
+# Installed root-owned, outside /app (which `agent` owns), at the fixed path
+# /etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh
+# (deploy/docker/Dockerfile's managed-policy RUN block, alongside the policy
+# itself), which is what the managed policy's hooks.PreToolUse command names
+# — independent of whatever repository a stage's own working directory
+# happens to be a checkout of, and not rewritable by a stage the way the
+# /app checkout it came from is (issue #2801).
 
 set -uo pipefail
 

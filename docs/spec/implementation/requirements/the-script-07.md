@@ -1298,7 +1298,20 @@
    `scripts/background-wait-guard.sh` (logic in `lib/background-wait-guard.sh`)
    against the matcher `Bash|Agent|Workflow`, and `allowManagedHooksOnly`
    (requirement 4k) is what makes this the one `PreToolUse` hook that can
-   ever fire, ahead of anything a checkout's own settings file might add. It
+   ever fire, ahead of anything a checkout's own settings file might add.
+   Both files are installed root-owned at
+   `/etc/claude-code/background-wait-guard/{scripts,lib}/background-wait-guard.sh`,
+   outside `/app` (which `agent` owns), in the same `RUN` block that installs
+   the policy itself — otherwise a stage could disarm this hook by editing
+   its own checkout even though it could never touch the root-owned policy
+   that invokes it (issue #2801). `.github/workflows/build-image.yml`'s
+   "Verify Claude Code runs nothing a checkout plants" step measures that
+   ownership rather than only asserting it, reading each installed file's
+   `stat -c %U:%a` and requiring a `touch` of it to fail, as `agent` inside
+   the built image, exactly as it already does for the policy beside them —
+   the `RUN` block's own `test -x` checks cannot stand in for this, since
+   they run as `root` at build time and pass equally on a copy `agent` can
+   rewrite (issue #2813). It
    denies — exit code 2, Claude Code's own documented "show stderr to model
    and block tool call" contract, with the stderr naming the exact foreground
    retry — a `Bash` call whose `tool_input.run_in_background` is `true`; an

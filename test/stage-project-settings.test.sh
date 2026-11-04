@@ -143,7 +143,7 @@ assert_eq "a policy that does not pin a control does not unlock its keys" \
 assert_eq "the shipped policy's PreToolUse matcher covers Bash, Agent and Workflow" \
   "Bash|Agent|Workflow" "$(jq -r '.hooks.PreToolUse[0].matcher' "$policy")"
 assert_eq "...pointed at the installed background-wait-guard hook" \
-  "/app/scripts/background-wait-guard.sh" \
+  "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh" \
   "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$policy")"
 assert_eq "...as a command-type hook" \
   "command" "$(jq -r '.hooks.PreToolUse[0].hooks[0].type' "$policy")"

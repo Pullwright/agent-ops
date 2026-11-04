@@ -459,10 +459,26 @@ RUN grep -vE '^[[:space:]]*(#|$)' /app/deploy/docker/egress-allowlist.txt > /tmp
 # owns), so nothing a stage runs can rewrite it. The pins are checked here so a
 # bad edit fails the build rather than a node; the image's own acceptance step
 # in build-image.yml checks that `claude` honours them.
+#
+# The policy's own hooks.PreToolUse entry (requirement 4m) names an
+# executable to run, so that executable — and the lib file it sources — is
+# installed root-owned alongside the policy here too, under the same
+# scripts/-sources-lib/ layout the repository itself uses, so
+# background-wait-guard.sh's own SCRIPT_DIR lookup needs no change. Without
+# this, the policy would still be tamper-proof but the hook it points at
+# would sit under /app, which `agent` owns — a stage could disarm the
+# backgrounded-wait guard by editing its own checkout even though it could
+# never touch the policy that invokes it (issue #2801).
 RUN install -D -m 0644 -o root -g root /app/deploy/docker/claude-managed-settings.json \
         /etc/claude-code/managed-settings.json \
-    && jq -e '.allowManagedHooksOnly == true and .allowedMcpServers == [] and .disableSkillShellExecution == true' \
-        /etc/claude-code/managed-settings.json >/dev/null
+    && install -D -m 0755 -o root -g root /app/scripts/background-wait-guard.sh \
+        /etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh \
+    && install -D -m 0755 -o root -g root /app/lib/background-wait-guard.sh \
+        /etc/claude-code/background-wait-guard/lib/background-wait-guard.sh \
+    && jq -e '.allowManagedHooksOnly == true and .allowedMcpServers == [] and .disableSkillShellExecution == true and .hooks.PreToolUse[0].hooks[0].command == "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh"' \
+        /etc/claude-code/managed-settings.json >/dev/null \
+    && test -x /etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh \
+    && test -x /etc/claude-code/background-wait-guard/lib/background-wait-guard.sh
 
 USER agent
 WORKDIR /app

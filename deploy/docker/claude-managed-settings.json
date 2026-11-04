@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/app/scripts/background-wait-guard.sh"
+            "command": "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh"
           }
         ]
       }
