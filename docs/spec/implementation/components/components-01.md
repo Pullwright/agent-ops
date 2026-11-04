@@ -1175,9 +1175,13 @@ What exists, and the requirements each part answers to:
 8. <a id="impl-c-8"></a>`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
 9. <a id="impl-c-9"></a>`.github/workflows/build-image.yml` — the build-and-publish path for
-   component 7's image: build, verify the toolchain, validate the crontab, run
-   the `test/` suite inside the image, and check the role guard; then publish
-   to GHCR on `main` only. It carries `packages: write` and authenticates as
+   component 7's image: build, scan it for known vulnerabilities, verify the
+   toolchain, validate the crontab, run the `test/` suite inside the image,
+   and check the role guard; then publish to GHCR on `main` only. The
+   vulnerability scan (Trivy) is report-only — `continue-on-error: true` and
+   its own non-failing exit code, so neither a finding nor a scanner failure
+   blocks the build or the merge — until its signal is proven and it is
+   promoted to a required check. It carries `packages: write` and authenticates as
    the workflow's own `GITHUB_TOKEN`, so nothing about publishing depends on a
    human's credentials. Its `changes` job decides whether there is an image
    worth building at all, through `scripts/is-docs-only.sh` — the allowlist of
