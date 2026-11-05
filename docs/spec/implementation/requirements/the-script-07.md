@@ -1311,12 +1311,19 @@
    the built image, exactly as it already does for the policy beside them —
    the `RUN` block's own `test -x` checks cannot stand in for this, since
    they run as `root` at build time and pass equally on a copy `agent` can
-   rewrite (issue #2813). The same step also asserts each hook's own parent
-   directory — `/etc/claude-code/background-wait-guard/scripts` and
-   `/etc/claude-code/background-wait-guard/lib` — is `root:755` (issue
-   #2821): a directory `agent` could write to would let a stage delete and
-   recreate the hook despite the file's own mode and ownership, checked
-   just above, reading correctly on their own. It
+   rewrite (issue #2813). The same step also asserts that each directory
+   holding one of those files is `root:755` — both hooks' own parent
+   directories, `/etc/claude-code/background-wait-guard/scripts` and
+   `/etc/claude-code/background-wait-guard/lib`, and
+   `/etc/claude-code/background-wait-guard` above them (issue #2821): a
+   directory `agent` could write to would let a stage delete and recreate
+   the hook, or the directory holding it, despite the file's own mode and
+   ownership, checked just above, reading correctly on their own. The
+   intermediate directory is measured rather than inferred from its own
+   parent's check because deleting `…/background-wait-guard/scripts` needs
+   write permission on `…/background-wait-guard`, not on `scripts` itself,
+   so the two leaf checks alone would leave the link that governs them
+   unmeasured. It
    denies — exit code 2, Claude Code's own documented "show stderr to model
    and block tool call" contract, with the stderr naming the exact foreground
    retry — a `Bash` call whose `tool_input.run_in_background` is `true`; an
