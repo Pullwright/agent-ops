@@ -629,6 +629,46 @@ assert_eq "a threshold of 0 is the off switch" "[]" \
 assert_eq "a non-numeric threshold is also the off switch" "[]" \
   "$(void_refusal_escalation_candidates not-a-number "$log")"
 
+# --- compute_band_eligibility's own enabler_assignee gate (issue #2806) ---
+# `void_refusal_escalated_json` is computed inside `compute_band_eligibility`
+# (lib/eligibility.sh) behind the identical
+# `[[ -n "$enabler_assignee" && -s "$union_log" ]]` gate agent-cycle.sh's
+# 1b-v escalation filer already uses, so exclusion and the escalation issue
+# that is meant to end it stay paired: with no enabler_assignee configured,
+# a run already at threshold is offered for the ordinary re-check instead of
+# being excluded from every band with no human ever asked about it.
+cat > "$log" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"297","detail":"void refused (x). reason"}
+{"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"297","detail":"void refused (x). reason"}
+EOF
+(
+  # shellcheck source=lib/candidate-select.sh
+  . "$SCRIPT_DIR/lib/candidate-select.sh"
+  # shellcheck source=lib/eligibility.sh
+  . "$SCRIPT_DIR/lib/eligibility.sh"
+  # shellcheck disable=SC2317
+  guard_warn() { :; }
+
+  # shellcheck disable=SC2034  # read by compute_band_eligibility, eval'd below
+  union_log="$log" repo_slug_aliases_json='{}' blocked_json='[]' void_json='[]'
+
+  # shellcheck disable=SC2034
+  ordered_repos_json='[{"slug":"o/a","tech_debt":[{"ref":"297"}],"issues":[]}]'
+  enabler_assignee=""
+  compute_band_eligibility
+  printf '%s' "$ordered_repos_json" > "$tmp_dir/band-eligibility-unset.json"
+
+  # shellcheck disable=SC2034
+  ordered_repos_json='[{"slug":"o/a","tech_debt":[{"ref":"297"}],"issues":[]}]'
+  enabler_assignee="maintainer"
+  compute_band_eligibility
+  printf '%s' "$ordered_repos_json" > "$tmp_dir/band-eligibility-set.json"
+)
+assert_eq "with no enabler_assignee configured, a run at threshold is not excluded from a band" \
+  '["297"]' "$(jq -c '[.[] | select(.slug == "o/a") | .tech_debt[].ref]' "$tmp_dir/band-eligibility-unset.json")"
+assert_eq "...but with enabler_assignee configured, the identical run is excluded" \
+  '[]' "$(jq -c '[.[] | select(.slug == "o/a") | .tech_debt[].ref]' "$tmp_dir/band-eligibility-set.json")"
+
 # --- void_refusal_escalated_since (the escalation filer's own dedup) ---
 cat > "$log" <<'EOF'
 {"ts":"2026-11-02T06:00:00Z","event":"void-refusal-escalated","repo":"Poetic-Poems/poetic","item":"297"}
