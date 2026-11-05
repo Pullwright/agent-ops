@@ -408,10 +408,15 @@
      file outranks every other settings source, and project instructions and
      project skills load under it unchanged. The image build checks the three
      pins, and its acceptance step runs `scripts/claude-policy-probe.sh`
-     against the built image. A scratch checkout plants a hook; an MCP server,
-     approved by the MCP-approval keys the launcher admits; and inline shell
-     in a project command and in a project skill. The checkout must run none
-     of the four, and must run all four once the policy is removed.
+     against the built image. That acceptance step also asserts, as `agent`,
+     that `/etc/claude-code` itself — the policy file's own parent directory —
+     is `root:755` (issue #2816): a directory `agent` could write to would let
+     a stage delete and recreate the policy even though the file's own mode
+     and ownership read correctly on their own. A scratch checkout plants a
+     hook; an MCP server, approved by the MCP-approval keys the launcher
+     admits; and inline shell in a project command and in a project skill.
+     The checkout must run none of the four, and must run all four once the
+     policy is removed.
    - **The launcher's settings check.** No managed key can switch off a
      project's `env`, which sets variables in the runner's process and in
      every command it runs, or the settings that name commands the runner
