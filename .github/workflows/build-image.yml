@@ -334,15 +334,22 @@ jobs:
       # `aquasecurity/trivy`'s GitHub releases, which failed outright in
       # testing (exit 6, after the installer had already resolved the
       # release tag) — this pulls the same scanner from Docker Hub instead,
-      # a dependency this workflow already has throughout, and runs it
-      # against the image already loaded into the runner's own Docker
-      # daemon from the build step above.
+      # a dependency this workflow already has throughout. Pinned by digest
+      # (resolved from the `0.70.0` tag) rather than the mutable tag itself,
+      # so a repoint of that tag on Docker Hub can't swap in a different
+      # scanner image. The target is a `docker save`d tarball passed via
+      # `--input`, not the running daemon: a `:ro` flag on a socket mount
+      # would not have restricted anything, since unix-socket API access
+      # isn't governed by the mount's read-only flag, so this drops the
+      # socket mount entirely instead of narrowing it.
       - name: Scan the image for known vulnerabilities
         if: env.DOCS_ONLY != 'true'
         continue-on-error: true
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.70.0 image --exit-code 0 agent-ops:ci
+          docker save agent-ops:ci -o /tmp/agent-ops-ci.tar
+          docker run --rm -v /tmp/agent-ops-ci.tar:/tmp/agent-ops-ci.tar:ro \
+            aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+            image --exit-code 0 --input /tmp/agent-ops-ci.tar
 
       # The acceptance checks of docs/spec/implementation/acceptance-checks/acceptance-checks-01.md (1b), run
       # here so a broken image cannot reach a node. `docker run` goes through
