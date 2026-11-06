@@ -912,10 +912,19 @@
     ordinary case.
 
     **Exclusion.** An item whose run has reached the threshold is dropped
-    from both actors' eligible sets, unconditionally — never returned by a
-    later re-check, including requirement 18a's own mandatory live re-read
-    for a GitHub issue, since this item's own repeated history is exactly
-    what proves a fresh thread will never settle it:
+    from both actors' eligible sets — never returned by a later re-check,
+    including requirement 18a's own mandatory live re-read for a GitHub
+    issue, since this item's own repeated history is exactly what proves a
+    fresh thread will never settle it — but only when `enabler_assignee` is
+    configured (issue #2806). The exclusion and the escalation below share
+    the one gate the escalation filer already needed
+    (`[[ -n "$enabler_assignee" && -s "$union_log" ]]`), so an
+    Enabler-less installation — one with nowhere to send the escalation this
+    circuit breaker depends on to end the exclusion — never excludes an item
+    with no human ever asked about it; such an item instead gets the
+    ordinary re-check every other block gets, exactly as if this requirement
+    did not exist. With `enabler_assignee` configured, the exclusion applies
+    unconditionally, as below:
 
     - `exclude_blocked_or_void_items` and `exclude_blocked_or_void_issues`
       (`lib/candidate-select.sh`) each take a fifth, optional `escalated`

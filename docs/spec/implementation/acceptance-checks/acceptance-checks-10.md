@@ -748,7 +748,14 @@
    recent refusal's own detail, naming the "Done-ness inferred from one
    channel" gotcha, and logging `void-refusal-escalated` with the filed
    issue's number; a run already escalated calls `create_escalation_issue`
-   not at all. `test/verdict-corroboration.test.sh` passes,
+   not at all. `test/cycle-state.test.sh` additionally passes, against
+   `compute_band_eligibility`'s own gate on `void_refusal_escalated_json`
+   (`lib/eligibility.sh`, issue #2806), lifted verbatim: a run already at
+   threshold is not excluded from a band when `enabler_assignee` is empty —
+   the same gate the escalation filer above already requires, so an
+   Enabler-less installation never excludes an item with no human ever
+   asked about it — and the identical run is excluded once `enabler_assignee`
+   is configured. `test/verdict-corroboration.test.sh` passes,
    against `coordinator_eligible_items`'s own third, `escalated` argument,
    lifted verbatim: an escalated issue is excluded from the eligible `issues`
    band the same way a blocked one is, a repo-less escalated entry suppresses

@@ -90,8 +90,20 @@ live_td_refs_json="$(jq -c \
 # identical refusal repeat before a human's one-time look is cheaper than a
 # third attempt" — a question with one honest answer, not an installation
 # preference.
-void_refusal_escalated_json="$(void_refusal_escalation_candidates 2 "$union_log" "$repo_slug_aliases_json")"
-[[ -n "$void_refusal_escalated_json" ]] || void_refusal_escalated_json='[]'
+# shellcheck disable=SC2154  # union_log is assigned by agent-cycle.sh before
+# this function is called (#771); enabler_assignee likewise, but read with a
+# `:-` fallback since a fixture exercising this function in isolation may
+# never set it. The same gate 1b-v's escalation filer uses, so exclusion and
+# the escalation issue stay paired: with no enabler_assignee configured
+# there is nowhere for the escalation to land, so a twice-refused item is
+# offered for the ordinary re-check instead of being excluded with no human
+# ever asked about it (issue #2806).
+if [[ -n "${enabler_assignee:-}" && -s "$union_log" ]]; then
+  void_refusal_escalated_json="$(void_refusal_escalation_candidates 2 "$union_log" "$repo_slug_aliases_json")"
+  [[ -n "$void_refusal_escalated_json" ]] || void_refusal_escalated_json='[]'
+else
+  void_refusal_escalated_json='[]'
+fi
 
 # --- 3c/3u. Pre-fetched-band eligibility, decided (requirement 3t, issue ---
 # --- #310; extended to every other pre-fetched band by requirement 3u, ---
