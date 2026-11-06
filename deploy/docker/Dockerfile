@@ -56,7 +56,7 @@ ARG CLAUDE_CODE_VERSION=2.1.318
 # Grok Build (issue #2134), pinned under the same policy and for the same
 # reason: docs/reviews/2026-10-06-grok-build-evaluation.md evaluated 1.0.46,
 # the npm `latest` dist-tag on 2026-10-06.
-ARG GROK_BUILD_VERSION=1.0.70
+ARG GROK_BUILD_VERSION=1.0.77
 # The container user's ids. They matter because the state, workspace and
 # Claude-config volumes outlive the container: mounting a host directory owned
 # by a different uid is the classic way to make a persistent volume read-only
