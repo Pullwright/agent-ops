@@ -424,7 +424,15 @@ jobs:
       # The policy's own parent directory has to stay root-owned too (issue
       # #2816): write access to /etc/claude-code would let a stage delete and
       # recreate the policy even though the file's own mode and ownership,
-      # checked just above, read correctly on their own.
+      # checked just above, read correctly on their own. Every directory
+      # holding one of the hook files has to stay root-owned for the same
+      # reason (issue #2821): such a directory would let a stage delete and
+      # recreate the hook — or the directory holding it — despite the file's
+      # own mode and ownership, checked just below, reading correctly on
+      # their own. `$guard` is checked beside its two children because
+      # deleting `$guard/scripts` needs write permission on `$guard`, not on
+      # `$guard/scripts`, so checking the two leaves alone would leave the
+      # link that actually governs them unmeasured.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |
@@ -438,6 +446,10 @@ jobs:
             owner="$(stat -c %U:%a /etc/claude-code)"
             [ "$owner" = "root:755" ] || { echo "/etc/claude-code is $owner, not root:755" >&2; exit 1; }
             guard=/etc/claude-code/background-wait-guard
+            for dir in "$guard" "$guard/scripts" "$guard/lib"; do
+              owner="$(stat -c %U:%a "$dir")"
+              [ "$owner" = "root:755" ] || { echo "$dir is $owner, not root:755" >&2; exit 1; }
+            done
             for hook in "$guard/scripts/background-wait-guard.sh" "$guard/lib/background-wait-guard.sh"; do
               owner="$(stat -c %U:%a "$hook")"
               [ "$owner" = "root:755" ] || { echo "$hook is $owner, not root:755" >&2; exit 1; }
