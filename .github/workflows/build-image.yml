@@ -321,7 +321,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
 
-      # Report-only (issue #2832): findings are logged for a human to read,
+      # Report-only (issue #2836): findings are logged for a human to read,
       # but neither a scanner failure nor a found vulnerability fails this
       # step or the job it's in, so nothing here yet blocks a merge or a
       # publish. Converting it into a required check is deliberately
