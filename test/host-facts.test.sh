@@ -265,6 +265,47 @@ assert_eq "a non-empty override is used verbatim" \
   "http://{node}:9999/viewer.js" "$(host_facts_viewer_url_template)"
 unset AGENT_OPS_VIEWER_URL_TEMPLATE
 
+# --- Viewer probe fold (owner decision #1358, agent-ops#2788) -----------------
+# The `viewer-probe` sidecar writes {"generated_at":…, "viewer_probe":{…}} to
+# its own file on the shared state volume; `collect-host-facts.sh` folds it
+# in when fresh, and must fall back — printing nothing, returning 1 — on
+# every other shape: missing file, stale timestamp, no `viewer_probe` key,
+# unparseable JSON.
+fold_dir="$tmp_dir/viewer-probe"
+mkdir -p "$fold_dir"
+now_epoch=1793555200  # 2026-11-01T17:46:40Z, fixed so this needs no live clock
+
+fresh_file="$fold_dir/fresh.json"
+printf '{"generated_at":"2026-11-01T17:46:10Z","viewer_probe":{"poetic-1":{"ok":true,"bytes":42,"seconds":0.1,"reason":null}}}' \
+  > "$fresh_file"  # 30s before now_epoch
+assert_eq "a file present and fresh folds its own viewer_probe object in" \
+  '{"poetic-1":{"ok":true,"bytes":42,"seconds":0.1,"reason":null}}' \
+  "$(host_facts_viewer_probe_fold_json "$fresh_file" 900 "$now_epoch")"
+
+stale_file="$fold_dir/stale.json"
+printf '{"generated_at":"2026-11-01T17:30:00Z","viewer_probe":{"poetic-1":{"ok":true,"bytes":1,"seconds":0.1,"reason":null}}}' \
+  > "$stale_file"  # 970s before now_epoch, older than the 900s window
+assert_eq "a file older than the window falls back (non-zero)" \
+  "1" "$(host_facts_viewer_probe_fold_json "$stale_file" 900 "$now_epoch" >/tmp/fold-stale.$$ 2>/dev/null; echo $?)"
+assert_eq "a stale file's own stdout is empty, the caller's fall-back signal" \
+  "" "$(cat /tmp/fold-stale.$$)"
+rm -f /tmp/fold-stale.$$
+
+assert_eq "a missing file falls back (non-zero, no stdout)" \
+  "1" "$(host_facts_viewer_probe_fold_json "$fold_dir/no-such-file.json" 900 "$now_epoch" >/tmp/fold-missing.$$ 2>/dev/null; echo $?)"
+assert_eq "a missing file prints nothing to fall back on" "" "$(cat /tmp/fold-missing.$$)"
+rm -f /tmp/fold-missing.$$
+
+no_key_file="$fold_dir/no-key.json"
+printf '{"generated_at":"2026-11-01T17:46:10Z"}' > "$no_key_file"
+assert_eq "a fresh file with no viewer_probe key still falls back" \
+  "1" "$(host_facts_viewer_probe_fold_json "$no_key_file" 900 "$now_epoch" >/dev/null 2>&1; echo $?)"
+
+malformed_file="$fold_dir/malformed.json"
+printf 'not json at all' > "$malformed_file"
+assert_eq "malformed JSON falls back rather than aborting the caller" \
+  "1" "$(host_facts_viewer_probe_fold_json "$malformed_file" 900 "$now_epoch" >/dev/null 2>&1; echo $?)"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"
