@@ -71,6 +71,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/github-limit.sh
 . "$SCRIPT_DIR/lib/github-limit.sh"
 GH="${SWEEP_GH:-gh}"
+# shellcheck source=lib/issue-priority.sh
+. "$SCRIPT_DIR/lib/issue-priority.sh"
+# This script has no other trap and exits from several points below (bad
+# arguments, an unreadable issue list) — armed immediately after the library
+# that owns ISSUE_PRIORITY_CACHE_DIR is sourced, the same pattern
+# scripts/doctor.sh already uses.
+trap issue_priority_cache_cleanup EXIT
 
 # shellcheck source=lib/pipeline-marker.sh
 . "$SCRIPT_DIR/lib/pipeline-marker.sh"
@@ -260,6 +267,10 @@ $(pipeline_comment_marker "$cycle_id" script)"
     revisit_url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$revisit_raw" | tail -n1 || true)"
     if [[ -n "$revisit_url" ]]; then
       revisit_number="${revisit_url##*/}"
+      # High (agent-ops#2422, requirement 1): a human overriding a tactical
+      # decision after the fact is not routine, even though it is not an
+      # active production emergency either.
+      ISSUE_PRIORITY_GH="$GH" issue_priority_apply "$slug" "$revisit_number" "High" >/dev/null 2>&1 || true
       jq -nc --arg r "$slug" --arg i "$marker_item" --argjson n "$revisit_number" --arg u "$revisit_url" \
         '{action: "revisit-filed", repo: $r, item: $i, number: $n, url: $u}'
       log_comment="$(pipeline_comment_header script "$node_name")

@@ -21,6 +21,10 @@
 #     "number": 42,
 #     "url": "https://github.com/…/issues/42",
 #     "title": "…",
+#     "priority": "Medium",           // the Priority band, default Medium (agent-ops#2422)
+#     "priority_set": false,          // true iff any option is set on the field, even one
+#                                      // outside the four recognised names — see
+#                                      // scripts/gather-issues.sh's own header
 #     "labels": ["pw::type:tech-debt", "…"],
 #     "author": "…",
 #     "created_at": "…", "updated_at": "…",
@@ -44,13 +48,14 @@
 # arrays, the same way a pull request is absent from scripts/gather-issues.sh's
 # own `excluded`.
 #
-# `candidates` is sorted by issue number ascending — the same
-# "lowest-id-first" rule the register-backed gatherer this replaces always
-# applied, restated over issue numbers instead of register ids. That is the
-# gatherer's order only, and a prose-only fit leaves it alone; when
-# requirement 4i's entry caps do drop entries, `keep_order_tech_debt`
-# (lib/coordinator-input.sh) keeps the freshest thread first, not the lowest
-# number (agent-ops#1379).
+# `candidates` is sorted by Priority, then by the freshest thread
+# (agent-ops#2422, requirement 4 — before this, lowest-issue-number-first, the
+# same "lowest-id-first" rule the register-backed gatherer this replaces
+# always applied, restated over issue numbers instead of register ids).
+# `keep_order_tech_debt` (lib/coordinator-input.sh) keeps the identical order
+# when requirement 4i's entry caps do drop entries (agent-ops#1379) — the
+# gatherer's own order and the fit ladder's trim order are now one definition,
+# not two that happened to agree on "freshest first" alone.
 #
 # ## Why `excluded` is reported at all (agent-ops#2603)
 #
@@ -182,23 +187,54 @@ fi
 jq -e 'type == "array"' <<<"$issues_raw" >/dev/null 2>&1 \
   || degrade "issues list payload is not an array"
 
+# Every open issue's `priority`/`priority_set` (requirement 1/2,
+# agent-ops#2422 — tech-debt now carries a band, the same field and the same
+# way `scripts/gather-issues.sh` reads it), then priority inheritance over
+# the whole open-issue set, `issues` and `tech-debt` alike (requirement 4's
+# "what it needs", point 4): an item that blocks another ranks at least as
+# high as the highest band among what it blocks, whichever band either one
+# is in. Both are pure passes over data already in hand; neither issues a
+# further `gh` call. See scripts/gather-issues.sh's own header for the parse
+# itself.
+issues_raw="$(issue_prefetch_annotate_priority "$issues_raw")"
+issues_raw="$(issue_priority_inherit "$issues_raw")"
+
+# Which issues the holding check below may skip the native Issue Dependencies
+# read for — exactly as scripts/gather-issues.sh computes it, and for the
+# same reason: see `issue_prefetch_native_dep_skip_set`'s own header
+# (lib/issue-prefetch.sh). This band is the larger of the two on this
+# repository's own backlog, so it is the one that paid most for a read per
+# candidate.
+native_dep_skip_set="$(issue_prefetch_native_dep_skip_set "$issues_raw")"
+
 # The deterministic filter — see lib/issue-prefetch.sh's own comment. A pull
 # request never carries this label in practice, so `issue_deterministic_ok`'s
 # PR check is defensive rather than load-bearing here.
+#
+# Sorted by Priority, then by the freshest thread (agent-ops#2422, requirement
+# 4) — the same total order `keep_order_tech_debt` (lib/coordinator-input.sh)
+# already applies when the fit ladder's own entry caps trim this band
+# (agent-ops#1379); giving the gatherer's own order the identical shape means
+# an uncapped cycle's walk order already ranks this way too, not only a capped
+# one's surviving set.
 candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
+  def issue_rank: {Urgent: 4, High: 3, Medium: 2, Low: 1}[(.priority // "Medium") | tostring] // 2;
   [.[]
    | select(issue_deterministic_ok)
    | select(([.labels[]?.name] | index("pw::type:tech-debt")) != null)
    | {number: .number,
       url: .html_url,
       title: .title,
+      priority: (.priority // "Medium"),
+      priority_set: (.priority_set // false),
       labels: ([.labels[]?.name] | sort),
       author: (.user.login // ""),
       created_at: .created_at,
       updated_at: .updated_at,
       body: (.body // ""),
-      comments: [(.comments // [])[] | {author: (.user.login // ""), created_at: .created_at, body: (.body // "")}]}]
-  | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
+      comments: [(.comments // [])[] | {author: (.user.login // ""), created_at: .created_at, body: (.body // "")}]}
+     + (if (.priority_raised_by // null) == null then {} else {priority_raised_by: .priority_raised_by} end)]
+  | sort_by([issue_rank, ((.updated_at // "") | tostring)]) | reverse' <<<"$issues_raw" 2>/dev/null)" \
   || degrade "issues filter failed"
 
 # `excluded` mirrors scripts/gather-issues.sh's own (agent-ops#2603): scoped to
@@ -231,7 +267,7 @@ excluded="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
 # scripts/gather-issues.sh) re-tests just the issues already excluded above,
 # and reports a second entry alongside — never replacing — the one already
 # there.
-blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded")" \
+blocked_by_additions="$(issue_prefetch_blocked_by_additions "$slug" "$issues_raw" "$excluded" "$native_dep_skip_set")" \
   || degrade "blocked-by additions check failed"
 excluded="$(jq -nc 'input as $a | input as $b | $a + $b' <<<"$excluded"$'\n'"$blocked_by_additions")" \
   || degrade "excluded merge with blocked-by additions failed"
@@ -253,7 +289,11 @@ while IFS= read -r candidate; do
   # already removed from the `tech_debt` band.
   thread_text="$(jq -r '.body' <<<"$candidate")
 $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
-  ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+  # The empty string where the walk already reported no native dependency —
+  # see scripts/gather-issues.sh's own copy of this two-liner.
+  native_n="$n"
+  [[ "$native_dep_skip_set" == *" $n "* ]] && native_n=""
+  ref_display="$(issue_blocked_by_ref "$slug" "$native_n" "$thread_text")"
   if [[ -n "$ref_display" ]]; then
     excl_entry="$(jq -nc --argjson n "$n" --arg ref "$ref_display" \
       '{number: $n, reason: ("blocked-by: " + $ref)}')" || degrade "excluded entry assembly failed for issue #$n"

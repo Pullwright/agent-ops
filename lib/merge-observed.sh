@@ -64,8 +64,8 @@
 # reader can tell which read caught it.
 reviewer_merge_observed() {
   local pr_url="${1:-}" merge_sha="${2:-}" rev_status_json="${3:-{\}}" stage="${4:-reviewer}"
-  local fd_json fd_title fd_body fd_result fd_number fd_url fd_default_fix fd_owner_decision
-  local fi_json fi_title fi_body fi_body_file fi_result fi_number fi_url fi_default_fix fi_owner_decision
+  local fd_json fd_title fd_body fd_result fd_number fd_url fd_default_fix fd_owner_decision fd_priority
+  local fi_json fi_title fi_body fi_body_file fi_result fi_number fi_url fi_default_fix fi_owner_decision fi_priority
 
   log_event "merge-observed" "$(jq -nc --arg r "$selected_repo" --arg i "$selected_item" \
     --arg u "$pr_url" --arg s "$merge_sha" --arg stage "$stage" \
@@ -85,6 +85,7 @@ reviewer_merge_observed() {
       'if (.owner_decision // false) == true then "true" else "false" end' \
       <<<"$fd_json" 2>/dev/null || true)"
     [[ -n "$fd_owner_decision" ]] || fd_owner_decision="false"
+    fd_priority="$(jq -r '.priority // ""' <<<"$fd_json" 2>/dev/null || true)"
     if [[ -z "$fd_title" || -z "$fd_body" ]]; then
       log_event "warning" "$(jq -nc --arg u "$pr_url" \
         --arg d "reviewer set file_debt for $pr_url, but it carries no title or body — ignored" \
@@ -100,7 +101,7 @@ reviewer_merge_observed() {
       # or branch involved, so this call needs no `clone_dir`.
       if fd_result="$(techdebt_file_debt "$selected_repo" "$fd_title" "$fd_body" \
              "while the Reviewer was examining $pr_url, whose subject merged mid-pass" "" \
-             "$fd_default_fix" "$fd_owner_decision")" \
+             "$fd_default_fix" "$fd_owner_decision" "$fd_priority")" \
              && [[ -n "$fd_result" ]]; then
         IFS=$'\t' read -r fd_number fd_url <<<"$fd_result"
         log_event "tech-debt-filed" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" \
@@ -123,6 +124,7 @@ reviewer_merge_observed() {
       'if (.owner_decision // false) == true then "true" else "false" end' \
       <<<"$fi_json" 2>/dev/null || true)"
     [[ -n "$fi_owner_decision" ]] || fi_owner_decision="false"
+    fi_priority="$(jq -r '.priority // ""' <<<"$fi_json" 2>/dev/null || true)"
     if [[ -z "$fi_title" || -z "$fi_body" ]]; then
       log_event "warning" "$(jq -nc --arg u "$pr_url" \
         --arg d "reviewer set file_issue for $pr_url, but it carries no title or body — ignored" \
@@ -137,7 +139,7 @@ reviewer_merge_observed() {
       printf '%s\n\n---\nNoticed by the autonomous pipeline while the Reviewer was examining %s, whose subject merged mid-pass.\n' \
         "$fi_body" "$pr_url" > "$fi_body_file"
       if fi_result="$(techdebt_file_issue "$selected_repo" "$pr_url" "$fi_title" \
-             "$fi_body_file" "" "$fi_default_fix" "$fi_owner_decision")" \
+             "$fi_body_file" "" "$fi_default_fix" "$fi_owner_decision" "$fi_priority")" \
              && [[ -n "$fi_result" ]]; then
         IFS=$'\t' read -r fi_number fi_url <<<"$fi_result"
         log_event "issue-filed" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" \

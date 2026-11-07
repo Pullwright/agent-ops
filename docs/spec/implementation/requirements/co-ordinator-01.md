@@ -294,6 +294,21 @@
     whatever its band, including a `Low` one), the bare issue number as the item
     ref, and `"source": "issues"` in the work order (requirement 21) —
     downstream consumers never see the band.
+
+    **An entry's `priority` may already be raised above what it was triaged
+    to** (priority inheritance, agent-ops#2422, requirement 34j): an open item
+    that blocks another — named in a same-repo `Blocked-by:` reference on
+    the blocked item's own thread — ranks at least as high as the highest
+    band among every item it blocks, whichever of `issues`/`tech_debt`
+    either one is in. This runs once, upstream of the Co-Ordinator's own
+    input (`issue_priority_inherit`, `lib/dependency-gate.sh`), so the walk
+    above reads the raised band exactly as it would a band a human stated
+    directly — a raised entry additionally carries `priority_raised_by`,
+    naming what it blocks, informational only. Tech-debt (requirement 3t) is
+    not split into four walk ranks the way `issues` is here — it occupies one
+    slot in the per-repo walk regardless of band — but its own candidates are
+    ordered by this same `Priority`, then by freshness, the identical
+    inheritance included.
 16. <a id="impl-16"></a>Excludes from candidacy any item that is:
     - recorded as blocked in the shared log (an `attempt-failed` event not
       followed by an `unblocked` event for that item) — for a GitHub issue,

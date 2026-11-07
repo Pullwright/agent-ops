@@ -414,6 +414,61 @@ assert_eq "an unmeetable allowance reports fits: false" \
 assert_true "an unmeetable allowance still hands back a usable array" \
   "$(jq '(.repos[0].issues | length) > 0' <<<"$out")"
 
+# --- agent-ops#2422, requirement 5: a capped tech-debt band never drops a
+#     High or Urgent entry, or one priority inheritance has raised to that
+#     band for what it blocks, while any lower entry remains. `keep_order_tech_debt`
+#     now ranks by Priority then freshness, the same total order
+#     `keep_order_issues` already uses, so a cap over that order can never
+#     drop a kept-band entry while a lower one survives — this is the
+#     property under test, not a redesign of the ladder itself (#2416/#2417
+#     are untouched). "#1" here is a Low item upstream `issue_priority_inherit`
+#     (lib/dependency-gate.sh, tested directly in test/dependency-gate.test.sh)
+#     has already raised to Urgent because it blocks "#2" — this fixture
+#     starts from that already-inherited shape, since the ladder itself never
+#     re-derives inheritance. ---
+tech_debt_priority_fixture="$(python3 -c '
+import json
+entries = [{
+  "source": "tech-debt", "ref": "1", "number": 1,
+  "url": "https://github.com/o/r/issues/1", "title": "blocks a High item",
+  "priority": "Urgent", "priority_set": False, "priority_raised_by": ["#2"],
+  "labels": [], "author": "someone", "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z", "body": "B" * 400, "comments": [],
+}, {
+  "source": "tech-debt", "ref": "2", "number": 2,
+  "url": "https://github.com/o/r/issues/2", "title": "the High item itself",
+  "priority": "High", "priority_set": True,
+  "labels": [], "author": "someone", "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-02T00:00:00Z", "body": "B" * 400, "comments": [],
+}]
+entries += [{
+  "source": "tech-debt", "ref": str(i), "number": i,
+  "url": "https://github.com/o/r/issues/%d" % i, "title": "an ordinary Low item",
+  "priority": "Low", "priority_set": True,
+  "labels": [], "author": "someone", "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-%02dT00:00:00Z" % ((i % 28) + 1),
+  "body": "B" * 400, "comments": [],
+} for i in range(3, 63)]
+print(json.dumps([{"slug": "o/r", "sources": ["tech-debt"], "issues": [], "tech_debt": entries}]))')"
+capped="$(coordinator_apply_rung 0 0 0 10 <<<"$tech_debt_priority_fixture")"
+assert_eq "capping a 62-entry tech-debt band to 10 keeps exactly 10" \
+  "10" "$(jq '.[0].tech_debt | length' <<<"$capped")"
+assert_eq "…the Urgent entry (raised by inheritance) survives the cap" \
+  "true" "$(jq '.[0].tech_debt | any(.ref == "1")' <<<"$capped")"
+assert_eq "…the High entry it blocks survives too" \
+  "true" "$(jq '.[0].tech_debt | any(.ref == "2")' <<<"$capped")"
+# Capping to exactly 2 — the Urgent+High count — must keep precisely those
+# two and no Low entry at all: the sharpest form of "never drops a kept band
+# while a lower one survives", since any Low surviving here would mean one
+# of the two higher-ranked entries did not.
+capped_to_2="$(coordinator_apply_rung 0 0 0 2 <<<"$tech_debt_priority_fixture")"
+assert_eq "capping to exactly the Urgent+High count keeps only those two" \
+  '["1","2"]' "$(jq -c '.[0].tech_debt | map(.ref) | sort' <<<"$capped_to_2")"
+assert_eq "…the raised entry still carries priority_raised_by after capping" \
+  '["#2"]' "$(jq -c '.[0].tech_debt[] | select(.ref == "1") | .priority_raised_by' <<<"$capped")"
+assert_eq "…capping to 1 entry keeps only the single highest-ranked one (the inherited Urgent)" \
+  "1" "$(coordinator_apply_rung 0 0 0 1 <<<"$tech_debt_priority_fixture" | jq -r '.[0].tech_debt[0].ref')"
+
 # --- Requirement 4g: the repo array is fleet state and unbounded, so it must
 #     never travel in argv. The first draft of coordinator_fit_report bound it
 #     as `--argjson`, and this input — genuinely past MAX_ARG_STRLEN (131072)

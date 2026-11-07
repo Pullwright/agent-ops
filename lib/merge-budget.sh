@@ -58,14 +58,16 @@
 # `scripts/doctor.sh` reports the freeze's state as it would any other flag.
 #
 # Sourced by `agent-cycle.sh` after `lib/toggle.sh` and `lib/github-limit.sh`
-# (for `fleet_flag_*`, `GITHUB_PR_LIST_LIMIT` and `github_pr_list_truncated`)
-# and by `scripts/doctor.sh` after `lib/toggle.sh` alone — doctor only ever
-# calls the pure `merge_budget_effective_cap`, never the network-reading
-# functions, so it has no need of `lib/github-limit.sh`. Both source it
-# before `lib/merge-autonomy.sh`, which calls `merge_budget_freeze_state` —
-# see that file's own shellcheck source note — though bash resolves that
-# call at run time, not at source time, so the textual order does not
-# actually matter; it is kept for readability alone.
+# (for `fleet_flag_*`, `GITHUB_PR_LIST_LIMIT` and `github_pr_list_truncated`),
+# by `scripts/doctor.sh` after `lib/toggle.sh` alone — doctor only ever calls
+# the pure `merge_budget_effective_cap`, never the network-reading functions,
+# so it has no need of `lib/github-limit.sh` — and by
+# `scripts/publish-dashboard.sh`, transitively, through `lib/merge-autonomy.sh`
+# (`merge_autonomy_effective_level`). All three source it before
+# `lib/merge-autonomy.sh`, which calls `merge_budget_freeze_state` — see that
+# file's own shellcheck source note — though bash resolves that call at run
+# time, not at source time, so the textual order does not actually matter; it
+# is kept for readability alone.
 
 # shellcheck source=lib/toggle.sh
 # shellcheck source=lib/github-limit.sh
@@ -476,6 +478,24 @@ MERGE_BUDGET_ESC_BODY
     return 0
   fi
   number="${url##*/}"
+  # Urgent (agent-ops#2422, requirement 1): the governor holding past its own
+  # cap is a correctness invariant violated, not a routine finding.
+  # `issue_priority_apply` (lib/issue-priority.sh) is sourced lazily, right
+  # before this uses it, rather than at this file's own top level, the same
+  # pattern lib/pager.sh's `_pager_create_issue` and
+  # lib/tech-debt-file.sh's `_techdebt_apply_priority` use: that file's
+  # source-time `mktemp -d` has nowhere of its own to land before
+  # scripts/publish-dashboard.sh's `scratch_enter` repoints $TMPDIR into its
+  # scoped working set, and this file is sourced (transitively, through
+  # lib/merge-autonomy.sh) by that script before `scratch_enter` runs. This
+  # anomaly-escalation branch is the only path in this file that ever needs
+  # it, so every other caller — including every ordinary publish, which never
+  # reaches this branch — never pays for the cache directory at all.
+  if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+    # shellcheck source=lib/issue-priority.sh
+    . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
+  fi
+  issue_priority_apply "$slug" "$number" "Urgent" >/dev/null 2>&1 || true
   log_event "merge-budget-freeze-escalated" "$(jq -nc --arg s "$slug" --argjson n "$number" \
     --arg u "$url" --argjson cap "$cap" --argjson count "$count" \
     '{repo: $s, issue_number: $n, issue_url: $u, cap: $cap, count: $count}')"

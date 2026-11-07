@@ -234,21 +234,27 @@ def fit_entry($cb; $bb; $keep):
        else {} end);
 
 # The order the entry caps keep entries in — most worth the Co-Ordinator's
-# attention first, so a cap takes from the bottom. Issues rank by the same
-# four Priority bands requirement 15e ranks on, then by the freshest thread.
-# Tech-debt carries no band (`scripts/gather-issues.sh` reads the Priority
-# field for `issues` only, and no tech-debt convention sets one), so it ranks
-# by the freshest thread alone (agent-ops#1379): the ascending-by-number order
-# this used to keep meant that, under a cap pinned at 64 for weeks, the ~90
-# *newest* `pw::type:tech-debt` issues — the fresh defects — were the ones
-# dropped on every cycle, and nothing but a fallback pick could ever reach
-# them.
+# attention first, so a cap takes from the bottom. Issues and tech-debt alike
+# rank by the same four Priority bands requirement 15e ranks on (`scripts/
+# gather-issues.sh` and, since agent-ops#2422, `scripts/gather-tech-debt.sh`
+# both read the field, and both now also apply priority inheritance —
+# `issue_priority_inherit`, lib/dependency-gate.sh — so an entry's own
+# `priority` here may already be raised above what it was triaged to by
+# what it blocks), then by the freshest thread. Before agent-ops#2422,
+# tech-debt carried no band at all and ranked by freshness alone
+# (agent-ops#1379): the ascending-by-number order the gatherer used to keep
+# meant that, under a cap pinned at 64 for weeks, the ~90 *newest*
+# `pw::type:tech-debt` issues — the fresh defects — were the ones dropped on
+# every cycle, and nothing but a fallback pick could ever reach them.
 def issue_rank: {Urgent: 4, High: 3, Medium: 2, Low: 1}[(.priority // "Medium") | tostring] // 2;
 # Ascending on [band, thread freshness] and then reversed, which is one total
 # order rather than two sorts relying on jq's tie-breaking: highest band first,
-# and freshest thread first within a band.
+# and freshest thread first within a band. The never-more-than-halving entry
+# caps below apply this order to tech-debt exactly as to issues, so capping
+# never drops a High/Urgent entry (or one priority inheritance has raised to
+# that band for what it blocks) while a lower one survives.
 def keep_order_issues: sort_by([issue_rank, ((.updated_at // "") | tostring)]) | reverse;
-def keep_order_tech_debt: sort_by((.updated_at // "") | tostring) | reverse;
+def keep_order_tech_debt: sort_by([issue_rank, ((.updated_at // "") | tostring)]) | reverse;
 
 # Reordering and capping are one step, applied only when there is a cap to
 # apply: with no entries to drop the order the gatherer produced is the order
