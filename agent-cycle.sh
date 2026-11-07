@@ -282,10 +282,13 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/dependency-gate.sh"
 # shellcheck source=lib/issue-prefetch.sh
 # Sourced after dependency-gate.sh, whose dependency_refs its own
-# issue_blocked_by_ref calls (lib/eligibility.sh's stale-expensive-gather-
-# cache live re-check, issue #2709, is the one caller inside this process —
-# scripts/gather-issues.sh and scripts/gather-tech-debt.sh each source this
-# file themselves, as separate processes).
+# issue_blocked_by_ref calls. Two callers inside this process: lib/eligibility.sh's
+# stale-expensive-gather-cache live re-check (issue #2709), and requirement
+# 35a's dependency deferral (`enabler_defer_open_dependency_items`,
+# lib/cycle-state.sh), which skips itself entirely when the predicate is
+# undefined — scripts/gather-issues.sh and scripts/gather-tech-debt.sh each
+# source this file themselves, as separate processes, and share no
+# definition with the cycle.
 . "$SCRIPT_DIR/lib/issue-prefetch.sh"
 # shellcheck source=lib/refinement.sh
 # Sourced after void-guard.sh, which defines the `entry_field_text` it uses.
