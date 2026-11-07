@@ -858,12 +858,17 @@ What exists, and the requirements each part answers to:
    via `lib/handoff.sh`'s `handoff_latest_positions` — the one
    standing-position-per-reviewer definition `scripts/gather-review-
    feedback.sh` (3c) also calls (requirement 34a, issue #1373) — and voiding
-   when the item's own review id no longer names it. `preflight_done_reason`
-   and `preflight_open_pr_reason` are pure — they read nothing themselves —
-   sourced after `lib/work-gone.sh`, whose function `preflight_done_reason`
-   wraps, and after `lib/handoff.sh`, whose `handoff_latest_positions`
-   `preflight_review_feedback_reason` calls. Unit-tested
-   (`test/preflight.test.sh`); must pass `shellcheck`.
+   when the item's own review id no longer names it. `preflight_abandoned_
+   draft_reason` is the fourth done-signal (requirement 34m, agent-ops#2840),
+   scoped to `abandoned-drafts` items alone: one live `gh api pulls/<n>`
+   call, reading `.draft` — `false` voids, since a draft is precisely that
+   source's own claim marker and its absence means some other node, or a
+   human, already moved the candidate past "abandoned". `preflight_done_
+   reason` and `preflight_open_pr_reason` are pure — they read nothing
+   themselves — sourced after `lib/work-gone.sh`, whose function
+   `preflight_done_reason` wraps, and after `lib/handoff.sh`, whose
+   `handoff_latest_positions` `preflight_review_feedback_reason` calls.
+   Unit-tested (`test/preflight.test.sh`); must pass `shellcheck`.
 3n. <a id="impl-c-3n"></a>`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
    given a repo slug, examines every `<branch_prefix>*` and
    `td-record/*` ref, and

@@ -216,6 +216,34 @@ assert_eq "an unreadable reviews read decides nothing" \
 assert_eq "missing arguments decide nothing" \
   "" "$(PREFLIGHT_GH="$stub_dir/gh" preflight_review_feedback_reason "" pr-1355-review-5163386654)"
 
+# --- preflight_abandoned_draft_reason (agent-ops#2840) -----------------------------
+# `gh` is a stub on PATH via PREFLIGHT_GH; no network. It only ever answers
+# `api repos/<slug>/pulls/<n> --jq .draft`, returning PREFLIGHT_STUB_DRAFT (or
+# failing outright when PREFLIGHT_STUB_FAIL=1).
+cat > "$stub_dir/gh" <<'STUB'
+#!/usr/bin/env bash
+set -uo pipefail
+[[ "${PREFLIGHT_STUB_FAIL:-0}" == "1" ]] && exit 1
+printf '%s\n' "${PREFLIGHT_STUB_DRAFT:-true}"
+STUB
+chmod +x "$stub_dir/gh"
+
+assert_eq "a pull request that is no longer a draft is already done" \
+  "the pull request is no longer a draft" \
+  "$(PREFLIGHT_GH="$stub_dir/gh" PREFLIGHT_STUB_DRAFT=false \
+     preflight_abandoned_draft_reason o/a 2838)"
+assert_eq "a pull request still a draft is still live work" \
+  "" "$(PREFLIGHT_GH="$stub_dir/gh" PREFLIGHT_STUB_DRAFT=true \
+        preflight_abandoned_draft_reason o/a 2838)"
+assert_eq "an unreadable draft-status read decides nothing" \
+  "" "$(PREFLIGHT_GH="$stub_dir/gh" PREFLIGHT_STUB_FAIL=1 \
+        preflight_abandoned_draft_reason o/a 2838)"
+assert_eq "missing arguments decide nothing" \
+  "" "$(PREFLIGHT_GH="$stub_dir/gh" preflight_abandoned_draft_reason "" "")"
+assert_eq "a missing pr_number decides nothing (no gh call)" \
+  "" "$(PREFLIGHT_GH="$stub_dir/gh" PREFLIGHT_STUB_FAIL=1 \
+        preflight_abandoned_draft_reason o/a "")"
+
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"
