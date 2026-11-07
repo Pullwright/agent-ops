@@ -74,6 +74,24 @@
 # costs one call, paid once, for the single freshly claimed item, immediately
 # before the engagement it would otherwise waste.
 #
+# `preflight_abandoned_draft_reason` is a fourth named done-signal
+# (agent-ops#2840): `scripts/gather-abandoned-drafts.sh`'s own definition of a
+# candidate is "it is open and is a draft — a draft is precisely the
+# Implementer's own claim marker", so a live `isDraft: false` read is, on its
+# own, the complete and correct signal that this candidate is no longer
+# abandoned — some other node already finished it, a human already
+# un-drafted it, or it merged and reopened under another ref. Before this
+# function existed, that fact was only ever caught by a *prompted*
+# instruction asking the Co-Ordinator model to read a non-fresh candidate
+# live before selecting it — advisory, not Script-enforced, and PR #2838 was
+# selected twice without it being followed, burning two full Implementer
+# engagements to rediscover what one live read already knew. Like
+# `preflight_branch_merged_reason` and `preflight_review_feedback_reason`, it
+# is impure — one live `gh api` read of the pull request itself — and gated
+# to the same `abandoned-drafts` source for the same reason: it costs one
+# call, paid once, for the single freshly claimed item, immediately before
+# the clone and the engagement it would otherwise waste.
+#
 # Sourced, never executed: this file sets no shell options, because
 # agent-cycle.sh runs under `set -euo pipefail`. `preflight_done_reason`
 # depends on `work_gone_clearances` (lib/work-gone.sh), sourced first;
@@ -215,4 +233,24 @@ preflight_review_feedback_reason() {
       elif ($blocking.id | tostring) != $rid
       then "the review no longer blocks the pull request"
       else "" end' <<<"$latest_per_reviewer" 2>/dev/null || true
+}
+
+# preflight_abandoned_draft_reason SLUG PR_NUMBER — the abandoned-drafts
+# item's own claim marker (its pull request being a draft) no longer holds:
+# one live `gh api` read of the pull request itself, gated to the
+# `abandoned-drafts` source for the same reason `preflight_branch_merged_
+# reason` and `preflight_review_feedback_reason` are each gated to their own
+# source — see the header (agent-ops#2840).
+#
+# Environment: PREFLIGHT_GH overrides `gh` (tests stub it).
+#
+# Always prints nothing rather than fail: an unreadable or ambiguous read
+# decides nothing, the same direction every other signal here already fails
+# safe in.
+preflight_abandoned_draft_reason() {
+  local slug="$1" pr_number="$2" gh="${PREFLIGHT_GH:-gh}" draft
+  [[ -n "$slug" && -n "$pr_number" ]] || return 0
+  draft="$("$gh" api "repos/$slug/pulls/$pr_number" --jq '.draft' 2>/dev/null)" || return 0
+  [[ "$draft" == "false" ]] && printf 'the pull request is no longer a draft'
+  return 0
 }

@@ -463,16 +463,38 @@
     the engagement it would otherwise waste, regardless of which cache or
     race produced the stale ref.
 
-    A hit from any of the three done-signals logs `item-void` (stage
+    A fourth done-signal runs alongside the other three, scoped to
+    `abandoned-drafts` alone: **the claimed item's own pull request has
+    stopped being a draft** (`lib/preflight.sh`'s
+    `preflight_abandoned_draft_reason`, agent-ops#2840). `scripts/gather-
+    abandoned-drafts.sh`'s own definition of a candidate is "open and is a
+    draft — a draft is precisely the Implementer's own claim marker", so a
+    live `isDraft: false` read is, on its own, the complete and correct
+    signal that the candidate has moved past "abandoned", whether because
+    some other node already finished it, a human already un-drafted it, or
+    it merged and reopened under another ref. `prompts/coordinator.md`'s own
+    instruction to read a non-fresh candidate live before selecting it is a
+    *prompted* safeguard for the same fact, not a Script-enforced one, and
+    this deterministic check is the backstop for exactly the gap a prompted
+    instruction leaves open: PR #2838 was selected twice at a head already
+    open, non-draft and CI-green, each selection costing a full Implementer
+    engagement to rediscover that fact. One live `gh api repos/<slug>/
+    pulls/<n>` call, reading `.draft`, using the `pr_number` the claimed
+    candidate already carries (requirement 3v's `pr_number_for_candidate`) —
+    run only for `abandoned-drafts`, the one source whose claim marker is
+    specifically "is a draft".
+
+    A hit from any of the four done-signals logs `item-void` (stage
     `preflight`) with the reason `work_gone_clearances`,
-    `preflight_branch_merged_reason` or `preflight_review_feedback_reason`
+    `preflight_branch_merged_reason`, `preflight_review_feedback_reason` or
+    `preflight_abandoned_draft_reason`
     gives, releases the claim (requirement 17a's release rules) and ends the
     cycle — no Implementer engagement spent. None needs a corroboration
     guard of its own (requirement 34d exists to catch a model's fabricated
     citation, and there is no model in this path to fabricate one): the
     evidence is read directly off `gh`/the register file/the cycle's own
     pre-claim digest, the same ground truth requirement 34d's guard checks a
-    citation against. And all three are safe to make terminal for the same
+    citation against. And all four are safe to make terminal for the same
     reason the 34i signals are: each fact, once true, stays true — the
     staleness of a pre-claim digest can only delay such a fact's arrival,
     never assert one that later becomes false.

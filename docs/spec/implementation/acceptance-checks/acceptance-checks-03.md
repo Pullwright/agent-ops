@@ -1031,7 +1031,11 @@
    when a different reviewer's later `CHANGES_REQUESTED` has taken its
    place; it decides nothing for an item not shaped `pr-<n>-review-<id>`, and
    nothing for an unreadable reviews read, without calling `gh` at all for
-   the former.
+   the former. `preflight_abandoned_draft_reason` (agent-ops#2840), against a
+   stubbed `gh api pulls/<n>`, reads a `.draft` of `false` as already done
+   (the item's own claim marker gone), `true` as still live, and an
+   unreadable read or a missing `slug`/`pr_number` as deciding nothing
+   without calling `gh` at all for the latter.
 8o. <a id="impl-ac-8o"></a>**A void that is both actioned and old drops out of the extract; every
    other one does not (requirement 34n).** `test/cycle-state.test.sh`'s
    `retire_void_items` section passes: an entry whose `{repo, item}` is in
