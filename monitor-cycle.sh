@@ -297,10 +297,10 @@ detect_and_log_limit_hit() {
     log_shared_limit_hit "$resume_at" "$class" "$reset_known"
     return 0
   fi
-  # Before #2135 scopes a limit to the account that hit it, phrase detection
-  # stays off any non-Claude stage's output (see agent-cycle.sh's copy of
-  # this comment for why).
-  [[ "${stage_provider:-anthropic}" == "anthropic" ]] || return 1
+  # Scoped per provider (issue #2135) — see agent-cycle.sh's copy of this
+  # comment for why. `limit_phrase_provider` is a local, visible to
+  # `limit_phrase_in` below via bash's dynamic scope.
+  local limit_phrase_provider="${stage_provider:-anthropic}"
   limit_phrase_in "$out_file" "$out_file.stderr" || return 1
   text="$(cat "$out_file" "$out_file.stderr" 2>/dev/null || true)"
   IFS=$'\t' read -r resume_at class reset_known < <(limit_decide "$text" "$limit_cooldown_default_hours")
@@ -585,19 +585,24 @@ acquire_lock
 
 # --- Stand-down checks (M3) ---
 # 3.1 Usage-limit cooldown, exactly as agent-cycle.sh 2.1 and review-cycle.sh
-#     R3.1: the log union (as fresh as the last fetch) and fleet/limit.json
-#     (read live), later resume wins.
+#     R3.1, scoped to monitor_model's own provider (issue #2135) — this
+#     pipeline has exactly one stage and one model, resolved just above, so
+#     there is nothing else here to scope separately the way agent-cycle.sh's
+#     Implementer/Reviewer launches are: the log union (as fresh as the last
+#     fetch) and fleet/limit.json (read live), later resume wins.
 #     The union read skips a line that does not parse and fails only when it
 #     could not read at all; that is logged as a `warning`, leaving the flag
 #     carrier to decide alone (agent-ops#2037). A union that could not be built
 #     (`union_build_ok`, reported where it was built) is not read at all.
+monitor_check_provider="${MODEL_PROVIDER[$monitor_model]:-anthropic}"
 union_record=""
 if (( union_build_ok )) && [[ -s "$union_log" ]]; then
-  union_record="$(limit_union_record < "$union_log" 2>&1)" \
+  union_record="$(limit_union_record_for "$monitor_check_provider" < "$union_log" 2>&1)" \
     || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the usage-limit stand-down; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
          union_record=""; }
 fi
-governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
+governing="$(limit_later_record "$union_record" "$(limit_flag_record_for \
+  "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$monitor_check_provider")")"
 [[ -n "$governing" ]] || governing='{}'
 resume_at="$(jq -r '.resume_at // empty' <<<"$governing" 2>/dev/null || true)"
 resume_epoch=0
@@ -605,9 +610,10 @@ if [[ -n "$resume_at" ]]; then
   resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
 fi
 if (( resume_epoch > $(date +%s) )); then
-  log_event "monitor-stand-down" "$(jq -nc --arg r "usage-limit cooldown $(limit_describe "$resume_at" \
+  log_event "monitor-stand-down" "$(jq -nc --arg r "usage-limit cooldown ($monitor_check_provider) $(limit_describe "$resume_at" \
     "$(jq -r '.class // "other"' <<<"$governing" 2>/dev/null || echo other)" \
-    "$(limit_reset_known "$governing")")" '{reason: $r, cause: "usage-limit"}')"
+    "$(limit_reset_known "$governing")")" --arg p "$monitor_check_provider" \
+    '{reason: $r, cause: "usage-limit", provider: $p}')"
   exit 0
 fi
 
@@ -890,7 +896,8 @@ digest_json="$(monitor_digest_build \
        "$SCRIPT_DIR/docs/spec/review/README.md" "$SCRIPT_DIR/docs/spec/monitor.md" \
        "$SCRIPT_DIR/docs/spec/dashboard/README.md")" \
   "$(monitor_digest_promoted "$promoted_open_json")" \
-  "$monitor_peers_json")"
+  "$monitor_peers_json" \
+  "$(monitor_digest_limits "$union_log" "$now_epoch")")"
 
 digest_file="$run_dir/digest.md"
 IFS=$'\t' read -r digest_rung digest_bytes \

@@ -53,6 +53,24 @@ current_limit_record() {
   limit_later_record "$union" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
 }
 
+# current_limit_record_for PROVIDER
+# current_limit_record, narrowed to PROVIDER (issue #2135) — the answer
+# `--clear-limit <provider>` acts on: the union's own answer for PROVIDER
+# (limit_union_record_for, itself already folding in the wildcard bucket) and
+# the live flag, narrowed to PROVIDER by limit_flag_record_for. A separate
+# function rather than a parameter on current_limit_record above, since that
+# one is also `--status`'s own fleet-wide read and must keep answering exactly
+# as it always has.
+current_limit_record_for() {
+  local provider="$1" union
+  union="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | limit_union_record_for "$provider"; } 2>&1)" \
+    || { guard_warn "current_limit_record:union" "$union"; union=""; }
+  limit_later_record "$union" \
+    "$(limit_flag_record_for "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$provider")"
+}
+
 # The `--status` line for that stand-down. Reported alongside the switch
 # because they are two answers to one question — "why is nothing happening?"
 # — and a status that knew only about the switch is what let a stale limit
@@ -631,45 +649,126 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       exit 0
       ;;
     clear-limit)
+      # Which of up to two bare tokens (agent-cycle.sh's own argv parsing)
+      # is a provider and which is a reason cannot be told until now (issue
+      # #2135): providers_load runs well before run_manage_command, so
+      # PROVIDER_SUBSTRATE's keys — every provider config.json names, plus the
+      # always-implicit `anthropic` (lib/model-id.sh) — are what decide it.
+      # Two tokens are unambiguous in *shape* (provider, then reason), but the
+      # first still has to name a real provider — there is no second reading
+      # of two bare tokens to fall back on, and silently scoping the clear to
+      # a provider that does not exist would log a `limit-cleared` nothing
+      # reads and report a stand-down lifted that never was. One token is the
+      # provider only if it names one, exactly as before this issue otherwise
+      # (a single token is the reason).
+      if [[ -n "$CLEAR_LIMIT_ARG1" ]] \
+         && { [[ "$CLEAR_LIMIT_ARG1" == "anthropic" ]] \
+              || [[ -n "${PROVIDER_SUBSTRATE[$CLEAR_LIMIT_ARG1]:-}" ]]; }; then
+        CLEAR_LIMIT_PROVIDER="$CLEAR_LIMIT_ARG1"
+        CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG2"
+      elif [[ -n "$CLEAR_LIMIT_ARG2" ]]; then
+        printf 'agent-cycle: --clear-limit: "%s" is not a configured provider (known: %s) — with two arguments the first must name one\n' \
+          "$CLEAR_LIMIT_ARG1" \
+          "$(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" anthropic | sort -u | paste -sd, -)" >&2
+        exit 64
+      elif [[ -n "$CLEAR_LIMIT_ARG1" ]]; then
+        CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG1"
+      fi
+
       # Both carriers of requirement 2.1, because the stand-down lifts only
       # when the later of the two says so. Clearing one alone reads as
       # success and changes nothing — the failure this command exists to end.
-      governing="$(current_limit_record)"
+      if [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+        governing="$(current_limit_record_for "$CLEAR_LIMIT_PROVIDER")"
+      else
+        governing="$(current_limit_record)"
+      fi
       was="$(jq -r '.resume_at // empty' <<<"${governing:-{\}}" 2>/dev/null || true)"
 
       # Carrier 1: the log union. A `limit-cleared` event dated now outranks
-      # every earlier limit-hit, on this node immediately and on its peers at
-      # their next state-sync fetch.
+      # every earlier limit-hit for this same scope, on this node immediately
+      # and on its peers at their next state-sync fetch. A `provider` field
+      # scopes the clear to that provider alone; its absence means every
+      # provider, exactly as `--clear-limit` always has before this issue.
       log_event "limit-cleared" "$(jq -nc --arg w "$was" --arg r "$CLEAR_LIMIT_REASON" \
-        --arg by "$(toggle_actor)" \
+        --arg by "$(toggle_actor)" --arg p "$CLEAR_LIMIT_PROVIDER" \
         '{was: (if $w == "" then null else $w end),
           reason: (if $r == "" then "cleared by hand" else $r end),
-          by: $by, actor: $by, kind: "manual"}')"
-      notify_post_cycle "fleet-standdown-end" "standdown:usage-limit" \
-        "Usage-limit cooldown cleared by hand" "" "" \
+          by: $by, actor: $by, kind: "manual"}
+         + (if $p == "" then {} else {provider: $p} end)')"
+      notify_post_cycle "fleet-standdown-end" \
+        "standdown:usage-limit${CLEAR_LIMIT_PROVIDER:+:$CLEAR_LIMIT_PROVIDER}" \
+        "Usage-limit cooldown cleared by hand${CLEAR_LIMIT_PROVIDER:+ ($CLEAR_LIMIT_PROVIDER)}" "" "" \
         "${CLEAR_LIMIT_REASON:-cleared by hand}"
 
       # Carrier 2: the live flag. Deleting it rather than shortening it,
       # because fleet_limit_publish is extend-only by design (concurrent hits
       # must converge on the latest resume) — a human lifting a stand-down is
       # the one case that legitimately moves it earlier, and delete is the
-      # only write that expresses that.
+      # only write that expresses that. With a named provider, the flag is
+      # only ever deleted outright when its own current record is exactly
+      # that provider's — never a wildcard or a different provider's, since
+      # the flag holds exactly one record and clearing one provider must not
+      # silently clear whichever other provider the flag happened to be
+      # carrying (limit_flag_record_for's own header).
+      clear_flag=1
+      if [[ -n "$CLEAR_LIMIT_PROVIDER" && -n "$state_repo" ]]; then
+        flag_provider="$(jq -r '.provider // empty' \
+          <<<"$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" 2>/dev/null || true)"
+        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" ]] || clear_flag=0
+      fi
       if [[ -n "$state_repo" ]]; then
-        # >/dev/null: fleet_flag_delete now prints which of "deleted"/"absent"
-        # it was (issue #426) for callers that log the outcome; this one only
-        # ever reads the return code, and the raw word must not leak to the
-        # operator's terminal.
-        if fleet_flag_delete "$state_repo" "$state_dir" limit >/dev/null; then
-          printf 'agent-cycle: fleet usage-limit flag clear\n'
-        else
-          printf 'agent-cycle: WARNING — could not clear fleet/limit.json; peers reading it live still stand down. Re-run --clear-limit, or delete fleet/limit.json in %s by hand.\n' "$state_repo" >&2
+        if (( clear_flag )); then
+          # >/dev/null: fleet_flag_delete now prints which of "deleted"/"absent"
+          # it was (issue #426) for callers that log the outcome; this one only
+          # ever reads the return code, and the raw word must not leak to the
+          # operator's terminal.
+          if fleet_flag_delete "$state_repo" "$state_dir" limit >/dev/null; then
+            printf 'agent-cycle: fleet usage-limit flag clear\n'
+          else
+            printf 'agent-cycle: WARNING — could not clear fleet/limit.json; peers reading it live still stand down. Re-run --clear-limit, or delete fleet/limit.json in %s by hand.\n' "$state_repo" >&2
+          fi
+        elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+          printf 'agent-cycle: fleet/limit.json does not name %s — it is left in place; whether %s is still held down is reported below\n' \
+            "$CLEAR_LIMIT_PROVIDER" "$CLEAR_LIMIT_PROVIDER"
         fi
       fi
 
-      if [[ -n "$was" ]]; then
-        printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)\n' "$was"
+      # Did the clear actually work? Asked of the carriers themselves rather
+      # than inferred from what was written to them, because a *scoped* clear
+      # has one case where both carriers legitimately refuse it: a wildcard
+      # record — no `provider` field at all, as every record written before
+      # issue #2133 is — governs every provider by the "a record without one
+      # applies to every provider" rule, and neither carrier can express
+      # "every provider but this one". The union's `limit-cleared` resets only
+      # this provider's own bucket, leaving the wildcard bucket standing; the
+      # flag is left alone by the guard above. So the stand-down survives a
+      # clear that otherwise reports success — which is the exact failure this
+      # command exists to end, and the reason it is re-read here instead of
+      # trusted. Only the scoped form can hit it: a bare `--clear-limit`
+      # writes a wildcard `limit-cleared` and deletes the flag outright.
+      if [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+        still="$(current_limit_record_for "$CLEAR_LIMIT_PROVIDER")"
+        still_at="$(jq -r '.resume_at // empty' <<<"${still:-{\}}" 2>/dev/null || true)"
+        still_epoch=0
+        if [[ -n "$still_at" ]]; then
+          still_epoch="$(date -d "$still_at" +%s 2>&1)" \
+            || { guard_warn "clear_limit:still_epoch" "$still_epoch"; still_epoch=0; }
+        fi
       else
-        printf 'agent-cycle: no usage-limit stand-down was in force\n'
+        still_at=""
+        still_epoch=0
+      fi
+
+      if (( still_epoch > $(date +%s) )); then
+        printf 'agent-cycle: WARNING — the usage-limit stand-down for %s is NOT lifted: a fleet-wide record naming no provider still holds it down until %s, and a clear scoped to one provider cannot remove it. Re-run "agent-cycle.sh --clear-limit" with no provider to clear every provider at once.\n' \
+          "$CLEAR_LIMIT_PROVIDER" "$still_at" >&2
+      elif [[ -n "$was" ]]; then
+        printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)%s\n' "$was" \
+          "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
+      else
+        printf 'agent-cycle: no usage-limit stand-down was in force%s\n' \
+          "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
       fi
       refresh_dashboard
       exit 0

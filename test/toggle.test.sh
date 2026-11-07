@@ -42,6 +42,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# fleet_limit_publish and fleet_limit_resume_at_for (issue #2135) call
+# limit_flag_record_for, which lives in lib/limit-detect.sh rather than here —
+# agent-cycle.sh sources limit-detect.sh before toggle.sh for exactly this
+# reason (see its own sourcing-order comment), and this file has to mirror
+# that order or those two functions silently see an undefined function
+# instead of the real one (bash's "command not found" on an unset function,
+# swallowed here because this file does not run under `set -e`), which reads
+# as limit_flag_record_for always returning empty — the extend-only guard
+# below then never finds a "current, same-provider" record to compare
+# against and overwrites on every publish, whatever the resume_at ordering.
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -698,6 +710,91 @@ assert_eq "a publish carries its evidence" \
   "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.evidence')"
 assert_eq "and records an automatic kind with the node as actor" "auto/node-b" \
   "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '"\(.kind)/\(.actor)"')"
+rm -f "$gh_backing/fleet/limit.json"
+
+# --- The limit flag's extend-only guard is now PER PROVIDER (issue #2135) --
+# The flag still carries exactly one record at a time (limit_flag_record_for's
+# own header explains the trade), so a second provider's hit cannot simply
+# join the first — it has to replace it outright. "Already covers this" is
+# now judged against the CURRENT record's own provider via
+# limit_flag_record_for: a longer-running freeze for a *different* provider
+# must not suppress this provider's own publish just because its resume_at
+# happens to be later, or whichever provider freezes longest would silently
+# own the fast path forever.
+fleet_limit_publish "$slug" "$fs_a" "2099-01-01T00:00:00Z" "monthly-spend" true node-a "" anthropic
+assert_eq "an anthropic hit with a far-future resume_at creates the flag" "0" "$?"
+assert_eq "…scoped to anthropic" "anthropic" \
+  "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.provider')"
+
+fleet_limit_publish "$slug" "$fs_b" "2030-01-01T00:00:00Z" "weekly" false node-b "" xai
+assert_eq "publishing a SHORTER-resuming hit for a DIFFERENT provider still succeeds" "0" "$?"
+assert_eq "…and OVERWRITES the flag rather than no-opping against anthropic's longer freeze" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at "$slug" "$fs_a")"
+assert_eq "…the flag now names xai, not anthropic" "xai" \
+  "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.provider')"
+
+# Extend-only is still preserved WITHIN the same provider — the regression
+# this scoping must not introduce: a second, shorter hit for xai itself must
+# still no-op against the xai record just written.
+fleet_limit_publish "$slug" "$fs_b" "2025-01-01T00:00:00Z" "weekly" false node-b "" xai
+assert_eq "a shorter hit for the SAME provider the flag already covers is a no-op" \
+  "0" "$?"
+assert_eq "…the flag still shows xai's own earlier (longer) publish" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at "$slug" "$fs_a")"
+
+# --- fleet_limit_resume_at_for: the per-provider live re-check -------------
+# lib/enabler.sh and lib/refinement.sh take this right before launching their
+# own stage, scoped the same way the main stand-down check is.
+assert_eq "fleet_limit_resume_at_for returns the resume_at for the provider the flag currently names" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" xai)"
+assert_eq "…and is empty for a provider the current record doesn't name and isn't a wildcard" \
+  "" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# A record with no provider field at all (every flag written before issue
+# #2133, or one hand-migrated) is the wildcard case: it governs whichever
+# provider asks, exactly as fleet_limit_resume_at (the fleet-wide reader)
+# already treats it.
+legacy_limit_rec="$(jq -nc '{resume_at: "2040-01-01T00:00:00Z", class: "monthly-spend", reset_known: true, node: "node-a", kind: "auto", actor: "node-a"}')"
+fleet_flag_write "$slug" limit "$legacy_limit_rec" "legacy record, written before issue #2133 named a provider"
+assert_eq "fleet_limit_resume_at_for honours a wildcard (pre-#2133) record for xai" \
+  "2040-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" xai)"
+assert_eq "…and for anthropic too" \
+  "2040-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# --- limit_governing_record_for: the union and the flag, combined ----------
+# Requirement 2.1's "later resume wins" over BOTH carriers at once, scoped to
+# one provider — the answer lib/enabler.sh, lib/refinement.sh, the dashboard
+# and the Monitor's digest want, without each re-deriving it from the union
+# and the flag separately. With no state repo configured this degrades to
+# reading the log union alone (fleet_flag_fetch's own quiet no-op for an
+# empty STATE_REPO), which keeps this half of the test pure/offline.
+xai_hit_only="$(printf '%s\n' \
+  '{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2099-06-01T00:00:00Z","provider":"xai"}')"
+assert_eq "limit_governing_record_for with no state repo reads the log union alone" \
+  "2099-06-01T00:00:00Z" \
+  "$(printf '%s\n' "$xai_hit_only" | limit_governing_record_for "" "$fs_a" xai | jq -r '.resume_at')"
+
+# With a real flag published too, the later of the flag and the union governs
+# — the same "later resume wins" rule, now exercised across both carriers at
+# once rather than just within the union (above) or just within the flag
+# (fleet_limit_publish's own extend-only guard).
+fleet_limit_publish "$slug" "$fs_a" "2050-01-01T00:00:00Z" "monthly-spend" true node-a "" xai
+union_earlier_than_flag="$(printf '%s\n' \
+  '{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2040-01-01T00:00:00Z","provider":"xai"}')"
+assert_eq "limit_governing_record_for picks the flag when IT is the later carrier" \
+  "2050-01-01T00:00:00Z" \
+  "$(printf '%s\n' "$union_earlier_than_flag" | limit_governing_record_for "$slug" "$fs_a" xai | jq -r '.resume_at')"
+
+union_later_than_flag="$(printf '%s\n' \
+  '{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2060-01-01T00:00:00Z","provider":"xai"}')"
+assert_eq "…and picks the log union when IT is the later carrier" \
+  "2060-01-01T00:00:00Z" \
+  "$(printf '%s\n' "$union_later_than_flag" | limit_governing_record_for "$slug" "$fs_a" xai | jq -r '.resume_at')"
+
+assert_eq "a provider the flag doesn't name and the union says nothing about has no governing record" \
+  "" "$(printf '%s\n' "$union_earlier_than_flag" | limit_governing_record_for "$slug" "$fs_a" anthropic | jq -r '.resume_at // empty')"
 rm -f "$gh_backing/fleet/limit.json"
 
 # ===== The credit mix's live lever, lib/mix.sh (issue #2244, D30) =============
@@ -1435,7 +1532,7 @@ rm -f "$b_log"
 run_node "$b_home" agent-cycle.sh >/dev/null 2>&1
 assert_eq "a cycle under a fleet limit flag exits cleanly" "0" "$?"
 assert_contains "and stands down until the flag's resume_at" \
-  'usage-limit cooldown until 2030-01-01T00:00:00Z' "$(cat "$b_log" 2>/dev/null)"
+  'usage-limit cooldown (anthropic) until 2030-01-01T00:00:00Z' "$(cat "$b_log" 2>/dev/null)"
 
 # --- --clear-limit (2.1a) -------------------------------------------------
 # The stand-down must have a supported exit. It arrives on two carriers and
@@ -1471,6 +1568,60 @@ assert_contains "the superseded limit-hit is still in the log" \
 assert_not_contains "and the cycle no longer stands down for the usage limit" \
   'usage-limit cooldown' "$(tail -n +$(( b_log_before + 1 )) "$b_log" 2>/dev/null)"
 rm -f "$gh_backing/fleet/limit.json"
+
+# --- --clear-limit <provider>: the two faults a scoped clear can hide ------
+# Two bare tokens are provider-then-reason, so the first must actually name
+# a configured provider: there is no second reading to fall back on, and
+# silently scoping the clear to a provider that does not exist would log a
+# `limit-cleared` nothing reads and report a stand-down lifted that never
+# was. A single token naming no provider is still the reason, as it always
+# has been (asserted by the `cap raised` call above).
+clear_bad_out="$(run_node "$b_home" agent-cycle.sh --clear-limit "the cap" "was raised" 2>&1)"
+assert_eq "--clear-limit rejects a two-token form whose first token names no provider" \
+  "64" "$?"
+assert_contains "...saying which token it objected to" 'is not a configured provider' "$clear_bad_out"
+
+# A wildcard record — no `provider` field at all, as every record written
+# before #2133 is — governs every provider, and NEITHER carrier can express
+# "every provider but this one": the union's scoped `limit-cleared` resets
+# only that provider's own bucket and leaves the wildcard bucket standing,
+# and the flag is left alone rather than deleted out from under whichever
+# other provider it covers. So a scoped clear genuinely does not lift it,
+# and the operator must be told that rather than reading "stand-down lifted"
+# and walking away. Asserted on each carrier separately, because the check
+# re-reads the carriers rather than inferring from what it wrote — a check
+# keyed on the flag alone would miss the union-only case entirely.
+printf '%s\n' '{"resume_at":"2030-01-01T00:00:00Z","class":"monthly-spend","reset_known":true,"kind":"auto","actor":"node-a"}' \
+  > "$gh_backing/fleet/limit.json"
+clear_wild_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
+assert_contains "a scoped --clear-limit reports a wildcard flag record as NOT lifted" \
+  'is NOT lifted' "$clear_wild_out"
+assert_contains "...naming the bare --clear-limit that can remove it" \
+  'with no provider' "$clear_wild_out"
+assert_eq "...leaving fleet/limit.json in place rather than clearing another provider's too" "1" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# The same refusal, carried by the log union alone with no flag at all: a
+# pre-#2133 limit-hit still sitting in the log. The flag-only form of this
+# check reported success here, which is why it is re-read from the carriers.
+# The union's own fold is ts-ordered, not append-ordered (fleet_logs sorts the
+# whole stream, lib/fleet.sh), so this event's own `ts` has to sort after the
+# real clock-stamped `limit-cleared` events the two calls above already wrote
+# into this same log a moment ago — a canned past date here would let the
+# fold treat those earlier clears as happening *after* this hit and wipe the
+# wildcard bucket before the assertions below even run.
+printf '%s\n' \
+  "{\"ts\":\"$(date -u -d '+10 minutes' +%Y-%m-%dT%H:%M:%SZ)\",\"cycle\":\"seed\",\"node\":\"node-b\",\"event\":\"limit-hit\",\"resume_at\":\"2031-01-01T00:00:00Z\",\"class\":\"monthly\",\"reset_known\":true}" \
+  >> "$b_log"
+clear_union_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
+assert_contains "a scoped --clear-limit reports a wildcard *union* record as NOT lifted too" \
+  'is NOT lifted' "$clear_union_out"
+assert_contains "...naming the resume time still in force" '2031-01-01T00:00:00Z' "$clear_union_out"
+# And the bare form, which writes a wildcard limit-cleared, does lift it.
+clear_all_out="$(run_node "$b_home" agent-cycle.sh --clear-limit 2>&1)"
+assert_contains "while the bare --clear-limit lifts that same wildcard record" \
+  'stand-down lifted' "$clear_all_out"
 
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing
@@ -1595,7 +1746,7 @@ rm -f "$b_log"
 run_node "$b_home" agent-cycle.sh >/dev/null 2>&1
 assert_eq "a cycle under a manual limit flag exits cleanly" "0" "$?"
 assert_contains "a manual stand-down names its actor and kind" \
-  'manual stand-down until 2030-03-01T00:00:00Z, set by warwick@laptop' \
+  'manual stand-down (anthropic) until 2030-03-01T00:00:00Z, set by warwick@laptop' \
   "$(cat "$b_log" 2>/dev/null)"
 assert_not_contains "a manual stand-down is never probed" \
   '(probe:' "$(cat "$b_log" 2>/dev/null)"

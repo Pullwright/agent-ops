@@ -183,17 +183,22 @@ M3. <a id="mon-m3"></a>**CronJob-shaped.** The Monitor uses no Docker socket, no
    that the pipeline's runtime container holds neither the Docker socket nor
    the Kubernetes API.
 
-M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check, in full: the log
-   union (as fresh as the last fetch) and `fleet/limit.json` (read live),
-   later resume wins. A cooldown in force stands the run down before the
-   digest is built. The union is read with requirement 2.1's reduction,
-   which skips a line that does not parse; a read that fails outright, or a
-   union that could not be built (`fleet_logs` failing, requirement 2.5), is
-   logged as a `warning` and leaves the flag to decide alone. Both of the
-   run's snapshots, of `log.jsonl` and of `monitor-log.jsonl`, are built by
-   `fleet_logs`, which takes a peer's damaged line apart before its sort, so
-   neither is repaired afterwards; a `monitor-log.jsonl` snapshot that could
-   not be built is logged as a `warning` too.
+M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check, in full, scoped to
+   `monitor_model`'s own provider (issue #2135) — this pipeline runs one
+   stage against one model, resolved before this check, so there is nothing
+   else here to scope separately the way the implementation pipeline's
+   Implementer launch is: the log union (as fresh as the
+   last fetch), narrowed to that provider, and `fleet/limit.json` (read
+   live, narrowed the same way), later resume wins. A cooldown in force
+   stands the run down before the digest is built. The union is read with
+   requirement 2.1's reduction, which skips a line that does not parse; a
+   read that fails outright, or a union that could not be built
+   (`fleet_logs` failing, requirement 2.5), is logged as a `warning` and
+   leaves the flag to decide alone. Both of the run's snapshots, of
+   `log.jsonl` and of `monitor-log.jsonl`, are built by `fleet_logs`, which
+   takes a peer's damaged line apart before its sort, so neither is repaired
+   afterwards; a `monitor-log.jsonl` snapshot that could not be built is
+   logged as a `warning` too.
 
 M3.2. <a id="mon-m3-2"></a>**Deference to a live sibling.** If either `lock.json` (the
    implementation pipeline) or `review-lock.json` (the review pipeline) is
@@ -274,6 +279,15 @@ M6. <a id="mon-m6"></a>**The model never reads a primary record.** The Script as
      open with no transition in the window, and a transition can have no open
      page behind it, and it is the *open pages* the triage duty (M15) is owed
      to.
+   - **every provider currently frozen on a usage limit** (issue #2135),
+     right now rather than within the window — the same "live state, not a
+     transition log" distinction the pager section draws between its own
+     open pages and its transitions. Each entry names the provider (the
+     wildcard bucket — every pre-#2133 `limit-hit` carrying no `provider`
+     field — renders as "every provider"), its `resume_at`, class and
+     `reset_known`, and the same human description `limit_describe` gives
+     the dashboard banner and `--status`. A provider whose hit has already
+     lapsed or been superseded by a `limit-cleared` carries no entry.
    - **every node's heartbeat verdicts** — per-stage health, updater, compose,
      image, mirror, doctor. A peer's row comes from its own `heartbeat.json`,
      never from anything this node derives on a peer's behalf; this node's own
@@ -739,9 +753,11 @@ M19. <a id="mon-m19"></a>**No `node-state` transition.** The Monitor writes none
    check M13b needs, and nothing else from either — no evaluation, no filing,
    no fleet-wide claim. `shellcheck`-clean; sets its own `PATH`.
 2. <a id="mon-c-2"></a>`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the
-   promoted-findings section (M13a) `monitor_digest_promoted` shapes. Pure
-   readers, unit-tested over fixture logs (`test/monitor-digest.test.sh`);
-   `shellcheck`-clean.
+   promoted-findings section (M13a) `monitor_digest_promoted` shapes and the
+   currently-frozen-providers section (issue #2135) `monitor_digest_limits`
+   shapes, over `lib/limit-detect.sh`'s own `limit_union_frozen_providers`
+   and `limit_union_state_for`. Pure readers, unit-tested over fixture logs
+   (`test/monitor-digest.test.sh`); `shellcheck`-clean.
 3. <a id="mon-c-3"></a>`prompts/monitor.md` implementing M10, M10a and M15.
 4. <a id="mon-c-4"></a>`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,
    implementing M17.
@@ -775,8 +791,11 @@ supplies its own values.
    the throughput fold counts selections per source, stand-downs per cause,
    `none-selected` reasons verbatim and the fit rung histogram; the gotcha
    reader lifts a `## Gotchas` section and contributes nothing for a file
-   without one; and every reader returns its empty shape for a missing file
-   rather than failing.
+   without one; the currently-frozen-providers section lists a provider once
+   per live stand-down, two simultaneously frozen providers as two entries,
+   and carries no entry for a provider whose hit has lapsed or been cleared;
+   and every reader returns its empty shape for a missing file rather than
+   failing.
 3. <a id="mon-ac-3"></a>**The bound holds exactly (M7).** Same file: the rendered digest is never
    larger than `monitor_max_input_bytes`, measured in bytes, at every rung
    including the truncating one; the rung climbs monotonically as the bound

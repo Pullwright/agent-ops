@@ -1481,7 +1481,10 @@ _refiner_engagement_json() {
 
 _refiner_fleet_limit_active() {
   local live_resume live_epoch
-  live_resume="$(fleet_limit_resume_at "$state_repo" "$state_dir" 2>/dev/null || true)"
+  # Scoped to the Refiner's own provider (issue #2135): a limit against a
+  # different provider's account does not idle this one.
+  live_resume="$(fleet_limit_resume_at_for "$state_repo" "$state_dir" \
+    "${MODEL_PROVIDER[$refiner_model]:-anthropic}" 2>/dev/null || true)"
   [[ -n "$live_resume" ]] || return 1
   live_epoch="$(date -d "$live_resume" +%s 2>&1)" \
     || { guard_warn "live_epoch" "$live_epoch"; live_epoch=0; }

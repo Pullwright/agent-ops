@@ -475,10 +475,10 @@ detect_and_log_limit_hit() {
     log_shared_limit_hit "$resume_at" "$class" "$reset_known"
     return 0
   fi
-  # Before #2135 scopes a limit to the account that hit it, phrase detection
-  # stays off any non-Claude stage's output (see agent-cycle.sh's copy of
-  # this comment for why).
-  [[ "${stage_provider:-anthropic}" == "anthropic" ]] || return 1
+  # Scoped per provider (issue #2135) — see agent-cycle.sh's copy of this
+  # comment for why. `limit_phrase_provider` is a local, visible to
+  # `limit_phrase_in` below via bash's dynamic scope.
+  local limit_phrase_provider="${stage_provider:-anthropic}"
   limit_phrase_in "$out_file" "$out_file.stderr" || return 1
   text="$(cat "$out_file" "$out_file.stderr" 2>/dev/null || true)"
   IFS=$'\t' read -r resume_at class reset_known < <(limit_decide "$text" "$limit_cooldown_default_hours")
@@ -946,6 +946,15 @@ acquire_lock
 # --- Stand-down checks (R3) ---
 # 3.1 Usage-limit cooldown, exactly as agent-cycle.sh 2.1: the log union (as
 # fresh as the last fetch) and fleet/limit.json (read live), later resume wins.
+#
+# Deliberately fleet-wide, not scoped to any one provider (issue #2135): no
+# repo has been chosen yet, so there is no single model's provider to check
+# here, and this pipeline's own `repository_review.repos[]` can each resolve
+# to a different one. Fleet-wide is the conservative direction — it can only
+# stand this run down when a narrower check would have let it proceed, never
+# the reverse — and the R6 re-check inside the per-repo loop below is what
+# actually scopes the stand-down per repo's own resolved provider, skipping
+# just the repos whose provider is frozen rather than the whole run.
 #
 # The union read skips a line that does not parse and fails only when it
 # could not read at all; that is logged as a `warning` and leaves the flag
@@ -1476,17 +1485,31 @@ while IFS= read -r entry; do
   # The union is re-snapshotted here — this node's own hit lands in its log
   # immediately — and fleet/limit.json is re-read live, which is how a hit a
   # *peer* took during our first review reaches us before their branch does.
+  #
+  # Scoped to this entry's own resolved provider (issue #2135): each repo
+  # under `repository_review.repos[]` can configure a different model, so a
+  # limit against one provider must skip only the repos that resolve to it,
+  # never the repos on a healthy provider too. The resolution is repeated
+  # here and again inside review_one() below (line ~1188) — both idempotent
+  # reads of the same (model_key, model) pair into MODEL_PROVIDER — rather
+  # than restructuring review_one() to accept a pre-resolved model, since this
+  # loop needs the provider before deciding whether to call it at all.
+  entry_check_model_key="$(jq -r '.model_key' <<<"$entry")"
+  entry_check_model_raw="$(jq -r '.model' <<<"$entry")"
+  resolve_model_id_into entry_check_model "$entry_check_model_key" "$entry_check_model_raw"
+  check_provider="${MODEL_PROVIDER[$entry_check_model]:-anthropic}"
   union_build_ok=1
   union_build_err="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl 2>&1 > "$union_log")" \
     || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be built for the between-repository usage-limit re-check; fleet/limit.json decides alone: ${union_build_err:0:500}" '{detail: $d}')"
          union_build_ok=0; }
   union_record=""
   if (( union_build_ok )) && [[ -s "$union_log" ]]; then
-    union_record="$(limit_union_record < "$union_log" 2>&1)" \
+    union_record="$(limit_union_record_for "$check_provider" < "$union_log" 2>&1)" \
       || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the between-repository usage-limit re-check; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
            union_record=""; }
   fi
-  governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
+  governing="$(limit_later_record "$union_record" "$(limit_flag_record_for \
+    "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$check_provider")")"
   [[ -n "$governing" ]] || governing='{}'
   resume_at="$(jq -r '.resume_at // empty' <<<"$governing" 2>/dev/null || true)"
   resume_epoch=0
@@ -1494,9 +1517,23 @@ while IFS= read -r entry; do
     resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
   fi
   if (( resume_epoch > $(date +%s) )); then
-    log_event "review-stand-down" "$(jq -nc --arg r "usage-limit cooldown $(limit_describe "$resume_at" \
+    log_event "review-stand-down" "$(jq -nc --arg r "usage-limit cooldown ($check_provider) $(limit_describe "$resume_at" \
       "$(jq -r '.class // "other"' <<<"$governing" 2>/dev/null || echo other)" \
-      "$(limit_reset_known "$governing")")" '{reason: $r, cause: "usage-limit"}')"
+      "$(limit_reset_known "$governing")")" \
+      --arg p "$check_provider" '{reason: $r, cause: "usage-limit", provider: $p}')"
+    # Still ends the run here, not just this one repo (unlike
+    # lib/coordinator-phase.sh's own per-item Implementer check, issue #2135):
+    # `finalize_node_state_for_review`'s `_CYCLE_TERMINAL_STATE` latch
+    # (lib/node-time-state.sh) is a one-shot set-once-per-run memory with no
+    # way to un-set it for a later repo that *does* get reviewed, so
+    # continuing past this entry on a provider that later clears would
+    # mis-file the whole run as externally-blocked even though real review
+    # work happened after. What this scoping buys over the fleet-wide check
+    # it replaces is still real: a repo earlier in $to_review_json, on a
+    # provider this freeze does not name, is reviewed before this break is
+    # ever reached, where the fleet-wide form would have stopped the run at
+    # the very first repo regardless of which provider it or any other
+    # configured repo actually used.
     # node-state (docs/reference/flow-schema.md, D21): the same terminal state its
     # sibling at the top of this script records, for the same reason. Without
     # it this `break` falls through to finalize_node_state_for_review's

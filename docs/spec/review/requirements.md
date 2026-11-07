@@ -115,18 +115,37 @@ R2. <a id="rev-r2"></a>**Lock.** Acquire `review-lock.json` in `state_dir` recor
    long as it would keep the lock against another review.
 
 R3. <a id="rev-r3"></a>**Stand-down checks.** Each logs its reason and exits 0:
-   1. *Usage-limit cooldown* — identical to requirement 2.1: the log
-      union's most recent `limit-hit` and the live `fleet/limit.json` flag
-      are both read, and the **later** `resume_at` wins; if it is still in
-      the future, stand down. When *this* pipeline hits a limit it writes
-      the same two carriers the implementation cycle does — the `limit-hit`
-      event to the shared `log.jsonl`, and the fleet flag, extend-only,
-      best-effort (a `warning` is logged when the flag write fails and the
-      union carries the signal instead). The union is read with requirement
-      2.1's reduction, which skips a line that does not parse; a read that
-      fails outright, or a union that could not be built (R2c), is logged as
-      a `warning` and leaves the flag to decide alone, here and at the
-      re-check between repositories alike.
+   1. *Usage-limit cooldown* — requirement 2.1's two carriers, read the
+      same way: the log union's most recent `limit-hit` and the live
+      `fleet/limit.json` flag are both read, and the **later** `resume_at`
+      wins; if it is still in the future, stand down. When *this* pipeline
+      hits a limit it writes the same two carriers the implementation cycle
+      does — the `limit-hit` event to the shared `log.jsonl`, and the fleet
+      flag, extend-only, best-effort (a `warning` is logged when the flag
+      write fails and the union carries the signal instead). The union is
+      read with requirement 2.1's reduction, which skips a line that does
+      not parse; a read that fails outright, or a union that could not be
+      built (R2c), is logged as a `warning` and leaves the flag to decide
+      alone, here and at the re-check between repositories alike.
+
+      Unlike requirement 2.1 this check is **not** scoped to one provider
+      (issue #2135): no repository has been chosen when it runs, and each
+      entry in `repository_review.repos[]` may configure a model on a
+      different provider, so there is no single provider to narrow to.
+      Fleet-wide is the conservative direction — it can only stand a run
+      down where a narrower read would have let it proceed, never the
+      reverse — and it is the re-check between repositories (R6) that
+      actually scopes the stand-down, to each entry's own resolved
+      provider off the `MODEL_PROVIDER` map R1a populates. A repository
+      earlier in the list whose provider the freeze does not name is
+      therefore reviewed before that re-check is ever reached, where a
+      fleet-wide re-check would have stopped the run at the first
+      repository regardless of which provider it used. The re-check still
+      ends the whole run rather than skipping just that one repository:
+      `set_node_state_terminal`'s record (`lib/node-time-state.sh`) has no
+      un-set, so continuing to a later repository on a healthy provider
+      would mis-file the whole run as `externally-blocked` even though real
+      review work followed.
    2. *Implementation pipeline busy* — if `lock.json` is held by a live
       process, stand down and wait for the next tick (defer to it, per
       "Relationship to the existing pipelines"), removing the record
@@ -535,7 +554,10 @@ R5. <a id="rev-r5"></a>**Per non-skipped repo** (processed **sequentially**, so 
       `lib/pipeline-marker.sh` that requirement's component describes.
 
 R6. <a id="rev-r6"></a>**Usage-limit detection.** After every `claude` invocation, run the shared
-   detector (`lib/limit-detect.sh`). On a match, write a `limit-hit` event to
+   detector (`lib/limit-detect.sh`), against the phrase table belonging to
+   the provider the stage just ran on (`limit_phrase_regex_for`, requirement
+   10) — so a limit on any configured provider is detected, not only
+   Anthropic's (issue #2135). On a match, write a `limit-hit` event to
    the *shared* `log.jsonl` with the requirement-10 shape (`resume_at`,
    `class`, `reset_known`, and requirement 2.1's `provider` naming the
    provider the stage that hit the limit was running on) and stop launching
@@ -544,8 +566,12 @@ R6. <a id="rev-r6"></a>**Usage-limit detection.** After every `claude` invocatio
    implementation pipeline (holding its own lock) appends concurrently, and it
    is the one signal both pipelines and the dashboard key their stand-down off.
    Both of this pipeline's stand-down checks read that signal through the same
-   shared reduction, so `agent-cycle.sh --clear-limit` lifts the review cycle
-   too — one account, one limit, one way to clear it.
+   shared reduction, so `agent-cycle.sh --clear-limit [<provider>]` lifts the
+   review cycle too — one account per provider, one limit each, and the same
+   one way to clear it. The re-check between repositories narrows that read
+   to the next entry's own provider (R3.1); the top-of-run check stays
+   fleet-wide, so a hit on any provider still stands a whole run down before
+   the first repository is chosen.
 
 R7. <a id="rev-r7"></a>**Cleanup (always, via a trap).** Delete each cycle's clone, write a
    `review-end` event, release the review lock, and tee each stage's
