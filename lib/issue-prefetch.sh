@@ -86,25 +86,30 @@ JQ
 # whose live state cannot be read counts as still-open, the same fail-safe
 # direction every other deterministic exclusion in this file takes.
 issue_blocked_by_ref() {
-  local slug="$1" thread_text="$2" dep_refs ref ref_repo ref_n ref_state ref_display
+  local slug="$1" number="$2" thread_text="$3" dep_refs ref ref_repo ref_n ref_state ref_display
   dep_refs="$(dependency_refs "$thread_text")"
-  [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]] || return 0
-  while IFS= read -r ref; do
-    [[ -n "$ref" ]] || continue
-    if [[ "$ref" == */* ]]; then
-      ref_repo="${ref%%#*}"
-      ref_n="${ref##*#}"
-    else
-      ref_repo="$slug"
-      ref_n="$ref"
-    fi
-    ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
-    if [[ "$ref_state" != "closed" ]]; then
-      ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
-      printf '%s\n' "$ref_display"
-      return 0
-    fi
-  done < <(jq -r '.[]' <<<"$dep_refs")
+  if [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]]; then
+    while IFS= read -r ref; do
+      [[ -n "$ref" ]] || continue
+      if [[ "$ref" == */* ]]; then
+        ref_repo="${ref%%#*}"
+        ref_n="${ref##*#}"
+      else
+        ref_repo="$slug"
+        ref_n="$ref"
+      fi
+      ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
+      if [[ "$ref_state" != "closed" ]]; then
+        ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
+        printf '%s\n' "$ref_display"
+        return 0
+      fi
+    done < <(jq -r '.[]' <<<"$dep_refs")
+  fi
+  [[ -n "$number" ]] || return 0
+  # shellcheck source=lib/dependency-gate.sh
+  . "$SCRIPT_DIR/lib/dependency-gate.sh"
+  dependency_native_open_ref "$slug" "$number"
   return 0
 }
 
@@ -149,7 +154,7 @@ issue_prefetch_blocked_by_additions() {
       (.[] | select(.number == $n)) as $i
       | ($i.body // "") + "\n" + (([$i.comments[]?.body]) | join("\n"))
       ' <<<"$issues_raw" 2>/dev/null)" || continue
-    ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+    ref_display="$(issue_blocked_by_ref "$slug" "$n" "$thread_text")"
     [[ -n "$ref_display" ]] || continue
     out="$(jq -c --argjson n "$n" --arg ref "$ref_display" \
       '. + [{number: $n, reason: ("blocked-by: " + $ref)}]' <<<"$out" 2>/dev/null)" || out='[]'
