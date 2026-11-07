@@ -1195,7 +1195,14 @@ _landing_notice_body() {
 
 Landing is holding this pull request — approved, but not yet armed to merge — until this clears. This is informational only: it changes nothing about whether or when this pull request lands.
 
-- **Refusal class:** \`$class\`
+- **Refusal class:** \`$class\`$(
+    # Guarded, not an unconditional call: a caller that has not sourced
+    # lib/reason-url.sh (every one before this field existed) gets the
+    # notice exactly as before, with no catalogue link.
+    if declare -F reason_code_url >/dev/null 2>&1; then
+      printf ' — see [its catalogue entry](%s)' "$(reason_code_url "$class")"
+    fi
+  )
 - **Reason:** $reason"
   if [[ -n "$eligible_at" ]]; then
     body="$body

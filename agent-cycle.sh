@@ -215,6 +215,12 @@ scratch_enter agent-cycle || exit 1
 # Ahead of landing.sh, whose _landing_retry_sweep_repo calls
 # landing_retry_source_map (#1050).
 . "$SCRIPT_DIR/lib/union-log-scan.sh"
+# shellcheck source=lib/reason-url.sh
+# Ahead of landing.sh, whose _landing_notice_body links a persistent
+# refusal's own class to its catalogue entry (issue #2098) when this is
+# sourced — optional, `declare -F`-guarded there, so order relative to this
+# line only decides whether that one link appears.
+. "$SCRIPT_DIR/lib/reason-url.sh"
 # shellcheck source=lib/landing.sh
 # Sourced after merge-queue.sh (landing_arm's own queue-detection read),
 # github-limit.sh (github_pr_list_truncated, sourced above already) and
