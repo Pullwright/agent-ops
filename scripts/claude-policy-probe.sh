@@ -57,9 +57,10 @@
 # This checks the one hook this repository ships, once per alternative of
 # the matcher it is registered against: a backgrounded `Bash` call, a
 # default-backgrounded `Agent` call and a `Workflow` call must each be
-# denied when the policy is present and let through when it is removed, and
+# denied when the policy is present and go undenied when it is removed, and
 # a foreground-equivalent of the first two must run either way, proving the
-# probe can see the tool call it is checking rather than just its absence.
+# probe can see the tool calls it is checking rather than just their
+# absence.
 #
 # Each denial is read back from the guard's own reason rather than inferred
 # from the absence of a side effect, because a tool call that never happened
@@ -99,14 +100,15 @@
 #     apiKeyHelper did not run, the seven allowlist-refused keys above
 #     behaved as lib/stage-run.sh's provenance comment claims, and each of
 #     the guard's three deniable tool calls was denied by the guard itself
-#     while both foreground controls ran — the managed policy is in force.
+#     and left no trace of having proceeded, while both foreground controls
+#     ran undenied — the managed policy is in force.
 #   --expect ran: exit 0 iff all four checkout-planted things ran (the
 #     control that shows the probe can see what it is looking for), the
 #     user-level apiKeyHelper still did not run, the seven
 #     allowlist-refused keys still behave the same way — removing the
-#     managed policy does not touch any of those three controls — and all
-#     three of the guard's deniable tool calls now go through undenied,
-#     with both foreground controls still running.
+#     managed policy does not touch any of those three controls — and the
+#     guard denies none of its three deniable tool calls any more, with
+#     both foreground controls still running undenied.
 
 set -uo pipefail
 
@@ -262,6 +264,21 @@ user_ok=0
 # instance that answers its first turn with the named canned tool call, so
 # the managed hook either runs it or denies it for real.
 #
+# The stub is named by the run's own checkout rather than by its
+# environment. In the image `claude` is the stage shim, which reaches the
+# CLI through `sudo -n -u stage stage-exec`, and sudo resets the environment
+# to what deploy/docker/sudoers-agent-ops' `env_keep` names — a deliberately
+# short list that is the boundary between the Script and its stages
+# (requirement 45e) and no place for a probe's convenience. An
+# `ANTHROPIC_BASE_URL` exported here would therefore be dropped on its way
+# to the CLI, leaving the run to reach for the real API with the placeholder
+# key and never weigh a tool call at all; a planted `env` block in the
+# run's own `.claude/settings.json` arrives instead through the file the CLI
+# reads for itself, the same way this probe's other runs already switch
+# provider (the `CLAUDE_CODE_USE_BEDROCK`/`CLAUDE_CODE_USE_VERTEX` plants
+# above). Nothing in the managed policy gates that key, which is exactly
+# what those runs already measure.
+#
 # claude_tool_call_guard_probe TOOL_NAME TOOL_INPUT_JSON PREFIX
 # Leaves the transcript at $probe/guard-$PREFIX.jsonl; the caller decides
 # what "ran" means for its own tool (a touched mark for Bash, a spawned
@@ -285,14 +302,15 @@ claude_tool_call_guard_probe() {
     sleep 0.1
   done
 
-  mkdir -p "$cwd"
+  mkdir -p "$cwd/.claude"
   git -C "$cwd" init -q
   if [[ -n "$port" ]]; then
+    jq -n --arg u "http://127.0.0.1:$port" '{env: {ANTHROPIC_BASE_URL: $u}}' \
+      >"$cwd/.claude/settings.json"
     (
       cd "$cwd" || exit 1
       timeout 60 env DISABLE_AUTOUPDATER=1 CLAUDE_CODE_MAX_RETRIES=0 \
         ANTHROPIC_API_KEY=sk-ant-api03-policy-probe-placeholder \
-        ANTHROPIC_BASE_URL="http://127.0.0.1:$port" \
         claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
         <<<"hello" >"$out" 2>"$err"
     ) || true
@@ -324,19 +342,6 @@ rm -f "$marks/guard-bash-bg" "$marks/guard-bash-fg"
 claude_tool_call_guard_probe Bash \
   "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-bg"), run_in_background: true}')" \
   bash-bg
-# A backgrounded `Bash` call's own command is detached from the run that asked
-# for it, so under `--expect ran` its mark can land after `claude -p` has
-# already exited. Wait for it here rather than at the measurement below: the
-# next run's own `stage_boundary_sweep` (through the shim) kills whatever the
-# stage user still has running, which includes the stray that is yet to write
-# it. Under `--expect blocked` the mark is meant never to appear, so there is
-# nothing to wait for.
-if [[ "$expect" == "ran" ]]; then
-  for _ in $(seq 1 50); do
-    [[ -e "$marks/guard-bash-bg" ]] && break
-    sleep 0.1
-  done
-fi
 claude_tool_call_guard_probe Bash \
   "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-fg")}')" \
   bash-fg
@@ -374,19 +379,29 @@ printf 'guard: foreground Agent spawned: %s (guard denied it: %s)\n' \
   "${agent_fg_spawned:-0}" "$agent_fg_denied"
 printf 'guard: Workflow denied: %s\n' "$workflow_denied"
 
+# What each mode asserts of the three deniable calls is the guard's own
+# denial, which is a property of the run itself and so exact either way.
+# Their side effects are asserted only in the direction that is reliable:
+# that a denied call left none is a fact about the run that has already
+# finished, while a call the guard let through hands its work to something
+# that outlives the turn — a detached background command, a subagent — and
+# `stage-exec` stops everything below a launch when the launch ends, so an
+# absent mark under `--expect ran` would say nothing about whether the call
+# was allowed. The two foreground controls carry that burden instead: their
+# side effects are synchronous, they are asserted in both modes, and
+# nothing the managed policy does touches a foreground call — so one of
+# them failing says the probe has stopped being able to see the tool calls
+# it is checking at all.
 guard_ok=0
 if [[ "$expect" == "blocked" ]]; then
-  [[ "$bash_bg_ran" == "no" && "$bash_bg_denied" == "yes" ]] || guard_ok=1
-  [[ "${agent_bg_spawned:-0}" == "0" && "$agent_bg_denied" == "yes" ]] || guard_ok=1
+  [[ "$bash_bg_denied" == "yes" && "$bash_bg_ran" == "no" ]] || guard_ok=1
+  [[ "$agent_bg_denied" == "yes" && "${agent_bg_spawned:-0}" == "0" ]] || guard_ok=1
   [[ "$workflow_denied" == "yes" ]] || guard_ok=1
 else
-  [[ "$bash_bg_ran" == "yes" && "$bash_bg_denied" == "no" ]] || guard_ok=1
-  [[ "${agent_bg_spawned:-0}" -ge 1 && "$agent_bg_denied" == "no" ]] || guard_ok=1
+  [[ "$bash_bg_denied" == "no" ]] || guard_ok=1
+  [[ "$agent_bg_denied" == "no" ]] || guard_ok=1
   [[ "$workflow_denied" == "no" ]] || guard_ok=1
 fi
-# The two controls behave the same way in both modes: nothing the managed
-# policy does touches a foreground call, so one of these failing says the
-# probe has stopped being able to see the tool call it is checking at all.
 [[ "$bash_fg_ran" == "yes" && "$bash_fg_denied" == "no" ]] || guard_ok=1
 [[ "${agent_fg_spawned:-0}" -ge 1 && "$agent_fg_denied" == "no" ]] || guard_ok=1
 
