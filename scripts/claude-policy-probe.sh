@@ -54,11 +54,21 @@
 # named by `ANTHROPIC_BASE_URL`, it answers a run's first turn with a canned
 # tool call and every later turn with a plain `end_turn`, so the CLI
 # attempts one real tool call with no network egress and nothing billed.
-# This checks the one hook this repository ships: a backgrounded `Bash`
-# call and a default-backgrounded `Agent` call must be denied when the
-# policy is present and let through when it is removed, and a
-# foreground-equivalent of each must run either way, proving the probe can
-# see the tool call it is checking rather than just its absence. The same
+# This checks the one hook this repository ships, once per alternative of
+# the matcher it is registered against: a backgrounded `Bash` call, a
+# default-backgrounded `Agent` call and a `Workflow` call must each be
+# denied when the policy is present and let through when it is removed, and
+# a foreground-equivalent of the first two must run either way, proving the
+# probe can see the tool call it is checking rather than just its absence.
+#
+# Each denial is read back from the guard's own reason rather than inferred
+# from the absence of a side effect, because a tool call that never happened
+# at all — a stub that failed to answer, a canned `tool_input` the tool
+# itself refused, a run that died before any tool use — leaves exactly that
+# same absence behind and would otherwise read as a pass. Claude Code puts a
+# denying `PreToolUse` hook's stderr into the transcript's own `tool_result`
+# (`PreToolUse:<tool> hook error: [<path>]: …`), so `guard_denied` below
+# greps the hook's path and reason out of it. The same
 # technique is what issue #2775 still needs for the `permissions` sub-keys
 # above — this is its first use, scoped to this one hook.
 #
@@ -86,14 +96,17 @@
 # Usage: scripts/claude-policy-probe.sh [--expect blocked|ran]
 #   --expect blocked (the default): exit 0 iff none of the four checkout-
 #     planted things ran, the skill loaded, the planted user-level
-#     apiKeyHelper did not run, and the seven allowlist-refused keys above
-#     behaved as lib/stage-run.sh's provenance comment claims — the managed
-#     policy is in force.
+#     apiKeyHelper did not run, the seven allowlist-refused keys above
+#     behaved as lib/stage-run.sh's provenance comment claims, and each of
+#     the guard's three deniable tool calls was denied by the guard itself
+#     while both foreground controls ran — the managed policy is in force.
 #   --expect ran: exit 0 iff all four checkout-planted things ran (the
 #     control that shows the probe can see what it is looking for), the
-#     user-level apiKeyHelper still did not run, and the seven
+#     user-level apiKeyHelper still did not run, the seven
 #     allowlist-refused keys still behave the same way — removing the
-#     managed policy does not touch any of those three controls.
+#     managed policy does not touch any of those three controls — and all
+#     three of the guard's deniable tool calls now go through undenied,
+#     with both foreground controls still running.
 
 set -uo pipefail
 
@@ -291,10 +304,39 @@ claude_tool_call_guard_probe() {
   wait "$stub_pid" 2>/dev/null || true
 }
 
+# guard_denied PREFIX
+# "yes" when the run left behind the guard's own denial — the hook's stderr,
+# which Claude Code reports back through the transcript's `tool_result` as
+# `PreToolUse:<tool> hook error: [<path to the hook>]: <reason>`. Matched on
+# the hook's file name rather than its installed path, so this reads the same
+# wherever the policy names it. This is what makes a blocked case a positive
+# measurement rather than the absence of a side effect, which a tool call
+# that was never attempted at all would leave behind just as well.
+guard_denied() {
+  if grep -qF 'background-wait-guard.sh]: Denied:' "$probe/guard-$1.jsonl" 2>/dev/null; then
+    echo yes
+  else
+    echo no
+  fi
+}
+
 rm -f "$marks/guard-bash-bg" "$marks/guard-bash-fg"
 claude_tool_call_guard_probe Bash \
   "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-bg"), run_in_background: true}')" \
   bash-bg
+# A backgrounded `Bash` call's own command is detached from the run that asked
+# for it, so under `--expect ran` its mark can land after `claude -p` has
+# already exited. Wait for it here rather than at the measurement below: the
+# next run's own `stage_boundary_sweep` (through the shim) kills whatever the
+# stage user still has running, which includes the stray that is yet to write
+# it. Under `--expect blocked` the mark is meant never to appear, so there is
+# nothing to wait for.
+if [[ "$expect" == "ran" ]]; then
+  for _ in $(seq 1 50); do
+    [[ -e "$marks/guard-bash-bg" ]] && break
+    sleep 0.1
+  done
+fi
 claude_tool_call_guard_probe Bash \
   "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-fg")}')" \
   bash-fg
@@ -304,6 +346,13 @@ claude_tool_call_guard_probe Agent \
 claude_tool_call_guard_probe Agent \
   '{"description": "policy probe subagent", "prompt": "Reply with the single word done.", "subagent_type": "general-purpose", "run_in_background": false}' \
   agent-fg
+# The matcher's third alternative. `Workflow` has no `run_in_background` key
+# to set and so no foreground shape to control against — the guard denies it
+# unconditionally — which is exactly why it is worth reaching: were this
+# alternation to stop matching, nothing else in this repository would notice.
+claude_tool_call_guard_probe Workflow \
+  '{"script": "export const meta = {name: \"policy-probe\", description: \"policy probe\"}\nreturn {}\n"}' \
+  workflow
 
 bash_bg_ran="$([[ -e "$marks/guard-bash-bg" ]] && echo yes || echo no)"
 bash_fg_ran="$([[ -e "$marks/guard-bash-fg" ]] && echo yes || echo no)"
@@ -311,21 +360,34 @@ agent_bg_spawned="$(jq -r 'select(.type == "result") | .subagent_stats.spawned /
   "$probe/guard-agent-bg.jsonl" 2>/dev/null | tail -n 1)"
 agent_fg_spawned="$(jq -r 'select(.type == "result") | .subagent_stats.spawned // 0' \
   "$probe/guard-agent-fg.jsonl" 2>/dev/null | tail -n 1)"
+bash_bg_denied="$(guard_denied bash-bg)"
+bash_fg_denied="$(guard_denied bash-fg)"
+agent_bg_denied="$(guard_denied agent-bg)"
+agent_fg_denied="$(guard_denied agent-fg)"
+workflow_denied="$(guard_denied workflow)"
 
-printf 'guard: backgrounded Bash ran: %s\n' "$bash_bg_ran"
-printf 'guard: foreground Bash ran: %s\n' "$bash_fg_ran"
-printf 'guard: default-backgrounded Agent spawned: %s\n' "${agent_bg_spawned:-0}"
-printf 'guard: foreground Agent spawned: %s\n' "${agent_fg_spawned:-0}"
+printf 'guard: backgrounded Bash ran: %s (guard denied it: %s)\n' "$bash_bg_ran" "$bash_bg_denied"
+printf 'guard: foreground Bash ran: %s (guard denied it: %s)\n' "$bash_fg_ran" "$bash_fg_denied"
+printf 'guard: default-backgrounded Agent spawned: %s (guard denied it: %s)\n' \
+  "${agent_bg_spawned:-0}" "$agent_bg_denied"
+printf 'guard: foreground Agent spawned: %s (guard denied it: %s)\n' \
+  "${agent_fg_spawned:-0}" "$agent_fg_denied"
+printf 'guard: Workflow denied: %s\n' "$workflow_denied"
 
 guard_ok=0
 if [[ "$expect" == "blocked" ]]; then
-  [[ "$bash_bg_ran" == "no" ]] || guard_ok=1
-  [[ "${agent_bg_spawned:-0}" == "0" ]] || guard_ok=1
+  [[ "$bash_bg_ran" == "no" && "$bash_bg_denied" == "yes" ]] || guard_ok=1
+  [[ "${agent_bg_spawned:-0}" == "0" && "$agent_bg_denied" == "yes" ]] || guard_ok=1
+  [[ "$workflow_denied" == "yes" ]] || guard_ok=1
 else
-  [[ "$bash_bg_ran" == "yes" ]] || guard_ok=1
-  [[ "${agent_bg_spawned:-0}" -ge 1 ]] || guard_ok=1
+  [[ "$bash_bg_ran" == "yes" && "$bash_bg_denied" == "no" ]] || guard_ok=1
+  [[ "${agent_bg_spawned:-0}" -ge 1 && "$agent_bg_denied" == "no" ]] || guard_ok=1
+  [[ "$workflow_denied" == "no" ]] || guard_ok=1
 fi
-[[ "$bash_fg_ran" == "yes" ]] || guard_ok=1
-[[ "${agent_fg_spawned:-0}" -ge 1 ]] || guard_ok=1
+# The two controls behave the same way in both modes: nothing the managed
+# policy does touches a foreground call, so one of these failing says the
+# probe has stopped being able to see the tool call it is checking at all.
+[[ "$bash_fg_ran" == "yes" && "$bash_fg_denied" == "no" ]] || guard_ok=1
+[[ "${agent_fg_spawned:-0}" -ge 1 && "$agent_fg_denied" == "no" ]] || guard_ok=1
 
 exit $(( main_ok || settings_ok || user_ok || guard_ok ))

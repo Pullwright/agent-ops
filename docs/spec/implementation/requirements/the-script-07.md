@@ -1354,12 +1354,28 @@
    `scripts/claude-tool-call-stub.py` stands in for the model for exactly
    that purpose: bound to 127.0.0.1 and named by `ANTHROPIC_BASE_URL`, it
    answers a run's first turn with a canned tool call and every later turn
-   with a plain `end_turn`, so the run attempts exactly one real `Bash` or
-   `Agent` call with no network egress and nothing billed. The probe
-   reaches both deniable shapes — a backgrounded `Bash` call and a
-   default-backgrounded `Agent` call — and a foreground-equivalent control
-   for each, in both `--expect` runs: with the policy present the two
-   deniable shapes are blocked and both controls still run; with it removed
-   (the `--expect ran` run) all four run, which is what shows the probe can
-   see the tool call it is checking rather than just its absence.
+   with a plain `end_turn`, so the run attempts exactly one real tool call
+   with no network egress and nothing billed. The probe reaches one
+   deniable call per alternative of the matcher, so that no alternation is
+   left asserted and unmeasured — a backgrounded `Bash` call, a
+   default-backgrounded `Agent` call and a `Workflow` call — plus a
+   foreground-equivalent control for the first two (`Workflow` has no
+   foreground shape to control against), in both `--expect` runs: with the
+   policy present the three deniable calls are blocked and both controls
+   still run; with it removed (the `--expect ran` run) all five run, which
+   is what shows the probe can see the tool calls it is checking rather
+   than just their absence.
+
+   Each denial is measured as the guard's own, read back from the hook's
+   stderr — which Claude Code reports through the transcript's `tool_result`
+   as `PreToolUse:<tool> hook error: [<path>]: <reason>` — rather than
+   inferred from the absence of the call's side effect. A tool call that was
+   never attempted at all leaves behind exactly that same absence, so
+   inferring the denial from it would let the check pass over a probe that
+   had stopped working, which is the fail-open this requirement's own
+   verification exists to rule out. The remaining deniable shape, an `Agent`
+   call carrying `isolation: "remote"`, is a variation of the guard's own
+   decision logic rather than of the matcher, and stays covered by
+   `test/background-wait-guard.test.sh` (acceptance check 7j) rather than by
+   this probe.
 

@@ -21,9 +21,11 @@ when invoked with port 0.
 
 usage: claude-tool-call-stub.py <port> <tool-name> <tool-input-json>
   <port>            0 for an OS-chosen port (reported on stdout as above).
-  <tool-name>       the `tool_name` the canned `tool_use` block carries,
-                    e.g. "Bash" or "Agent".
-  <tool-input-json> the block's `tool_input`, verbatim, e.g.
+  <tool-name>       the `name` the canned `tool_use` block carries — the
+                    `tool_name` a PreToolUse hook then sees, e.g. "Bash",
+                    "Agent" or "Workflow".
+  <tool-input-json> the block's `input`, verbatim — the hook's own
+                    `tool_input`, e.g.
                     '{"command": "...", "run_in_background": true}'.
 """
 import http.server
