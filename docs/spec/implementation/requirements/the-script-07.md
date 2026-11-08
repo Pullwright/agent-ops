@@ -1342,3 +1342,24 @@
    This covers exactly the three shapes named above — `CronCreate`,
    `RemoteTrigger` and `Monitor` are not examined by this hook.
 
+   Three things sit between the shipped policy above and an actual denied
+   tool call: `allowManagedHooksOnly` admitting a managed `hooks` block
+   rather than suppressing it too, `matcher` being matched as a regex
+   (`"Bash|Agent|Workflow"` matching three tool names, not a literal string
+   matching none), and a `PreToolUse` hook's exit code 2 actually blocking
+   the call rather than only surfacing its stderr. None of these is
+   something a synthetic payload can measure, so
+   `scripts/claude-policy-probe.sh`'s acceptance step (requirement 4k)
+   reaches an actual tool call for this hook to weigh (issue #2799).
+   `scripts/claude-tool-call-stub.py` stands in for the model for exactly
+   that purpose: bound to 127.0.0.1 and named by `ANTHROPIC_BASE_URL`, it
+   answers a run's first turn with a canned tool call and every later turn
+   with a plain `end_turn`, so the run attempts exactly one real `Bash` or
+   `Agent` call with no network egress and nothing billed. The probe
+   reaches both deniable shapes — a backgrounded `Bash` call and a
+   default-backgrounded `Agent` call — and a foreground-equivalent control
+   for each, in both `--expect` runs: with the policy present the two
+   deniable shapes are blocked and both controls still run; with it removed
+   (the `--expect ran` run) all four run, which is what shows the probe can
+   see the tool call it is checking rather than just its absence.
+

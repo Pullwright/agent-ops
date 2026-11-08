@@ -47,6 +47,21 @@
 # first failed request; with no network the client's own back-off would
 # otherwise hold each run to the 60-second timeout.
 #
+# The managed `hooks.PreToolUse` entry (requirement 4m) is the one exception
+# to that: it only fires once a tool call is actually weighed, so it needs a
+# run that reaches one (issue #2799). scripts/claude-tool-call-stub.py
+# stands in for the model for exactly that purpose — bound to 127.0.0.1 and
+# named by `ANTHROPIC_BASE_URL`, it answers a run's first turn with a canned
+# tool call and every later turn with a plain `end_turn`, so the CLI
+# attempts one real tool call with no network egress and nothing billed.
+# This checks the one hook this repository ships: a backgrounded `Bash`
+# call and a default-backgrounded `Agent` call must be denied when the
+# policy is present and let through when it is removed, and a
+# foreground-equivalent of each must run either way, proving the probe can
+# see the tool call it is checking rather than just its absence. The same
+# technique is what issue #2775 still needs for the `permissions` sub-keys
+# above — this is its first use, scoped to this one hook.
+#
 # In the node image `claude` is the stage shim (deploy/docker/claude-shim.sh),
 # so the CLI runs as the stage user, as a stage's does. The scratch checkout is
 # therefore shared with that user (`stage_workspace_share`, requirement 45e),
@@ -227,4 +242,90 @@ printf 'user-level apiKeyHelper ran: %s\n' "$user_ran"
 user_ok=0
 [[ "$user_ran" == "no" && "$user_rc" == "1" ]] || user_ok=1
 
-exit $(( main_ok || settings_ok || user_ok ))
+# The managed hooks.PreToolUse entry (requirement 4m, issue #2799): the one
+# hook this repository ships, and the only thing in this script that needs
+# an actual tool call to be weighed rather than merely attempted. Each run
+# below points a real `claude -p` at a fresh claude-tool-call-stub.py
+# instance that answers its first turn with the named canned tool call, so
+# the managed hook either runs it or denies it for real.
+#
+# claude_tool_call_guard_probe TOOL_NAME TOOL_INPUT_JSON PREFIX
+# Leaves the transcript at $probe/guard-$PREFIX.jsonl; the caller decides
+# what "ran" means for its own tool (a touched mark for Bash, a spawned
+# subagent for Agent).
+claude_tool_call_guard_probe() {
+  local tool_name="$1" tool_input="$2" prefix="$3"
+  local stub_log="$probe/guard-$prefix.stub.log"
+  local out="$probe/guard-$prefix.jsonl"
+  local err="$probe/guard-$prefix.stderr"
+  local cwd="$probe/guard-$prefix-cwd"
+  local stub_pid port=""
+
+  python3 "$SCRIPT_DIR/scripts/claude-tool-call-stub.py" 0 "$tool_name" "$tool_input" \
+    >"$stub_log" 2>&1 &
+  stub_pid=$!
+
+  for _ in $(seq 1 50); do
+    port="$(awk '/^LISTENING /{print $2; exit}' "$stub_log" 2>/dev/null)"
+    [[ -n "$port" ]] && break
+    kill -0 "$stub_pid" 2>/dev/null || break
+    sleep 0.1
+  done
+
+  mkdir -p "$cwd"
+  git -C "$cwd" init -q
+  if [[ -n "$port" ]]; then
+    (
+      cd "$cwd" || exit 1
+      timeout 60 env DISABLE_AUTOUPDATER=1 CLAUDE_CODE_MAX_RETRIES=0 \
+        ANTHROPIC_API_KEY=sk-ant-api03-policy-probe-placeholder \
+        ANTHROPIC_BASE_URL="http://127.0.0.1:$port" \
+        claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
+        <<<"hello" >"$out" 2>"$err"
+    ) || true
+  else
+    : >"$out"
+  fi
+
+  kill "$stub_pid" 2>/dev/null || true
+  wait "$stub_pid" 2>/dev/null || true
+}
+
+rm -f "$marks/guard-bash-bg" "$marks/guard-bash-fg"
+claude_tool_call_guard_probe Bash \
+  "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-bg"), run_in_background: true}')" \
+  bash-bg
+claude_tool_call_guard_probe Bash \
+  "$(jq -nc --arg m "$marks" '{command: ("touch " + $m + "/guard-bash-fg")}')" \
+  bash-fg
+claude_tool_call_guard_probe Agent \
+  '{"description": "policy probe subagent", "prompt": "Reply with the single word done.", "subagent_type": "general-purpose"}' \
+  agent-bg
+claude_tool_call_guard_probe Agent \
+  '{"description": "policy probe subagent", "prompt": "Reply with the single word done.", "subagent_type": "general-purpose", "run_in_background": false}' \
+  agent-fg
+
+bash_bg_ran="$([[ -e "$marks/guard-bash-bg" ]] && echo yes || echo no)"
+bash_fg_ran="$([[ -e "$marks/guard-bash-fg" ]] && echo yes || echo no)"
+agent_bg_spawned="$(jq -r 'select(.type == "result") | .subagent_stats.spawned // 0' \
+  "$probe/guard-agent-bg.jsonl" 2>/dev/null | tail -n 1)"
+agent_fg_spawned="$(jq -r 'select(.type == "result") | .subagent_stats.spawned // 0' \
+  "$probe/guard-agent-fg.jsonl" 2>/dev/null | tail -n 1)"
+
+printf 'guard: backgrounded Bash ran: %s\n' "$bash_bg_ran"
+printf 'guard: foreground Bash ran: %s\n' "$bash_fg_ran"
+printf 'guard: default-backgrounded Agent spawned: %s\n' "${agent_bg_spawned:-0}"
+printf 'guard: foreground Agent spawned: %s\n' "${agent_fg_spawned:-0}"
+
+guard_ok=0
+if [[ "$expect" == "blocked" ]]; then
+  [[ "$bash_bg_ran" == "no" ]] || guard_ok=1
+  [[ "${agent_bg_spawned:-0}" == "0" ]] || guard_ok=1
+else
+  [[ "$bash_bg_ran" == "yes" ]] || guard_ok=1
+  [[ "${agent_bg_spawned:-0}" -ge 1 ]] || guard_ok=1
+fi
+[[ "$bash_fg_ran" == "yes" ]] || guard_ok=1
+[[ "${agent_fg_spawned:-0}" -ge 1 ]] || guard_ok=1
+
+exit $(( main_ok || settings_ok || user_ok || guard_ok ))
