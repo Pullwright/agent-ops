@@ -1342,3 +1342,59 @@
    This covers exactly the three shapes named above — `CronCreate`,
    `RemoteTrigger` and `Monitor` are not examined by this hook.
 
+   Three things sit between the shipped policy above and an actual denied
+   tool call: `allowManagedHooksOnly` admitting a managed `hooks` block
+   rather than suppressing it too, `matcher` being matched as a regex
+   (`"Bash|Agent|Workflow"` matching three tool names, not a literal string
+   matching none), and a `PreToolUse` hook's exit code 2 actually blocking
+   the call rather than only surfacing its stderr. None of these is
+   something a synthetic payload can measure, so
+   `scripts/claude-policy-probe.sh`'s acceptance step (requirement 4k)
+   reaches an actual tool call for this hook to weigh (issue #2799).
+   `scripts/claude-tool-call-stub.py` stands in for the model for exactly
+   that purpose: bound to 127.0.0.1 and named by `ANTHROPIC_BASE_URL`, it
+   answers a run's first turn with a canned tool call and every later turn
+   with a plain `end_turn`, so the run attempts exactly one real tool call
+   with no network egress and nothing billed. The probe reaches one
+   deniable call per alternative of the matcher, so that no alternation is
+   left asserted and unmeasured — a backgrounded `Bash` call, a
+   default-backgrounded `Agent` call and a `Workflow` call — plus a
+   foreground-equivalent control for the first two (`Workflow` has no
+   foreground shape to control against), in both `--expect` runs: with the
+   policy present the three deniable calls are denied and both controls
+   still run; with it removed (the `--expect ran` run) none of the three is
+   denied and both controls still run, which is what shows the probe can
+   see the tool calls it is checking rather than just their absence.
+
+   Each denial is measured as the guard's own, read back from the hook's
+   stderr — which Claude Code reports through the transcript's `tool_result`
+   as `PreToolUse:<tool> hook error: [<path>]: <reason>` — rather than
+   inferred from the absence of the call's side effect. A tool call that was
+   never attempted at all leaves behind exactly that same absence, so
+   inferring the denial from it would let the check pass over a probe that
+   had stopped working, which is the fail-open this requirement's own
+   verification exists to rule out. The side effects are asserted only in
+   the direction that is exact: that a denied call left none is a fact about
+   a run that has finished, whereas a call the guard lets through hands its
+   work to something outliving the turn — a detached background command, a
+   subagent — which `stage-exec` stops along with everything else below a
+   launch when the launch ends, so their absence under `--expect ran` would
+   say nothing. The two foreground controls, whose side effects are
+   synchronous, carry that in both runs instead.
+
+   The stub is named to each run by an `ANTHROPIC_BASE_URL` in a planted
+   `env` block in the run's own `.claude/settings.json`, not by the probe's
+   own environment: `claude` is the stage shim (requirement 45e), which
+   reaches the CLI through `sudo`, and the `env_keep` list in
+   `deploy/docker/sudoers-agent-ops` that bounds what crosses that
+   boundary does not carry it — nor should it be widened to, for a probe's
+   convenience. This is the same route by which the probe's other runs
+   already switch model provider, and the managed policy gates it no more
+   than it gates those.
+
+   The remaining deniable shape, an `Agent` call carrying `isolation:
+   "remote"`, is a variation of the guard's own decision logic rather than
+   of the matcher, and stays covered by
+   `test/background-wait-guard.test.sh` (acceptance check 7j) rather than
+   by this probe.
+
