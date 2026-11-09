@@ -606,7 +606,7 @@ while IFS=$'\t' read -r sglr_orig_repo sglr_canon_repo sglr_item sglr_gathered_a
   # `dependency_refs` then scans — concatenation is all this needs.
   sglr_thread="$sglr_thread"$'\n'"$(gh api "repos/$sglr_canon_repo/issues/$sglr_item/comments?per_page=100" \
     --paginate --jq '[.[].body // ""] | join("\n")' 2>/dev/null || true)"
-  sglr_ref="$(issue_blocked_by_ref "$sglr_canon_repo" "$sglr_thread")"
+  sglr_ref="$(issue_blocked_by_ref "$sglr_canon_repo" "$sglr_item" "$sglr_thread")"
   [[ -n "$sglr_ref" ]] || continue
   stale_gather_live_checked_json="$(jq -c --arg r "$sglr_orig_repo" --arg i "$sglr_item" \
     '. + [{repo: $r, item: $i}]' <<<"$stale_gather_live_checked_json" 2>/dev/null \
