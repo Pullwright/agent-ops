@@ -244,6 +244,17 @@ assert_eq "…leaving the sibling lane at its own untouched default" \
   '{"weight":1,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}' \
   "$(jq -c '.api' <<<"${PROVIDER_LANES[xai]}")"
 
+# issue #2290: a lane string value containing a backslash or double quote
+# must not corrupt PROVIDER_LANES' JSON through the @tsv/read transport.
+# config_provider_errors' own ISO 8601 format check on balance_as_of is not
+# what closes this — this exercises providers_load directly, bypassing that
+# gate entirely, since the transport itself must be safe for any value.
+providers_load '{"xai": {"substrate": "test-substrate", "lanes": {"api": {"balance_as_of": "a\"b\\c"}}}}'
+assert_eq "PROVIDER_LANES stays valid JSON when a lane value holds a quote and a backslash" \
+  "0" "$(jq -e . >/dev/null 2>&1 <<<"${PROVIDER_LANES[xai]}"; echo $?)"
+assert_eq "…and round-trips the value unchanged" \
+  'a"b\c' "$(jq -r '.api.balance_as_of' <<<"${PROVIDER_LANES[xai]}")"
+
 # A provider configured with no credential_env falls back to its substrate's
 # own default, the same way claude-code's ANTHROPIC_API_KEY does — exercised
 # here against this fixture's own test-substrate entry, appended above,
