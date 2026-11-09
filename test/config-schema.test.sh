@@ -1408,6 +1408,15 @@ assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date" \
 assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date-time" \
   '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-10-09T12:00:00Z"}}}}' 0 \
   "providers block is well-formed"
+assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date-time with a numeric UTC offset" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-10-09T12:00:00+13:00"}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor names a balance_as_of containing a double quote in its tail" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-01-01 a\"b"}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_as_of must be an ISO 8601 date string'
+assert_doctor "doctor names a balance_as_of containing a backslash in its tail" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-01-01T\\oops"}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_as_of must be an ISO 8601 date string'
 assert_doctor "doctor names an enabled that is not a boolean" \
   '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"enabled": "yes"}}}}' 1 \
   'providers.anthropic.lanes.api: enabled must be a boolean'
