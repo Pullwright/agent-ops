@@ -221,8 +221,9 @@
    inside a lane, a `weight` that is not an integer >= 0, an `enabled` that
    is not a boolean, a `spend_cap_usd`/`balance_usd`/`balance_floor_usd` that
    is not a number or a `spend_window_hours` that is not a positive integer,
-   a `balance_as_of` that is not a string, a `balance_floor_usd` set without
-   both `balance_usd` and `balance_as_of`, a `spend_cap_usd` or
+   a `balance_as_of` that is not a string or is not an ISO 8601 date (or
+   date-time), a `balance_floor_usd` set without both `balance_usd` and
+   `balance_as_of`, a `spend_cap_usd` or
    `balance_floor_usd` set on a lane `lib/model-id.sh`'s
    `PROVIDER_LANE_NO_MEASURE` names as having no cost measure at all (no
    substrate-reported cost and no statement, #2248 — today: `xai/subscription`
