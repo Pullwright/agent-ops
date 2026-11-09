@@ -494,9 +494,11 @@
     already bounds — one Enabler engagement — and stands only until that
     repo's own next expensive gather writes a cache to compare against.
 
-    The three ways a live read can fail here do not all go the same
+    The ways a live read can fail here do not all go the same
     direction, though the two inherited from issue #2709 both match what
-    `issue_blocked_by_ref` already does at gather time:
+    `issue_blocked_by_ref` already does at gather time — as does its own
+    native-dependency read (requirement 34j), which names nothing on a
+    failed read exactly as the thread read below does:
 
     - **The candidate's own live `updated_at` cannot be read at all.** An
       empty read is never treated as "later than `gathered_at`", so the

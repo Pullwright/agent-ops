@@ -214,8 +214,12 @@
     endpoint live, and reports the first still-open issue it names (same- or
     cross-repository, displayed the same `#195`/`owner/repo#195` way a text
     reference is) — or nothing, when it names none, or every one it names is
-    already closed; a read that fails counts as still-open, the same
-    fail-safe direction the text convention's own live re-check already
+    already closed. A read that fails names nothing, so nothing is held:
+    `dependency_native_blocked_by` prints `[]` rather than assume a block on
+    an API hiccup, the same direction an unreadable *thread* takes for the
+    text convention. A dependency the payload does name but gives no `state`
+    for counts as still-open instead — the fail-safe direction an
+    unverifiable `Blocked-by:` reference already
     takes. `issue_blocked_by_ref` (`lib/issue-prefetch.sh`), the one call site
     both gatherers' holding check already made, tries the text convention
     first and falls through to the native check only when the thread names no
@@ -254,9 +258,12 @@
     unaffected either way: an item merely dropped by the holding check above,
     never recorded blocked, reappears as a candidate the moment the native
     dependency closes, because nothing persisted that drop. A block that did
-    reach the log stays there until an Enabler engagement clears it, since
-    nothing re-fetches native dependencies for an already-blocked item
-    outside the gatherer's own live check. Recorded as tech debt in
+    reach the log stays there until an Enabler engagement clears it: the one
+    re-fetch outside the gatherer — requirement 35g's own live re-check of a
+    stale-gather candidate (`lib/eligibility.sh`) — reads the native
+    dependency through the same `issue_blocked_by_ref`, but only ever to
+    *hold* the item out of Enabler eligibility, never to release a block.
+    Recorded as tech debt in
     agent-ops#2459 rather than fixed here; the Implementer is instructed to
     record a dependency both ways (`prompts/implementer.md`), so an item this
     pipeline blocks itself carries the text line the release reads.
