@@ -887,7 +887,7 @@ config_provider_errors() {
          then ["providers.\($pkey).lanes.\($lname): balance_as_of must be an ISO 8601 date string"]
          else [] end),
         (if ($lv | has("balance_as_of")) and (($lv.balance_as_of | type) == "string")
-           and (($lv.balance_as_of | test("^\\d{4}-\\d{2}-\\d{2}([T ].*)?$")) | not)
+           and (($lv.balance_as_of | test("^\\d{4}-\\d{2}-\\d{2}([T ][0-9:.+Zz-]*)?$")) | not)
          then ["providers.\($pkey).lanes.\($lname): balance_as_of must be an ISO 8601 date string"]
          else [] end),
         (if ($lv | has("balance_floor_usd")) and (($lv.balance_floor_usd | type) != "number")
