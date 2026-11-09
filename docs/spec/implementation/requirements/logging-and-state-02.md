@@ -494,10 +494,39 @@
     citation, and there is no model in this path to fabricate one): the
     evidence is read directly off `gh`/the register file/the cycle's own
     pre-claim digest, the same ground truth requirement 34d's guard checks a
-    citation against. And all four are safe to make terminal for the same
-    reason the 34i signals are: each fact, once true, stays true — the
+    citation against. The first three are safe to make terminal for the
+    same reason the 34i signals are: each fact, once true, stays true — the
     staleness of a pre-claim digest can only delay such a fact's arrival,
     never assert one that later becomes false.
+
+    `preflight_abandoned_draft_reason` is the exception: draft status is
+    reversible in this system's own vocabulary (`convert_to_draft`, modelled
+    by `lib/reconciliation-gate.sh`'s own anchor logic and performed by the
+    decision-veto sweep itself, `lib/decision-veto.sh`), so a pull request
+    this signal voided for leaving draft can later be converted back to
+    draft at the same head, with no new commits, and re-abandoned. Because
+    `scripts/gather-abandoned-drafts.sh` scopes its candidate ref to the
+    head SHA alone (`pr-<n>-abandoned-<head-sha>`; see that script's own
+    "Why the ref is scoped to the head SHA" section), the re-abandoned pull
+    request re-mints the identical ref by design, and the terminal void
+    (requirement 34h) suppresses it — indefinitely, because
+    `scripts/close-void-github-items.sh`'s stage gate actions only `stage`
+    values `coordinator`, `enabler`, `implementer` and `decision`, never
+    `preflight`, so this void never closes the pull request itself and
+    requirement 34n's retirement criterion (actioned *and* old) never fires
+    for it. Recovery is a human's hand-appended `unvoided` label
+    (requirement 34c), or any new commit landing on the branch, which moves
+    the head SHA and lets the next gather mint a fresh, unvoided ref
+    instead of the suppressed one. The signal still voids rather than
+    defers (`preflight_defer_reason`, below): the defer path would re-pay
+    this same live read and re-release the claim every cycle the stale ref
+    is reoffered, whereas this void is paid once — once a new commit moves
+    the head, the next fresh gather does not re-mint the voided ref at all,
+    so nothing is lost by leaving the narrower re-draft-at-the-same-head
+    edge to the slower, human-mediated recovery routes above. Either way
+    this fails safe: the consequence is a stalled, recoverable draft
+    candidate left void longer than necessary, never live work silently
+    discarded.
 
     **An open pull request already carrying the just-claimed branch defers
     the claim instead of voiding it** (`preflight_defer_reason`, agent-ops
