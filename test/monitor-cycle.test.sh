@@ -811,6 +811,36 @@ assert_lacks "the oldest bytes are the ones dropped" \
 assert_contains "the most recent bytes survive" \
   "TAIL-MARKER-MUST-SURVIVE" "$(jq -r '.stderr_tail' <<<"$failed_event")"
 
+# ============================================================================
+# 14. monitor_digest_build's own PEERS_JSON wiring (agent-ops#2266/#2549)
+# ============================================================================
+# monitor_peers_json is hand-counted onto this call's 9th (last) positional
+# argument; nothing else asserts the count stays right under a later
+# parameter insertion, and the failure mode is quiet — the digest's opening
+# line would simply stop saying anything about peer staleness, with no
+# signal. `make_node` shares `lib/` back into the checkout as a symlink
+# (every other case here wants the real library); this one replaces it with
+# a real copy so `lib/monitor-digest.sh`'s own `monitor_digest_build` can be
+# overridden by a recorder appended after the real definition in the same
+# sourced file — the later definition in the same file wins, so the override
+# takes effect without touching the checkout the other cases still share.
+d="$(make_node digest-wiring "$BASE")"
+rm -f "$d/lib"
+cp -r "$SCRIPT_DIR/lib" "$d/lib"
+dw_argv="$tmp_dir/digest-wiring-argv"
+cat >> "$d/lib/monitor-digest.sh" <<OVERRIDE
+
+monitor_digest_build() {
+  printf '%s\n' "\$@" > "$dw_argv"
+  printf '{}'
+}
+OVERRIDE
+out="$(run_monitor "$d" --once)"
+assert_eq "a run against the recorder still completes" "0" "$RC"
+assert_eq "monitor_digest_build's own PEERS_JSON lands at position 9 (no peers marker: the vacuous default)" \
+  '{"stale":false,"ok":null,"ts":null,"last_ok_ts":null}' \
+  "$(sed -n '9p' "$dw_argv")"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

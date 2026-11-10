@@ -114,6 +114,7 @@ cat > "$union" <<'EOF'
 {"ts":"2026-09-11T04:10:00Z","cycle":"c9","node":"n2","event":"claim-lost","repo":"o/r","item":"15"}
 {"ts":"2026-09-11T05:00:00Z","cycle":"pub","node":"n1","event":"pager-fired","key":"node-stale","evidence":"poetic-1 has published nothing for 3 h","issue_number":99,"issue_url":"https://github.com/o/r/issues/99","remedy_class":"owner-only","nodes":["poetic-1"]}
 {"ts":"2026-09-11T06:00:00Z","cycle":"pub","node":"n1","event":"pager-cleared","key":"updater-stuck","cleared_at":"2026-09-11T06:00:00Z","evidence":"the ledger advanced"}
+{"ts":"2026-09-11T07:00:00Z","cycle":"pub","node":"n1","event":"pager-evaluation-skipped","reason":"peer-view-stale","last_ok_ts":"2026-09-11T03:00:00Z"}
 EOF
 
 # --- Events by class --------------------------------------------------------
@@ -140,6 +141,8 @@ assert_eq "a sample drops the cycle id, which names a run the Monitor cannot ope
 assert_eq "pager-fired sorts ahead of selection, whatever the alphabet says" \
   "1" "$(jq '([.[] | .event] | index("pager-fired")) < ([.[] | .event] | index("selection"))
             | if . then 1 else 0 end' <<<"$events")"
+assert_eq "agent-ops#2549: pager-evaluation-skipped sorts ahead of every other classified event — this digest's own view may be poisoned" \
+  "0" "$(jq '[.[] | .event] | index("pager-evaluation-skipped")' <<<"$events")"
 assert_eq "an empty log yields an empty array, not an error" \
   "[]" "$(monitor_digest_events "$tmp_dir/does-not-exist.jsonl" "$SINCE" 3)"
 
