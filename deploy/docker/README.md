@@ -179,14 +179,17 @@ ip link show <interface>    # gives its mtu
 ```
 
 `COMPOSE_PROFILES` in `.env` decides what that brings up — `tailnet` for the
-dashboard over your tailnet, `local` for the dashboard on this machine's own
-loopback, `node-health` for the node-health HTTP surface on that same loopback
-(`http://127.0.0.1:$NODE_HEALTH_PORT`, default 8788), `auto-update` for
-watchtower. The scheduler starts regardless: it is
-in no profile, because a node that runs no cycles and no heartbeat is not a
-node. So does the `collector` (issue #1283) — the container that holds the
-read-only Docker socket and cgroup mounts that let `scripts/collect-host-facts.sh`
-read a host fact none of the others can (see `docs/reference/host-facts-schema.md`).
+dashboard over your tailnet (and, sharing its sidecar, the `viewer-probe`
+service that lets the host-facts collector's viewer-vantage check actually
+reach a peer — owner decision #1358, agent-ops#2788), `local` for the
+dashboard on this machine's own loopback, `node-health` for the node-health
+HTTP surface on that same loopback (`http://127.0.0.1:$NODE_HEALTH_PORT`,
+default 8788), `auto-update` for watchtower. The scheduler starts
+regardless: it is in no profile, because a node that runs no cycles and no
+heartbeat is not a node. So does the `collector` (issue #1283) — the
+container that holds the read-only Docker socket and cgroup mounts that let
+`scripts/collect-host-facts.sh` read a host fact none of the others can
+(see `docs/reference/host-facts-schema.md`).
 
 ### 4. Give this node model credentials
 
