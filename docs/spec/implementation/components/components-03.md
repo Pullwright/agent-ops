@@ -25,10 +25,17 @@
     `shellcheck`.
 18. <a id="impl-c-18"></a>`scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
-    `pr_label`-labelled pull requests (bounded to the most recently updated),
-    and for each carrying an `agent-ops:closes-issue` marker whose named
-    issue is still open and not `state_reason: "reopened"`, closes it with a
-    `pipeline_comment_header`/
+    `pr_label`-labelled pull requests, both the most recently updated (bounded
+    to `pr_search_limit`) and, via a second listing walking a persistent
+    per-repo cursor (`<state-dir>/sweep-closed-issues-cursor.json`) across the
+    same pull requests in ascending creation order, whatever batch picks up
+    from where that cursor last reached — the two listings merged and
+    de-duplicated by pull request number before either is examined. For each
+    carrying an `agent-ops:closes-issue` marker, or a head branch of exactly
+    `agent/<N>`, naming an issue still open and not `state_reason:
+    "reopened"`, closes it, and does the same for every other same-repository
+    issue that pull request's own `closingIssuesReferences` names beyond that
+    single target, each closed with a `pipeline_comment_header`/
     `pipeline_comment_marker`-wrapped comment citing the merge as evidence,
     printing one JSON action per outcome (`closed`, `merge-observed`,
     `approver-escalation-retired`, `deferred`, `warning`)

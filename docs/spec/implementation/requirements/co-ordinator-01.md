@@ -1174,8 +1174,35 @@
     no record of our own to keep, because the re-open is GitHub's record of
     it. The skip is reported as a warning, never silent.
 
-    Bounded to the most recently updated merged pull requests per repo, and
-    idempotent by construction — it only ever acts on an issue GitHub itself
+    A pull request can name more than one issue this way — PR #2812 closed
+    both #2801 and #2813 in the same body, but the marker/branch anchor above
+    only ever identifies a single target, so #2813 sat open for five days
+    after #2801 closed within the half hour (agent-ops#2851). Alongside that
+    single target, this sweep also checks every other same-repository issue
+    the pull request's own GitHub-reported `closingIssuesReferences` names —
+    already present on the same listing, at no extra cost — and closes each
+    one still open and not reopened the same way, counted under the same
+    `max_actions` budget as the single-target close.
+
+    Bounded, by default, to the most recently updated merged pull requests
+    per repo — but that ordering alone has a gap: a merged pull request
+    nobody touches again ages out of it for good once enough newer pull
+    requests merge, with nothing to reach back for it. PR #2425 merged
+    2026-10-20 and met every closing criterion above, but #2393 sat open for
+    three weeks because it never again surfaced near the top of that
+    ordering (agent-ops#2851). So alongside that window, this sweep also
+    walks a second, persistent cursor — `<state_dir>/sweep-closed-issues-
+    cursor.json`, keyed per repo slug — across the same merged, labelled pull
+    requests in ascending creation order, continuing each run from wherever
+    the cursor last reached rather than from the beginning, and bounded by
+    the same `pr_search_limit` per call. An exhausted cursor (an empty batch)
+    is left exactly where it is: every pull request merging from that point
+    on is fresh enough to appear in the "most recently updated" window on
+    its own. The two listings are merged and de-duplicated by pull request
+    number before either is examined, so a pull request either call finds is
+    processed exactly once.
+
+    Idempotent by construction — it only ever acts on an issue GitHub itself
     still reports open and not reopened, so re-running it costs nothing once
     the backlog is cleared. Actions are capped per run (three per repo per cycle, the
     overflow reported, never silent), logged as `issue-closed-post-merge`
