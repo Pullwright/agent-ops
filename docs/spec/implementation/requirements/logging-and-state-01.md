@@ -306,7 +306,7 @@
     re-arm trusts must come from an engagement whose review actually
     reached GitHub, since the gate's other two controls are measured
     against the review that is standing there (issue #2534). The landing
-    audit record's own adjudication history (requirement 8x) is the
+    audit record's own adjudication history (acceptance check 8x) is the
     deliberate exception: it carries every event, `posted: false` ones
     included, because it is a diagnostic record of what the Approver
     decided rather than a trust decision. A `critical_reason` field (`protected-path` or
