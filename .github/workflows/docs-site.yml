@@ -1,0 +1,86 @@
+name: Documentation site
+
+# Builds the public documentation site (site/, Astro + Starlight — see
+# site/astro.config.mjs and site/scripts/sync-docs.mjs) on every pull request
+# and in the merge queue, and deploys it to GitHub Pages from `main` (issue
+# #2100). The build fails on a broken internal link
+# (starlight-links-validator, configured in site/astro.config.mjs) — that is
+# this workflow's equivalent of toc.yml/config-table.yml's freshness checks,
+# just for the site rather than a single generated region.
+#
+# site/ is the whole of this toolchain (never copied into the pipeline's node
+# image — see .dockerignore and scripts/is-docs-only.sh), so this workflow,
+# like build-image.yml, is the one place it runs.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
+# runs with write-scoped secrets — the deploy job only ever runs on `push` to
+# `main`, which forks cannot trigger.
+#
+# The `merge_group:` trigger is required for this context to report inside
+# the merge queue — without it, a required `build` would stall every queue
+# entry for the ruleset's 60-minute `check_response_timeout_minutes`.
+#
+# Actions are pinned to SHAs (issue #2100's Deliverable 3) rather than this
+# repository's usual `@vN` tags, and permissions are minimal — `pages: write`
+# and `id-token: write` scoped to the deploy job alone — because this is the
+# one workflow in the repository that publishes to a world-readable surface.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The whole history, because site/scripts/sync-docs.mjs reads each
+          # page's own last-updated date out of it. At the default depth of 1
+          # the only commit present is the one being built, and — having no
+          # parent in a shallow clone — it diffs against the empty tree, so
+          # `git log --name-only` names *every* file at that one timestamp and
+          # all 352 pages claim they were last updated on the day the site was
+          # deployed. The build stays green either way, which is the whole
+          # danger: `sync-docs.mjs` refuses a shallow clone outright rather
+          # than publishing dates nobody would know to disbelieve.
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build (fails on a broken internal link)
+        run: npm run build
+      - name: Upload build output
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

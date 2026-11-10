@@ -81,9 +81,11 @@ assert_docs_only "AGENTS.md is documentation" AGENTS.md
 assert_docs_only "TECH-DEBT.md is documentation" TECH-DEBT.md
 assert_docs_only "the licence is documentation" LICENCE
 assert_docs_only "the node runbook is documentation" deploy/docker/README.md
+assert_docs_only "the documentation site's own toolchain is documentation" \
+  site/astro.config.mjs site/scripts/sync-docs.mjs
 assert_docs_only "the whole inert set at once is documentation" \
   docs/ROADMAP.md README.md CLAUDE.md AGENTS.md \
-  TECH-DEBT.md LICENCE deploy/docker/README.md
+  TECH-DEBT.md LICENCE deploy/docker/README.md site/astro.config.mjs
 assert_not_docs_only "a frozen register item file is not documentation" \
   tech-debt/TD-PPagop-26073101.md
 
@@ -196,6 +198,19 @@ for doc in README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/READ
   fi
 done
 
+# site/ is the one inert entry that does *not* carry this "exists inside the
+# image too" property — .dockerignore excludes it on purpose (it never
+# reaches a node), so a missing site/ means nothing when this test runs
+# inside the image itself (no .git there, per the comment above); only a
+# checkout is expected to carry it.
+if [[ ! -e "$SCRIPT_DIR/.git" ]]; then
+  pass "the allowlist's site still exists (skipped — running inside the image, where .dockerignore keeps it out)"
+elif [[ -e "$SCRIPT_DIR/site" ]]; then
+  pass "the allowlist's site still exists"
+else
+  fail "the allowlist's site still exists" "it is gone — remove or repoint the entry"
+fi
+
 # --- The set of documents the pipeline actually reads at run time, derived
 #     from the code rather than hand-maintained here, so the next machine-read
 #     document is caught the moment it is added without being classified.
@@ -233,7 +248,7 @@ done
 #     either way; only "Run the test suite inside the image" is what the
 #     workflow skips when this call succeeds. ---
 assert_suite_skippable "the inert set alone is suite-skippable" \
-  docs/ROADMAP.md README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md
+  docs/ROADMAP.md README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md site/astro.config.mjs
 assert_suite_skippable "the standing decisions file alone is suite-skippable" \
   docs/STANDING-DECISIONS.md
 assert_suite_skippable "the standing decisions file beside inert documentation is suite-skippable" \

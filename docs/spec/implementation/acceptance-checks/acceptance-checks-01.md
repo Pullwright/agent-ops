@@ -56,7 +56,13 @@ oblige anyone to edit a test.
    `docs/spec/dashboard/README.md`), which the image *does* deliver to a
    running stage and so count as code — or is
    `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`, `LICENCE` or
-   `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
+   `deploy/docker/README.md`, or is under `site/` — the public documentation
+   site's own toolchain, the one allowlist entry that is a directory rather
+   than a named file and the only one `.dockerignore` excludes outright, so
+   the image is not merely the wrong delivery path for it but no delivery path
+   at all; `.github/workflows/docs-site.yml` builds and deploys it, and
+   `test/is-docs-only.test.sh`'s own "still exists" assertion skips inside the
+   image for exactly that reason — and calls it code otherwise — `prompts/*.md`
    included, since those are Markdown documents *and* the operating
    instructions of requirement 1a's stages, so classifying by file extension
    would let a change to a node's behaviour skip the build that deploys it.
