@@ -680,6 +680,29 @@ M17. <a id="mon-m17"></a>**A stage-health verdict, from day one.** The Monitor l
    its own stream and into its own file, in `docs/spec/review/README.md`
    R19.
 
+M17a. <a id="mon-m17a"></a>**A failed attempt names the failure it can, not just the bare exit
+   code.** `monitor-cycle.sh` sources `lib/stage-attempt.sh` for its two
+   classification helpers, `stage_api_refusal` and `stage_api_refusal_message`
+   — pure functions of the stage's own output file, with no dependency on the
+   implementation pipeline's claim/PR/cycle globals that file's other
+   functions read and write — and calls them ahead of its three bare-exit
+   branches (M17's "exited non-zero, timed out or returned no usable
+   completion"). When the model stage's own output records a recognised API
+   refusal — the same shape every implementation-pipeline stage already
+   classifies via `handle_stage_failure` (`docs/spec/implementation/README.md`) —
+   `attempt-failed`'s `detail` names the refusal's own stable token and the
+   API's own words, instead of the bare, useless "the Monitor exited 1" that
+   is all a lapsed login or an unscoped key otherwise leaves behind. For a
+   generic non-zero exit that is not a recognised refusal, `detail` stays
+   exactly "the Monitor exited `$rc`" — unchanged, because it is the field a
+   crash-loop-style reader would count consecutive failures on, and a moving
+   value folded into it would break that grouping the same way a moving token
+   already did once for the implementation pipeline — and the event instead
+   gains a sibling `stderr_tail` field carrying up to 600 characters of the
+   model process's own stderr, tail-truncated so the most recent words
+   survive, present only when there was something captured to carry
+   (agent-ops#2864).
+
 ### Logging and state
 
 M18. <a id="mon-m18"></a>**Streams.** Monitor *operational* events go to
@@ -733,7 +756,9 @@ M19. <a id="mon-m19"></a>**No `node-state` transition.** The Monitor writes none
    M9/M9a/M10b (the stage and its caps, assembled through
    `lib/prompt-overrides.sh`), M11–M16 (every filing, the triage comments,
    M13a/M13b's promotion and retirement, and the report), M17 (the
-   stage-health verdict, through `lib/stage-health.sh`), M18 (its own stream,
+   stage-health verdict, through `lib/stage-health.sh`) and M17a (the
+   refused-request/`stderr_tail` detail, through `lib/stage-attempt.sh`'s
+   `stage_api_refusal`/`stage_api_refusal_message`), M18 (its own stream,
    including `monitor-promoted`) and M19 (no `node-state` event). Sources
    `lib/pager.sh` and `lib/pager-invariants.sh` for the registry membership
    check M13b needs, and nothing else from either — no evaluation, no filing,
@@ -823,6 +848,13 @@ supplies its own values.
    `state_dir/.stage-health.json` carries a `monitor` entry, and an
    implementation-pipeline write of the same file does not remove it
    (`test/stage-health.test.sh` covers the merge in isolation).
+7a. <a id="mon-ac-7a"></a>**A failed attempt names the failure it can (M17a).**
+   `test/monitor-cycle.test.sh` passes: a stubbed `claude` whose output
+   records a recognised API refusal logs `attempt-failed` with `detail`
+   naming the refusal's own token and its message, never the bare "the
+   Monitor exited `$rc`"; a stubbed `claude` that exits non-zero for any
+   other reason keeps that bare `detail` unchanged and gains a `stderr_tail`
+   field capped at 600 characters, the oldest bytes the ones dropped.
 8. <a id="mon-ac-8"></a>**The untrusted framing is byte-identical (M10a).**
    `test/prompt-untrusted-framing.test.sh` passes with `prompts/monitor.md` in
    its list.

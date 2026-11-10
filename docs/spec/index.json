@@ -3865,6 +3865,13 @@
       "file": "docs/spec/monitor.md",
       "title": "A stage-health verdict, from day one."
     },
+    "MON M17a": {
+      "kind": "mon",
+      "label": "M17a",
+      "anchor": "mon-m17a",
+      "file": "docs/spec/monitor.md",
+      "title": "A failed attempt names the failure it can, not just the bare exit"
+    },
     "MON M18": {
       "kind": "mon",
       "label": "M18",
@@ -4018,6 +4025,13 @@
       "anchor": "mon-ac-7",
       "file": "docs/spec/monitor.md",
       "title": "The stage-health verdict exists (M17)."
+    },
+    "MON AC 7a": {
+      "kind": "mon-ac",
+      "label": "7a",
+      "anchor": "mon-ac-7a",
+      "file": "docs/spec/monitor.md",
+      "title": "A failed attempt names the failure it can (M17a)."
     },
     "MON AC 8": {
       "kind": "mon-ac",
