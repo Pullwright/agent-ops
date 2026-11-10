@@ -134,16 +134,30 @@ providers_load() {
   PROVIDER_SUBSTRATE=()
   PROVIDER_CREDENTIAL_ENV=()
   PROVIDER_LANES=()
+  local name_b64 substrate_b64 lanes_b64 credential_env_b64
   local name substrate lanes_json credential_env default_env
-  # lanes_json (never empty — lane_defaults always fills both lanes) comes
-  # before credential_env (routinely empty) in both the jq row and this read:
-  # `read` with a tab IFS collapses a run of consecutive tabs into a single
-  # delimiter exactly as it does whitespace-default IFS, so an empty field
-  # anywhere but last silently merges into its neighbour and shifts every
-  # field after it — this field order is what keeps the one field that can
-  # be empty safely last.
-  while IFS=$'\t' read -r name substrate lanes_json credential_env; do
-    [[ -n "$name" ]] || continue
+  # Every column travels as base64, not as raw text (issue #2855, extending
+  # #2290's own fix for the lanes column alone): `@tsv` escapes a literal
+  # backslash to `\\`, and `read -r` keeps it doubled rather than
+  # un-escaping it, so a provider name, substrate, credential_env or lane
+  # value containing a backslash (or, for the lanes column's `tojson`
+  # encoding, a double quote) came out mangled or unparseable. Base64's
+  # alphabet contains neither character, so `@tsv` has nothing to escape and
+  # the round-trip is safe regardless of what any column's value is.
+  #
+  # lanes_b64 (never empty — lane_defaults always fills both lanes) comes
+  # before credential_env_b64 (routinely empty) in both the jq row and this
+  # read: `read` with a tab IFS collapses a run of consecutive tabs into a
+  # single delimiter exactly as it does whitespace-default IFS, so an empty
+  # field anywhere but last silently merges into its neighbour and shifts
+  # every field after it — this field order is what keeps the one field
+  # that can be empty safely last.
+  while IFS=$'\t' read -r name_b64 substrate_b64 lanes_b64 credential_env_b64; do
+    [[ -n "$name_b64" ]] || continue
+    name="$(base64 -d <<<"$name_b64" 2>/dev/null)"
+    substrate="$(base64 -d <<<"$substrate_b64" 2>/dev/null)"
+    lanes_json="$(base64 -d <<<"$lanes_b64" 2>/dev/null)"
+    credential_env="$(base64 -d <<<"$credential_env_b64" 2>/dev/null)"
     PROVIDER_SUBSTRATE["$name"]="$substrate"
     # An entry carrying no `substrate` at all is a config fault, but it is
     # `config_provider_errors`' fault to report, by name, one call *later*
@@ -168,10 +182,11 @@ providers_load() {
        balance_usd: null, balance_as_of: null, balance_floor_usd: null};
     (. // {}) | to_entries[] | . as $e |
     ($e.value.lanes // {}) as $lanes |
-    [$e.key, ($e.value.substrate // ""),
+    [($e.key | @base64),
+     ($e.value.substrate // "" | @base64),
      ({api: (lane_defaults("api") * ($lanes.api // {})),
-       subscription: (lane_defaults("subscription") * ($lanes.subscription // {}))} | tojson),
-     ($e.value.credential_env // "")
+       subscription: (lane_defaults("subscription") * ($lanes.subscription // {}))} | tojson | @base64),
+     ($e.value.credential_env // "" | @base64)
     ] | @tsv' \
     <<<"$providers_json" 2>/dev/null)
   if [[ -z "${PROVIDER_SUBSTRATE[anthropic]+set}" ]]; then

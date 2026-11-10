@@ -818,6 +818,36 @@ assert_eq "an unreadable log prints nothing rather than guessing" "" "$out"
 out="$(landing_retry_tier "https://github.com/acme/widgets/pull/12" < "$tier_log")"
 assert_eq "stdin works the same as a named file (LOG_FILE omitted/-)" "critical" "$out"
 
+# A `posted:false` approver-verdict event's own review never reached GitHub
+# (issue #2534) — landing_retry_tier must never stamp its tier, even when it
+# is the most recent event for the pull request, and even when an older
+# posted event for a different tier exists.
+unposted_log="$tmp_dir/tier-union-log-unposted.jsonl"
+cat > "$unposted_log" <<'LOG'
+{"ts":"2026-08-17T09:00:00Z","event":"approver-verdict","pr_url":"https://github.com/acme/widgets/pull/13","tier":"standard","verdict":"approve","refuse_streak":0,"adjudication":false,"posted":true}
+{"ts":"2026-08-17T10:00:00Z","event":"approver-verdict","pr_url":"https://github.com/acme/widgets/pull/13","tier":"critical","verdict":"approve","refuse_streak":0,"adjudication":false,"posted":false}
+LOG
+
+out="$(landing_retry_tier "https://github.com/acme/widgets/pull/13" "$unposted_log")"
+assert_eq "a later posted:false event is skipped; the earlier posted event's tier wins" \
+  "standard" "$out"
+
+only_unposted_log="$tmp_dir/tier-union-log-only-unposted.jsonl"
+cat > "$only_unposted_log" <<'LOG'
+{"ts":"2026-08-17T10:00:00Z","event":"approver-verdict","pr_url":"https://github.com/acme/widgets/pull/14","tier":"critical","verdict":"approve","refuse_streak":0,"adjudication":false,"posted":false}
+LOG
+
+out="$(landing_retry_tier "https://github.com/acme/widgets/pull/14" "$only_unposted_log")"
+assert_eq "the only event for a pull request being posted:false prints nothing" "" "$out"
+
+no_posted_field_log="$tmp_dir/tier-union-log-no-posted-field.jsonl"
+cat > "$no_posted_field_log" <<'LOG'
+{"ts":"2026-08-17T10:00:00Z","event":"approver-verdict","pr_url":"https://github.com/acme/widgets/pull/15","tier":"high","verdict":"approve","refuse_streak":0,"adjudication":false}
+LOG
+
+out="$(landing_retry_tier "https://github.com/acme/widgets/pull/15" "$no_posted_field_log")"
+assert_eq "an event with no posted field at all is still read as posted" "high" "$out"
+
 # --- landing_arm ---------------------------------------------------------------
 
 : > "$enqueue_calls"; : > "$merge_calls"

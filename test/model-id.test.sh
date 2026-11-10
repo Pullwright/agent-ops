@@ -244,6 +244,17 @@ assert_eq "…leaving the sibling lane at its own untouched default" \
   '{"weight":1,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}' \
   "$(jq -c '.api' <<<"${PROVIDER_LANES[xai]}")"
 
+# issue #2290: a lane string value containing a backslash or double quote
+# must not corrupt PROVIDER_LANES' JSON through the @tsv/read transport.
+# config_provider_errors' own ISO 8601 format check on balance_as_of is not
+# what closes this — this exercises providers_load directly, bypassing that
+# gate entirely, since the transport itself must be safe for any value.
+providers_load '{"xai": {"substrate": "test-substrate", "lanes": {"api": {"balance_as_of": "a\"b\\c"}}}}'
+assert_eq "PROVIDER_LANES stays valid JSON when a lane value holds a quote and a backslash" \
+  "0" "$(jq -e . >/dev/null 2>&1 <<<"${PROVIDER_LANES[xai]}"; echo $?)"
+assert_eq "…and round-trips the value unchanged" \
+  'a"b\c' "$(jq -r '.api.balance_as_of' <<<"${PROVIDER_LANES[xai]}")"
+
 # A provider configured with no credential_env falls back to its substrate's
 # own default, the same way claude-code's ANTHROPIC_API_KEY does — exercised
 # here against this fixture's own test-substrate entry, appended above,
@@ -252,6 +263,17 @@ PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV[test-substrate]=TEST_SUBSTRATE_API_KEY
 providers_load '{"xai": {"substrate": "test-substrate"}}'
 assert_true "credential_env defaults by substrate when not configured explicitly" \
   [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "TEST_SUBSTRATE_API_KEY" ]
+
+# A literal backslash in the provider's own key or in credential_env (issue
+# #2855) must not be doubled by the @tsv round-trip: every column travels as
+# base64, so @tsv has nothing to escape regardless of what the value is.
+providers_load '{"xa\\i": {"substrate": "test-substrate", "credential_env": "A\\B"}}'
+assert_true "a backslash in the provider name survives the @tsv round-trip undoubled" \
+  [ -n "${PROVIDER_SUBSTRATE[xa\\i]+set}" ]
+assert_eq "…and its substrate is recorded under that same undoubled key" \
+  "test-substrate" "${PROVIDER_SUBSTRATE[xa\\i]:-}"
+assert_eq "a backslash in credential_env survives the @tsv round-trip undoubled" \
+  "A\\B" "${PROVIDER_CREDENTIAL_ENV[xa\\i]:-}"
 
 # A configured provider whose substrate has no adapter installed on this
 # node fails fast too, naming the key and the substrate (today's schema enum

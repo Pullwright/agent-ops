@@ -180,6 +180,38 @@ which is exactly the self-certification gap the 2026-08-08 four-day silent
 outage (`docs/ROADMAP.md`'s health bullet) already burned this installation
 once on a different signal.
 
+On a `tailnet` node, this section can be filled in from either of two
+vantages (owner decision #1358, agent-ops#2788). `collector` runs on every
+node under every profile and carries no tailnet route of its own, so its own
+direct fetch degrades to the honest failure described above. The
+`viewer-probe` service instead shares the `tailscale` sidecar's own network
+namespace — the same way `dashboard` does — and so does have a route; it
+runs the identical probe, on the same `AGENT_OPS_COLLECTOR_INTERVAL_SECONDS`
+cadence, and writes its own result to `state_dir/viewer-probe/<node>.json`.
+`collector` folds that file's `viewer_probe` object in whenever the file
+exists and its own `generated_at` is no older than
+`HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS` (default: three times
+`AGENT_OPS_COLLECTOR_INTERVAL_SECONDS` — `lib/host-facts.sh`'s
+`host_facts_viewer_probe_fold_json`), falling back to its own direct fetch
+otherwise. On `local` and bare nodes, which run no sidecar and so never
+have a file to fold, the direct fetch's own honest failure is this
+section's whole answer, exactly as it was before the fold existed.
+`AGENT_OPS_VIEWER_URL_TEMPLATE`, `HOST_FACTS_VIEWER_PROBE_TIMEOUT` and
+`HOST_FACTS_CURL_CMD` govern the fetch itself identically on both
+vantages, since both run the same `host_facts_viewer_probe_json`.
+
+A route is necessary but not sufficient, and the second half is a node's
+own configuration rather than anything either vantage can derive.
+`deploy/docker/ts-serve.json` publishes a node's dashboard on
+`${TS_CERT_DOMAIN}` alone — that node's `<name>.<tailnet>.ts.net` — so
+`AGENT_OPS_VIEWER_URL_TEMPLATE`'s own default, naming the bare `{node}`
+short name, matches neither that handler nor the certificate Tailscale
+serves for it, and every entry reports `ok: false` with a TLS or
+name-resolution `reason` however good the vantage's route is. A `tailnet`
+node sets the template to the `https://{node}.<tailnet>.ts.net/data.js`
+form (`deploy/docker/.env.example`) for this section to carry a real
+measurement.
+
 ## Degradation
 
 Every field in this document is `null` (or the array it belongs to is
