@@ -745,6 +745,72 @@ assert_contains "the report records the promotion" \
 assert_eq "and the promotion event is logged" "1" \
   "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | length')"
 
+# ============================================================================
+# 13. The attempt-failed detail on a failed model-stage run (#2864)
+# ============================================================================
+# Two shapes, both hitting "the Monitor exited $rc" before #2864: an API
+# refusal (the ockham-container case this issue was filed for — a lapsed
+# login reported only as "exited 1") now names the refusal instead, and a
+# genuine crash keeps its unchanged, groupable `detail` but gains a
+# `stderr_tail` sibling field carrying what the model process actually wrote.
+
+# 13a. An API refusal — `claude` exits non-zero (exactly as the real CLI does
+# on a lapsed login) but the failure is legible from `is_error`/
+# `terminal_reason`/`result` in the stream itself, same shape
+# `stage_api_refusal` already recognises for every implementation-pipeline
+# stage.
+d="$(make_node api-refusal "$BASE")"
+cat > "$d/stub/claude" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+cat > /dev/null
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"result","subtype":"error_during_execution","is_error":true,"terminal_reason":"api_error","api_error_status":null,"num_turns":1,"total_cost_usd":0,"duration_ms":559,"result":"Failed to authenticate: OAuth session expired and could not be refreshed"}'
+exit 1
+STUB
+chmod +x "$d/stub/claude"
+out="$(run_monitor "$d" --once)"
+assert_eq "monitor-cycle.sh itself still reports the run as ok (the Script's own exit, not the model's)" "0" "$RC"
+failed_event="$(events_of "$d" | jq -rs '[.[] | select(.event == "attempt-failed" and .stage == "monitor")] | last')"
+assert_contains "detail names the refusal by its own stable token" \
+  "the Monitor was refused by the API before it could run: authentication_failed:" "$(jq -r '.detail' <<<"$failed_event")"
+assert_contains "and carries the API's own words alongside it" \
+  "OAuth session expired and could not be refreshed" "$(jq -r '.detail' <<<"$failed_event")"
+assert_lacks "never the useless bare exit code this issue was filed over" \
+  "the Monitor exited 1" "$(jq -r '.detail' <<<"$failed_event")"
+assert_eq "stage_failure is still set, exactly as any other attempt-failed" "true" \
+  "$(jq -r '.stage_failure' <<<"$failed_event")"
+assert_eq "and no stderr_tail is added here — the refusal's own message already is the diagnostic" \
+  "null" "$(jq -r '.stderr_tail // null' <<<"$failed_event")"
+
+# 13b. A generic non-zero exit, no recorded refusal — `detail` stays exactly
+# as it always has (what crash-loop-style grouping would count on), and the
+# new `stderr_tail` field carries up to 600 characters of whatever the model
+# process actually wrote to its own stderr, tail-truncated so the most recent
+# words (where the real fault usually is) survive over the oldest.
+d2="$(make_node generic-crash "$BASE")"
+stderr_payload="HEAD-MARKER-MUST-BE-DROPPED-$(printf 'x%.0s' {1..700})-TAIL-MARKER-MUST-SURVIVE"
+printf '%s' "$stderr_payload" > "$d2/stub/stderr-payload.txt"
+cat > "$d2/stub/claude" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+cat > /dev/null
+printf '%s\n' '{"type":"system","subtype":"init"}'
+cat "$d2/stub/stderr-payload.txt" >&2
+exit 7
+STUB
+chmod +x "$d2/stub/claude"
+out="$(run_monitor "$d2" --once)"
+failed_event="$(events_of "$d2" | jq -rs '[.[] | select(.event == "attempt-failed" and .stage == "monitor")] | last')"
+assert_eq "detail is the unchanged bare-exit-code wording" "the Monitor exited 7" \
+  "$(jq -r '.detail' <<<"$failed_event")"
+assert_eq "stderr_tail is capped at 600 characters" "600" \
+  "$(jq -r '.stderr_tail | length' <<<"$failed_event")"
+assert_lacks "the oldest bytes are the ones dropped" \
+  "HEAD-MARKER-MUST-BE-DROPPED" "$(jq -r '.stderr_tail' <<<"$failed_event")"
+assert_contains "the most recent bytes survive" \
+  "TAIL-MARKER-MUST-SURVIVE" "$(jq -r '.stderr_tail' <<<"$failed_event")"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"
