@@ -253,6 +253,17 @@ providers_load '{"xai": {"substrate": "test-substrate"}}'
 assert_true "credential_env defaults by substrate when not configured explicitly" \
   [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "TEST_SUBSTRATE_API_KEY" ]
 
+# A literal backslash in the provider's own key or in credential_env (issue
+# #2855) must not be doubled by the @tsv round-trip: every column travels as
+# base64, so @tsv has nothing to escape regardless of what the value is.
+providers_load '{"xa\\i": {"substrate": "test-substrate", "credential_env": "A\\B"}}'
+assert_true "a backslash in the provider name survives the @tsv round-trip undoubled" \
+  [ -n "${PROVIDER_SUBSTRATE[xa\\i]+set}" ]
+assert_eq "…and its substrate is recorded under that same undoubled key" \
+  "test-substrate" "${PROVIDER_SUBSTRATE[xa\\i]:-}"
+assert_eq "a backslash in credential_env survives the @tsv round-trip undoubled" \
+  "A\\B" "${PROVIDER_CREDENTIAL_ENV[xa\\i]:-}"
+
 # A configured provider whose substrate has no adapter installed on this
 # node fails fast too, naming the key and the substrate (today's schema enum
 # admits `claude-code` and `grok-build`, both always installed, so this is
