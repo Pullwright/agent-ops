@@ -243,6 +243,13 @@ Every live node's doctor verdict names the same failing check.
 - **Is a fault?** Yes. Investigate the named check across nodes.
 - **What to do:** Handled automatically by `pager_remedy_verdict_unanimous`; the page names the suspect check to go and read.
 
+### `viewer-probe-unanimous`
+
+Every live node's viewer-vantage probe (`.host.viewer_probe`) reports every target it probed failing at once — the #1071 signature again, this time for the probe rather than a stage_health/updater/doctor verdict.
+
+- **Is a fault?** Yes. A uniform fleet-wide failure is almost always the probe reader being wrong, not every node failing alike at once.
+- **What to do:** Handled automatically by `pager_remedy_verdict_unanimous` (the same remedy `verdict-unanimous` uses); the page's own evidence names every node that saw the uniform failure.
+
 ### `page-outlived-item`
 
 An open `pw::pager`/escalation page's own item (the PR or issue its body links) has already gone terminal — merged or closed.
