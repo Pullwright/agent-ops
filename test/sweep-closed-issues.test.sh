@@ -564,13 +564,67 @@ jq -n '{state: "open"}' > "$c/issue-2394"
 
 out2="$(run_sweep_for "x/y" "$c" "$state17")"
 calls="$(cat "$c/calls.log")"
-assert_contains "  ... so the next pass queries past the saved cursor, not from the start" \
-  "created:>2026-10-20T23:00:00Z" "$calls"
+assert_contains "  ... so the next pass queries at or past the saved cursor, not from the start" \
+  "created:>=2026-10-20T23:00:00Z" "$calls"
 assert_eq "  ... and finds the next stray batch along, not the one already handled" \
   '{"action":"closed","issue":2394,"pr_number":2450,"pr_url":"https://github.com/x/y/pull/2450"}' \
   "$(jq -c 'select(.action == "closed" and .issue == 2394)' <<<"$out2")"
 assert_contains "  ... advancing the saved cursor again" \
   '"x/y":{"created_at":"2026-10-21T00:00:00Z"}' "$(cat "$cursor_file")"
+
+# --- Case 18: the cursor does not advance past a batch the shared budget ---
+# --- left unfinished, and a later pass still reaches the deferred PR ------------
+# agent-ops#2869 review: `cursor_newest_created_at` used to be written
+# unconditionally over the whole cursor batch, even though `close_named_issue`
+# defers once the shared `max_actions` budget is spent. The next pass then
+# searched strictly past that point, so a cursor-batch pull request whose own
+# close was deferred became permanently unreachable — it is too old to ever
+# resurface in the "most recently updated" window either. Here the window
+# listing alone spends the whole budget, so the one cursor-sourced pull
+# request is deferred; the cursor must stay put until a later pass actually
+# finishes it.
+c="$tmp_dir/case18"; mkdir -p "$c"
+state18="$tmp_dir/case18-state"
+
+jq -n '[
+  {number: 6001, url: "https://github.com/x/y/pull/6001", mergeCommit: {oid: "w1"},
+   body: "<!-- agent-ops:closes-issue item=6011 -->"},
+  {number: 6002, url: "https://github.com/x/y/pull/6002", mergeCommit: {oid: "w2"},
+   body: "<!-- agent-ops:closes-issue item=6012 -->"},
+  {number: 6003, url: "https://github.com/x/y/pull/6003", mergeCommit: {oid: "w3"},
+   body: "<!-- agent-ops:closes-issue item=6013 -->"}
+]' > "$c/prs.json"
+for n in 6011 6012 6013; do jq -n '{state: "open"}' > "$c/issue-$n"; done
+
+jq -n '[{number: 6100, url: "https://github.com/x/y/pull/6100",
+         body: "<!-- agent-ops:closes-issue item=6101 -->",
+         mergeCommit: {oid: "cur100"}, createdAt: "2026-11-01T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-6101"
+
+out1="$(run_sweep_for "x/y" "$c" "$state18")"
+assert_eq "the window's three closes spend the whole per-run budget" 3 \
+  "$(jq -c 'select(.action == "closed")' <<<"$out1" | wc -l | tr -d ' ')"
+assert_eq "the cursor-batch pull request's own close is deferred, not skipped silently" \
+  '{"action":"deferred","remaining":1}' \
+  "$(jq -c 'select(.action == "deferred")' <<<"$out1")"
+assert_eq "  ... so its issue is left open" '' \
+  "$(jq -c 'select(.action == "closed" and .issue == 6101)' <<<"$out1" 2>/dev/null || true)"
+
+cursor_file18="$state18/sweep-closed-issues-cursor.json"
+assert_eq "  ... and the cursor is not advanced past the batch it could not finish" "" \
+  "$(cat "$cursor_file18" 2>/dev/null || true)"
+
+# Simulate: the window's three issues really are closed now, by the close
+# calls the first run just made — only the deferred one is still open.
+for n in 6011 6012 6013; do jq -n '{state: "closed"}' > "$c/issue-$n"; done
+
+out2="$(run_sweep_for "x/y" "$c" "$state18")"
+assert_eq "a later pass — the cursor was never advanced — still finds the deferred pull request" \
+  '{"action":"closed","issue":6101,"pr_number":6100,"pr_url":"https://github.com/x/y/pull/6100"}' \
+  "$(jq -c 'select(.action == "closed")' <<<"$out2")"
+assert_contains "  ... and the cursor now advances, since this batch finished clean" \
+  '"x/y":{"created_at":"2026-11-01T00:00:00Z"}' "$(cat "$cursor_file18")"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"

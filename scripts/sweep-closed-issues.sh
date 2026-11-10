@@ -62,6 +62,26 @@
 # merged and de-duplicated by pull request number before either is examined
 # below, so a pull request either call finds is only ever processed once.
 #
+# The cursor only ever advances past a batch every cursor-sourced pull
+# request in it actually finished (agent-ops#2869 review): closing is
+# idempotent, so re-walking a batch that finished cleanly is wasteful but
+# harmless, but advancing past one that did not is not — the next cursor
+# search is strictly past whatever it last reached, and an old pull request
+# by definition no longer surfaces in the "most recently updated" window
+# either, so a close deferred by the shared `max_actions` budget, or one a
+# transient `gh` failure left alone, would become permanently unreachable.
+# Provenance (whether a given swept pull request came from this cursor
+# listing, as opposed to only the "most recently updated" one) is checked
+# per row despite the earlier de-duplication, and the cursor-advance write
+# at the bottom of this script is skipped entirely — leaving the saved
+# cursor exactly where it was — whenever any cursor-sourced row's close was
+# deferred or failed. The search itself also matches `created_at` at or
+# after the saved cursor (`created:>=`, not `created:>`) rather than
+# strictly after it, so two pull requests sharing one `createdAt` second at
+# the boundary can never let one of them slip past unexamined — the
+# occasional re-fetch of an already-finished boundary row this costs is the
+# same harmless idempotent re-walk already described above.
+#
 # A PR can also name more than one issue in its own closing references
 # (agent-ops#2851): PR #2812 closed both #2801 and #2813, but this sweep's
 # marker/branch resolution only ever anchors a single target per PR, so #2813
@@ -170,6 +190,7 @@ max_actions=3
 
 actions=0
 deferred=0
+last_close_incomplete=0
 
 merge_observed_seen='[]'
 [[ -n "$state_dir" && -s "$merge_observed_seen_file" ]] && \
@@ -189,18 +210,18 @@ if [[ -z "$prs_json" ]]; then
 fi
 
 # The persistent cursor (see this script's own header): a second listing,
-# ordered by creation ascending and starting just past whatever this repo's
-# cursor last reached, so a merged pull request that ages out of the "most
-# recently updated" window above is still found, eventually, rather than
-# left to a human to rediscover. A failed call is warned about but does not
-# abort the pass — the "most recently updated" window above still runs.
+# ordered by creation ascending and starting at or just past whatever this
+# repo's cursor last reached, so a merged pull request that ages out of the
+# "most recently updated" window above is still found, eventually, rather
+# than left to a human to rediscover. A failed call is warned about but does
+# not abort the pass — the "most recently updated" window above still runs.
 cursor_state='{}'
 [[ -n "$state_dir" && -s "$cursor_file" ]] && \
   cursor_state="$(jq -c 'if type == "object" then . else {} end' "$cursor_file" 2>/dev/null || echo '{}')"
 cursor_created_at="$(jq -r --arg slug "$slug" '.[$slug].created_at // ""' <<<"$cursor_state" 2>/dev/null)"
 
 cursor_search="sort:created-asc"
-[[ -n "$cursor_created_at" ]] && cursor_search="sort:created-asc created:>$cursor_created_at"
+[[ -n "$cursor_created_at" ]] && cursor_search="sort:created-asc created:>=$cursor_created_at"
 
 cursor_prs_json="$("$GH" pr list -R "$slug" --state merged --label "$pr_label" \
   --search "$cursor_search" \
@@ -210,6 +231,13 @@ if [[ -z "$cursor_prs_json" ]]; then
   warn "could not list merged, $pr_label-labelled pull requests past the saved cursor — this pass only covers the most recently updated window"
   cursor_prs_json='[]'
 fi
+
+# Provenance for the cursor-advance gate below (see this script's own
+# header): the number of every pull request this cursor listing itself
+# found, so a row in the de-duplicated union can still be recognized as
+# cursor-sourced after `unique_by(.number)` has erased which listing it
+# originally came from.
+cursor_pr_numbers_json="$(jq -c '[.[].number]' <<<"$cursor_prs_json" 2>/dev/null || echo '[]')"
 
 # Union of both listings, de-duplicated by pull request number, so a pull
 # request either call found is examined exactly once below.
@@ -355,18 +383,31 @@ fi
 # `closingIssuesReferences` entry a pull request also names (agent-ops#2851):
 # both close the same way, under the same $actions/$max_actions/$deferred
 # budget, and differ only in the evidence cited in the comment.
+#
+# Sets the global $last_close_incomplete to 1 whenever this call's own issue
+# was left in a state that still needs revisiting — deferred by the budget,
+# or a transient read/close failure — and to 0 for every other outcome,
+# including "already closed" and the deliberate, permanent "reopened" skip:
+# neither of those needs this issue looked at again, so neither should block
+# the cursor-advance gate below from treating a batch as finished. The
+# caller, not this function, decides what an incomplete cursor-sourced row
+# means for the cursor.
 close_named_issue() {
   local pr_number="$1" pr_url="$2" merge_sha="$3" item="$4" evidence="$5"
   local issue_json state state_reason comment_body
 
+  last_close_incomplete=0
+
   if (( actions >= max_actions )); then
     deferred=$(( deferred + 1 ))
+    last_close_incomplete=1
     return
   fi
 
   issue_json="$("$GH" api "repos/$slug/issues/$item" 2>/dev/null)" || issue_json=""
   if [[ -z "$issue_json" ]]; then
     warn "could not read issue #$item (named by PR #$pr_number) — leaving it alone"
+    last_close_incomplete=1
     return
   fi
   state="$(jq -r '.state // ""' <<<"$issue_json" 2>/dev/null)"
@@ -402,10 +443,12 @@ $(pipeline_comment_marker "$cycle_id" script)"
     actions=$(( actions + 1 ))
   else
     warn "could not close issue #$item (named by PR #$pr_number)"
+    last_close_incomplete=1
   fi
 }
 
-while IFS=$'\t' read -r pr_number pr_url item merge_sha named_by extra_items_json; do
+cursor_batch_incomplete=0
+while IFS=$'\t' read -r pr_number pr_url item merge_sha named_by extra_items_json cursor_sourced; do
   # bash's `read` collapses consecutive IFS-whitespace delimiters (tab
   # included) even when IFS is narrowed to just "\t", so a genuinely empty
   # middle field shifts every field after it — jq emits "-" rather than ""
@@ -444,6 +487,7 @@ $( [[ -n "$merge_sha" && "$merge_sha" != "-" ]] && printf ' (%s)' "$merge_sha" )
   fi
 
   close_named_issue "$pr_number" "$pr_url" "$merge_sha" "$item" "$evidence"
+  [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && cursor_batch_incomplete=1
 
   # A pull request can name more than one issue in its own closing
   # references (agent-ops#2851) — $extra_items_json already carries every
@@ -461,9 +505,11 @@ merged\
 $( [[ -n "$merge_sha" && "$merge_sha" != "-" ]] && printf ' (%s)' "$merge_sha" )\
 , but never triggered GitHub's own closing-keyword auto-close for it."
       close_named_issue "$pr_number" "$pr_url" "$merge_sha" "$extra_item" "$extra_evidence"
+      [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && cursor_batch_incomplete=1
     done < <(jq -r '.[]' <<<"$extra_items_json" 2>/dev/null || true)
   fi
-done < <(jq -r --arg slug "$slug" '.[]
+done < <(jq -r --arg slug "$slug" --argjson cursor_nums "$cursor_pr_numbers_json" '.[]
+  | .number as $primary_number
   | ((.body // "") | capture("<!-- agent-ops:closes-issue item=(?<n>[0-9]+) -->")? // null) as $marker
   | ((.headRefName // "") | capture("^agent/(?<n>[0-9]+)$")? // null) as $branch
   | (if $marker then $marker.n elif $branch then $branch.n else null end) as $primary
@@ -480,7 +526,8 @@ done < <(jq -r --arg slug "$slug" '.[]
     (if $primary then $primary else "-" end),
     (.mergeCommit.oid // "-"),
     (if $marker then "marker" elif $branch then "branch" else "-" end),
-    ($extra | tostring)
+    ($extra | tostring),
+    (if ($cursor_nums | any(. == $primary_number)) then "1" else "0" end)
   ] | @tsv' <<<"$swept_prs_json" 2>/dev/null || true)
 
 if (( deferred > 0 )); then
@@ -515,10 +562,21 @@ fi
 # there is nothing further for it to reach. A write failure is warned about,
 # not silent — the next pass would otherwise re-walk this same batch from
 # scratch, which is wasteful but not incorrect, since closing is idempotent.
+#
+# $cursor_batch_incomplete (set above, in the main loop) gates this the same
+# way a write failure already does, but for a different reason: a deferred
+# or failed close for a cursor-sourced row left that pull request's own
+# issue unresolved, and advancing past it anyway would make it permanently
+# unreachable — the next search starts strictly past this point, and an old
+# pull request never resurfaces in the "most recently updated" window to
+# compensate. Skipping the write leaves the cursor where it was, so the next
+# pass re-examines the whole batch, including whatever already finished —
+# the same harmless, idempotent re-walk the write-failure case already
+# tolerates.
 cursor_newest_created_at="$(jq -r \
   'if length > 0 then (max_by(.createdAt) | .createdAt) else "" end' \
   <<<"$cursor_prs_json" 2>/dev/null)"
-if [[ -n "$state_dir" && -n "$cursor_newest_created_at" ]]; then
+if [[ -n "$state_dir" && -n "$cursor_newest_created_at" && "$cursor_batch_incomplete" -eq 0 ]]; then
   if ! { mkdir -p "$state_dir" 2>/dev/null && \
       jq -nc --argjson existing "$cursor_state" --arg slug "$slug" \
         --arg created_at "$cursor_newest_created_at" \

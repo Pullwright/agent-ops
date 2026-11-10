@@ -1193,14 +1193,26 @@
     ordering (agent-ops#2851). So alongside that window, this sweep also
     walks a second, persistent cursor — `<state_dir>/sweep-closed-issues-
     cursor.json`, keyed per repo slug — across the same merged, labelled pull
-    requests in ascending creation order, continuing each run from wherever
-    the cursor last reached rather than from the beginning, and bounded by
-    the same `pr_search_limit` per call. An exhausted cursor (an empty batch)
-    is left exactly where it is: every pull request merging from that point
-    on is fresh enough to appear in the "most recently updated" window on
-    its own. The two listings are merged and de-duplicated by pull request
-    number before either is examined, so a pull request either call finds is
-    processed exactly once.
+    requests in ascending creation order, continuing each run from at or just
+    past wherever the cursor last reached (`created:>=`, not `created:>`, so
+    two pull requests sharing one `createdAt` second at that boundary cannot
+    let one slip past unexamined) rather than from the beginning, and bounded
+    by the same `pr_search_limit` per call. The two listings are merged and
+    de-duplicated by pull request number before either is examined, so a
+    pull request either call finds is processed exactly once.
+
+    The cursor advances past a batch the cursor listing examined only once
+    every cursor-sourced pull request in it actually finished — closed,
+    already closed, or left alone as a deliberate `state_reason: "reopened"`
+    skip. A close the shared `max_actions` budget deferred, or one a
+    transient `gh` read or close failure left alone, holds the cursor exactly
+    where it was instead: advancing past it regardless would make that pull
+    request's own issue permanently unreachable, since the next cursor search
+    starts strictly past this point and an old pull request by definition no
+    longer surfaces in the "most recently updated" window either
+    (agent-ops#2869). An exhausted cursor (an empty batch) is likewise left
+    exactly where it is: every pull request merging from that point on is
+    fresh enough to appear in the "most recently updated" window on its own.
 
     Idempotent by construction — it only ever acts on an issue GitHub itself
     still reports open and not reopened, so re-running it costs nothing once
