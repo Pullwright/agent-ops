@@ -66,6 +66,12 @@ S="$SWEEP_STUB_DIR"
 printf '%s\n' "$*" >> "$S/calls.log"
 args="$*"
 case "$args" in
+  "pr list -R "*" --state merged --label autonomous-agent --search "*)
+    if [[ "$args" == *"created:>"* ]]; then
+      cat "$S/cursor-prs-next.json" 2>/dev/null || echo '[]'
+    else
+      cat "$S/cursor-prs.json" 2>/dev/null || echo '[]'
+    fi ;;
   "pr list -R "*" --state merged --label autonomous-agent "*)
     cat "$S/prs.json" ;;
   "issue list -R "*" --label enabler-escalation --state open --search approver-adjudication "*)
@@ -490,6 +496,135 @@ jq -n '[{number: 1200, url: "https://github.com/a/one/pull/1200",
 out3="$(run_sweep_for "a/one" "$c" "$shared_state")"
 assert_eq "  ... and a later run back on the first repo does not re-emit its own already-seen key" '' \
   "$(jq -c 'select(.action == "merge-observed")' <<<"$out3" 2>/dev/null || true)"
+
+# --- Case 16: a pull request's own closingIssuesReferences names a second issue ---
+# agent-ops#2851: PR #2812 closed both #2801 and #2813, but the marker/branch
+# resolution above only ever anchors a single target (#2801 here), so #2813
+# sat open for five days after #2801 closed within the half hour. Every
+# same-repository issue `closingIssuesReferences` names beyond that single
+# target must be closed too, under the same budget.
+c="$tmp_dir/case16"; mkdir -p "$c"
+state16="$tmp_dir/case16-state"
+jq -n '[{number: 2812, url: "https://github.com/x/y/pull/2812",
+         body: "Fixes #2801.\n\n<!-- agent-ops:closes-issue item=2801 -->",
+         mergeCommit: {oid: "mno678"},
+         closingIssuesReferences: [
+           {number: 2801, repository: {name: "y", owner: {login: "x"}}},
+           {number: 2813, repository: {name: "y", owner: {login: "x"}}}
+         ]}]' > "$c/prs.json"
+jq -n '{state: "closed"}' > "$c/issue-2801"
+jq -n '{state: "open"}' > "$c/issue-2813"
+
+out="$(run_sweep_for "x/y" "$c" "$state16")"
+calls="$(cat "$c/calls.log")"
+
+assert_eq "the marker's own target is left alone (already closed)" '' \
+  "$(jq -c 'select(.action == "closed" and .issue == 2801)' <<<"$out" 2>/dev/null || true)"
+assert_eq "  ... but the second, closingIssuesReferences-named issue is closed too" \
+  '{"action":"closed","issue":2813,"pr_number":2812,"pr_url":"https://github.com/x/y/pull/2812"}' \
+  "$(jq -c 'select(.action == "closed")' <<<"$out")"
+assert_contains "  ... citing closingIssuesReferences as its own evidence, not the marker's" \
+  "also names this issue among the issues it closes" "$calls"
+assert_not_contains "  ... and the already-closed marker target is never reclosed" \
+  "issue close 2801" "$calls"
+
+# --- Case 17: a persistent cursor reaches a merged pull request the "most ---
+# --- recently updated" window has already pushed out ------------------------------
+# agent-ops#2851: PR #2425 merged 2026-10-20 and met every closing criterion,
+# but #2393 sat open for three weeks because it never again surfaced near the
+# top of the "most recently updated" ordering. A second, persistent,
+# ascending-by-creation listing must still reach it — and the cursor it
+# leaves behind must make the next pass continue from there, not restart.
+c="$tmp_dir/case17"; mkdir -p "$c"
+state17="$tmp_dir/case17-state"
+jq -n '[{number: 5000, url: "https://github.com/x/y/pull/5000",
+         body: "<!-- agent-ops:closes-issue item=5001 -->",
+         mergeCommit: {oid: "unrelated"}}]' > "$c/prs.json"
+jq -n '{state: "closed"}' > "$c/issue-5001"
+jq -n '[{number: 2425, url: "https://github.com/x/y/pull/2425",
+         body: "Implements #2393.\n\n<!-- agent-ops:closes-issue item=2393 -->",
+         mergeCommit: {oid: "cur001"}, createdAt: "2026-10-20T23:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-2393"
+
+out1="$(run_sweep_for "x/y" "$c" "$state17")"
+assert_eq "the pull request the window alone would miss is still found and closed" \
+  '{"action":"closed","issue":2393,"pr_number":2425,"pr_url":"https://github.com/x/y/pull/2425"}' \
+  "$(jq -c 'select(.action == "closed" and .issue == 2393)' <<<"$out1")"
+
+cursor_file="$state17/sweep-closed-issues-cursor.json"
+assert_contains "  ... and the cursor is saved past it" \
+  '"x/y":{"created_at":"2026-10-20T23:00:00Z"}' "$(cat "$cursor_file")"
+
+jq -n '[{number: 2450, url: "https://github.com/x/y/pull/2450",
+         body: "Implements #2394.\n\n<!-- agent-ops:closes-issue item=2394 -->",
+         mergeCommit: {oid: "cur002"}, createdAt: "2026-10-21T00:00:00Z"}]' \
+  > "$c/cursor-prs-next.json"
+jq -n '{state: "open"}' > "$c/issue-2394"
+
+out2="$(run_sweep_for "x/y" "$c" "$state17")"
+calls="$(cat "$c/calls.log")"
+assert_contains "  ... so the next pass queries at or past the saved cursor, not from the start" \
+  "created:>=2026-10-20T23:00:00Z" "$calls"
+assert_eq "  ... and finds the next stray batch along, not the one already handled" \
+  '{"action":"closed","issue":2394,"pr_number":2450,"pr_url":"https://github.com/x/y/pull/2450"}' \
+  "$(jq -c 'select(.action == "closed" and .issue == 2394)' <<<"$out2")"
+assert_contains "  ... advancing the saved cursor again" \
+  '"x/y":{"created_at":"2026-10-21T00:00:00Z"}' "$(cat "$cursor_file")"
+
+# --- Case 18: the cursor does not advance past a batch the shared budget ---
+# --- left unfinished, and a later pass still reaches the deferred PR ------------
+# agent-ops#2869 review: `cursor_newest_created_at` used to be written
+# unconditionally over the whole cursor batch, even though `close_named_issue`
+# defers once the shared `max_actions` budget is spent. The next pass then
+# searched strictly past that point, so a cursor-batch pull request whose own
+# close was deferred became permanently unreachable — it is too old to ever
+# resurface in the "most recently updated" window either. Here the window
+# listing alone spends the whole budget, so the one cursor-sourced pull
+# request is deferred; the cursor must stay put until a later pass actually
+# finishes it.
+c="$tmp_dir/case18"; mkdir -p "$c"
+state18="$tmp_dir/case18-state"
+
+jq -n '[
+  {number: 6001, url: "https://github.com/x/y/pull/6001", mergeCommit: {oid: "w1"},
+   body: "<!-- agent-ops:closes-issue item=6011 -->"},
+  {number: 6002, url: "https://github.com/x/y/pull/6002", mergeCommit: {oid: "w2"},
+   body: "<!-- agent-ops:closes-issue item=6012 -->"},
+  {number: 6003, url: "https://github.com/x/y/pull/6003", mergeCommit: {oid: "w3"},
+   body: "<!-- agent-ops:closes-issue item=6013 -->"}
+]' > "$c/prs.json"
+for n in 6011 6012 6013; do jq -n '{state: "open"}' > "$c/issue-$n"; done
+
+jq -n '[{number: 6100, url: "https://github.com/x/y/pull/6100",
+         body: "<!-- agent-ops:closes-issue item=6101 -->",
+         mergeCommit: {oid: "cur100"}, createdAt: "2026-11-01T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-6101"
+
+out1="$(run_sweep_for "x/y" "$c" "$state18")"
+assert_eq "the window's three closes spend the whole per-run budget" 3 \
+  "$(jq -c 'select(.action == "closed")' <<<"$out1" | wc -l | tr -d ' ')"
+assert_eq "the cursor-batch pull request's own close is deferred, not skipped silently" \
+  '{"action":"deferred","remaining":1}' \
+  "$(jq -c 'select(.action == "deferred")' <<<"$out1")"
+assert_eq "  ... so its issue is left open" '' \
+  "$(jq -c 'select(.action == "closed" and .issue == 6101)' <<<"$out1" 2>/dev/null || true)"
+
+cursor_file18="$state18/sweep-closed-issues-cursor.json"
+assert_eq "  ... and the cursor is not advanced past the batch it could not finish" "" \
+  "$(cat "$cursor_file18" 2>/dev/null || true)"
+
+# Simulate: the window's three issues really are closed now, by the close
+# calls the first run just made — only the deferred one is still open.
+for n in 6011 6012 6013; do jq -n '{state: "closed"}' > "$c/issue-$n"; done
+
+out2="$(run_sweep_for "x/y" "$c" "$state18")"
+assert_eq "a later pass — the cursor was never advanced — still finds the deferred pull request" \
+  '{"action":"closed","issue":6101,"pr_number":6100,"pr_url":"https://github.com/x/y/pull/6100"}' \
+  "$(jq -c 'select(.action == "closed")' <<<"$out2")"
+assert_contains "  ... and the cursor now advances, since this batch finished clean" \
+  '"x/y":{"created_at":"2026-11-01T00:00:00Z"}' "$(cat "$cursor_file18")"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"

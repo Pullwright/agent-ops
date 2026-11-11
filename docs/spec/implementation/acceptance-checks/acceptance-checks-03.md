@@ -978,7 +978,22 @@
    left untouched, with no extra API call made for the unnamed case; an
    issue GitHub reports `state_reason: "reopened"` is left alone and the
    skip reported, so a human's re-open is never undone on the hour; and the
-   per-call action cap defers rather than floods.
+   per-call action cap defers rather than floods. On the PR #2812/#2801/#2813
+   shape (agent-ops#2851) — one marker-derived target already closed plus a
+   second, still-open issue named only by the pull request's own
+   `closingIssuesReferences` — both are checked independently and the second
+   is closed, citing `closingIssuesReferences` rather than the marker as its
+   evidence, while the first is never reclosed. On the PR #2425/#2393 shape
+   (agent-ops#2851) — a qualifying merged pull request absent from the
+   "most recently updated" window — the persistent, ascending-by-creation
+   cursor listing still finds and closes it, saves its own cursor past it,
+   and a second pass queries past that saved cursor rather than from the
+   start and closes the next stray batch along. On a cursor batch where the
+   shared `max_actions` budget is already spent by the time a cursor-sourced
+   pull request is reached (agent-ops#2869) — the batch's own close deferred,
+   not performed — the cursor is not advanced past it; a later pass, with the
+   cursor still at its prior position, finds and closes the same pull
+   request's issue, and only then does the cursor advance past it.
 8m. <a id="impl-ac-8m"></a>**The closing-keyword and changelog-section checks block, not just
    report (requirements 25a and 25c).** The one piece of requirements 25a
    and 25c that no file in this repository carries is the repo setting that
