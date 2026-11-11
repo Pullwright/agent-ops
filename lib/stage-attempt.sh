@@ -280,10 +280,22 @@ dump_stage_output() {
 # non-zero exit that `pipefail` would otherwise hand straight to an
 # unguarded `set -e` caller. Torn lines are skipped, the same tolerance
 # `lib/stage-health.sh` gives a partial write for the same reason.
+#
+# Tolerant parsing closes the one failure agent-ops#2867 names, and the
+# `|| true` beside each `jq` closes the rest of the same class: `head -1`
+# leaves the pipe the moment it has its line, so a `jq` with more than a
+# pipe-buffer of output still to write dies of `SIGPIPE` — 141, which
+# `pipefail` hands on exactly as it handed on a parse failure — and any
+# other way `jq` can exit non-zero (an unreadable file that passed the `-s`
+# test, a program error) travels the same path. These three helpers are
+# documented as total functions of `$out_file` — a token, a message, a
+# class, or empty — so none of them may put a status where a caller's
+# `set -e` can read it; `2>/dev/null` already says their diagnostics are
+# not part of that contract either.
 stage_api_refusal() {  # <out-file> -> terminal reason, or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+  { jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
          | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
@@ -295,13 +307,13 @@ stage_api_refusal() {  # <out-file> -> terminal reason, or empty
            else ((.terminal_reason // "") as $r
                  | if $r == "" or $r == "completed" or $r == "api_error" then "api_error_\(.api_error_status)" else $r end)
            end' \
-    "$out_file" 2>/dev/null | head -1
+    "$out_file" 2>/dev/null || true; } | head -1
 }
 
 stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+  { jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
          | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
@@ -309,7 +321,7 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
             and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
          | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | (.result // "") | .[0:600]' \
-    "$out_file" 2>/dev/null | head -1
+    "$out_file" 2>/dev/null || true; } | head -1
 }
 
 # Issue #1073 (agent-ops#1073): a refusal's stable token cannot carry the one
@@ -349,7 +361,7 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
 stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+  { jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
          | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
@@ -366,7 +378,7 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
            elif ($status == 429 and $r == "") then "transient"
            else "refused"
            end' \
-    "$out_file" 2>/dev/null | head -1
+    "$out_file" 2>/dev/null || true; } | head -1
 }
 
 # `extra` (default `{}`, agent-ops#1630) is merged into this failure's own
