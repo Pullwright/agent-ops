@@ -830,9 +830,9 @@
     any *live* node's `doctor.memory_cgroup` — `scripts/doctor.sh`'s hourly
     unattended pass, `lib/memory.sh`'s own `memory_cgroup_verdict`, now
     published in the heartbeat's `doctor` object alongside `timestamp`/
-    `verdict`/`fails` (`scripts/state-sync.sh`, additive) — reads `unbounded`
-    or `livelocked`: nothing reclaims that container's memory before its
-    hard ceiling. `bounded`/`unconfirmed`/`unlimited`/absent never fire it:
+    `verdict`/`fails` (`scripts/state-sync.sh`, additive) — reads `livelocked`,
+    or reads `unbounded` and the sibling `doctor.memory_cgroup_accepted` flag
+    is not `true`. `bounded`/`unconfirmed`/`unlimited`/absent never fire it:
     the first two are already reclaimed or uncapped, and `unconfirmed` is a
     measurement gap rather than a known-bad configuration. The remedy is
     owner-only because fixing it is a host-configuration change — setting
@@ -840,6 +840,19 @@
     never one this pipeline can perform on its own behalf. No new
     configuration: the invariant reads `fleet_nodes_json` alone, declared
     with no event types, on `node-stale`/`updater-stuck`'s own terms.
+
+    Issue #2885 adds the `doctor.memory_cgroup_accepted` flag itself: a
+    standing owner decision (#2861) to keep an unbounded cgroup on this
+    fleet's VM nodes otherwise had no way to retire this very page, since
+    nothing short of changing the cgroup clears an `unbounded`/`livelocked`
+    reading on its own. `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` (`.env`, never
+    written by any pipeline stage) names the one value the owner accepts;
+    `lib/memory.sh`'s `memory_cgroup_accepted_verdict` sets the flag only
+    while the setting reads `unbounded` and the live verdict matches it, so a
+    node whose verdict later changes is judged afresh, and never for
+    `livelocked`, which `doctor.sh` warns about instead of honouring. This
+    changes no configuration or event declaration of the invariant itself —
+    only what `pager_eval_memory_cgroup`'s own predicate now excludes.
 
     Issues #2779/#2528 both describe the same shape going undetected for
     weeks on the viewer-vantage probe (`docs/reference/host-facts-schema.md`'s

@@ -2664,6 +2664,105 @@ env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULL
 mc_status_file="$mc_status_state_dir/.doctor-status.json"
 assert_eq "a real ceiling with memory.high unset (unbounded) reaches .doctor-status.json's memory_cgroup field" \
   "unbounded" "$(jq -r '.memory_cgroup' "$mc_status_file" 2>/dev/null)"
+assert_eq "...and with no AGENT_OPS_MEMORY_CGROUP_ACCEPTED set, memory_cgroup_accepted is false" \
+  "false" "$(jq -r '.memory_cgroup_accepted' "$mc_status_file" 2>/dev/null)"
+
+# --- Memory: an owner-recorded acceptance of unbounded (agent-ops#2885) ----
+#
+# Same unbounded fixture as above, but with AGENT_OPS_MEMORY_CGROUP_ACCEPTED
+# set to the one value it is ever honoured for. The plain (non-unattended)
+# run proves the advisory line itself flips from warn to ok and names the
+# acceptance; the --unattended run proves the flag reaches .doctor-status.json
+# for a peer's own memory-cgroup invariant to read.
+
+mc_accepted_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "an accepted unbounded verdict reads ok, naming the acceptance" \
+  "[ ok ] container memory: this container holds" "$mc_accepted_out"
+assert_contains "...and the setting that recorded it" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded records that the owner has accepted this trade-off" "$mc_accepted_out"
+assert_not_contains "...never the ordinary unbounded warning too" \
+  "[warn] container memory: this container holds" "$mc_accepted_out"
+
+mc_accepted_status_dir="$tmp/mc-accepted-status-dir"
+mkdir -p "$mc_accepted_status_dir"
+mc_accepted_config="$tmp/mc-accepted-config.json"
+jq --arg sd "$mc_accepted_status_dir" '.state_dir = $sd' "$niced_config" > "$mc_accepted_config"
+env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded \
+  bash "$DOCTOR" --config "$mc_accepted_config" --unattended >/dev/null 2>&1
+mc_accepted_status_file="$mc_accepted_status_dir/.doctor-status.json"
+assert_eq "the accepted flag reaches .doctor-status.json alongside the unbounded verdict" \
+  "true" "$(jq -r '.memory_cgroup_accepted' "$mc_accepted_status_file" 2>/dev/null)"
+assert_eq "...the verdict itself is unchanged by the acceptance" \
+  "unbounded" "$(jq -r '.memory_cgroup' "$mc_accepted_status_file" 2>/dev/null)"
+
+# A setting that no longer matches the live verdict (a typo, or a verdict
+# that has since changed) is judged afresh — never grandfathered in.
+mc_stale_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=bounded \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "a setting that does not match the live verdict still warns" \
+  "[warn] container memory: this container holds" "$mc_stale_out"
+
+# --- Memory: livelocked can never be accepted (agent-ops#2885) -------------
+#
+# A parent with no memory.max of its own (the open-ended livelock band,
+# agent-ops#1305) with AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked set: the
+# setting is ignored outright and doctor.sh warns about it, on top of the
+# ordinary livelock warning — never read as ok.
+
+mc_livelock_cgroup_root="$tmp/mc-livelock-cgroup"
+mkdir -p "$mc_livelock_cgroup_root"
+printf 'max\n' > "$mc_livelock_cgroup_root/memory.high"
+printf '1610612736\n' > "$mc_livelock_cgroup_root/memory.max"
+printf '786432000\n' > "$mc_livelock_cgroup_root/memory.current"
+mc_livelock_parent_high="$tmp/mc-livelock-parent-high"
+printf '805306368' > "$mc_livelock_parent_high"
+mc_livelock_parent_max="$tmp/mc-livelock-parent-max"
+printf 'max' > "$mc_livelock_parent_max"
+
+mc_livelock_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_livelock_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$mc_livelock_parent_high" \
+  MEMORY_CGROUP_PARENT_MAX="$mc_livelock_parent_max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "the livelock warning still fires" \
+  "[warn] container memory: this container" "$mc_livelock_out"
+assert_contains "...and a livelocked acceptance setting is warned about, never honoured" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked is set but ignored" "$mc_livelock_out"
+
+mc_livelock_status_dir="$tmp/mc-livelock-status-dir"
+mkdir -p "$mc_livelock_status_dir"
+mc_livelock_config="$tmp/mc-livelock-config.json"
+jq --arg sd "$mc_livelock_status_dir" '.state_dir = $sd' "$niced_config" > "$mc_livelock_config"
+env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_livelock_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$mc_livelock_parent_high" \
+  MEMORY_CGROUP_PARENT_MAX="$mc_livelock_parent_max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked \
+  bash "$DOCTOR" --config "$mc_livelock_config" --unattended >/dev/null 2>&1
+mc_livelock_status_file="$mc_livelock_status_dir/.doctor-status.json"
+assert_eq "a livelocked verdict is never recorded as accepted, whatever the setting names" \
+  "false" "$(jq -r '.memory_cgroup_accepted' "$mc_livelock_status_file" 2>/dev/null)"
+assert_eq "...the raw verdict itself is still livelocked" \
+  "livelocked" "$(jq -r '.memory_cgroup' "$mc_livelock_status_file" 2>/dev/null)"
 
 # --- --unattended: a refused model credential is read from this node's own
 #     log.jsonl, by name, without the live credential ever being read

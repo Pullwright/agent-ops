@@ -444,6 +444,8 @@ assert_eq "and so does token_expiry, which only the node holding the credential 
   "$(jq -r '.doctor | has("token_expiry")' <<<"$hb")"
 assert_eq "but memory_cgroup does travel (agent-ops#2698): lib/pager-invariants.sh's memory-cgroup invariant reads it fleet-wide" "unbounded" \
   "$(jq -r '.doctor.memory_cgroup' <<<"$hb")"
+assert_eq "...and memory_cgroup_accepted travels alongside it, defaulting to false when the status file carries none (agent-ops#2885)" "false" \
+  "$(jq -r '.doctor.memory_cgroup_accepted' <<<"$hb")"
 
 # --- The heartbeat carries a mirror-rebuild verdict slot (#604) ---------------
 # lib/mirror-integrity.sh's own behaviour (a corrupted mirror is discarded

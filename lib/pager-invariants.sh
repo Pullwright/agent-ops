@@ -1029,12 +1029,23 @@ pager_eval_dashboard_unreadable() {
 # `unlimited` are already reclaimed or uncapped, and `unconfirmed` is a
 # measurement gap, not a known-bad configuration — the issue this invariant
 # answers names only `unbounded`/`livelocked`.
+#
+# An `unbounded` node whose heartbeat carries `doctor.memory_cgroup_accepted:
+# true` is exempt (agent-ops#2885): `doctor.sh`'s own `memory_cgroup_accepted_
+# verdict` (lib/memory.sh) only ever sets that flag once the owner has
+# recorded acceptance of `unbounded` via AGENT_OPS_MEMORY_CGROUP_ACCEPTED (a
+# setting no pipeline stage can write) *and* the node's live verdict still
+# reads `unbounded` — so a node whose verdict changes is judged afresh, never
+# grandfathered in under a stale flag. `livelocked` is never exempt, whatever
+# the flag says: a livelock is a wedge, not a trade-off, and `memory_cgroup_
+# accepted_verdict` never reports `accepted` for it.
 pager_eval_memory_cgroup() {
   local fleet_nodes_json="$1" _union_log_file="$2"
   jq -c -n --argjson nodes "$fleet_nodes_json" "$PAGER_JQ_ROW_PREDICATES"'
     ($nodes | map(select(pager_row_live))
      | map(select((.doctor.memory_cgroup? // "") as $v
-                   | $v == "unbounded" or $v == "livelocked"))) as $hits
+                   | ($v == "livelocked")
+                     or ($v == "unbounded" and ((.doctor.memory_cgroup_accepted? // false) != true))))) as $hits
     | if ($hits | length) == 0 then {firing: false}
       else {firing: true, nodes: ($hits | map(.node)),
             evidence: ("doctor.memory_cgroup reports "
@@ -2155,7 +2166,7 @@ pager_register_builtin_invariants() {
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
   pager_declare_events dashboard-unreadable
   pager_register memory-cgroup pager_eval_memory_cgroup owner-only \
-    "A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked: nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class). Set memory.high on the node's own parent cgroup directly (see deploy/docker/compose.yaml for the recipe that survives a roll) — this is a host-configuration fix, never one this pipeline can perform on its own behalf."
+    "A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked, and — for an unbounded reading — the owner has not recorded acceptance of it (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, agent-ops#2885): nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class). Set memory.high on the node's own parent cgroup directly (see deploy/docker/compose.yaml for the recipe that survives a roll), or, if this node's unbounded cgroup is a deliberate choice (agent-ops#2861's own case), record that acceptance in .env instead — this is a host-configuration fix either way, never one this pipeline can perform on its own behalf."
   pager_declare_events memory-cgroup
   # agent-ops#1281: the selection and ledger class.
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \

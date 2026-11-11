@@ -165,6 +165,17 @@ x-agent-ops-env: &agent-ops-env
   # config.json governs. Named here for the allowlist reason every other
   # variable in this block is; .env.example describes it.
   STATE_SYNC_STREAMS_RETAINED: ${STATE_SYNC_STREAMS_RETAINED:-}
+  # The owner's own record that this node's unbounded memory cgroup
+  # (lib/memory.sh's `memory_cgroup_verdict`) is an accepted trade-off rather
+  # than an unexamined gap (agent-ops#2885, agent-ops#2861) — the one value it
+  # honours is the literal string "unbounded"; "livelocked" is never accepted,
+  # whatever is written here, and doctor.sh warns about it instead. Named
+  # here for the allowlist reason every other variable in this block is:
+  # there is no `env_file:`, so a value set only in `.env` and not named here
+  # never reaches the container. Left unset, `lib/pager-invariants.sh`'s
+  # `memory-cgroup` invariant keeps paging on an unbounded reading exactly as
+  # before this variable existed.
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED: ${AGENT_OPS_MEMORY_CGROUP_ACCEPTED:-}
   TZ: ${TZ:-UTC}
 
 x-agent-ops: &agent-ops

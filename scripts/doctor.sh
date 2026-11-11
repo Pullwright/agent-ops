@@ -1291,10 +1291,29 @@ fi
 # already in trouble. Measured on the ockham node 2026-09-04, two schedulers
 # left unbounded held 2465 MiB between them while idle, against 891 MiB once
 # `memory.high` was set.
-case "$(memory_cgroup_verdict)" in
-  unbounded)   warn "container memory: $(memory_cgroup_describe)" ;;
+#
+# An `unbounded` verdict the owner has recorded acceptance of
+# (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, lib/memory.sh's `memory_cgroup_accepted_
+# verdict`, agent-ops#2885/#2861) reads `[ ok ]` naming the acceptance instead
+# of warning. `livelocked` never does, whatever the setting names: a wedge is
+# never a trade-off, and a setting that names it is ignored and warned about
+# below rather than silently honoured.
+memory_cgroup_live_verdict="$(memory_cgroup_verdict)"
+memory_cgroup_accepted_setting="${AGENT_OPS_MEMORY_CGROUP_ACCEPTED:-}"
+case "$memory_cgroup_live_verdict" in
+  unbounded)
+    if [[ "$(memory_cgroup_accepted_verdict "$memory_cgroup_accepted_setting" "$memory_cgroup_live_verdict")" == "accepted" ]]; then
+      ok "container memory: $(memory_cgroup_accepted_describe)"
+    else
+      warn "container memory: $(memory_cgroup_describe)"
+    fi
+    ;;
   parented)    ok "container memory: $(memory_cgroup_parent_describe)" ;;
-  livelocked)  warn "container memory: $(memory_cgroup_livelock_describe)" ;;
+  livelocked)
+    warn "container memory: $(memory_cgroup_livelock_describe)"
+    [[ "$memory_cgroup_accepted_setting" == "livelocked" ]] && \
+      warn "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked is set but ignored — livelocked is a wedge, never a trade-off, so it can never be accepted; fix the parent cgroup instead (see deploy/docker/compose.yaml)"
+    ;;
   unconfirmed) warn "container memory: $(memory_cgroup_unconfirmed_describe)" ;;
   bounded)     warn "container memory: memory.high is set on this container, so the kernel reclaims before the hard ceiling — but it is set on the container, so the next roll will wipe it; see deploy/docker/compose.yaml for the parent cgroup that survives one" ;;
   unlimited)   ok "container memory: no cgroup ceiling, so there is nothing to reclaim against" ;;
@@ -3148,7 +3167,7 @@ fi
 # Directories section above already reported as a fail, and this must not
 # mask that behind a second, unrelated failure of its own.
 write_unattended_status() {
-  local dir="$1" ts verdict tmp fail_json warn_json token_expiry_json memory_cgroup
+  local dir="$1" ts verdict tmp fail_json warn_json token_expiry_json memory_cgroup memory_cgroup_accepted
   [[ -n "$dir" && "$dir" != "null" ]] || return 0
   mkdir -p "$dir" 2>/dev/null && [[ -w "$dir" ]] || return 0
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -3174,13 +3193,23 @@ write_unattended_status() {
   # can read it fleet-wide — today this value reaches only this node's own
   # advisory warn, never another node.
   memory_cgroup="$(memory_cgroup_verdict 2>/dev/null)"
+  # Whether the owner has recorded acceptance of the verdict above
+  # (agent-ops#2885) — a boolean, not the setting itself, since what a peer's
+  # own `memory-cgroup` invariant needs is only "does this unbounded node's
+  # accepted state cover it", never the raw AGENT_OPS_MEMORY_CGROUP_ACCEPTED
+  # value (which is this node's own .env, not a fact a peer can act on).
+  memory_cgroup_accepted="false"
+  [[ "$(memory_cgroup_accepted_verdict "${AGENT_OPS_MEMORY_CGROUP_ACCEPTED:-}" "$memory_cgroup")" == "accepted" ]] \
+    && memory_cgroup_accepted="true"
   tmp="$(mktemp "$dir/.doctor-status.json.XXXXXX" 2>/dev/null)" || return 0
   if jq -n --arg ts "$ts" --arg verdict "$verdict" \
         --argjson fails "$fail_json" --argjson warns "$warn_json" --argjson skips "$skips" \
         --argjson token_expiry "$token_expiry_json" --arg memory_cgroup "$memory_cgroup" \
+        --argjson memory_cgroup_accepted "$memory_cgroup_accepted" \
         '{timestamp: $ts, verdict: $verdict, fails: $fails, warns: $warns, skips: $skips,
           token_expiry: $token_expiry,
-          memory_cgroup: (if $memory_cgroup == "" then null else $memory_cgroup end)}' \
+          memory_cgroup: (if $memory_cgroup == "" then null else $memory_cgroup end),
+          memory_cgroup_accepted: $memory_cgroup_accepted}' \
         > "$tmp" 2>/dev/null; then
     mv -f "$tmp" "$dir/.doctor-status.json"
   else

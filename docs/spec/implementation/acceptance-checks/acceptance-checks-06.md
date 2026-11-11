@@ -220,11 +220,14 @@
     nowhere when `PAGER_REMEDY_REPO` is unset.
 
     The same file also drives agent-ops#2698's `memory-cgroup` invariant: it
-    fires on a live row whose `doctor.memory_cgroup` reads `unbounded` or
-    `livelocked`, naming the affected node and its verdict in the evidence;
-    it does not fire on a row reading `parented`, `unconfirmed`, `bounded`,
-    or `unlimited`, on a row carrying no `memory_cgroup` field at all, or on
-    an otherwise-matching row that is stale.
+    fires on a live row whose `doctor.memory_cgroup` reads `livelocked`, or
+    reads `unbounded` with `doctor.memory_cgroup_accepted` not `true`, naming
+    the affected node and its verdict in the evidence; it does not fire on a
+    row reading `parented`, `unconfirmed`, `bounded`, or `unlimited`, on a row
+    carrying no `memory_cgroup` field at all, on an otherwise-matching row
+    that is stale, or on an `unbounded` row whose `memory_cgroup_accepted` is
+    `true` (agent-ops#2885) — never on a `livelocked` row, whatever that flag
+    reads.
 
     The same file also drives agent-ops#2781's `viewer-probe-unanimous`
     invariant: it fires when every live node's `host.viewer_probe` object is

@@ -404,9 +404,12 @@
    argument- or config-unusable exits near the top of the script, which bail
    before `state_dir` is even resolved) it writes
    `state_dir/.doctor-status.json` — `{timestamp, verdict, fails[], warns[],
-   skips, memory_cgroup, token_expiry}`, `verdict` the worst of
-   `fail`/`warn`/`ok`, `memory_cgroup` the Memory section's own
-   `memory_cgroup_verdict` (agent-ops#2698) —
+   skips, memory_cgroup, memory_cgroup_accepted, token_expiry}`, `verdict`
+   the worst of `fail`/`warn`/`ok`, `memory_cgroup` the Memory section's own
+   `memory_cgroup_verdict` (agent-ops#2698), `memory_cgroup_accepted` the
+   boolean result of comparing `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` against
+   that verdict through `lib/memory.sh`'s `memory_cgroup_accepted_verdict`
+   (agent-ops#2885) —
    atomically (`mktemp` then `mv -f`), the third declared exception to
    doctor.sh's read-only rule alongside the state/workspace directories and
    the trial crontab render. `scripts/publish-dashboard.sh` reads this file
