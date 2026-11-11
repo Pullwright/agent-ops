@@ -132,7 +132,16 @@
    workspace scope is named `workspace_scope_refused` and classified
    `refused`, with the API's own message kept beside it; the existing
    `authentication_failed` case and a bare `api_error_503` are both
-   unchanged.
+   unchanged. The same file covers requirement 4i's totality rule
+   (agent-ops#2867), each case run in its own `bash -euo pipefail` child so
+   that a helper handing back a status is observable as the child dying at
+   the assignment rather than as a verdict the parent silently ignores: over
+   a transcript whose final line is torn mid-value, all three helpers answer
+   empty and the child reaches its end; and over a transcript of 500
+   well-formed refusal records — more than a pipe-buffer of answers, the
+   shape that deals the reader a `SIGPIPE` rather than a parse failure —
+   all three answer with the first record's own token, message and class and
+   the child again reaches its end.
 
 1k. <a id="impl-ac-1k"></a>**A stage prompt reaches `claude` on stdin, at a size argv could not
    carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
