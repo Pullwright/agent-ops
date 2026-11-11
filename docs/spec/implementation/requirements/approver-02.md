@@ -312,17 +312,25 @@
       excludes it), so "holds no lock" is derived purely from the union log:
       grouping a node's own cycle-start/cycle-end/cycle-skipped events by
       the `cycle` id they share, any group whose `cycle-start` has no
-      matching `cycle-end`, or any `cycle-skipped` whose own `detail` names
-      a pid holding the lock (`acquire_lock`'s own log format), is evidence
-      the lock is, or very recently was, held — whatever the node's newest
-      *event* happens to be, so a long *legitimate* cycle is never mistaken
-      for a missed one, and a chained continuation's own
+      matching `cycle-end` is evidence the lock is held — whatever the
+      node's newest *event* happens to be, so a long *legitimate* cycle is
+      never mistaken for a missed one, and a chained continuation's own
       `cycle-start`/`cycle-skipped`/`cycle-end` becoming the node's newest
       events never hides an older cycle that still holds the lock
       (agent-ops#1412: a second cycle chaining in while a first one is still
       running writes exactly that shape within a second or two of the
-      first). That evidence is trusted only while it is younger than a
-      four-hour bound — the same default `lock_stale_after` documents
+      first). A lock-contention `cycle-skipped` — one whose own `detail`
+      names a pid holding the lock (`acquire_lock`'s own log format) — is
+      **not** lock evidence: its own holder logs a `cycle-start` first, so
+      while that start is unmatched the skip changes nothing, and once the
+      holder has ended the skip only claims a lock nobody holds — in every
+      band the clause could apply it was either redundant or actively
+      suppressive, delaying a genuine missed-firing page by up to the
+      staleness bound below (agent-ops#2441). That same `detail` test still
+      excludes a lock-contention tick from the cycle-duration histogram
+      described below, which is a separate question from whether the lock
+      is held. Unmatched-start evidence is trusted only while it is younger
+      than a four-hour bound — the same default `lock_stale_after` documents
       elsewhere for how long a legitimate cycle may hold the lock — because a
       container recreation leaves its last `cycle-start` permanently
       unmatched, and nothing will ever write that cycle an end: trusting an
