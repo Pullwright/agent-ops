@@ -668,14 +668,19 @@ advance_created_at=0
 # consecutive_stall_candidate above) and not merely a budget defer — a
 # budget-deferred pass must never feed this counter, or a row that was only
 # ever waiting its turn for the shared budget would get skip-listed for a
-# reason it was never stuck for. No such row this pass — whether because
-# none was incomplete, or because the only incomplete rows were deferred by
-# budget, or already skip-listed — clears any stall this slug was carrying:
-# the gate resolved (or was never really stalled), so there is nothing left
-# to track.
+# reason it was never stuck for. But a budget defer must not clear an
+# already-running stall either: $cursor_batch_incomplete stays 1 for a
+# budget-deferred row, and clearing the persisted count on such a pass would
+# let recurring budget exhaustion wipe out progress toward $stall_threshold
+# indefinitely, even though the row itself never stopped being stuck. Only a
+# pass with no cursor-sourced row incomplete at all — $cursor_batch_incomplete
+# stays 0 — means the gate genuinely resolved (or was never really stalled),
+# which is the one case that clears any stall this slug was carrying. A
+# budget-deferred pass with no new stall candidate instead carries the
+# persisted count/PR forward unchanged, same as doing nothing.
 new_skip_list_json="$skip_list_json"
-new_stall_count=0
-new_stall_pr=0
+new_stall_count="$stall_count"
+new_stall_pr="$stall_pr_number"
 if [[ -n "$blocking_stall_pr" ]]; then
   if [[ "$blocking_stall_pr" == "$stall_pr_number" ]]; then
     new_stall_count=$(( stall_count + 1 ))
@@ -689,6 +694,9 @@ if [[ -n "$blocking_stall_pr" ]]; then
     new_stall_count=0
     new_stall_pr=0
   fi
+elif [[ "$cursor_batch_incomplete" -eq 0 ]]; then
+  new_stall_count=0
+  new_stall_pr=0
 fi
 
 # A write is only worth making when something in the slug's own entry would

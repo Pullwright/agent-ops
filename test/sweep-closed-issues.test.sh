@@ -735,6 +735,61 @@ run_sweep_for "x/y" "$c" "$state21" >/dev/null
 assert_contains "pass 2: a different pull request (#7400) blocks instead, resetting the counter" \
   '"x/y":{"stall":{"pr_number":7400,"count":1}}' "$(cat "$cursor_file21")"
 
+# --- Case 22: a budget-deferred pass preserves an already-running stall ----
+# --- count rather than wiping it, and a later real stall resumes from it ---
+# agent-ops#2891 review: $blocking_stall_pr is empty on a pass where the
+# shared budget, not a real failure, left the stalled cursor-sourced row
+# unreached — $cursor_batch_incomplete still holds the gate for it, same as
+# Case 18. Clearing the persisted counter on such a pass (rather than
+# carrying it forward unchanged) would let recurring budget exhaustion wipe
+# out progress toward the skip-list threshold indefinitely, even though the
+# row itself never stopped being stuck.
+c="$tmp_dir/case22"; mkdir -p "$c"
+state22="$tmp_dir/case22-state"
+cursor_file22="$state22/sweep-closed-issues-cursor.json"
+
+jq -n '[]' > "$c/prs.json"
+jq -n '[{number: 8100, url: "https://github.com/x/y/pull/8100",
+         body: "<!-- agent-ops:closes-issue item=8101 -->",
+         mergeCommit: {oid: "t1"}, createdAt: "2026-11-09T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-8101"
+touch "$c/fail-close-8101"
+
+run_sweep_for "x/y" "$c" "$state22" >/dev/null
+assert_contains "pass 1: PR #8100 fails to close — a real stall starts at 1" \
+  '"x/y":{"stall":{"pr_number":8100,"count":1}}' "$(cat "$cursor_file22")"
+
+# The window alone now spends the whole per-run budget, so the cursor-sourced
+# PR #8100 — still blocked, but never actually reached this pass — is merely
+# deferred, not re-confirmed as a stall.
+jq -n '[
+  {number: 8001, url: "https://github.com/x/y/pull/8001", mergeCommit: {oid: "u1"},
+   body: "<!-- agent-ops:closes-issue item=8011 -->"},
+  {number: 8002, url: "https://github.com/x/y/pull/8002", mergeCommit: {oid: "u2"},
+   body: "<!-- agent-ops:closes-issue item=8012 -->"},
+  {number: 8003, url: "https://github.com/x/y/pull/8003", mergeCommit: {oid: "u3"},
+   body: "<!-- agent-ops:closes-issue item=8013 -->"}
+]' > "$c/prs.json"
+for n in 8011 8012 8013; do jq -n '{state: "open"}' > "$c/issue-$n"; done
+
+out2="$(run_sweep_for "x/y" "$c" "$state22")"
+assert_eq "pass 2: the window's three closes spend the whole per-run budget" 3 \
+  "$(jq -c 'select(.action == "closed")' <<<"$out2" | wc -l | tr -d ' ')"
+assert_eq "  ... so PR #8100's own cursor-sourced row is deferred, not reached" \
+  '{"action":"deferred","remaining":1}' \
+  "$(jq -c 'select(.action == "deferred")' <<<"$out2")"
+assert_contains "  ... and the already-running stall count survives unchanged" \
+  '"x/y":{"stall":{"pr_number":8100,"count":1}}' "$(cat "$cursor_file22")"
+
+# Budget is free again, and PR #8100 still fails to close — a real stall,
+# resuming from the count the deferred pass in between carried forward.
+jq -n '[]' > "$c/prs.json"
+
+run_sweep_for "x/y" "$c" "$state22" >/dev/null
+assert_contains "pass 3: PR #8100 fails again — the count resumes from 1, not from 0" \
+  '"x/y":{"stall":{"pr_number":8100,"count":2}}' "$(cat "$cursor_file22")"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1
