@@ -272,6 +272,23 @@
    preflight (requirement 2.0h) reads it too, directly off its own probe's
    transcript rather than off a logged event.
 
+   **All three readers are total functions of the transcript, and never hand
+   a status to their caller (agent-ops#2867).** `stage_api_refusal`,
+   `stage_api_refusal_message` and `stage_api_refusal_class` answer with a
+   token, a message, a class, or nothing, and exit `0` whatever the file
+   holds — which they must, because `handle_stage_failure` and the four
+   stages that read a transcript directly (`monitor-cycle.sh`,
+   `lib/enabler.sh`, `lib/refinement.sh`, `lib/standdown.sh`) call them as
+   plain assignments with errexit live, on the very paths that exist to
+   record a failure. So each reads the transcript line by line and skips a
+   line it cannot parse (`jq -R -n 'inputs | … | fromjson? // empty'`, the
+   tolerance `lib/stage-health.sh` already gives a partial write), and
+   neither a `jq` that fails for any other reason nor the `SIGPIPE` that
+   taking only the first answer can deal it reaches `pipefail`. Both halves
+   are load-bearing: a torn transcript is what a backstop or inactivity kill
+   leaves, and before this the reader would have killed the caller at the
+   line that was about to log the kill.
+
 4j. <a id="impl-4j"></a>**The unsheddable half of the Co-Ordinator's input is bounded too, and
    `refinements` is bounded by candidacy.** Requirement 4i bounds the prompt
    and sheds `issues` and `tech_debt` to meet the bound. It says nothing about
