@@ -725,6 +725,55 @@ draft_obsolete_flags() {
   printf '%s' "$out"
 }
 
+# Issue #2910: requirement-3x corroboration (`unaccounted_items`,
+# lib/candidate-select.sh) runs against `eligible_items_json`, a snapshot
+# `coordinator_eligible_items` takes once at gather time — before this same
+# cycle's Approver/Landing stages (or the 2.1e landing-retry sweep) can have
+# moved any of its review-feedback PRs on. A PR whose blocking review was
+# approved and who was armed into the landing path *after* that snapshot but
+# *before* a same-cycle corroboration retry is still named in the snapshot as
+# an open review-feedback candidate, even though the Co-Ordinator was never
+# actually offered it (it had already left that band by the time any
+# engagement ran) — `unaccounted_items`'s own review-feedback exception reads
+# this cycle's own event log, never a live `gh pr view`, to find such a PR
+# and let it go unaccounted for.
+LANDING_ARMED_THIS_CYCLE_EVENTS="landing-armed"
+# shellcheck disable=SC2016  # jq's $cycle, not the shell's.
+LANDING_ARMED_THIS_CYCLE_JQ='
+  [ .[] | select(.event == "landing-armed" and (.cycle // "") == $cycle
+                 and ((.pr_url // "") | test("/pull/[0-9]+$")))
+    | {repo: (.repo // ""), pr_number: ((.pr_url) | capture("/pull/(?<n>[0-9]+)$").n)} ]
+  | unique
+'
+
+# landing_armed_this_cycle [LOG_FILE] [CYCLE_ID]
+# Print, as a JSON array of `{repo, pr_number}`, every pull request this very
+# cycle's own event log already shows was armed into the landing path
+# (`landing-armed`, requirement 8d) — the fact `unaccounted_items` reads to
+# drop a review-feedback item whose PR has already moved past that band since
+# this cycle's own gather snapshot. Reads LOG_FILE, or stdin if it is omitted
+# or "-".
+#
+# CYCLE_ID scopes the match to events *this* cycle logged, never an older
+# one: an empty CYCLE_ID matches nothing, deliberately — the PR number a
+# stale `landing-armed` names may since have been reopened for a genuinely
+# fresh review round, and that round must not be suppressed forever by an
+# arm from a cycle that has nothing to do with it.
+#
+# Always succeeds, printing [] for a missing, empty, unreadable or unparseable
+# log, or an empty CYCLE_ID: a caller running under `set -e` must not be
+# killed by it, and "nothing landed this cycle" is the safe reading of a
+# source this function could not make sense of.
+landing_armed_this_cycle() {
+  local src="${1:--}" cycle="${2:-}" out=""
+  if [[ -n "$cycle" ]] && { [[ "$src" == "-" ]] || [[ -s "$src" ]]; }; then
+    out="$(_log_fold "$src" "$LANDING_ARMED_THIS_CYCLE_JQ" "$LANDING_ARMED_THIS_CYCLE_EVENTS" \
+      --arg cycle "$cycle" 2>/dev/null || true)"
+  fi
+  [[ -n "$out" ]] || out='[]'
+  printf '%s' "$out"
+}
+
 # latest_issues_excluded [LOG_FILE]
 # Print, as a JSON object keyed by repo slug, the `excluded` array carried by
 # the most recent `issues-excluded` event logged for that repo (requirement

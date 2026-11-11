@@ -891,7 +891,7 @@ coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorde
   local false_repos="${1:-[]}" reason="${2:-no repository reported a verdict this cycle}" \
         recorded_refinement="${3:-[]}" recorded_voided="${4:-[]}" n_failed="${5:-0}" \
         eligible_false_json eligible_false_total unaccounted_json unaccounted_n \
-        unaccounted_bands_json fallback_candidate_json fallback_empty=0
+        unaccounted_bands_json fallback_candidate_json fallback_empty=0 landed_json
   [[ "$n_failed" =~ ^[0-9]+$ ]] || n_failed=0
 
   # --- Verdict corroboration, scoped to the repositories that said no
@@ -901,10 +901,17 @@ coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorde
   eligible_false_total="$(jq 'length' <<<"$eligible_false_json" 2>/dev/null || echo 0)"
   unaccounted_json='[]'
   if (( eligible_false_total > 0 )); then
+    # Issue #2910: `landing_armed_this_cycle` (lib/cycle-state.sh) reads this
+    # very cycle's own event log for a review-feedback PR that armed into the
+    # landing path after `eligible_items_json`'s own gather-time snapshot was
+    # taken but before this corroboration check runs — `unaccounted_items`'s
+    # own review-feedback exception, so a verdict correctly silent about it
+    # is not flagged as having skipped a band it was never actually offered.
+    landed_json="$(landing_armed_this_cycle "$log_file" "$cycle_id")"
     unaccounted_json="$(unaccounted_items \
       "$(jq -nc 'input as $nr | input as $v | {needs_refinement: $nr, voided: $v}' \
           <<<"$recorded_refinement"$'\n'"$recorded_voided")" \
-      "$eligible_false_json" "$refinement_policy_json" "${coordinator_fit_trimmed_json:-[]}")"
+      "$eligible_false_json" "$refinement_policy_json" "${coordinator_fit_trimmed_json:-[]}" "$landed_json")"
   fi
   unaccounted_n="$(jq 'length' <<<"$unaccounted_json" 2>/dev/null || echo 0)"
   unaccounted_bands_json='{}'
