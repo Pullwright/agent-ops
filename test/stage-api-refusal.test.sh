@@ -6,7 +6,10 @@
 # carries its own HTTP status in the returned token rather than being
 # returned verbatim, and a model credential the API refuses for carrying no
 # workspace scope is named by its own stable token, `workspace_scope_refused`,
-# rather than falling through unclassified.
+# rather than falling through unclassified. Also covers agent-ops#2867: a
+# torn final line in `$out_file` (a backstop/inactivity kill landing mid-write)
+# must not propagate jq's parse failure to an unguarded `set -e`/`pipefail`
+# caller.
 #
 # Run directly: ./test/stage-api-refusal.test.sh — exit 0 iff all passed.
 
@@ -75,6 +78,48 @@ assert_eq "a bare api_error 503 still carries its status in the token" \
   "api_error_503" "$(stage_api_refusal "$tmp_dir/ockham-503.out")"
 assert_eq "…and is still classified transient, not refused" \
   "transient" "$(stage_api_refusal_class "$tmp_dir/ockham-503.out")"
+
+# --- agent-ops#2867: a torn final line must not propagate jq's parse
+#     failure to an unguarded set -e/pipefail caller. Reproduced exactly as
+#     the issue states it: under `set -euo pipefail`, a plain assignment
+#     `r="$(stage_api_refusal torn.json)"` must not exit the calling shell —
+#     which a bare `$(...)` inside this test file's own `set -uo pipefail`
+#     (no `-e`) can't exercise, so each case below runs in a fresh `bash -e`
+#     process and checks that it reaches the end rather than dying at the
+#     assignment. ---
+printf '%s\n' '{"type":"system"}' > "$tmp_dir/torn.out"
+printf '{"is_error":true,"terminal_reason":"api_error","api_error_status":503,"result":"This is a server-side iss' \
+  >> "$tmp_dir/torn.out"
+
+torn_refusal="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "a torn final line does not exit a set -e caller, and returns empty" \
+  "$(printf '\nreached-end')" "$torn_refusal"
+
+torn_msg="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_message "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal_message likewise returns empty and does not exit" \
+  "$(printf '\nreached-end')" "$torn_msg"
+
+torn_class="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_class "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal_class likewise returns empty and does not exit" \
+  "$(printf '\nreached-end')" "$torn_class"
 
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed.\n' "$failures"

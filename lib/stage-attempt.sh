@@ -271,10 +271,20 @@ dump_stage_output() {
 # `authenticat` matches — is `authentication_failed` rather than this, which
 # is the truer of the two names for a key the API would not authenticate at
 # all.
+#
+# `$out_file` is `--output-format stream-json`'s own NDJSON, so all three
+# functions below read it with `jq -R -n 'inputs | ... | fromjson? // empty'`
+# rather than jq's default whole-stream parse (agent-ops#2867): a
+# backstop/inactivity kill can land mid-write of the (often large) final
+# result line, and the default parse aborts on that torn line with a
+# non-zero exit that `pipefail` would otherwise hand straight to an
+# unguarded `set -e` caller. Torn lines are skipped, the same tolerance
+# `lib/stage-health.sh` gives a partial write for the same reason.
 stage_api_refusal() {  # <out-file> -> terminal reason, or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -r 'select((.is_error // false) == true)
+  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+         | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
@@ -291,7 +301,8 @@ stage_api_refusal() {  # <out-file> -> terminal reason, or empty
 stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -r 'select((.is_error // false) == true)
+  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+         | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
@@ -338,7 +349,8 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
 stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
-  jq -r 'select((.is_error // false) == true)
+  jq -R -n -r '(inputs | select(length > 0) | (fromjson? // empty))
+         | select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
