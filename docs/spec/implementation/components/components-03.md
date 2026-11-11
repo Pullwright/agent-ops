@@ -30,7 +30,12 @@
     per-repo cursor (`<state-dir>/sweep-closed-issues-cursor.json`) across the
     same pull requests in ascending creation order, whatever batch picks up
     from where that cursor last reached — the two listings merged and
-    de-duplicated by pull request number before either is examined. For each
+    de-duplicated by pull request number before either is examined. The same
+    cursor file also carries, per repo slug, a consecutive-stall counter and a
+    skip-list (`stall: {pr_number, count}`, `skip_list: […]`) so a cursor-
+    sourced pull request whose issue can never actually be read or closed
+    stops holding the cursor back after three consecutive passes, rather than
+    wedging the walk behind it forever. For each
     carrying an `agent-ops:closes-issue` marker, or a head branch of exactly
     `agent/<N>`, naming an issue still open and not `state_reason:
     "reopened"`, closes it, and does the same for every other same-repository

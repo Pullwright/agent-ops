@@ -82,6 +82,30 @@
 # occasional re-fetch of an already-finished boundary row this costs is the
 # same harmless idempotent re-walk already described above.
 #
+# That gate alone cannot tell a transient hold from a permanent one
+# (agent-ops#2891): a cursor-sourced pull request naming an issue that 404s on
+# every read (deleted or transferred, or a malformed marker naming a number
+# that never existed), or whose `gh issue close` fails every run (e.g. the
+# number actually resolves to an open pull request), sets the gate every pass
+# forever, wedging the whole walk behind it. So alongside the cursor's own
+# `created_at`, the cursor file also tracks, per repo slug, a consecutive-
+# stall counter keyed on whichever single cursor-sourced pull request blocked
+# the gate this pass (`stall: {pr_number, count}`) and a `skip_list` of pull
+# request numbers the walk has given up on. The counter increments only for a
+# real 404/close failure — never for a close the shared `max_actions` budget
+# merely deferred, which is already expected to resolve on a later pass with
+# more budget to spend, and would otherwise reach the same threshold for a
+# reason that was never stuck — and resets to 1 the moment a *different* pull
+# request blocks the gate, or clears entirely the moment no cursor-sourced row
+# is incomplete. Once the same pull request has blocked three consecutive
+# passes this way, it is added to `skip_list` and the counter clears: a
+# skip-listed pull request's row no longer sets the gate (main loop, below),
+# so the walk resumes past it, loudly warning which pull request it gave up
+# on — while its issue, never actually closed, is left exactly as unclosed as
+# it already was. There is no path back off the list other than a human
+# editing the cursor file directly; this mechanism only ever stops the walk
+# from waiting on something it cannot get.
+#
 # A PR can also name more than one issue in its own closing references
 # (agent-ops#2851): PR #2812 closed both #2801 and #2813, but this sweep's
 # marker/branch resolution only ever anchors a single target per PR, so #2813
@@ -219,6 +243,23 @@ cursor_state='{}'
 [[ -n "$state_dir" && -s "$cursor_file" ]] && \
   cursor_state="$(jq -c 'if type == "object" then . else {} end' "$cursor_file" 2>/dev/null || echo '{}')"
 cursor_created_at="$(jq -r --arg slug "$slug" '.[$slug].created_at // ""' <<<"$cursor_state" 2>/dev/null)"
+
+# The stall/skip-list bookkeeping (see this script's own header): read with
+# tolerant defaults so a cursor file written before this bookkeeping existed
+# needs no migration.
+skip_list_json="$(jq -c --arg slug "$slug" '.[$slug].skip_list // []' <<<"$cursor_state" 2>/dev/null)"
+[[ -n "$skip_list_json" ]] || skip_list_json='[]'
+stall_pr_number="$(jq -r --arg slug "$slug" '.[$slug].stall.pr_number // 0' <<<"$cursor_state" 2>/dev/null)"
+[[ -n "$stall_pr_number" ]] || stall_pr_number=0
+stall_count="$(jq -r --arg slug "$slug" '.[$slug].stall.count // 0' <<<"$cursor_state" 2>/dev/null)"
+[[ -n "$stall_count" ]] || stall_count=0
+# Three consecutive passes blocked by the same unreadable/uncloseable pull
+# request is enough to call it permanent rather than transient.
+stall_threshold=3
+
+is_skip_listed() {  # is_skip_listed PR_NUMBER
+  jq -e --argjson n "$1" 'index($n) != null' <<<"$skip_list_json" >/dev/null 2>&1
+}
 
 cursor_search="sort:created-asc"
 [[ -n "$cursor_created_at" ]] && cursor_search="sort:created-asc created:>=$cursor_created_at"
@@ -392,11 +433,20 @@ fi
 # the cursor-advance gate below from treating a batch as finished. The
 # caller, not this function, decides what an incomplete cursor-sourced row
 # means for the cursor.
+#
+# Also sets the global $last_close_stalled to 1 for exactly the two outcomes
+# the stall counter above (see this script's own header) treats as evidence
+# of a permanent block — the issue 404ing on read, or the close call itself
+# failing — and to 0 otherwise, including the budget-deferred case: spending
+# the shared budget is an ordinary, expected reason a row goes unfinished
+# this pass, never a sign the pull request itself is stuck, so it must never
+# feed the stall counter toward skip-listing something that was never stuck.
 close_named_issue() {
   local pr_number="$1" pr_url="$2" merge_sha="$3" item="$4" evidence="$5"
   local issue_json state state_reason comment_body
 
   last_close_incomplete=0
+  last_close_stalled=0
 
   if (( actions >= max_actions )); then
     deferred=$(( deferred + 1 ))
@@ -408,6 +458,7 @@ close_named_issue() {
   if [[ -z "$issue_json" ]]; then
     warn "could not read issue #$item (named by PR #$pr_number) — leaving it alone"
     last_close_incomplete=1
+    last_close_stalled=1
     return
   fi
   state="$(jq -r '.state // ""' <<<"$issue_json" 2>/dev/null)"
@@ -444,10 +495,35 @@ $(pipeline_comment_marker "$cycle_id" script)"
   else
     warn "could not close issue #$item (named by PR #$pr_number)"
     last_close_incomplete=1
+    last_close_stalled=1
+  fi
+}
+
+# consecutive_stall_candidate PR_NUMBER ITEM — called from the main loop below
+# for a cursor-sourced row whose close this pass left incomplete (see this
+# script's own header). A pull request already on $skip_list_json is treated
+# as resolved rather than re-counted: it has already been given up on, so it
+# must neither re-block the cursor-advance gate nor feed the stall counter a
+# second time. Otherwise sets the gate, and — only when this row's own
+# incompleteness was a real stall ($last_close_stalled, not a budget defer —
+# see close_named_issue above) and no other row has already claimed this
+# pass's single blocking slot — records which pull request/issue the stall
+# counter below should track for this pass.
+consecutive_stall_candidate() {
+  local candidate_pr="$1" candidate_item="$2"
+  if is_skip_listed "$candidate_pr"; then
+    return
+  fi
+  cursor_batch_incomplete=1
+  if [[ "$last_close_stalled" == "1" && -z "$blocking_stall_pr" ]]; then
+    blocking_stall_pr="$candidate_pr"
+    blocking_stall_item="$candidate_item"
   fi
 }
 
 cursor_batch_incomplete=0
+blocking_stall_pr=""
+blocking_stall_item=""
 while IFS=$'\t' read -r pr_number pr_url item merge_sha named_by extra_items_json cursor_sourced; do
   # bash's `read` collapses consecutive IFS-whitespace delimiters (tab
   # included) even when IFS is narrowed to just "\t", so a genuinely empty
@@ -487,7 +563,8 @@ $( [[ -n "$merge_sha" && "$merge_sha" != "-" ]] && printf ' (%s)' "$merge_sha" )
   fi
 
   close_named_issue "$pr_number" "$pr_url" "$merge_sha" "$item" "$evidence"
-  [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && cursor_batch_incomplete=1
+  [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && \
+    consecutive_stall_candidate "$pr_number" "$item"
 
   # A pull request can name more than one issue in its own closing
   # references (agent-ops#2851) — $extra_items_json already carries every
@@ -505,7 +582,8 @@ merged\
 $( [[ -n "$merge_sha" && "$merge_sha" != "-" ]] && printf ' (%s)' "$merge_sha" )\
 , but never triggered GitHub's own closing-keyword auto-close for it."
       close_named_issue "$pr_number" "$pr_url" "$merge_sha" "$extra_item" "$extra_evidence"
-      [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && cursor_batch_incomplete=1
+      [[ "$cursor_sourced" == "1" && "$last_close_incomplete" == "1" ]] && \
+        consecutive_stall_candidate "$pr_number" "$extra_item"
     done < <(jq -r '.[]' <<<"$extra_items_json" 2>/dev/null || true)
   fi
 done < <(jq -r --arg slug "$slug" --argjson cursor_nums "$cursor_pr_numbers_json" '.[]
@@ -576,11 +654,69 @@ fi
 cursor_newest_created_at="$(jq -r \
   'if length > 0 then (max_by(.createdAt) | .createdAt) else "" end' \
   <<<"$cursor_prs_json" 2>/dev/null)"
-if [[ -n "$state_dir" && -n "$cursor_newest_created_at" && "$cursor_batch_incomplete" -eq 0 ]]; then
+advance_created_at=0
+[[ -n "$cursor_newest_created_at" && "$cursor_batch_incomplete" -eq 0 ]] && advance_created_at=1
+
+# The stall counter/skip-list update (see this script's own header):
+# independent of whether the cursor's own `created_at` advances this pass,
+# since a stalled pull request must keep accumulating consecutive-failure
+# passes — and must eventually get skip-listed — even while it is exactly
+# what is holding `created_at` back.
+#
+# $blocking_stall_pr is unset unless some cursor-sourced row's own
+# incompleteness this pass was a real stall (see close_named_issue and
+# consecutive_stall_candidate above) and not merely a budget defer — a
+# budget-deferred pass must never feed this counter, or a row that was only
+# ever waiting its turn for the shared budget would get skip-listed for a
+# reason it was never stuck for. No such row this pass — whether because
+# none was incomplete, or because the only incomplete rows were deferred by
+# budget, or already skip-listed — clears any stall this slug was carrying:
+# the gate resolved (or was never really stalled), so there is nothing left
+# to track.
+new_skip_list_json="$skip_list_json"
+new_stall_count=0
+new_stall_pr=0
+if [[ -n "$blocking_stall_pr" ]]; then
+  if [[ "$blocking_stall_pr" == "$stall_pr_number" ]]; then
+    new_stall_count=$(( stall_count + 1 ))
+  else
+    new_stall_count=1
+  fi
+  new_stall_pr="$blocking_stall_pr"
+  if (( new_stall_count >= stall_threshold )); then
+    warn "issue #$blocking_stall_item (named by PR #$blocking_stall_pr) has failed to close on $stall_threshold consecutive passes — skip-listing it so the cursor-advance walk is not permanently blocked"
+    new_skip_list_json="$(jq -c --argjson n "$blocking_stall_pr" '. + [$n] | unique' <<<"$skip_list_json")"
+    new_stall_count=0
+    new_stall_pr=0
+  fi
+fi
+
+# A write is only worth making when something in the slug's own entry would
+# actually change — advancing `created_at`, starting/incrementing/clearing a
+# stall, or growing the skip-list — so a pass with nothing cursor-sourced to
+# report (the overwhelming majority) costs no write at all, exactly as before
+# this bookkeeping existed.
+need_cursor_write=0
+[[ "$advance_created_at" -eq 1 ]] && need_cursor_write=1
+[[ "$new_stall_count" -ne 0 || "$stall_count" -ne 0 ]] && need_cursor_write=1
+[[ "$new_skip_list_json" != "$skip_list_json" ]] && need_cursor_write=1
+
+if [[ -n "$state_dir" && "$need_cursor_write" -eq 1 ]]; then
+  final_created_at="$cursor_created_at"
+  [[ "$advance_created_at" -eq 1 ]] && final_created_at="$cursor_newest_created_at"
+  stall_arg='null'
+  (( new_stall_count > 0 )) && \
+    stall_arg="$(jq -nc --argjson pr "$new_stall_pr" --argjson c "$new_stall_count" '{pr_number: $pr, count: $c}')"
   if ! { mkdir -p "$state_dir" 2>/dev/null && \
       jq -nc --argjson existing "$cursor_state" --arg slug "$slug" \
-        --arg created_at "$cursor_newest_created_at" \
-        '$existing + {($slug): {created_at: $created_at}}' \
+        --arg created_at "$final_created_at" \
+        --argjson skip_list "$new_skip_list_json" \
+        --argjson stall "$stall_arg" \
+        '$existing + {($slug): (
+           (if $created_at == "" then {} else {created_at: $created_at} end)
+           + (if ($skip_list | length) == 0 then {} else {skip_list: $skip_list} end)
+           + (if $stall == null then {} else {stall: $stall} end)
+         )}' \
         > "$cursor_file.tmp" 2>/dev/null && \
       mv "$cursor_file.tmp" "$cursor_file" 2>/dev/null; }; then
     warn "failed to write sweep cursor $cursor_file — the next pass may re-walk this batch"

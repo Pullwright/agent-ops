@@ -626,6 +626,115 @@ assert_eq "a later pass — the cursor was never advanced — still finds the de
 assert_contains "  ... and the cursor now advances, since this batch finished clean" \
   '"x/y":{"created_at":"2026-11-01T00:00:00Z"}' "$(cat "$cursor_file18")"
 
+# --- Case 19: a cursor-sourced issue that 404s on every read, three ---------
+# --- consecutive passes running, gets skip-listed, and the cursor then -----
+# --- advances past it; a louder warning names what was skipped -------------
+# agent-ops#2891: the cursor-advance gate above (Case 18) deliberately holds
+# the cursor on *any* incomplete cursor-sourced row, including a permanently
+# unreadable one — an issue deleted, transferred, or never existing at the
+# number a malformed marker names. Nothing distinguished that from Case 18's
+# ordinary, self-resolving budget defer, so the walk wedged behind it
+# forever. Three consecutive passes blocked by the same pull request now
+# skip-lists it instead, and the gate stops honouring that one pull request
+# from then on.
+c="$tmp_dir/case19"; mkdir -p "$c"
+state19="$tmp_dir/case19-state"
+cursor_file19="$state19/sweep-closed-issues-cursor.json"
+
+jq -n '[]' > "$c/prs.json"
+jq -n '[{number: 7100, url: "https://github.com/x/y/pull/7100",
+         body: "<!-- agent-ops:closes-issue item=7101 -->",
+         mergeCommit: {oid: "s1"}, createdAt: "2026-11-05T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+# No issue-7101 fixture at all: the stub's issue-read branch exits 1 for a
+# number it has no fixture for, modelling a 404.
+
+out1="$(run_sweep_for "x/y" "$c" "$state19")"
+assert_contains "pass 1: the ordinary per-run warning fires" \
+  "could not read issue #7101" "$out1"
+assert_not_contains "  ... but nothing is skip-listed on the first failure" \
+  "skip-listing" "$out1"
+assert_contains "  ... and the stall counter starts at 1" \
+  '"x/y":{"stall":{"pr_number":7100,"count":1}}' "$(cat "$cursor_file19")"
+
+out2="$(run_sweep_for "x/y" "$c" "$state19")"
+assert_not_contains "pass 2: still not skip-listed" "skip-listing" "$out2"
+assert_contains "  ... and the stall counter increments" \
+  '"x/y":{"stall":{"pr_number":7100,"count":2}}' "$(cat "$cursor_file19")"
+
+out3="$(run_sweep_for "x/y" "$c" "$state19")"
+assert_contains "pass 3: the threshold is reached, and skip-listing is reported loudly" \
+  "issue #7101 (named by PR #7100) has failed to close on 3 consecutive passes" \
+  "$out3"
+assert_contains "  ... the pull request is skip-listed and the stall counter clears" \
+  '"x/y":{"skip_list":[7100]}' "$(cat "$cursor_file19")"
+
+out4="$(run_sweep_for "x/y" "$c" "$state19")"
+assert_not_contains "pass 4: no fresh skip-listing — it already happened" \
+  "skip-listing" "$out4"
+assert_contains "  ... and the cursor now advances past the skip-listed pull request" \
+  '"x/y":{"created_at":"2026-11-05T00:00:00Z","skip_list":[7100]}' \
+  "$(cat "$cursor_file19")"
+
+# --- Case 20: a stall that resolves before the threshold clears entirely ---
+# A transient failure must never accumulate toward skip-listing once it
+# actually succeeds — only a run of consecutive failures at the same pull
+# request counts.
+c="$tmp_dir/case20"; mkdir -p "$c"
+state20="$tmp_dir/case20-state"
+cursor_file20="$state20/sweep-closed-issues-cursor.json"
+
+jq -n '[]' > "$c/prs.json"
+jq -n '[{number: 7200, url: "https://github.com/x/y/pull/7200",
+         body: "<!-- agent-ops:closes-issue item=7201 -->",
+         mergeCommit: {oid: "s2"}, createdAt: "2026-11-06T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-7201"
+touch "$c/fail-close-7201"
+
+run_sweep_for "x/y" "$c" "$state20" >/dev/null
+assert_contains "pass 1: the close call fails and the stall counter starts" \
+  '"x/y":{"stall":{"pr_number":7200,"count":1}}' "$(cat "$cursor_file20")"
+
+rm "$c/fail-close-7201"
+out2="$(run_sweep_for "x/y" "$c" "$state20")"
+assert_eq "pass 2: the close now succeeds" \
+  '{"action":"closed","issue":7201,"pr_number":7200,"pr_url":"https://github.com/x/y/pull/7200"}' \
+  "$(jq -c 'select(.action == "closed")' <<<"$out2")"
+assert_not_contains "  ... and the stall clears rather than reaching the threshold" \
+  '"stall"' "$(cat "$cursor_file20")"
+assert_contains "  ... with the cursor now free to advance" \
+  '"x/y":{"created_at":"2026-11-06T00:00:00Z"}' "$(cat "$cursor_file20")"
+
+# --- Case 21: a different blocking pull request on the very next pass ------
+# --- resets the counter instead of accumulating across unrelated PRs -------
+c="$tmp_dir/case21"; mkdir -p "$c"
+state21="$tmp_dir/case21-state"
+cursor_file21="$state21/sweep-closed-issues-cursor.json"
+
+jq -n '[]' > "$c/prs.json"
+jq -n '[{number: 7300, url: "https://github.com/x/y/pull/7300",
+         body: "<!-- agent-ops:closes-issue item=7301 -->",
+         mergeCommit: {oid: "s3"}, createdAt: "2026-11-07T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-7301"
+touch "$c/fail-close-7301"
+
+run_sweep_for "x/y" "$c" "$state21" >/dev/null
+assert_contains "pass 1: PR #7300 blocks, the counter starts at 1" \
+  '"x/y":{"stall":{"pr_number":7300,"count":1}}' "$(cat "$cursor_file21")"
+
+jq -n '[{number: 7400, url: "https://github.com/x/y/pull/7400",
+         body: "<!-- agent-ops:closes-issue item=7401 -->",
+         mergeCommit: {oid: "s4"}, createdAt: "2026-11-08T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-7401"
+touch "$c/fail-close-7401"
+
+run_sweep_for "x/y" "$c" "$state21" >/dev/null
+assert_contains "pass 2: a different pull request (#7400) blocks instead, resetting the counter" \
+  '"x/y":{"stall":{"pr_number":7400,"count":1}}' "$(cat "$cursor_file21")"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1
