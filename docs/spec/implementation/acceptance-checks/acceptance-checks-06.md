@@ -50,14 +50,18 @@
     deferred — even though that skip is not itself a lock hold, and not on
     one whose published `role` is a standby's however old its newest cycle
     event — including a raw `"STANDBY "`, since the role is read
-    normalised. It does fire on a node whose only unmatched `cycle-start`,
-    or whose only `cycle-skipped` naming a lock-holding pid, is older than
-    the four-hour bound — a container-recreation orphan with nothing since
-    — and its cycle-duration histogram excludes a lock-contention skip
-    tick's own near-zero duration even when that tick is itself past the
-    bound, while still counting a genuinely completed long cycle that
-    logged its own requirement 11a overrun-slot `cycle-skipped` events
-    under the same `cycle` id. Five nodes sharing
+    normalised. It does fire on a node whose only unmatched `cycle-start`
+    is older than the four-hour bound — a container-recreation orphan with
+    nothing since — and its cycle-duration histogram excludes a
+    lock-contention skip tick's own near-zero duration even when that tick
+    is itself past the bound, while still counting a genuinely completed
+    long cycle that logged its own requirement 11a overrun-slot
+    `cycle-skipped` events under the same `cycle` id. It also fires on a
+    node whose long cycle ended cleanly after a chained continuation's own
+    lock-contention `cycle-skipped`, once the silence that follows passes
+    2× the interval — even while that skip is still younger than the
+    four-hour bound, since a lock-contention skip is never lock-held
+    evidence on its own (agent-ops#2441). Five nodes sharing
     that one ancient history and differing only in the role their row
     publishes pin the rest of the matrix: `"Active"` is named (requirement
     2.4 runs cycles on it, so a peer must not read it as a standby),
