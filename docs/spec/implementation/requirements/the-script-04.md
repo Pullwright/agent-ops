@@ -34,10 +34,12 @@
    the two per-node caches whose own file mtimes *are* the schedule they
    gate — the label-ensure stamps (`labels-ensured/`, requirement 6a) and
    the expensive-gather cache (`expensive-gather/`, requirement 48) —
-   the updater's own invocation ledger (`updater-ledger/`, below), and the
+   the updater's own invocation ledger (`updater-ledger/`, below), the
    `gh` transport shim's stored response bodies and lock files
    (`gh-shim/http-cache/`, `gh-shim/*.lock`, requirement 2.0e — the ledger
-   and `budget.json` beside them excepted, below).
+   and `budget.json` beside them excepted, below), and the `viewer-probe`
+   sidecar's own intermediate (`viewer-probe/`, owner decision #1358,
+   agent-ops#1339).
    The exclusions are not tidiness: a copied `lock.json` is a lock no process
    holds — peers read logs, never locks; `roll-pending.json` is this node's own
    instruction to its own watchtower hook, earned by its own cycle boundary,
@@ -80,6 +82,18 @@
    `scripts/github-budget-report.sh` unions across nodes exactly as it
    unions `log.jsonl`, and `budget.json` is a reading of the one bucket
    every node shares, so both must travel.
+   `viewer-probe/` is excluded on the identical "answers for a vantage
+   nobody on the peer has" reasoning as `.image-drift-cache.json` above: it
+   is the `viewer-probe` sidecar's own node-local reading of the viewer-
+   vantage probe, taken from inside this node's own `tailscale` sidecar's
+   namespace, and a copy restored on a peer would answer for a fetch that
+   peer never made from a vantage it may not even have (a `local` or bare
+   node runs no sidecar at all). Its content still reaches every peer, the
+   same way `.stage-health.json`'s does: folded into
+   `host-facts/<node>.json`'s own `viewer_probe` object
+   (`lib/host-facts.sh`'s `host_facts_viewer_probe_fold_json`,
+   `docs/reference/host-facts-schema.md`), which replicates ordinarily, so only
+   the raw intermediate is held back.
    `labels-ensured/` and `expensive-gather/` carry a second reason on top of
    that one, and it is the sharper of the two: each schedules its own next
    run off its files' mtimes rather than off a timestamp written inside
