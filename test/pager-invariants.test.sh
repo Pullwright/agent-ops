@@ -949,10 +949,10 @@ PAGER_EVAL_DASHBOARD_FETCH_SECONDS=30
 
 # --- memory-cgroup (agent-ops#2698) ----------------------------------------
 
-mc_row() {  # mc_row NAME STALE MEMORY_CGROUP_OR_EMPTY
-  jq -nc --arg n "$1" --argjson stale "$2" --arg v "$3" \
+mc_row() {  # mc_row NAME STALE MEMORY_CGROUP_OR_EMPTY [ACCEPTED]
+  jq -nc --arg n "$1" --argjson stale "$2" --arg v "$3" --argjson accepted "${4:-false}" \
     '{node: $n, stale: $stale,
-      doctor: (if $v == "" then {} else {memory_cgroup: $v} end)}'
+      doctor: (if $v == "" then {} else {memory_cgroup: $v, memory_cgroup_accepted: $accepted} end)}'
 }
 mc_nodes="$(printf '%s\n%s\n%s\n%s\n%s\n' \
   "$(mc_row n1 false unbounded)" "$(mc_row n2 false livelocked)" \
@@ -974,6 +974,23 @@ assert_eq "bounded, unlimited and absent never fire" "false" \
 mc_nodes_stale="$(printf '%s\n' "$(mc_row n1 true unbounded)" | jq -sc '.')"
 assert_eq "a stale node's own reading is not trusted" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_stale" /dev/null)")"
+
+# --- memory-cgroup: owner acceptance of unbounded (agent-ops#2885) ---------
+
+mc_nodes_accepted="$(printf '%s\n' "$(mc_row n1 false unbounded true)" | jq -sc '.')"
+assert_eq "an unbounded node whose doctor.memory_cgroup_accepted is true does not fire" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_accepted" /dev/null)")"
+
+mc_nodes_mixed="$(printf '%s\n%s\n' \
+  "$(mc_row n1 false unbounded true)" "$(mc_row n2 false unbounded false)" | jq -sc '.')"
+mc_mixed_verdict="$(pager_eval_memory_cgroup "$mc_nodes_mixed" /dev/null)"
+assert_eq "...only the unaccepted sibling fires, never the accepted one" "true" \
+  "$(jq -r '.firing' <<<"$mc_mixed_verdict")"
+assert_eq "...naming only n2" "n2" "$(jq -r '.nodes | join(",")' <<<"$mc_mixed_verdict")"
+
+mc_nodes_livelocked_flag="$(printf '%s\n' "$(mc_row n1 false livelocked true)" | jq -sc '.')"
+assert_eq "a livelocked node still fires even if memory_cgroup_accepted somehow reads true" \
+  "true" "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_livelocked_flag" /dev/null)")"
 
 # --- idle-with-demand (agent-ops#1281) -------------------------------------
 
