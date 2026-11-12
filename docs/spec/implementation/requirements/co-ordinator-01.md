@@ -1214,6 +1214,25 @@
     exactly where it is: every pull request merging from that point on is
     fresh enough to appear in the "most recently updated" window on its own.
 
+    That hold alone cannot tell a transient defer from a permanent one
+    (agent-ops#2891): a cursor-sourced pull request naming an issue that 404s
+    on every read, or whose close call fails every run, held the cursor
+    forever, wedging the whole walk behind it. So the cursor file also tracks,
+    per repo slug, a consecutive-stall counter keyed on whichever single
+    cursor-sourced pull request blocked the gate this pass, and a skip-list of
+    pull requests the walk has given up on. The counter increments only for a
+    real read/close failure — never for a close the shared budget merely
+    deferred, which already expects to resolve once more budget is available
+    — resets to 1 the moment a different pull request blocks the gate, and
+    clears entirely the moment no cursor-sourced row is incomplete. Once the
+    same pull request has blocked three consecutive passes this way, it is
+    added to the skip-list and the counter clears: a skip-listed pull
+    request's row stops holding the cursor, so the walk resumes past it,
+    with a louder warning naming which pull request it gave up on — while its
+    issue, never actually closed, is left exactly as unclosed as before.
+    There is no path back off the skip-list other than a human editing the
+    cursor file directly.
+
     Idempotent by construction — it only ever acts on an issue GitHub itself
     still reports open and not reopened, so re-running it costs nothing once
     the backlog is cleared. Actions are capped per run (three per repo per cycle, the

@@ -993,7 +993,17 @@
    pull request is reached (agent-ops#2869) — the batch's own close deferred,
    not performed — the cursor is not advanced past it; a later pass, with the
    cursor still at its prior position, finds and closes the same pull
-   request's issue, and only then does the cursor advance past it.
+   request's issue, and only then does the cursor advance past it. On a
+   cursor-sourced pull request whose named issue 404s on every read
+   (agent-ops#2891) — three consecutive passes blocked at the same pull
+   request, the cursor held each time and the stall counter incrementing,
+   neither skipped nor advanced — the fourth pass skip-lists that pull
+   request with a warning distinguishable from the ordinary per-run one, and
+   only then does the cursor advance past it, the issue left exactly as
+   unclosed as before; a stall that instead resolves on its second pass (the
+   close succeeds) clears the counter rather than reaching the threshold, and
+   a different pull request blocking the very next pass resets the counter to
+   1 rather than accumulating across unrelated pull requests.
 8m. <a id="impl-ac-8m"></a>**The closing-keyword and changelog-section checks block, not just
    report (requirements 25a and 25c).** The one piece of requirements 25a
    and 25c that no file in this repository carries is the repo setting that
