@@ -880,8 +880,11 @@ coordinator_merge_candidates() {  # <candidates-json> <ordered-repos-json> <cand
 # `eligible_items_json`, `refinement_policy_json`, `coordinator_fit_trimmed_json`,
 # `ordered_repos_json`, `implementer_model_default`, `refinements_json`,
 # `pr_label`, `coordinator_model`, `noop_fingerprint_value`,
-# `eligible_items_total`. Sets `candidates_json` (the fallback's one-candidate
-# list) and `selected_by_fallback=1` and returns 0 when the fallback found
+# `eligible_items_total` — plus, since issue #2910, `log_file` and `cycle_id`,
+# read to find this very cycle's own `landing-armed` events
+# (`landing_armed_this_cycle`, lib/cycle-state.sh). Sets `candidates_json`
+# (the fallback's one-candidate list) and `selected_by_fallback=1` and
+# returns 0 when the fallback found
 # something to claim; otherwise logs `none-selected` itself (`td_verdict_rejected`/
 # `bands` present only when corroboration rejected a verdict and the fallback
 # then found nothing either — `scripts/publish-dashboard.sh`'s corroboration-
