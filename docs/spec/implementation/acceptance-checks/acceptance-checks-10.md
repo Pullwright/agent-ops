@@ -138,7 +138,26 @@
    leaving any other still-unaccounted item flagged; an omitted 4th argument
    exempts nothing, matching the function's behaviour before this change; and
    malformed trimmed JSON degrades to exempting nothing rather than
-   everything.
+   everything. `test/verdict-corroboration.test.sh` also passes
+   `unaccounted_items`' review-feedback-only landing exemption (issue #2910):
+   a 5th `landed-json` argument naming a pull request by repo+`pr_number`
+   exempts only the review-feedback eligible entry whose own ref
+   (`pr-<n>-review-<id>`) names that same PR, leaving a landed PR under a
+   different number, a different repo, or a non-review-feedback entry sharing
+   the same repo+item still unaccounted; an omitted 5th argument, or malformed
+   `landed-json`, exempts nothing, matching the function's behaviour before
+   this change. `test/cycle-state.test.sh` passes `landing_armed_this_cycle`
+   in isolation: a `landing-armed` event logged under the cycle id asked for
+   is reported as its own `{repo, pr_number}`, parsed out of the event's own
+   `pr_url`; an event logged under a different cycle id, or asked for with an
+   empty cycle id, is not; an event with no parseable `pr_url`, or of any
+   other type, is dropped. `test/coordinator-merge-fallback.test.sh` passes
+   the end-to-end wiring: a `selected: false` verdict left silent about a
+   review-feedback entry whose PR `landing_armed_this_cycle` reports for this
+   cycle's own `$log_file`/`$cycle_id` is accepted on the first attempt,
+   fires no mechanical fallback, and stands the cycle down clean with its
+   fingerprint, exactly as a verdict that reported or voided the entry itself
+   would.
 2j-iii. <a id="impl-ac-2j-iii"></a>**A `needs_refinement` block against an entry the fit ladder trimmed
    this cycle is refused, never recorded, and the completeness check owes no
    account of it either (requirement 34e's fourth refusal, requirement 3x's
