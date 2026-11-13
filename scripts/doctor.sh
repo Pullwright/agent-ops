@@ -1296,29 +1296,44 @@ fi
 # (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, lib/memory.sh's `memory_cgroup_accepted_
 # verdict`, agent-ops#2885/#2861) reads `[ ok ]` naming the acceptance instead
 # of warning. `livelocked` never does, whatever the setting names: a wedge is
-# never a trade-off, and a setting that names it is ignored and warned about
-# below rather than silently honoured.
+# never a trade-off. A setting that `memory_cgroup_accepted_verdict` does not
+# read as `accepted` is always warned about below, whichever verdict is live
+# and whichever of its `invalid`/`none` reasons applies, rather than silently
+# ignored (agent-ops#2919).
 memory_cgroup_live_verdict="$(memory_cgroup_verdict)"
 memory_cgroup_accepted_setting="${AGENT_OPS_MEMORY_CGROUP_ACCEPTED:-}"
+memory_cgroup_accepted_verdict_result="$(memory_cgroup_accepted_verdict "$memory_cgroup_accepted_setting" "$memory_cgroup_live_verdict")"
 case "$memory_cgroup_live_verdict" in
   unbounded)
-    if [[ "$(memory_cgroup_accepted_verdict "$memory_cgroup_accepted_setting" "$memory_cgroup_live_verdict")" == "accepted" ]]; then
+    if [[ "$memory_cgroup_accepted_verdict_result" == "accepted" ]]; then
       ok "container memory: $(memory_cgroup_accepted_describe)"
     else
       warn "container memory: $(memory_cgroup_describe)"
     fi
     ;;
   parented)    ok "container memory: $(memory_cgroup_parent_describe)" ;;
-  livelocked)
-    warn "container memory: $(memory_cgroup_livelock_describe)"
-    [[ "$memory_cgroup_accepted_setting" == "livelocked" ]] && \
-      warn "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked is set but ignored — livelocked is a wedge, never a trade-off, so it can never be accepted; fix the parent cgroup instead (see deploy/docker/compose.yaml)"
-    ;;
+  livelocked)  warn "container memory: $(memory_cgroup_livelock_describe)" ;;
   unconfirmed) warn "container memory: $(memory_cgroup_unconfirmed_describe)" ;;
   bounded)     warn "container memory: memory.high is set on this container, so the kernel reclaims before the hard ceiling — but it is set on the container, so the next roll will wipe it; see deploy/docker/compose.yaml for the parent cgroup that survives one" ;;
   unlimited)   ok "container memory: no cgroup ceiling, so there is nothing to reclaim against" ;;
   *)           ok "container memory: no cgroup v2 memory files to read (not a cgroup v2 container)" ;;
 esac
+
+# A setting `memory_cgroup_accepted_verdict` does not read as `accepted` is
+# never honoured, whatever verdict is live — warn about it here, once, rather
+# than only from inside whichever arm above happens to care (agent-ops#2919).
+# `invalid` (the setting is literally `livelocked`) warns on every verdict,
+# including `livelocked` itself, since naming a wedge as accepted is wrong
+# regardless of what is actually live. `none` with a non-empty setting warns
+# too, except when the live verdict is `livelocked`: nothing is ever accepted
+# there, so a setting that merely fails to match it (rather than naming the
+# wedge itself) adds no information beyond the livelock warning already
+# issued above, and would otherwise fire for every setting value.
+if [[ "$memory_cgroup_accepted_verdict_result" == "invalid" ]]; then
+  warn "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked is set but ignored — livelocked is a wedge, never a trade-off, so it can never be accepted; fix the parent cgroup instead (see deploy/docker/compose.yaml)"
+elif [[ -n "$memory_cgroup_accepted_setting" && "$memory_cgroup_accepted_verdict_result" == "none" && "$memory_cgroup_live_verdict" != "livelocked" ]]; then
+  warn "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=$memory_cgroup_accepted_setting is set but ignored — it does not match the live verdict ($memory_cgroup_live_verdict), so the acceptance is not honoured"
+fi
 
 # A rising memory.events `high` rate on the *parent* is a cheap, decisive
 # throttling signal that needs no ceiling to be correctly configured first:
