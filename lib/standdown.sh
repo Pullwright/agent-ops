@@ -925,7 +925,7 @@ if ! (( DRY_RUN )); then
           '{detail: ("orphan-branch sweep (" + $r + "): " + (del(.repo) | tostring))}' \
           <<<"$sweep_action")" ;;
       esac
-    done < <(timeout 120 "$SCRIPT_DIR/scripts/sweep-orphan-branches.sh" "$sweep_slug" \
+    done < <(timeout 120 "$SCRIPT_DIR/scripts/sweep-orphan-branches.sh" "$sweep_slug" "$union_log" \
                2>>"$cycle_dir/orphan-sweep.err" || true)
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
 fi

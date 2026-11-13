@@ -1125,12 +1125,33 @@
     branch carries commits a rival already superseded (sometimes with a
     fix the loser never saw), so resurrecting it as a recovery draft would
     reintroduce that superseded — sometimes regressed — code (issue #500,
-    PR #370). A ref with nothing ahead, with a merged PR against its own
-    head, or superseded by a rival branch's merge, is **deleted** — it was
-    only ever the claim, and the claim is dead, already honoured, or
-    honoured elsewhere. A failure to determine the merge state fails the
-    same way as the other guards: skip the ref, warn, touch nothing. The
-    rival-branch search is the one guard that does not: it cannot make the
+    PR #370). Checked before the rival-branch search, since it answers a
+    narrower question with a cheaper test: **the branch's own head never
+    merged, but its most recent closed pull request was a deliberate
+    pipeline retirement** (agent-ops#2923) rather than an ordinary human
+    decline — either it carries the `obsolete` label, or — never labelled,
+    but retired all the same — a `draft-obsolete-flagged` or
+    `void-object-closed` event, read from the union log an optional second
+    argument now hands the sweep, already names this branch's own item
+    (its stem, the same reduction the rival-branch search below uses).
+    Recovering such a ref as a draft would re-file exactly the work the
+    pipeline already judged unwanted, so it is deleted instead
+    (`released`, `reason: "retired"`) — without ever reaching the
+    rival-branch search below. An ordinary declined close, with neither
+    signal present, is untouched by this check and falls through to that
+    search unchanged — the case that must not regress, since this check
+    must never start deleting a branch a human simply closed. A ref with
+    nothing ahead, with a merged PR against its own
+    head, superseded by a rival branch's merge, or deliberately retired this
+    way, is **deleted** — it was
+    only ever the claim, and the claim is dead, already honoured, honoured
+    elsewhere, or judged unwanted. A failure to determine the merge state fails the
+    same way as the other guards: skip the ref, warn, touch nothing; so does
+    a closed-pull-request read the deliberate-retirement check cannot get an
+    answer from — it falls through to the rival-branch search exactly as an
+    ordinary declined close does, since an unanswered question here is no
+    different from "no signal found". The
+    rival-branch search is the one guard that does not fail closed: it cannot make the
     ref *safer* to delete, only safer to leave as unrecovered work, so on no
     match, or on any failure to get an answer, nothing about today's
     behaviour changes and the ordinary recovery draft still gets filed —
