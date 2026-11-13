@@ -18,6 +18,11 @@
 #   ahead > 0        the work becomes a draft PR the abandoned-drafts source
 #                    recovers; the label it keys on must be on it
 #   ahead == 0       the ref was only ever the claim, and the claim is dead
+#   deliberate       a closed, unmerged PR the pipeline itself retired —
+#   retirement       `obsolete`-labelled, or named by a logged
+#                    draft-obsolete-flagged/void-object-closed event — is
+#                    deleted, never recovered (agent-ops#2923); an ordinary
+#                    declined close, with neither signal, is unaffected
 #   the cap          a backlog surfaces a few per cycle, and the overflow is
 #                    reported, never silent
 #
@@ -94,6 +99,12 @@ case "$args" in
     exit 0 ;;
   "pr list -R x/y --head "*)
     b="${args##*--head }"; b="${b%% *}"
+    if [[ "$args" == *"--json number,state,labels,closedAt"* ]]; then
+      if [[ -f "$S/fail-closed-detail-pr-list-$(flat "$b")" ]]; then exit 1; fi
+      f="$S/closed-detail-$(flat "$b").json"
+      if [[ -f "$f" ]]; then cat "$f"; else echo '[]'; fi
+      exit 0
+    fi
     if [[ "$args" == *"--state open"* ]]; then st=open
     elif [[ "$args" == *"--state merged"* ]]; then st=merged
     elif [[ "$args" == *"--state closed"* ]]; then st=closed
@@ -179,10 +190,12 @@ compare_fixture() {
 stale=2020-01-01T00:00:00Z
 fresh="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# run_sweep CASE_DIR — invoke the sweep against that fixture dir.
+# run_sweep CASE_DIR [UNION_LOG] — invoke the sweep against that fixture
+# dir, optionally handing it a union log (agent-ops#2923's
+# draft-obsolete-flagged/void-object-closed events).
 run_sweep() {
   SWEEP_STUB_DIR="$1" SWEEP_GH="$stub" AGENT_OPS_CONFIG="$config" \
-    bash "$SWEEP" x/y
+    bash "$SWEEP" x/y "${2:-}"
 }
 
 # --- Case 1: every guard, one branch each ---------------------------------------
@@ -574,6 +587,93 @@ assert_not_contains "so the record ref is never deleted" \
   "api -X DELETE repos/x/y/git/refs/heads/td-record/TD-PPagop-30000008" "$calls"
 assert_not_contains "and the reservation question is never even asked" \
   "contents/tech-debt/TD-PPagop-30000008" "$calls"
+
+# --- Case 21: a deliberate pipeline retirement, labelled, is deleted not
+# recovered (agent-ops#2923) --------------------------------------------------
+# The branch's own head never merged, but its most recent closed pull
+# request carries `obsolete` — the pipeline (or a human corroborating it)
+# already judged this work unwanted, so recovering it as a draft would
+# re-file exactly what was just retired.
+c="$tmp_dir/retired-obsolete"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/obsolete-retired\tsha-obsolete\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-obsolete"
+compare_fixture "$c" agent/obsolete-retired 1
+jq -n '[{number: 50, state: "CLOSED", labels: [{name: "obsolete"}],
+         closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_obsolete-retired.json"
+
+out="$(run_sweep "$c")"
+calls="$(cat "$c/calls.log")"
+assert_eq "an obsolete-labelled retirement is released, not recovered" \
+  '{"action":"released","branch":"agent/obsolete-retired","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/obsolete-retired")' <<<"$out")"
+assert_contains "by deleting the ref" \
+  "api -X DELETE repos/x/y/git/refs/heads/agent/obsolete-retired" "$calls"
+assert_not_contains "and no recovery draft is ever opened for it" \
+  "pr create" "$(grep 'obsolete-retired' "$c/calls.log" || true)"
+
+# --- Case 22: a deliberate pipeline retirement, logged but never labelled,
+# is deleted not recovered (agent-ops#2923) -----------------------------------
+# No `obsolete` label on the closed pull request either time, but a
+# `draft-obsolete-flagged` (an Enabler verdict) or `void-object-closed` (the
+# void-close sweep) event already names the branch's own item — the union
+# log an optional second argument hands the sweep.
+c="$tmp_dir/retired-logged"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/flag-event-retired\tsha-flag\nagent/void-event-retired\tsha-void\n' \
+  > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-flag"
+echo "$stale" > "$c/date-sha-void"
+compare_fixture "$c" agent/flag-event-retired 1
+compare_fixture "$c" agent/void-event-retired 1
+jq -n '[{number: 51, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_flag-event-retired.json"
+jq -n '[{number: 52, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_void-event-retired.json"
+union_log="$c/union.jsonl"
+printf '%s\n' \
+  '{"event":"draft-obsolete-flagged","repo":"x/y","item":"flag-event-retired"}' \
+  '{"event":"void-object-closed","repo":"x/y","item":"void-event-retired"}' \
+  > "$union_log"
+
+out="$(run_sweep "$c" "$union_log")"
+calls="$(cat "$c/calls.log")"
+assert_eq "a draft-obsolete-flagged retirement is released, not recovered" \
+  '{"action":"released","branch":"agent/flag-event-retired","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/flag-event-retired")' <<<"$out")"
+assert_eq "and so is a void-object-closed retirement" \
+  '{"action":"released","branch":"agent/void-event-retired","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/void-event-retired")' <<<"$out")"
+assert_not_contains "with no recovery draft opened for either" \
+  "pr create" "$(grep -E 'flag-event-retired|void-event-retired' "$c/calls.log" || true)"
+
+# --- Case 23: an ordinary declined close carries neither signal, and is
+# unaffected (agent-ops#2923) -------------------------------------------------
+# The regression this fix must not cause: a closed, unmerged pull request a
+# human simply declined — no `obsolete` label, no logged retirement event —
+# still falls through to the ordinary recovery-draft flow exactly as before
+# this check existed.
+c="$tmp_dir/declined-ordinary"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/declined-ordinary\tsha-declined-ord\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-declined-ord"
+compare_fixture "$c" agent/declined-ordinary 1 "$stale"
+jq -n '[{number: 53, state: "CLOSED", labels: [{name: "some-other-label"}],
+         closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_declined-ordinary.json"
+union_log="$c/union.jsonl"
+printf '%s\n' \
+  '{"event":"void-object-closed","repo":"x/y","item":"some-unrelated-item"}' \
+  > "$union_log"
+
+out="$(run_sweep "$c" "$union_log")"
+assert_eq "an ordinary declined close still gets the ordinary recovery draft" \
+  "agent/declined-ordinary" \
+  "$(jq -r 'select(.action == "recovered") | .branch' <<<"$out")"
+assert_not_contains "and its ref is never deleted" \
+  "api -X DELETE repos/x/y/git/refs/heads/agent/declined-ordinary" \
+  "$(cat "$c/calls.log")"
 
 printf '\n'
 if (( failures )); then

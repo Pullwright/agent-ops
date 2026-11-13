@@ -617,7 +617,17 @@
    rival lookup also still yields the ordinary recovery draft, but with a
    `warning` naming the branch, distinct from the silent no-match case; and
    a backlog past the per-run cap acts on the cap's worth and reports the
-   remainder (`deferred`) rather than flooding or staying silent. For the `td-record/*` namespace
+   remainder (`deferred`) rather than flooding or staying silent. A stale
+   ref with commits ahead, no merged PR of its own, whose most recent
+   closed pull request carries the `obsolete` label yields a ref delete and
+   a `released` action carrying `reason: "retired"`, with **no** `pr
+   create` call ever made (agent-ops#2923); the same holds when that pull
+   request carries no such label but a `draft-obsolete-flagged` or
+   `void-object-closed` event, passed in on the union-log argument, already
+   names this branch's own item; and a ref whose most recent closed pull
+   request carries neither signal — an ordinary human decline — is
+   unaffected, still reaching the rival-branch search and the ordinary
+   recovery draft exactly as before this check existed. For the `td-record/*` namespace
    (TD-PPagop-26082310): a stale record branch whose only pull request was
    closed without merging yields a ref delete carrying
    `reason: "filing-declined"` and, on a clean 404 for `tech-debt/<id>.md` at
