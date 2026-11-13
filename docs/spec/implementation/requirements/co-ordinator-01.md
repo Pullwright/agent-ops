@@ -1132,8 +1132,18 @@
     decline — either it carries the `obsolete` label, or — never labelled,
     but retired all the same — a `draft-obsolete-flagged` or
     `void-object-closed` event, read from the union log an optional second
-    argument now hands the sweep, already names this branch's own item
-    (its stem, the same reduction the rival-branch search below uses).
+    argument now hands the sweep, already names this branch's own item.
+    The label is matched case-insensitively, the same way
+    `lib/void-guard.sh` and `scripts/close-void-github-items.sh` read it;
+    the item is matched on `branch_prefix` stripped from the front — the
+    derivation `gather_claimed` uses, and the whole ref the events are
+    logged under, 12-hex id included for the four finishing sources — as
+    well as on the rival-branch search's own further-reduced stem, so
+    neither shape of ref is reduced past the event naming it. An omitted
+    or unreadable union log reads as "no retirement events known yet",
+    and is read as a file or not at all: the sweep never consumes its own
+    stdin, which from `lib/standdown.sh` is the repo-slug stream of the
+    loop the call sits inside.
     Recovering such a ref as a draft would re-file exactly the work the
     pipeline already judged unwanted, so it is deleted instead
     (`released`, `reason: "retired"`) — without ever reaching the

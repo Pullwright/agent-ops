@@ -272,15 +272,27 @@ deferred=0
 # ever logged, reduced to the bare `{repo, item}` pairs `retirement_reason`
 # below matches against — read once here rather than per branch, since the
 # union log does not change mid-sweep. An unreadable or absent UNION_LOG
-# degrades to "no retirement events known yet" (both readers already default
-# to `[]`), never to a crash: a branch this would have caught instead falls
-# through to the ordinary flow below, exactly as it did before this check
-# existed.
-retirement_events_json="$(jq -nc \
-  --argjson a "$(draft_obsolete_flags "$union_log" 2>/dev/null || echo '[]')" \
-  --argjson b "$(void_object_closed_items "$union_log" 2>/dev/null || echo '[]')" \
-  '($a + $b) | map({repo, item})' 2>/dev/null)" || retirement_events_json='[]'
-[[ -n "$retirement_events_json" ]] || retirement_events_json='[]'
+# degrades to "no retirement events known yet", never to a crash: a branch
+# this would have caught instead falls through to the ordinary flow below,
+# exactly as it did before this check existed.
+#
+# The emptiness test is what makes "absent" mean that, and it is not
+# cosmetic: both readers take `[LOG_FILE]` defaulting to `-`, so an *empty*
+# argument asks them to read **stdin** — which, called from
+# `lib/standdown.sh`, is the repo-slug stream its own enclosing
+# `while … done < <(jq -r '.repos[].slug' …)` loop is reading, and from a
+# terminal is a wait for an EOF nobody will send. Reading the file only when
+# there is a readable file to read keeps the documented "omit it" form of
+# this script's own usage line honest, and keeps this sweep's stdin
+# untouched either way.
+retirement_events_json='[]'
+if [[ -n "$union_log" && -r "$union_log" ]]; then
+  retirement_events_json="$(jq -nc \
+    --argjson a "$(draft_obsolete_flags "$union_log" 2>/dev/null </dev/null || echo '[]')" \
+    --argjson b "$(void_object_closed_items "$union_log" 2>/dev/null </dev/null || echo '[]')" \
+    '($a + $b) | map({repo, item})' 2>/dev/null)" || retirement_events_json='[]'
+  [[ -n "$retirement_events_json" ]] || retirement_events_json='[]'
+fi
 
 # retirement_reason BRANCH — agent-ops#2923: told apart from an ordinary
 # human decline (which must fall through to the arms below unchanged), a
@@ -289,15 +301,32 @@ retirement_events_json="$(jq -nc \
 # closed, unmerged pull request either carries the `obsolete` label, or —
 # never labelled, but the retirement happened anyway — a logged
 # `draft-obsolete-flagged`/`void-object-closed` event already names this
-# branch's own item (`stem`, the same item-ref reduction `gather_claimed`
-# uses). Prints nothing and returns 1 for every other shape, including "no
-# closed PR" and "could not tell" — fail-closed exactly like every guard
-# above: an unanswered question here changes nothing about today's
-# behaviour, falling through to the ordinary recovery-draft/superseded-rival
-# flow unchanged, since that is already this walk's safe default for a
-# closed PR it cannot read.
+# branch's own item. Prints nothing and returns 1 for every other shape,
+# including "no closed PR" and "could not tell" — fail-closed exactly like
+# every guard above: an unanswered question here changes nothing about
+# today's behaviour, falling through to the ordinary recovery-draft/
+# superseded-rival flow unchanged, since that is already this walk's safe
+# default for a closed PR it cannot read.
+#
+# The label test lower-cases both sides, the same way `lib/void-guard.sh`
+# and `scripts/close-void-github-items.sh` read this very label: GitHub's
+# label names are case-preserving but case-insensitively unique, so an
+# `Obsolete` the other two already act on must not be a retirement this one
+# silently fails to see.
+#
+# Two keys answer the event test, because a claim branch reduces to its item
+# ref two different ways and the events are written under the unreduced one.
+# `$branch_prefix` stripped from the front is `gather_claimed`'s own
+# derivation and is the ref `lib/enabler.sh` logs (`pr-2913-abandoned-
+# 12c058202df8`, say — all four finishing sources mint a ref ending in a
+# 12-hex id by construction, requirements 3c/3e/3z/3g). `stem` strips that
+# trailing id as well, which is right for the rival-branch search below
+# (two branches for the same pull request under different head SHAs must
+# compare equal) and wrong here, where it would reduce the branch past every
+# such event's own `item` and never match one. Both are tried, so the plain
+# `<prefix><n>` case and the finishing-source case each resolve.
 retirement_reason() {
-  local branch="$1" closed_json latest obsolete item
+  local branch="$1" closed_json latest obsolete item item_stem
   closed_json="$("$GH" pr list -R "$slug" --head "$branch" --state closed \
     --json number,state,labels,closedAt 2>/dev/null)" || return 1
   jq -e 'type == "array"' <<<"$closed_json" >/dev/null 2>&1 || return 1
@@ -306,16 +335,19 @@ retirement_reason() {
     <<<"$closed_json" 2>/dev/null)"
   [[ -n "$latest" && "$latest" != "null" ]] || return 1
 
-  obsolete="$(jq -r '(.labels // []) | map(.name) | index("obsolete") != null' \
+  obsolete="$(jq -r '[(.labels // [])[].name // "" | ascii_downcase] | index("obsolete") != null' \
     <<<"$latest" 2>/dev/null)"
   if [[ "$obsolete" == "true" ]]; then
     printf 'its most recent closed pull request carries the obsolete label'
     return 0
   fi
 
-  item="$(stem "$branch")"
-  if jq -e --arg r "$slug" --arg i "$item" \
-      'any(.[]; (.repo // "" | ascii_downcase) == ($r | ascii_downcase) and (.item // "") == $i)' \
+  item="$branch"
+  [[ -n "$branch_prefix" && "$item" == "$branch_prefix"* ]] && item="${item#"$branch_prefix"}"
+  item_stem="$(stem "$branch")"
+  if jq -e --arg r "$slug" --arg i "$item" --arg s "$item_stem" \
+      'any(.[]; (.repo // "" | ascii_downcase) == ($r | ascii_downcase)
+                and ((.item // "" | tostring) == $i or (.item // "" | tostring) == $s))' \
       <<<"$retirement_events_json" >/dev/null 2>&1; then
     printf 'a draft-obsolete-flagged or void-object-closed event already names this item'
     return 0

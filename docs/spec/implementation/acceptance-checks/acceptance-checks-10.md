@@ -624,7 +624,11 @@
    create` call ever made (agent-ops#2923); the same holds when that pull
    request carries no such label but a `draft-obsolete-flagged` or
    `void-object-closed` event, passed in on the union-log argument, already
-   names this branch's own item; and a ref whose most recent closed pull
+   names this branch's own item — matched on the whole `branch_prefix`-
+   stripped ref, 12-hex id included, as well as on the rival search's
+   further-reduced stem — and the same holds for a label differing only in
+   case; a run given no union-log argument reads no events and leaves its
+   own stdin unread; and a ref whose most recent closed pull
    request carries neither signal — an ordinary human decline — is
    unaffected, still reaching the rival-branch search and the ordinary
    recovery draft exactly as before this check existed. For the `td-record/*` namespace
