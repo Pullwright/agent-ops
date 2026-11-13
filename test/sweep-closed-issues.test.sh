@@ -67,6 +67,7 @@ printf '%s\n' "$*" >> "$S/calls.log"
 args="$*"
 case "$args" in
   "pr list -R "*" --state merged --label autonomous-agent --search "*)
+    [[ -f "$S/fail-cursor-list" ]] && exit 1
     if [[ "$args" == *"created:>"* ]]; then
       cat "$S/cursor-prs-next.json" 2>/dev/null || echo '[]'
     else
@@ -789,6 +790,44 @@ jq -n '[]' > "$c/prs.json"
 run_sweep_for "x/y" "$c" "$state22" >/dev/null
 assert_contains "pass 3: PR #8100 fails again — the count resumes from 1, not from 0" \
   '"x/y":{"stall":{"pr_number":8100,"count":2}}' "$(cat "$cursor_file22")"
+
+
+# --- Case 23: a failed cursor-side listing preserves an already-running ---
+# --- stall count rather than wiping it (agent-ops#2908) --------------------
+# A transient `gh pr list` failure on the cursor-side call degrades
+# $cursor_prs_json to [] with only a warning — which, with no flag of its
+# own, would look exactly like a pass that genuinely found nothing
+# cursor-sourced-incomplete and clear any stall this slug was carrying, even
+# though the blocking pull request was never actually reached this pass.
+c="$tmp_dir/case23"; mkdir -p "$c"
+state23="$tmp_dir/case23-state"
+cursor_file23="$state23/sweep-closed-issues-cursor.json"
+
+jq -n '[]' > "$c/prs.json"
+jq -n '[{number: 9100, url: "https://github.com/x/y/pull/9100",
+         body: "<!-- agent-ops:closes-issue item=9101 -->",
+         mergeCommit: {oid: "v1"}, createdAt: "2026-11-09T00:00:00Z"}]' \
+  > "$c/cursor-prs.json"
+jq -n '{state: "open"}' > "$c/issue-9101"
+touch "$c/fail-close-9101"
+
+run_sweep_for "x/y" "$c" "$state23" >/dev/null
+assert_contains "pass 1: PR #9100 fails to close — a real stall starts at 1" \
+  '"x/y":{"stall":{"pr_number":9100,"count":1}}' "$(cat "$cursor_file23")"
+
+# The cursor-side listing call itself now fails outright — PR #9100's row
+# is never reached this pass, so this must not count as the gate resolving.
+touch "$c/fail-cursor-list"
+run_sweep_for "x/y" "$c" "$state23" >/dev/null
+assert_contains "pass 2: the cursor listing itself fails — the stall survives unchanged" \
+  '"x/y":{"stall":{"pr_number":9100,"count":1}}' "$(cat "$cursor_file23")"
+
+# The listing recovers, and PR #9100 still fails to close — the count
+# resumes from 1, never having been wiped by the failed listing in between.
+rm -f "$c/fail-cursor-list"
+run_sweep_for "x/y" "$c" "$state23" >/dev/null
+assert_contains "pass 3: the count resumes from 1, not from 0" \
+  '"x/y":{"stall":{"pr_number":9100,"count":2}}' "$(cat "$cursor_file23")"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"

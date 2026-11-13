@@ -268,9 +268,17 @@ cursor_prs_json="$("$GH" pr list -R "$slug" --state merged --label "$pr_label" \
   --search "$cursor_search" \
   --json number,body,url,mergeCommit,headRefName,mergedAt,mergedBy,closingIssuesReferences,createdAt \
   --limit "$pr_search_limit" 2>/dev/null)" || cursor_prs_json=""
+# Tracked separately from $cursor_batch_incomplete (set later, in the main
+# loop below): this call either succeeded or it didn't, known here and now,
+# before any cursor-sourced row exists to process — a failed call leaves
+# nothing for the loop to find incomplete, so without this flag the clearing
+# guard below could not tell "the gate genuinely resolved" apart from "the
+# listing never ran" (agent-ops#2908).
+cursor_listing_failed=0
 if [[ -z "$cursor_prs_json" ]]; then
   warn "could not list merged, $pr_label-labelled pull requests past the saved cursor — this pass only covers the most recently updated window"
   cursor_prs_json='[]'
+  cursor_listing_failed=1
 fi
 
 # Provenance for the cursor-advance gate below (see this script's own
@@ -674,10 +682,15 @@ advance_created_at=0
 # let recurring budget exhaustion wipe out progress toward $stall_threshold
 # indefinitely, even though the row itself never stopped being stuck. Only a
 # pass with no cursor-sourced row incomplete at all — $cursor_batch_incomplete
+# stays 0 — AND whose cursor listing itself actually ran — $cursor_listing_failed
 # stays 0 — means the gate genuinely resolved (or was never really stalled),
-# which is the one case that clears any stall this slug was carrying. A
-# budget-deferred pass with no new stall candidate instead carries the
-# persisted count/PR forward unchanged, same as doing nothing.
+# which is the one case that clears any stall this slug was carrying. A pass
+# whose cursor listing call failed outright leaves no cursor-sourced row to
+# find incomplete either, which would otherwise look exactly like the gate
+# resolving and wipe out progress toward $stall_threshold for a reason the
+# blocking pull request was never actually clear of (agent-ops#2908) — so
+# that pass, like a budget-deferred one, instead carries the persisted
+# count/PR forward unchanged, same as doing nothing.
 new_skip_list_json="$skip_list_json"
 new_stall_count="$stall_count"
 new_stall_pr="$stall_pr_number"
@@ -694,7 +707,7 @@ if [[ -n "$blocking_stall_pr" ]]; then
     new_stall_count=0
     new_stall_pr=0
   fi
-elif [[ "$cursor_batch_incomplete" -eq 0 ]]; then
+elif [[ "$cursor_batch_incomplete" -eq 0 && "$cursor_listing_failed" -eq 0 ]]; then
   new_stall_count=0
   new_stall_pr=0
 fi

@@ -1224,7 +1224,14 @@
     real read/close failure — never for a close the shared budget merely
     deferred, which already expects to resolve once more budget is available
     — resets to 1 the moment a different pull request blocks the gate, and
-    clears entirely the moment no cursor-sourced row is incomplete. Once the
+    clears entirely the moment no cursor-sourced row is incomplete and the
+    cursor listing itself actually ran. A pass whose cursor-side listing call
+    fails outright leaves no cursor-sourced row to find incomplete either,
+    which would otherwise look exactly like the gate genuinely resolving and
+    wipe out a persisted stall for a reason the blocking pull request was
+    never actually clear of (agent-ops#2908) — so that pass, like a
+    budget-deferred one, carries any persisted stall forward unchanged
+    instead. Once the
     same pull request has blocked three consecutive passes this way, it is
     added to the skip-list and the counter clears: a skip-listed pull
     request's row stops holding the cursor, so the walk resumes past it,
