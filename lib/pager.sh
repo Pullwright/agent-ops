@@ -831,9 +831,14 @@ _pager_evaluate_one() {
 # other key gets (`pager_state_for`/`pager_last_event` against UNION_LOG_FILE
 # — no separate extract exists here, since the early return this is called
 # from runs before `pager_evaluate` ever makes one), firing after
-# MIN_FIRING_MINUTES and calling `pager_file` directly once it does; closing
-# it again is `pager_evaluate`'s own job, on its ordinary, non-skipped path,
-# since this guard is never called there.
+# MIN_FIRING_MINUTES and calling `pager_file` directly once it does, and
+# resetting `candidate` back to `clear` with `pager-candidate-cleared` the
+# moment `last_ok_ts` is no longer overdue before it ever fired — the same
+# `candidate:false` reset `_pager_evaluate_one` gives every registered key,
+# so a `candidate` left over from an incident that cleared on its own never
+# lends its stale `first_seen` to a later, unrelated freeze. Closing a
+# `fired` key again is `pager_evaluate`'s own job, on its ordinary,
+# non-skipped path, since this guard is never called there.
 _pager_evaluate_frozen_guard() {
   local log_file="$1" node="$2" cycle="$3" pager_repo="$4" label="$5" assignee="$6" \
         webhook_url="$7" min_firing_minutes="$8" node_stale_after_minutes="$9" \
@@ -845,16 +850,17 @@ _pager_evaluate_frozen_guard() {
   last_ok_epoch="$(date -u -d "$peers_last_ok_ts" +%s 2>/dev/null)"
   [[ -n "$last_ok_epoch" ]] || return 0
   local age_min=$(( ( $(date -u +%s) - last_ok_epoch ) / 60 ))
+  local overdue="false"
   jq -ne --argjson a "$age_min" --argjson t "$node_stale_after_minutes" \
-    '$a >= (2 * $t)' >/dev/null 2>&1 || return 0
+    '$a >= (2 * $t)' >/dev/null 2>&1 && overdue="true"
   local key="pager-eval-frozen" state
   state="$(pager_state_for "$key" < "$union_log_file")"
-  case "$state" in
-    clear)
+  case "${state}:${overdue}" in
+    clear:true)
       pager_log_event "$log_file" "$node" "$cycle" "pager-candidate" \
         "$(jq -nc --arg k "$key" --arg fs "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{key: $k, first_seen: $fs}')"
       ;;
-    candidate)
+    candidate:true)
       local cand first_seen first_seen_epoch cand_age_min evidence remedy_arg
       cand="$(pager_last_event "$key" < "$union_log_file")"
       first_seen="$(jq -r '.first_seen // empty' <<<"$cand" 2>/dev/null)"
@@ -868,7 +874,11 @@ _pager_evaluate_frozen_guard() {
         "$pager_repo" "$label" "$assignee" "$webhook_url" "$log_file" "$node" "$cycle" '[]' \
         "$notify_events_json" "$notify_min_interval" "$union_log_file"
       ;;
-    *) ;;  # fired: nothing new to write, matches every other key's own hysteresis
+    candidate:false)
+      pager_log_event "$log_file" "$node" "$cycle" "pager-candidate-cleared" \
+        "$(jq -nc --arg k "$key" '{key: $k}')"
+      ;;
+    *) ;;  # clear:false, fired:true/false — nothing new to write here
   esac
 }
 
@@ -957,13 +967,23 @@ pager_evaluate() {
   done
   # `pager-eval-frozen` is never in PAGER_KEYS (it is unregistered — see
   # `_pager_evaluate_frozen_guard`'s own header), so the loop above never
-  # closes it: this is its own `fired:false` transition, by hand, the moment
-  # evaluation reaches this ordinary, non-skipped path with the key still
-  # `fired` — the peers view that was frozen is fresh again.
-  if [[ "$(pager_state_for "pager-eval-frozen" < "${pager_events_file:-$union_log_file}")" == "fired" ]]; then
+  # transitions it: these are its own `fired:false`/`candidate:false`
+  # transitions, by hand, the moment evaluation reaches this ordinary,
+  # non-skipped path — the peers view that was frozen is fresh again. A
+  # `candidate` left standing (the guard's own hysteresis had not yet
+  # reached MIN_FIRING_MINUTES when `last_ok_ts` caught up) resets to
+  # `clear` rather than lingering as the latest event for the key: left
+  # alone, its `first_seen` would otherwise be handed to an unrelated, later
+  # freeze incident as that incident's own start time.
+  local frozen_state
+  frozen_state="$(pager_state_for "pager-eval-frozen" < "${pager_events_file:-$union_log_file}")"
+  if [[ "$frozen_state" == "fired" ]]; then
     pager_close "pager-eval-frozen" "the peers view is fresh again" "$pager_repo" "$label" \
       "$log_file" "$node" "$cycle" "$webhook_url" "$notify_events_json" "$notify_min_interval" \
       "$union_log_file"
+  elif [[ "$frozen_state" == "candidate" ]]; then
+    pager_log_event "$log_file" "$node" "$cycle" "pager-candidate-cleared" \
+      "$(jq -nc --arg k "pager-eval-frozen" '{key: $k}')"
   fi
   PAGER_EVAL_PAGER_EVENTS_FILE=""
   [[ -z "$pager_events_file" ]] || rm -f "$pager_events_file"

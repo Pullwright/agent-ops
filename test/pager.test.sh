@@ -667,6 +667,39 @@ assert_eq "once the peers view is fresh again (PEERS_STALE omitted), pager-eval-
 assert_eq "  ... the tracking issue got a close call" "1" \
   "$(grep -c '^issue close' "$GH_CALLS_FILE")"
 
+# --- a candidate that recovers before firing resets to clear, not fired -----
+# Mirrors _pager_evaluate_one's own candidate:false reset: a candidate the
+# peers view recovers out of before MIN_FIRING_MINUTES elapses must not
+# linger as the key's latest event, or a later, unrelated freeze would
+# inherit its stale first_seen and fire immediately off it.
+union_log3="$WORKDIR/frozen-recovers.jsonl"; : > "$union_log3"
+: > "$GH_CALLS_FILE"; : > "$REMEDY_CALLS_FILE"
+STUB_GH_CREATE_FAIL=""; STUB_GH_LIST_OPEN="[]"; STUB_GH_LIST_ALL="[]"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "the-owner" "" 999999 "$union_log3" "$union_log3" '[]' n1 c1 \
+  "" "10" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2000-01-01T00:00:00Z"
+assert_eq "candidate logged, held below its own (very high) firing threshold" \
+  "1" "$(count_events "$union_log3" pager-candidate pager-eval-frozen)"
+assert_eq "  ... not fired" "0" "$(count_events "$union_log3" pager-fired pager-eval-frozen)"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log3" "$union_log3" '[]' n1 c1
+assert_eq "peers fresh again before firing: the candidate resets to clear, not fired" \
+  "1" "$(count_events "$union_log3" pager-candidate-cleared pager-eval-frozen)"
+assert_eq "  ... never filed" "0" "$(count_events "$union_log3" pager-fired pager-eval-frozen)"
+assert_eq "  ... no issue created" "0" "$(grep -c '^issue create' "$GH_CALLS_FILE")"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "the-owner" "" 0 "$union_log3" "$union_log3" '[]' n1 c1 \
+  "" "10" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2000-01-01T00:00:00Z"
+assert_eq "a later, unrelated freeze starts its own fresh candidate rather than reusing the old first_seen" \
+  "2" "$(count_events "$union_log3" pager-candidate pager-eval-frozen)"
+assert_eq "  ... and does not fire immediately off the stale first_seen" \
+  "0" "$(count_events "$union_log3" pager-fired pager-eval-frozen)"
+
 # The existing peer-view-stale block above (no threshold passed) must stay a
 # true no-op for this key too: an empty/omitted node_stale_after_minutes
 # makes no transition at all, only the ordinary skip.
