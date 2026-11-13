@@ -622,6 +622,64 @@ pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
 assert_eq "an empty PEERS_STALE (every call site before #2266) behaves exactly as omitted" \
   "1" "$(count_events "$union_log2" pager-candidate peerstale)"
 
+# --- a frozen peers view: pager-eval-frozen catches it directly (agent-ops#2918) -
+# Special-cased inside the same peer-view-stale early return above, never
+# through pager_register/PAGER_KEYS (the branch that skips that loop
+# entirely): catches `peers_last_ok_ts` frozen past 2x
+# node_stale_after_minutes, rather than leaving it to node-stale to notice,
+# up to ~15h later, that the node behind the frozen marker has gone fully
+# dark for publication too.
+
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
+union_log="$WORKDIR/frozen.jsonl"; : > "$union_log"
+: > "$GH_CALLS_FILE"; : > "$REMEDY_CALLS_FILE"
+STUB_GH_CREATE_FAIL=""; STUB_GH_LIST_OPEN="[]"; STUB_GH_LIST_ALL="[]"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "the-owner" "" 0 "$union_log" "$union_log" '[]' n1 c1 \
+  "" "10" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2000-01-01T00:00:00Z"
+assert_eq "tick 1: last_ok_ts frozen past 2x node_stale_after_minutes logs a pager-candidate for pager-eval-frozen" \
+  "1" "$(count_events "$union_log" pager-candidate pager-eval-frozen)"
+assert_eq "  ... not yet fired" "0" "$(count_events "$union_log" pager-fired pager-eval-frozen)"
+assert_eq "  ... and the ordinary skip is still logged too" "1" \
+  "$(count_events "$union_log" pager-evaluation-skipped)"
+assert_eq "  ... the remedy never ran — this key bypasses PAGER_KEYS/pager_register entirely" \
+  "0" "$(remedy_calls)"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "the-owner" "" 0 "$union_log" "$union_log" '[]' n1 c1 \
+  "" "10" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2000-01-01T00:00:00Z"
+assert_eq "tick 2 (hysteresis 0, still frozen): exactly one pager-fired for pager-eval-frozen" \
+  "1" "$(count_events "$union_log" pager-fired pager-eval-frozen)"
+assert_eq "  ... filed owner-only, assigned to the given assignee" "1" \
+  "$(grep '^issue create' "$GH_CALLS_FILE" | grep -c -- '--assignee the-owner')"
+assert_eq "  ... the remedy still never ran" "0" "$(remedy_calls)"
+
+STUB_GH_LIST_OPEN="$(jq -nc --arg u "$STUB_GH_CREATE_URL" \
+  '[{number: 601, url: $u, body: "ref: pager:pager-eval-frozen", stateReason: null}]')"
+
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "once the peers view is fresh again (PEERS_STALE omitted), pager-eval-frozen closes" \
+  "1" "$(count_events "$union_log" pager-cleared pager-eval-frozen)"
+assert_eq "  ... the tracking issue got a close call" "1" \
+  "$(grep -c '^issue close' "$GH_CALLS_FILE")"
+
+# The existing peer-view-stale block above (no threshold passed) must stay a
+# true no-op for this key too: an empty/omitted node_stale_after_minutes
+# makes no transition at all, only the ordinary skip.
+union_log2="$WORKDIR/frozen-no-threshold.jsonl"; : > "$union_log2"
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log2" "$union_log2" '[]' n1 c1 \
+  "" "" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2000-01-01T00:00:00Z"
+assert_eq "no node_stale_after_minutes: pager-eval-frozen makes no transition at all" \
+  "0" "$(count_events "$union_log2" pager-candidate pager-eval-frozen)"
+assert_eq "  ... and exactly one pager-evaluation-skipped, same as before this guard existed" \
+  "1" "$(count_events "$union_log2" pager-evaluation-skipped)"
+
 # --- the notify guard leaves the exit status alone ----------------------------
 # This file sources lib/pager.sh without lib/notify.sh, so `notify_post` is
 # undefined for every assertion above — which is the whole point of the

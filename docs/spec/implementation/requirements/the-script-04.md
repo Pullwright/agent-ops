@@ -1165,18 +1165,35 @@
      throughput loss traded against a self-correcting one;
    - the fleet dashboard — **degrade: badge** (the peers-staleness paragraph
      above; docs/spec/dashboard/state.md's `fleet.peers`);
-   - the pager (`lib/pager.sh`'s `pager_evaluate`) — **degrade: skip**
-     (agent-ops#2266). While the evaluating node's own `fleet_peers_stale`
-     holds, `pager_evaluate` makes no state transition for any key — every
-     invariant it registers reads `fleet_nodes_json` or the fleet union
-     either directly or through this node's own fetch, so a stale peers
-     marker cannot be told apart from a genuinely dark peer. It logs exactly
-     one `pager-evaluation-skipped {reason: "peer-view-stale", last_ok_ts}`
-     per evaluation instead, and resumes ordinary evaluation the moment its
-     own peers marker reads fresh again — the mechanism behind
-     agent-ops#2507, where a node-stale page fired and was legitimately
-     cleared by two different nodes' own fetch-poisoned views of each
-     other, while the peers it named had been cycling the entire time;
+   - the pager (`lib/pager.sh`'s `pager_evaluate`) — **degrade: skip, with
+     one direct guard** (agent-ops#2266, agent-ops#2918). While the
+     evaluating node's own `fleet_peers_stale` holds, `pager_evaluate` makes
+     no state transition for any *registered* key — every invariant it
+     registers reads `fleet_nodes_json` or the fleet union either directly
+     or through this node's own fetch, so a stale peers marker cannot be
+     told apart from a genuinely dark peer. It logs exactly one
+     `pager-evaluation-skipped {reason: "peer-view-stale", last_ok_ts}` per
+     evaluation instead of evaluating the registry, and resumes ordinary
+     evaluation the moment its own peers marker reads fresh again — the
+     mechanism behind agent-ops#2507, where a node-stale page fired and was
+     legitimately cleared by two different nodes' own fetch-poisoned views
+     of each other, while the peers it named had been cycling the entire
+     time. One key, `pager-eval-frozen` (owner-only), is driven directly from
+     inside this same branch instead — never through
+     `pager_register`/`PAGER_KEYS`, which the branch skips entirely —
+     because the fact it catches is this very skip persisting: once the
+     peers marker's own `last_ok_ts` has not advanced for 2×
+     `node_stale_after_minutes` (the same doubling `node-stale` itself
+     uses), it fires through the ordinary candidate→fired hysteresis and
+     closes again once `pager_evaluate` next runs its ordinary,
+     non-skipped path with the key still `fired`. Before this, a frozen
+     peers-view refresh was caught only by `node-stale`, up to twice that
+     same threshold later still — the gap agent-ops#2918 names, where the
+     frozen marker preceded the same node going fully stale for
+     publication by some fifteen hours with nothing alerting on the gap
+     itself. An absent or non-numeric `node_stale_after_minutes`, or an
+     absent `last_ok_ts` (every call site before agent-ops#2918), leaves
+     the skip as the only thing logged, exactly as before;
    - the Monitor digest (`lib/monitor-digest.sh`) — **degrade: opening line**
      (agent-ops#2266). `monitor_digest_build`'s own `PEERS_JSON` carries the
      assembling node's peers-marker status into the digest, and
