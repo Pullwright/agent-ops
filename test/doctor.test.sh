@@ -2764,6 +2764,65 @@ assert_eq "a livelocked verdict is never recorded as accepted, whatever the sett
 assert_eq "...the raw verdict itself is still livelocked" \
   "livelocked" "$(jq -r '.memory_cgroup' "$mc_livelock_status_file" 2>/dev/null)"
 
+# --- Memory: an ignored AGENT_OPS_MEMORY_CGROUP_ACCEPTED is warned about on
+#     every verdict, not just unbounded/livelocked (agent-ops#2919) ---------
+#
+# Before this, the "setting is ignored" warning only ever fired from inside
+# the `unbounded)` and `livelocked)` arms of doctor.sh's own case statement,
+# so a `bounded` node (memory.high set on the container itself) stayed
+# completely silent about a setting that named `livelocked` or a typo/stale
+# verdict. Both now warn, from the same check that covers every other verdict
+# too.
+
+mc_bounded_cgroup_root="$tmp/mc-bounded-cgroup"
+mkdir -p "$mc_bounded_cgroup_root"
+printf '786432000\n' > "$mc_bounded_cgroup_root/memory.high"
+printf '1610612736\n' > "$mc_bounded_cgroup_root/memory.max"
+printf '400000000\n' > "$mc_bounded_cgroup_root/memory.current"
+
+mc_bounded_livelocked_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_bounded_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "a bounded verdict's own line still fires" \
+  "[warn] container memory: memory.high is set on this container" "$mc_bounded_livelocked_out"
+assert_contains "...and a livelocked acceptance setting is now warned about on a bounded verdict too" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=livelocked is set but ignored" "$mc_bounded_livelocked_out"
+
+mc_bounded_typo_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_bounded_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$tmp/mc-no-such-parent-high" \
+  MEMORY_CGROUP_PARENT_MAX="$tmp/mc-no-such-parent-max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbonded \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "a typo'd setting on a bounded verdict is now warned about, naming the setting and the live verdict" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbonded is set but ignored — it does not match the live verdict (bounded)" "$mc_bounded_typo_out"
+
+# The unbounded case already warns via the ordinary container-memory line
+# (asserted on $mc_stale_out above); it now also names the ignored setting.
+assert_contains "a mismatched setting on an unbounded verdict also names the ignored setting" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=bounded is set but ignored — it does not match the live verdict (unbounded)" "$mc_stale_out"
+
+# A livelocked verdict never honours any setting, but a setting that merely
+# fails to match it (rather than naming the wedge itself) stays as silent as
+# an unset one - only a setting literally equal to "livelocked" (asserted
+# above) says anything on a livelocked verdict.
+mc_livelock_mismatch_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_livelock_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$mc_livelock_parent_high" \
+  MEMORY_CGROUP_PARENT_MAX="$mc_livelock_parent_max" \
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "the livelock warning still fires with a mismatched (non-livelocked) setting" \
+  "[warn] container memory: this container" "$mc_livelock_mismatch_out"
+assert_not_contains "...but no 'is set but ignored' warning appears for it - livelocked only ever warns about the literal livelocked setting" \
+  "is set but ignored" "$mc_livelock_mismatch_out"
+
 # --- --unattended: a refused model credential is read from this node's own
 #     log.jsonl, by name, without the live credential ever being read
 #     (agent-ops#2308) --------------------------------------------------------
