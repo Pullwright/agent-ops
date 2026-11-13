@@ -18,7 +18,7 @@
     `recheck-clean`, `item-void`, `unvoided`, `item-refined`,
     `enabler-examined`, `refiner-examined`, `own-label-action`,
     `label-remove-failed`, `escalated`,
-    `enabler-adjudication`,
+    `enabler-adjudication`, `enabler-dependency-deferred`,
     `crash-loop-escalated`, `void-refusal-escalated`,
     `enabler-void-refusal-escalated-skipped`, `provider-unreachable`,
     `labels-ensured`, `labels-minted`, `limit-hit`, `limit-cleared`,
