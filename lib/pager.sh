@@ -239,6 +239,27 @@ pager_registered_keys() {
   for k in "${PAGER_KEYS[@]}"; do printf '%s\n' "$k"; done
 }
 
+# Keys driven directly from inside a branch of `pager_evaluate` itself
+# (`_pager_evaluate_frozen_guard`'s own header) rather than through
+# `pager_register`/`PAGER_KEYS` — a key reached only from a branch that
+# skips the `PAGER_KEYS` loop entirely can never sit in that loop, so it can
+# never appear in `pager_registered_keys` above either. Named here, once,
+# so `lib/pager-invariants.sh`'s orphaned-key check
+# (`pager_eval_page_outlived_item`/`pager_remedy_page_outlived_item`) can
+# tell "never registered because it is driven directly" apart from "was
+# registered once, then renamed or retired out from under an open page"
+# (agent-ops#2575) — without this list, a directly-driven key's own page is
+# indistinguishable from the latter and gets retired within one evaluation
+# pass of ever being filed (agent-ops#2918, caught in review on PR #2924).
+declare -ga PAGER_DIRECT_KEYS=("pager-eval-frozen")
+
+# pager_direct_keys — one directly-driven key per line (see PAGER_DIRECT_KEYS
+# above).
+pager_direct_keys() {
+  local k
+  for k in "${PAGER_DIRECT_KEYS[@]}"; do printf '%s\n' "$k"; done
+}
+
 # --- Event log helpers ---------------------------------------------------------
 # pager_log_event LOG_FILE NODE CYCLE EVENT FIELDS_JSON
 # The same envelope agent-cycle.sh's own log_event writes — {ts, cycle, node,

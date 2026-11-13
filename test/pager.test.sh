@@ -153,6 +153,8 @@ assert_eq "registered keys, in registration order" "k1 k2" "$(pager_registered_k
 pager_register k1 stub_eval owner-only "changed my mind"
 assert_eq "re-registering a key replaces it rather than duplicating" "k1 k2" "$(pager_registered_keys | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "  ... and the new registration wins" "owner-only" "${PAGER_REMEDY_CLASS[k1]}"
+assert_eq "pager_direct_keys names pager-eval-frozen, which never goes through pager_register" \
+  "pager-eval-frozen" "$(pager_direct_keys | tr '\n' ' ' | sed 's/ $//')"
 
 # A fifth, optional argument (agent-ops#1282) — MIN_FIRING_MINUTES_OVERRIDE,
 # `node-stale`'s own per-key filing-hysteresis override — records against the
