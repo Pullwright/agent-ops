@@ -90,6 +90,131 @@ _repo_order_default_branch() {
   printf '%s\t%s' "$db" "$ts"
 }
 
+# agent-ops#2916: the gated-extra-read half of the cached branch's currency
+# re-test, for whatever staleness `pr_band_state_reapply` (lib/candidate-
+# select.sh) cannot see from `gather_source_state`'s own `open_prs` sample
+# alone — a conflict resolved while the pull request stays open
+# (merge-conflicts), a re-queue (dequeued), a reconciled comment
+# (landing-refusals), or a dismissed/fixed alert (findings, which has no
+# `open_prs` angle at all). Each of the four functions below:
+#
+#   - returns BAND-JSON unmodified, with no GitHub read at all, when it is
+#     empty or not an array — the common case, and the one requirement 48's
+#     own hot-path gating discipline (agent-ops#2910) says must cost nothing;
+#   - otherwise makes one targeted read per surviving entry, reusing the same
+#     live field the entry's own gatherer (scripts/gather-*.sh) tests to mint
+#     it, and drops only the entries that read confirms are no longer stale;
+#   - fails open **per entry**, not per band: a read that errors for one
+#     entry leaves that entry exactly as it arrived, never treated as a
+#     reason to abandon the whole call. A malformed BAND-JSON is handed back
+#     unmodified the same way `pr_band_state_reapply` does.
+#
+# Called only from the cached branch of `gather_ordered_repos` below, after
+# `pr_band_state_reapply` has already dropped whatever `open_prs` alone
+# settles, so a conflict/dequeue/refusal whose pull request has simply closed
+# never reaches here at all.
+
+# _merge_conflicts_state_reapply <band-json> <slug>
+# Mirrors `gather-merge-conflicts.sh`'s own candidate test: a surviving entry
+# is dropped once `gh pr view`'s live `mergeable` no longer reads
+# `CONFLICTING` (resolved by a rebase, or by the base moving back underneath
+# it) — never on `UNKNOWN`, which is transient and not this gatherer's own
+# admitting state either.
+_merge_conflicts_state_reapply() {
+  local band="$1" slug="${2:-}" gh_bin="${CANDIDATE_GATHER_GH:-gh}"
+  jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  [[ "$(jq 'length' <<<"$band" 2>/dev/null)" != "0" ]] || { printf '%s' "$band"; return 0; }
+  local stale='[]' num mergeable
+  while IFS= read -r num; do
+    [[ -n "$num" ]] || continue
+    mergeable="$("$gh_bin" pr view "$num" -R "$slug" --json mergeable --jq '.mergeable' 2>/dev/null)" || continue
+    [[ -n "$mergeable" && "$mergeable" != "CONFLICTING" ]] || continue
+    stale="$(jq -c --argjson n "$num" '. + [$n]' <<<"$stale" 2>/dev/null || printf '%s' "$stale")"
+  done < <(jq -r '.[].pr_number' <<<"$band" 2>/dev/null)
+  jq -c --argjson stale "$stale" '[.[] | select(.pr_number as $n | ($stale | index($n)) == null)]' <<<"$band" 2>/dev/null \
+    || printf '%s' "$band"
+}
+
+# _dequeued_state_reapply <band-json> <slug>
+# Mirrors `gather-dequeued.sh`'s own answered-at-mint test's queue half: a
+# surviving entry is dropped once `lib/merge-queue.sh`'s `merge_queue_probe`,
+# re-read live, reports the pull request `queued` again — it has been
+# re-enqueued (most often by a human re-clicking "Merge when ready" on the
+# strength of the Implementer's own diagnosis comment) and is no longer a
+# `dequeued` candidate at all. A probe that cannot answer leaves the entry as
+# it arrived, the same unknown-decides-nothing direction `merge_queue_probe`'s
+# own header already requires of every caller.
+_dequeued_state_reapply() {
+  local band="$1" slug="${2:-}"
+  jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  [[ "$(jq 'length' <<<"$band" 2>/dev/null)" != "0" ]] || { printf '%s' "$band"; return 0; }
+  local stale='[]' num mq_probe mq_queued
+  while IFS= read -r num; do
+    [[ -n "$num" ]] || continue
+    mq_probe="$(merge_queue_probe "$slug" "$num" 2>/dev/null)" || continue
+    mq_queued="$(jq -r '.queued' <<<"$mq_probe" 2>/dev/null)" || continue
+    [[ "$mq_queued" == "true" ]] || continue
+    stale="$(jq -c --argjson n "$num" '. + [$n]' <<<"$stale" 2>/dev/null || printf '%s' "$stale")"
+  done < <(jq -r '.[].pr_number' <<<"$band" 2>/dev/null)
+  jq -c --argjson stale "$stale" '[.[] | select(.pr_number as $n | ($stale | index($n)) == null)]' <<<"$band" 2>/dev/null \
+    || printf '%s' "$band"
+}
+
+# _landing_refusals_state_reapply <band-json>
+# Mirrors `gather-landing-refusals.sh`'s own answered clause: a surviving
+# entry is dropped once `lib/reconciliation-gate.sh`'s own
+# `reconciliation_unreconciled_comments`, asked fresh right now against the
+# entry's own `pr_url`, reports no unreconciled human comments left — the
+# Implementer (or a human) answered every one since the cached gather ran. A
+# read that fails outright (that function prints `[]` on failure too, so the
+# exit status, not the content, is what is tested) leaves the entry exactly
+# as it arrived.
+_landing_refusals_state_reapply() {
+  local band="$1"
+  jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  [[ "$(jq 'length' <<<"$band" 2>/dev/null)" != "0" ]] || { printf '%s' "$band"; return 0; }
+  local stale='[]' num pr_url unreconciled
+  while IFS=$'\t' read -r num pr_url; do
+    [[ -n "$num" && -n "$pr_url" ]] || continue
+    unreconciled="$(reconciliation_unreconciled_comments "$pr_url")" || continue
+    jq -e 'type == "array"' <<<"$unreconciled" >/dev/null 2>&1 || continue
+    [[ "$(jq 'length' <<<"$unreconciled" 2>/dev/null)" == "0" ]] || continue
+    stale="$(jq -c --argjson n "$num" '. + [$n]' <<<"$stale" 2>/dev/null || printf '%s' "$stale")"
+  done < <(jq -r '.[] | "\(.pr_number)\t\(.pr_url)"' <<<"$band" 2>/dev/null)
+  jq -c --argjson stale "$stale" '[.[] | select(.pr_number as $n | ($stale | index($n)) == null)]' <<<"$band" 2>/dev/null \
+    || printf '%s' "$band"
+}
+
+# _findings_state_reapply <band-json> <slug>
+# `findings_raw` has no `open_prs`-equivalent cheap sample at all (point 4,
+# agent-ops#2916) — every alert's own `state` is this band's whole currency
+# re-test, gated on non-empty exactly like its three PR-keyed siblings. A
+# surviving entry is dropped once the same alert, re-read live by the kind
+# its own `ref` names (`dependabot-alert-<n>` / `code-scanning-alert-<n>`,
+# matching the `kind` field `gather-findings.sh` already stamps each finding
+# with), no longer reports `state == "open"` — dismissed, fixed, or the
+# underlying dependency/code path gone. A read that fails or returns an
+# unreadable state leaves the entry exactly as it arrived.
+_findings_state_reapply() {
+  local band="$1" slug="${2:-}" gh_bin="${CANDIDATE_GATHER_GH:-gh}"
+  jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  [[ "$(jq 'length' <<<"$band" 2>/dev/null)" != "0" ]] || { printf '%s' "$band"; return 0; }
+  local stale='[]' ref kind num path state
+  while IFS=$'\t' read -r ref kind num; do
+    [[ -n "$ref" && -n "$num" ]] || continue
+    case "$kind" in
+      dependabot) path="repos/$slug/dependabot/alerts/$num" ;;
+      code-scanning) path="repos/$slug/code-scanning/alerts/$num" ;;
+      *) continue ;;
+    esac
+    state="$("$gh_bin" api "$path" --jq '.state // empty' 2>/dev/null)" || continue
+    [[ -n "$state" && "$state" != "open" ]] || continue
+    stale="$(jq -c --arg r "$ref" '. + [$r]' <<<"$stale" 2>/dev/null || printf '%s' "$stale")"
+  done < <(jq -r '.[] | "\(.ref)\t\(.kind)\t\(.number)"' <<<"$band" 2>/dev/null)
+  jq -c --argjson stale "$stale" '[.[] | select(.ref as $r | ($stale | index($r)) == null)]' <<<"$band" 2>/dev/null \
+    || printf '%s' "$band"
+}
+
 gather_ordered_repos() {
 if [[ -n "$REPO_FILTER" ]]; then
   repos_json="$(jq -c --arg f "$REPO_FILTER" '[.[] | select(.slug == $f or (.slug | endswith("/" + $f)))]' <<<"$all_repos_json")"
@@ -652,6 +777,31 @@ while IFS=$'\t' read -r _ slug default_branch; do
   issues_excluded_raw="$(jq -c '.issues_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
   tech_debt_raw="$(jq -c '.tech_debt_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   tech_debt_excluded_raw="$(jq -c '.tech_debt_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
+
+  # agent-ops#2916: the currency re-test the issues band alone had
+  # (`issue_state_reapply`, just below) extended to the four replayed bands
+  # keyed on `pr_number` plus `findings_raw`. `pr_band_state_reapply`
+  # (lib/candidate-select.sh) re-applies this cycle's own `$state.open_prs`
+  # sample at zero extra GitHub cost; `_merge_conflicts_state_reapply`/
+  # `_dequeued_state_reapply`/`_landing_refusals_state_reapply`/
+  # `_findings_state_reapply` (above) each make one further, gated read per
+  # band only when the open_prs pass leaves it non-empty. Gated on
+  # `$state.ok` exactly like the issues band's own reapplication below: when
+  # the sample itself did not succeed, every one of these four bands is left
+  # exactly as replayed — "unknown decides nothing" here too. `findings_raw`
+  # has no `open_prs` equivalent, so its own reapplication runs unconditionally
+  # (gated only on its own band being non-empty, inside the function itself).
+  if [[ "$(jq -r '.ok // false' <<<"$state" 2>/dev/null)" == "true" ]]; then
+    open_prs_json="$(jq -c '.open_prs // []' <<<"$state" 2>/dev/null || echo '[]')"
+    abandoned_drafts_raw="$(pr_band_state_reapply "$abandoned_drafts_raw" "$open_prs_json" "true")"
+    merge_conflicts_raw="$(pr_band_state_reapply "$merge_conflicts_raw" "$open_prs_json" "false")"
+    dequeued_raw="$(pr_band_state_reapply "$dequeued_raw" "$open_prs_json" "false")"
+    landing_refusals_raw="$(pr_band_state_reapply "$landing_refusals_raw" "$open_prs_json" "false")"
+    merge_conflicts_raw="$(_merge_conflicts_state_reapply "$merge_conflicts_raw" "$slug")"
+    dequeued_raw="$(_dequeued_state_reapply "$dequeued_raw" "$slug")"
+    landing_refusals_raw="$(_landing_refusals_state_reapply "$landing_refusals_raw")"
+  fi
+  findings_raw="$(_findings_state_reapply "$findings_raw" "$slug")"
 
   findings="[]"
   if jq -e 'any(.[]; . == "security" or . == "code-quality")' <<<"$sources" >/dev/null 2>&1; then

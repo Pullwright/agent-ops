@@ -532,9 +532,36 @@ with the Reviewer's own.
     cycle regardless. The `Blocked-by:` third of that same drop stays as
     recent as the band's own last fresh read (34j), since resolving it needs
     the whole thread and a live per-reference check this sample does not
-    carry. `--repo` narrows the configured set to one repository, which
-    is then always the one picked, exactly as before this requirement
-    existed.
+    carry.
+
+    Four more of these replayed bands — `abandoned_drafts`, `merge_conflicts`,
+    `dequeued` and `landing_refusals`, each keyed on `pr_number` — get an
+    analogous currency re-test (agent-ops#2916), so a replayed entry whose
+    underlying GitHub state has since changed stops being offered, and stops
+    counting in requirement 3x's own corroboration denominator, for the rest
+    of this node's rotation. `pr_band_state_reapply`
+    (lib/candidate-select.sh) drops any entry whose pull request is absent
+    from this same `gather_source_state` sample's own open-PR list, and —
+    for `abandoned_drafts` alone — any entry whose matching pull request has
+    flipped from draft to ready, both at zero further GitHub cost and gated
+    on `state.ok` exactly like the issues band's own reapplication above.
+    Whatever that sample cannot settle on its own — a conflict resolved while
+    the pull request stays open (`merge_conflicts`), a re-queue (`dequeued`),
+    a reconciled comment (`landing_refusals`) — gets one further, targeted
+    live read per band (`_merge_conflicts_state_reapply`/
+    `_dequeued_state_reapply`/`_landing_refusals_state_reapply`,
+    lib/candidate-gather.sh), made only when that band survives the
+    `open_prs` pass non-empty, reusing the same live field each band's own
+    gatherer already tests to mint a candidate (`mergeable`,
+    `merge_queue_probe`'s `queued`, `reconciliation_unreconciled_comments`
+    respectively), and failing open per entry — never per band — on any read
+    error. `findings_raw` has no `open_prs`-equivalent cheap sample at all, so
+    its own reapplication (`_findings_state_reapply`) is the gated live read
+    alone — re-checking each surviving alert's own `state` by the kind its
+    `ref` names — and runs unconditionally rather than gated on `state.ok`,
+    since nothing about it depends on that sample. `--repo` narrows the
+    configured set to one repository, which is then always the one picked,
+    exactly as before this requirement existed.
 
     The ten values `expensive_gather_cache_save` writes into a repository's
     cache document — the eight raw bands plus `issues_excluded` and
