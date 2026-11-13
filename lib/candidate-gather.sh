@@ -116,10 +116,15 @@ _repo_order_default_branch() {
 
 # _merge_conflicts_state_reapply <band-json> <slug>
 # Mirrors `gather-merge-conflicts.sh`'s own candidate test: a surviving entry
-# is dropped once `gh pr view`'s live `mergeable` no longer reads
-# `CONFLICTING` (resolved by a rebase, or by the base moving back underneath
-# it) — never on `UNKNOWN`, which is transient and not this gatherer's own
-# admitting state either.
+# is dropped only on positive evidence that the conflict is gone — `gh pr
+# view`'s live `mergeable` reading `MERGEABLE` exactly (resolved by a rebase,
+# or by the base moving back underneath it). Anything else keeps the entry,
+# `UNKNOWN` above all: GitHub computes mergeability lazily, so the first read
+# of a pull request nobody has recently viewed routinely returns it, and this
+# branch runs precisely on the cycles when nothing has been poking this
+# repo's pull requests. It is transient, it is not this gatherer's own
+# admitting state either, and dropping on it would retire a genuinely
+# still-conflicting candidate — the "too eager" direction.
 _merge_conflicts_state_reapply() {
   local band="$1" slug="${2:-}" gh_bin="${CANDIDATE_GATHER_GH:-gh}"
   jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }

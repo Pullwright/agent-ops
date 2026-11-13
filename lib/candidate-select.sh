@@ -302,11 +302,16 @@ issue_state_reapply() {  # <candidates-json> <state-issues-json> <prior-excluded
 # (it is now review-feedback's or a human's to act on), while the other three
 # bands' candidacy never turns on draft state at all.
 #
-# Same fail-open direction as `issue_state_reapply`: a candidate `open_prs`
-# does not name at all is left exactly as it arrived — this is a visibility
-# layer over the gatherer's own candidate rule, never a second hard gate, so
-# malformed input (BAND-JSON not an array) hands the band straight back
-# rather than refusing it.
+# Absence from `open_prs` is a drop here, unlike `issue_state_reapply`'s own
+# treatment of an issue the sampled state no longer names: that sample walks
+# every page (`api_json_paged`, scripts/gather-source-state.sh) and any page
+# that fails flips `ok` false, which this call is already gated on — so a
+# pull request the sample does not name is genuinely closed, never merely
+# unsampled. The fail-open direction is kept where the read itself is in
+# doubt rather than its content: malformed input — BAND-JSON or
+# OPEN-PRS-JSON not an array, or the filter itself failing — hands the band
+# straight back unmodified rather than reading "could not tell" as "nothing
+# is open" and dropping every entry.
 #
 # BAND-JSON and OPEN-PRS-JSON are each unbounded past this call (a repo's own
 # open-PR count sizes both), so, per requirement 4g, both arrive on stdin, one
