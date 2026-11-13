@@ -128,7 +128,7 @@ _merge_conflicts_state_reapply() {
   while IFS= read -r num; do
     [[ -n "$num" ]] || continue
     mergeable="$("$gh_bin" pr view "$num" -R "$slug" --json mergeable --jq '.mergeable' 2>/dev/null)" || continue
-    [[ -n "$mergeable" && "$mergeable" != "CONFLICTING" ]] || continue
+    [[ "$mergeable" == "MERGEABLE" ]] || continue
     stale="$(jq -c --argjson n "$num" '. + [$n]' <<<"$stale" 2>/dev/null || printf '%s' "$stale")"
   done < <(jq -r '.[].pr_number' <<<"$band" 2>/dev/null)
   jq -c --argjson stale "$stale" '[.[] | select(.pr_number as $n | ($stale | index($n)) == null)]' <<<"$band" 2>/dev/null \

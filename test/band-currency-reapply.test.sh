@@ -96,7 +96,7 @@ assert_eq "_findings_state_reapply on an empty band makes no read, returns it un
   "$empty_band" "$(CANDIDATE_GATHER_GH="$SCRIPT_DIR/does-not-exist" _findings_state_reapply "$empty_band" "o/r")"
 
 # --- _merge_conflicts_state_reapply, with a stub `gh pr view` ---------------
-mc_band='[{"pr_number":10,"ref":"pr-10-conflict-aaa"},{"pr_number":11,"ref":"pr-11-conflict-bbb"},{"pr_number":12,"ref":"pr-12-conflict-ccc"}]'
+mc_band='[{"pr_number":10,"ref":"pr-10-conflict-aaa"},{"pr_number":11,"ref":"pr-11-conflict-bbb"},{"pr_number":12,"ref":"pr-12-conflict-ccc"},{"pr_number":13,"ref":"pr-13-conflict-ddd"}]'
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 cat > "$tmp_dir/gh" <<'STUB'
@@ -114,6 +114,7 @@ chmod +x "$tmp_dir/gh"
 printf 'CONFLICTING' > "$tmp_dir/mergeable-10"
 printf 'MERGEABLE' > "$tmp_dir/mergeable-11"
 : > "$tmp_dir/fail-12"
+printf 'UNKNOWN' > "$tmp_dir/mergeable-13"
 
 out_mc="$(CANDIDATE_GATHER_GH="$tmp_dir/gh" _merge_conflicts_state_reapply "$mc_band" "o/r")"
 assert_eq "still CONFLICTING survives" \
@@ -122,6 +123,8 @@ assert_eq "resolved to MERGEABLE is dropped" \
   "false" "$(jq -e 'any(.[]; .pr_number == 11)' <<<"$out_mc" >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "a failed read leaves the entry exactly as it arrived (fail open per entry)" \
   "true" "$(jq -e 'any(.[]; .pr_number == 12)' <<<"$out_mc" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "a transient UNKNOWN read leaves the entry exactly as it arrived, never dropped" \
+  "true" "$(jq -e 'any(.[]; .pr_number == 13)' <<<"$out_mc" >/dev/null 2>&1 && echo true || echo false)"
 
 # --- _dequeued_state_reapply, stubbing merge_queue_probe itself ------------
 dq_band='[{"pr_number":20,"ref":"pr-20-dequeued-aaa"},{"pr_number":21,"ref":"pr-21-dequeued-bbb"},{"pr_number":22,"ref":"pr-22-dequeued-ccc"}]'
