@@ -675,6 +675,77 @@ assert_not_contains "and its ref is never deleted" \
   "api -X DELETE repos/x/y/git/refs/heads/agent/declined-ordinary" \
   "$(cat "$c/calls.log")"
 
+# --- Case 24: the `obsolete` label is matched case-insensitively
+# (agent-ops#2923) ------------------------------------------------------------
+# GitHub label names are case-preserving but case-insensitively unique, and
+# `lib/void-guard.sh` and `scripts/close-void-github-items.sh` both read this
+# very label lower-cased. An `Obsolete` those two already act on must not be
+# a retirement this sweep silently fails to see and recovers a draft from.
+c="$tmp_dir/retired-obsolete-cased"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/obsolete-cased\tsha-obs-cased\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-obs-cased"
+compare_fixture "$c" agent/obsolete-cased 1
+jq -n '[{number: 54, state: "CLOSED", labels: [{name: "Obsolete"}],
+         closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_obsolete-cased.json"
+
+out="$(run_sweep "$c")"
+assert_eq "an Obsolete-labelled retirement is released, not recovered" \
+  '{"action":"released","branch":"agent/obsolete-cased","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/obsolete-cased")' <<<"$out")"
+
+# --- Case 25: a finishing-source item ref keeps its 12-hex id when matched
+# against a logged retirement event (agent-ops#2923) --------------------------
+# All four finishing sources mint refs ending in a 12-hex id by construction
+# (`pr-<n>-abandoned-<sha>` and friends, requirements 3c/3e/3z/3g), and
+# `lib/enabler.sh` logs `draft-obsolete-flagged` under that whole ref. `stem`
+# deliberately strips such a suffix — right for the rival-branch search, which
+# must see two branches for the same pull request as the same work, and wrong
+# here, where it would reduce the branch past the event's own `item`. The
+# branch_prefix-stripped name is what has to match, the way `gather_claimed`
+# derives it.
+c="$tmp_dir/retired-finishing-ref"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/pr-99-abandoned-1a2b3c4d5e6f\tsha-fin\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-fin"
+compare_fixture "$c" agent/pr-99-abandoned-1a2b3c4d5e6f 1
+jq -n '[{number: 55, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_pr-99-abandoned-1a2b3c4d5e6f.json"
+union_log="$c/union.jsonl"
+printf '%s\n' \
+  '{"event":"draft-obsolete-flagged","repo":"x/y","item":"pr-99-abandoned-1a2b3c4d5e6f"}' \
+  > "$union_log"
+
+out="$(run_sweep "$c" "$union_log")"
+assert_eq "an event naming the whole finishing-source ref is matched, not reduced past" \
+  '{"action":"released","branch":"agent/pr-99-abandoned-1a2b3c4d5e6f","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/pr-99-abandoned-1a2b3c4d5e6f")' <<<"$out")"
+
+# --- Case 26: an omitted union log reads no events, and never stdin
+# (agent-ops#2923) ------------------------------------------------------------
+# `draft_obsolete_flags`/`void_object_closed_items` both take `[LOG_FILE]`
+# defaulting to `-`, so handing them an empty argument asks them to read
+# *stdin*. That stdin is the repo-slug stream `lib/standdown.sh`'s own
+# enclosing `while … done < <(jq -r '.repos[].slug' …)` loop is reading, and
+# from a terminal it is a wait for an EOF nobody sends. The sweep must leave
+# its own stdin entirely alone: the sentinel below is still there to be read
+# after the sweep has run.
+c="$tmp_dir/no-union-log"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/no-union-log\tsha-noul\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-noul"
+compare_fixture "$c" agent/no-union-log 1 "$stale"
+jq -n '[{number: 56, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_no-union-log.json"
+
+leftover="$( { run_sweep "$c" >/dev/null; cat; } <<<'sentinel' )"
+assert_eq "the sweep reads no stdin when the union log is omitted" \
+  "sentinel" "$leftover"
+assert_eq "and an omitted union log is 'no events', so the branch is recovered as usual" \
+  "agent/no-union-log" \
+  "$(jq -r 'select(.action == "recovered") | .branch' <<<"$(run_sweep "$c")")"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"
