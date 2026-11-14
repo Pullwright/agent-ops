@@ -1125,12 +1125,51 @@
     branch carries commits a rival already superseded (sometimes with a
     fix the loser never saw), so resurrecting it as a recovery draft would
     reintroduce that superseded — sometimes regressed — code (issue #500,
-    PR #370). A ref with nothing ahead, with a merged PR against its own
-    head, or superseded by a rival branch's merge, is **deleted** — it was
-    only ever the claim, and the claim is dead, already honoured, or
-    honoured elsewhere. A failure to determine the merge state fails the
-    same way as the other guards: skip the ref, warn, touch nothing. The
-    rival-branch search is the one guard that does not: it cannot make the
+    PR #370). Checked before the rival-branch search, since it answers a
+    narrower question with a cheaper test: **the branch's own head never
+    merged, but its most recent closed pull request was a deliberate
+    pipeline retirement** (agent-ops#2923) rather than an ordinary human
+    decline — either it carries the `obsolete` label, or — never labelled,
+    but retired all the same — a `draft-obsolete-flagged` or
+    `void-object-closed` event, read from the union log an optional second
+    argument now hands the sweep, already names this branch's own item.
+    The label is matched case-insensitively, the same way
+    `lib/void-guard.sh` and `scripts/close-void-github-items.sh` read it.
+    The item is matched two ways, because the engagement that logs a
+    finishing-source retirement is never named after the claim branch at
+    all: an ordinary item's event is logged under `branch_prefix` stripped
+    from the front — the derivation `gather_claimed` uses — and that string
+    is matched directly; a finishing source instead works on the target
+    pull request's own existing head branch and logs its event under its
+    own engagement ref (`pr-2913-abandoned-12c058202df8`, say), a string no
+    claim branch is ever named, so that case is matched instead on the pull
+    request number the event carries (`draft_obsolete_flags`'s own `pr`
+    field, or `void_object_closed_items`'s own `number` for a `pr-<n>-…`
+    void — absent, and so never matched, for a bare-issue void) against the
+    number of this branch's own most recent closed pull request, the one
+    the finishing engagement worked on. An omitted or unreadable union log
+    reads as "no retirement events known yet", and is read as a file or not
+    at all: the sweep never consumes its own stdin, which from
+    `lib/standdown.sh` is the repo-slug stream of the loop the call sits
+    inside.
+    Recovering such a ref as a draft would re-file exactly the work the
+    pipeline already judged unwanted, so it is deleted instead
+    (`released`, `reason: "retired"`) — without ever reaching the
+    rival-branch search below. An ordinary declined close, with neither
+    signal present, is untouched by this check and falls through to that
+    search unchanged — the case that must not regress, since this check
+    must never start deleting a branch a human simply closed. A ref with
+    nothing ahead, with a merged PR against its own
+    head, superseded by a rival branch's merge, or deliberately retired this
+    way, is **deleted** — it was
+    only ever the claim, and the claim is dead, already honoured, honoured
+    elsewhere, or judged unwanted. A failure to determine the merge state fails the
+    same way as the other guards: skip the ref, warn, touch nothing; so does
+    a closed-pull-request read the deliberate-retirement check cannot get an
+    answer from — it falls through to the rival-branch search exactly as an
+    ordinary declined close does, since an unanswered question here is no
+    different from "no signal found". The
+    rival-branch search is the one guard that does not fail closed: it cannot make the
     ref *safer* to delete, only safer to leave as unrecovered work, so on no
     match, or on any failure to get an answer, nothing about today's
     behaviour changes and the ordinary recovery draft still gets filed —

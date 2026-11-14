@@ -48,6 +48,21 @@
 #                                         recovery draft would resurrect
 #                                         superseded — sometimes regressed —
 #                                         code (issue #500)
+#   ahead, never merged, but the branch's
+#   most recent closed pull request was a
+#   deliberate pipeline retirement — it
+#   carries the `obsolete` label, or a
+#   logged `draft-obsolete-flagged`/
+#   `void-object-closed` event already
+#   names this item                       delete the ref (`reason: "retired"`):
+#                                         the pipeline already judged this
+#                                         work unwanted, so a recovery draft
+#                                         would re-file exactly what it just
+#                                         retired (agent-ops#2923) — an
+#                                         ordinary human decline, with neither
+#                                         signal present, is unaffected and
+#                                         still falls through to the arms
+#                                         below
 #   a `td-record/<id>` branch whose only
 #   pull request was closed without
 #   merging                               delete the ref: a human declined
@@ -76,6 +91,7 @@
 #   {"action":"recovered","branch":…,"pr_url":…,"ahead_by":…}
 #   {"action":"released","branch":…}
 #   {"action":"released","branch":…,"reason":"superseded","superseded_by":…}
+#   {"action":"released","branch":…,"reason":"retired"}
 #   {"action":"released","branch":…,"reason":"filing-declined"}
 #   {"action":"deferred","remaining":N}     (the per-run cap, so a pathological
 #                                            backlog surfaces over several
@@ -84,9 +100,13 @@
 # The caller logs them; this script logs nothing itself. Exit 0 unless the
 # arguments are unusable.
 #
-# Usage: sweep-orphan-branches.sh <owner/repo>
+# Usage: sweep-orphan-branches.sh <owner/repo> [union-log]
 # Environment: SWEEP_GH overrides `gh` (tests stub it); AGENT_OPS_CONFIG
-# overrides the config path, as review-cycle.sh accepts it.
+# overrides the config path, as review-cycle.sh accepts it. UNION-LOG (the
+# fleet's union log, as agent-cycle.sh builds it; omitted or unreadable reads
+# as "no retirement events known yet") is what the deliberate-retirement
+# check below (agent-ops#2923) reads `draft-obsolete-flagged` and
+# `void-object-closed` events from.
 
 set -uo pipefail
 
@@ -116,10 +136,16 @@ GH="${SWEEP_GH:-gh}"
 # sanitizer alone lives in this small, side-effect-free file instead.
 # shellcheck source=lib/claim-key.sh
 . "$SCRIPT_DIR/lib/claim-key.sh"
+# draft_obsolete_flags / void_object_closed_items, for the deliberate-
+# retirement check below (agent-ops#2923) — read off the same union log the
+# rest of the fleet already folds these events from, never re-derived here.
+# shellcheck source=lib/cycle-state.sh
+. "$SCRIPT_DIR/lib/cycle-state.sh"
 
 slug="${1:-}"
+union_log="${2:-}"
 if [[ -z "$slug" ]]; then
-  echo "usage: sweep-orphan-branches.sh <owner/repo>" >&2
+  echo "usage: sweep-orphan-branches.sh <owner/repo> [union-log]" >&2
   exit 64
 fi
 
@@ -242,10 +268,109 @@ now_epoch="$(date +%s)"
 actions=0
 deferred=0
 
+# Every `draft-obsolete-flagged`/`void-object-closed` event the fleet has
+# ever logged, reduced to `{repo, item, pr}` triples `retirement_reason`
+# below matches against — read once here rather than per branch, since the
+# union log does not change mid-sweep. `pr` is `draft_obsolete_flags`'s own
+# `pr` field, or `void_object_closed_items`'s own `number` for a PR-shaped
+# void (`null` for an issue-shaped one, which closes a bare issue number and
+# names no separate pull request). An unreadable or absent UNION_LOG
+# degrades to "no retirement events known yet", never to a crash: a branch
+# this would have caught instead falls through to the ordinary flow below,
+# exactly as it did before this check existed.
+#
+# The emptiness test is what makes "absent" mean that, and it is not
+# cosmetic: both readers take `[LOG_FILE]` defaulting to `-`, so an *empty*
+# argument asks them to read **stdin** — which, called from
+# `lib/standdown.sh`, is the repo-slug stream its own enclosing
+# `while … done < <(jq -r '.repos[].slug' …)` loop is reading, and from a
+# terminal is a wait for an EOF nobody will send. Reading the file only when
+# there is a readable file to read keeps the documented "omit it" form of
+# this script's own usage line honest, and keeps this sweep's stdin
+# untouched either way.
+retirement_events_json='[]'
+if [[ -n "$union_log" && -r "$union_log" ]]; then
+  retirement_events_json="$(jq -nc \
+    --argjson a "$(draft_obsolete_flags "$union_log" 2>/dev/null </dev/null || echo '[]')" \
+    --argjson b "$(void_object_closed_items "$union_log" 2>/dev/null </dev/null || echo '[]')" \
+    '($a + $b) | map({repo, item, pr: (.pr // .number // null)})' 2>/dev/null)" || retirement_events_json='[]'
+  [[ -n "$retirement_events_json" ]] || retirement_events_json='[]'
+fi
+
+# retirement_reason BRANCH — agent-ops#2923: told apart from an ordinary
+# human decline (which must fall through to the arms below unchanged), a
+# closed-and-unmerged pull request the pipeline itself judged unwanted.
+# Prints a short reason and returns 0 the moment BRANCH's most recent
+# closed, unmerged pull request either carries the `obsolete` label, or —
+# never labelled, but the retirement happened anyway — a logged
+# `draft-obsolete-flagged`/`void-object-closed` event already names this
+# branch's own item. Prints nothing and returns 1 for every other shape,
+# including "no closed PR" and "could not tell" — fail-closed exactly like
+# every guard above: an unanswered question here changes nothing about
+# today's behaviour, falling through to the ordinary recovery-draft/
+# superseded-rival flow unchanged, since that is already this walk's safe
+# default for a closed PR it cannot read.
+#
+# The label test lower-cases both sides, the same way `lib/void-guard.sh`
+# and `scripts/close-void-github-items.sh` read this very label: GitHub's
+# label names are case-preserving but case-insensitively unique, so an
+# `Obsolete` the other two already act on must not be a retirement this one
+# silently fails to see.
+#
+# Two signals answer the event test, because the engagement that logs a
+# finishing-source retirement is never named after this branch at all. An
+# ordinary (non-finishing) item's own `draft-obsolete-flagged`/`void-object-
+# closed` event is logged under this branch's own item — `$branch_prefix`
+# stripped from the front, `gather_claimed`'s own derivation — and that
+# plain string match is tried first. But a finishing source (an Enabler
+# engagement, or `close-void-github-items.sh` acting on its void) works on
+# the *target pull request's own existing head branch*, so it logs its
+# event under its own engagement ref (`pr-2913-abandoned-12c058202df8`, say)
+# — a string that never equals any claim branch's name, no matter how it is
+# reduced. What it does share with the branch that wedges is the pull
+# request number: this branch's own most recent closed pull request is
+# exactly the one the finishing engagement worked on, so matching the
+# event's own `pr` (logged by `lib/enabler.sh`) or `number` (logged by
+# `close-void-github-items.sh` for a `pr-<n>-…` void; absent, and so never
+# matched, for a bare-issue void) against that pull request's number ties
+# the retirement to exactly the branch it wedges.
+retirement_reason() {
+  local branch="$1" closed_json latest obsolete item number
+  closed_json="$("$GH" pr list -R "$slug" --head "$branch" --state closed \
+    --json number,state,labels,closedAt 2>/dev/null)" || return 1
+  jq -e 'type == "array"' <<<"$closed_json" >/dev/null 2>&1 || return 1
+
+  latest="$(jq -c '[.[] | select(.state == "CLOSED")] | sort_by(.closedAt) | last'  \
+    <<<"$closed_json" 2>/dev/null)"
+  [[ -n "$latest" && "$latest" != "null" ]] || return 1
+
+  obsolete="$(jq -r '[(.labels // [])[].name // "" | ascii_downcase] | index("obsolete") != null' \
+    <<<"$latest" 2>/dev/null)"
+  if [[ "$obsolete" == "true" ]]; then
+    printf 'its most recent closed pull request carries the obsolete label'
+    return 0
+  fi
+
+  item="$branch"
+  [[ -n "$branch_prefix" && "$item" == "$branch_prefix"* ]] && item="${item#"$branch_prefix"}"
+  number="$(jq -r '.number // empty' <<<"$latest" 2>/dev/null)"
+  [[ "$number" =~ ^[0-9]+$ ]] || number=""
+  if jq -e --arg r "$slug" --arg i "$item" --argjson n "${number:-null}" \
+      'any(.[]; (.repo // "" | ascii_downcase) == ($r | ascii_downcase)
+                and ((.item // "" | tostring) == $i
+                     or (($n != null) and (.pr // null) == $n)))' \
+      <<<"$retirement_events_json" >/dev/null 2>&1; then
+    printf 'a draft-obsolete-flagged or void-object-closed event already names this item'
+    return 0
+  fi
+
+  return 1
+}
+
 sweep_branch() {  # <branch> <tip-sha>
   local branch="$1" sha="$2"
   local prs merged registry_err tip_date tip_epoch compare_json ahead
-  local pr_out pr_url body_file
+  local pr_out pr_url body_file retired_reason
   local my_stem first_commit_date first_commit_epoch rivals rival_lookup_failed
   local rival_ref rival_merged_at rival_url rival_merged_epoch superseded_by
   local -a label_args=()
@@ -344,6 +469,26 @@ sweep_branch() {  # <branch> <tip-sha>
       actions=$(( actions + 1 ))
     else
       warn "$branch" "could not delete the already-merged leftover ref"
+    fi
+    return 0
+  fi
+
+  # This branch's own head never merged, but its most recent closed pull
+  # request may be one the pipeline itself retired as unwanted, rather than
+  # a human simply declining it (agent-ops#2923) — the `obsolete` label, or
+  # a `draft-obsolete-flagged`/`void-object-closed` event naming this item
+  # even though the PR itself was never labelled. Recovering it as a draft
+  # would re-file exactly the work just retired, so this is checked, and
+  # deleted on a match, before the rival-branch lookup below gets the chance
+  # to file one. An ordinary declined close — neither signal present — is
+  # untouched here and falls through unchanged.
+  retired_reason="$(retirement_reason "$branch")"
+  if [[ -n "$retired_reason" ]]; then
+    if "$GH" api -X DELETE "repos/$slug/git/refs/heads/$branch" >/dev/null 2>&1; then
+      jq -nc --arg b "$branch" '{action: "released", branch: $b, reason: "retired"}'
+      actions=$(( actions + 1 ))
+    else
+      warn "$branch" "could not delete the retired ref"
     fi
     return 0
   fi

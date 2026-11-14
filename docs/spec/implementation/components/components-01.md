@@ -870,7 +870,8 @@ What exists, and the requirements each part answers to:
    `handoff_latest_positions` `preflight_review_feedback_reason` calls.
    Unit-tested (`test/preflight.test.sh`); must pass `shellcheck`.
 3n. <a id="impl-c-3n"></a>`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
-   given a repo slug, examines every `<branch_prefix>*` and
+   given a repo slug and, optionally, the fleet's union log, examines every
+   `<branch_prefix>*` and
    `td-record/*` ref, and
    prints one JSON action object per orphan handled (`recovered`, `released`,
    `deferred`, `warning`) for the Script to log. `td-record/*` is delete-only,
@@ -879,7 +880,15 @@ What exists, and the requirements each part answers to:
    confirmed absent from the default branch, its paired `td/<id>` reservation
    too — a pair whose two actions are reserved against the per-run cap
    together, so a run without room for both defers it whole rather than
-   deleting the record and stranding the release. Fail-closed on every
+   deleting the record and stranding the release. An ordinary `<branch_prefix>*`
+   ref whose own head never merged but whose most recent closed pull request
+   carries the `obsolete` label, or whose item a logged
+   `draft-obsolete-flagged`/`void-object-closed` event (read off the union
+   log argument, via `lib/cycle-state.sh`) already names, is likewise deleted
+   rather than recovered (`reason: "retired"`, agent-ops#2923) — a deliberate
+   pipeline retirement, told apart from an ordinary human decline, which
+   still falls through to the ordinary recovery/superseded-rival flow
+   unchanged. Fail-closed on every
    unanswered question; `SWEEP_GH` stubs `gh` and `AGENT_OPS_CONFIG`
    overrides the config for tests. Unit-tested
    (`test/sweep-orphan-branches.test.sh`); must pass `shellcheck`.
