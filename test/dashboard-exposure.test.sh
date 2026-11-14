@@ -231,6 +231,32 @@ assert_eq "the dashboard's local profile and the health surface are the only pub
 assert_eq "and every mapping any of them declares is scoped to the host's loopback" \
   "" "$unscoped_any"
 
+# --- viewer-probe: the tailnet-only route, and the collector's own abstention -
+# Owner decision #1358 (agent-ops#1339): the viewer-vantage probe's tailnet
+# route lives in its own sidecar-joined service, never in `collector`, which
+# every node runs under every profile including bare ones. A `profiles:` key
+# added to `collector` would stop it starting on a non-`tailnet` node; a
+# credential anchor added to `viewer-probe` would hand every secret the stack
+# holds to a container that reaches the tailnet.
+
+assert_eq "collector still declares no profiles key, so it starts on every node" \
+  "" "$(service_key collector profiles)"
+
+assert_eq "viewer-probe runs only under the tailnet profile" \
+  "[tailnet]" "$(service_key viewer-probe profiles)"
+assert_eq "viewer-probe lives in the sidecar's network namespace" \
+  "service:tailscale" "$(service_key viewer-probe network_mode)"
+assert_eq "and publishes no port of its own" \
+  "" "$(service_ports viewer-probe)"
+
+viewer_probe_block="$(service_block viewer-probe)"
+assert_eq "viewer-probe takes neither credential anchor" \
+  "0" "$(grep -c '<<: \*agent-ops' <<< "$viewer_probe_block")"
+assert_eq "and holds no GH_TOKEN of its own" \
+  "0" "$(grep -c 'GH_TOKEN' <<< "$viewer_probe_block")"
+assert_eq "and holds no ANTHROPIC_API_KEY of its own" \
+  "0" "$(grep -c 'ANTHROPIC_API_KEY' <<< "$viewer_probe_block")"
+
 # --- the server's own default is loopback -------------------------------------
 # Run for real, because the default is the whole contract for every caller that
 # passes no bind: the legacy WSL SysV init script, the tailnet profile, and

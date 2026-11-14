@@ -743,17 +743,24 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # `lock.json` itself is never published (scripts/state-sync.sh excludes
 # it), so "holds no lock" is derived purely from the union log: grouping a
 # node's own cycle-start/cycle-end/cycle-skipped events by the `cycle` id
-# they share, any group whose `cycle-start` has no matching `cycle-end`, or
-# any `cycle-skipped` whose own `detail` names a pid holding the lock
-# (`acquire_lock`'s own log format), is evidence the lock is, or very
-# recently was, held — whatever the node's newest *event* happens to be, so
-# a chained continuation's own start/skip/end becoming the node's newest
-# events never hides an older cycle that still holds the lock (agent-ops#1412:
-# a second cycle chaining in while a first one is still running writes
-# exactly that shape, and the first cycle's own unmatched `cycle-start` is
-# what proves the lock is still held once the newest-event reading is
-# dropped). That evidence is trusted only while it is younger than
-# `lock_stale_sec` below (four hours by default, the same default
+# they share, any group whose `cycle-start` has no matching `cycle-end` is
+# evidence the lock is held — whatever the node's newest *event* happens to
+# be, so a chained continuation's own start/skip/end becoming the node's
+# newest events never hides an older cycle that still holds the lock (agent-
+# ops#1412: a second cycle chaining in while a first one is still running
+# writes exactly that shape, and the first cycle's own unmatched
+# `cycle-start` is what proves the lock is still held once the newest-event
+# reading is dropped). A lock-contention `cycle-skipped` — one whose own
+# `detail` names a pid holding the lock (`acquire_lock`'s own log format) —
+# is not lock evidence: its own holder logs a `cycle-start` first, so while
+# that start is unmatched the skip changes nothing, and once the holder has
+# ended the skip only claims a lock nobody holds — in every band the clause
+# could apply it was either redundant or actively suppressive, delaying a
+# genuine missed-firing page by up to `lock_stale_sec` (agent-ops#2441). That
+# same `detail` test still excludes a lock-contention tick from the
+# cycle-duration histogram below, which is a separate question from whether
+# the lock is held. Unmatched-start evidence is trusted only while it is
+# younger than `lock_stale_sec` below (four hours by default, the same default
 # `lock_stale_after` documents elsewhere for how long a legitimate cycle may
 # hold the lock): a container recreation leaves its last `cycle-start`
 # permanently unmatched, and nothing will ever write that cycle an end, so
@@ -810,12 +817,8 @@ pager_eval_firing_missed() {
               | ($last_activity.ts | fromdateiso8601) as $start_epoch
               | (($now - $start_epoch) / 60) as $age_min
               | ($node_events | map(select(.event == "cycle-end")) | map(.cycle)) as $ended_cycles
-              | ($node_events | map(select(.event == "cycle-skipped"))) as $skips
               | ($starts | map(select((.cycle as $c | $ended_cycles | index($c)) | not))) as $unmatched_starts
-              | ($skips | map(select((.detail // "") | test("^lock held by pid [0-9]+"))))
-                 as $live_lock_skips
-              | ( [ $unmatched_starts[].ts, $live_lock_skips[].ts ]
-                  | map($now - (. | fromdateiso8601)) ) as $lock_evidence_ages
+              | ( [ $unmatched_starts[].ts ] | map($now - (. | fromdateiso8601)) ) as $lock_evidence_ages
               | ( ($lock_evidence_ages | length) > 0
                   and ($lock_evidence_ages | min) < $lock_stale_sec ) as $lock_held
               | if ($lock_held | not) and ($age_min > (2 * $interval)) then
@@ -1026,12 +1029,23 @@ pager_eval_dashboard_unreadable() {
 # `unlimited` are already reclaimed or uncapped, and `unconfirmed` is a
 # measurement gap, not a known-bad configuration — the issue this invariant
 # answers names only `unbounded`/`livelocked`.
+#
+# An `unbounded` node whose heartbeat carries `doctor.memory_cgroup_accepted:
+# true` is exempt (agent-ops#2885): `doctor.sh`'s own `memory_cgroup_accepted_
+# verdict` (lib/memory.sh) only ever sets that flag once the owner has
+# recorded acceptance of `unbounded` via AGENT_OPS_MEMORY_CGROUP_ACCEPTED (a
+# setting no pipeline stage can write) *and* the node's live verdict still
+# reads `unbounded` — so a node whose verdict changes is judged afresh, never
+# grandfathered in under a stale flag. `livelocked` is never exempt, whatever
+# the flag says: a livelock is a wedge, not a trade-off, and `memory_cgroup_
+# accepted_verdict` never reports `accepted` for it.
 pager_eval_memory_cgroup() {
   local fleet_nodes_json="$1" _union_log_file="$2"
   jq -c -n --argjson nodes "$fleet_nodes_json" "$PAGER_JQ_ROW_PREDICATES"'
     ($nodes | map(select(pager_row_live))
      | map(select((.doctor.memory_cgroup? // "") as $v
-                   | $v == "unbounded" or $v == "livelocked"))) as $hits
+                   | ($v == "livelocked")
+                     or ($v == "unbounded" and ((.doctor.memory_cgroup_accepted? // false) != true))))) as $hits
     | if ($hits | length) == 0 then {firing: false}
       else {firing: true, nodes: ($hits | map(.node)),
             evidence: ("doctor.memory_cgroup reports "
@@ -2132,7 +2146,7 @@ pager_register_builtin_invariants() {
     pipeline-act pager_remedy_page_outlived_item
   pager_declare_events page-outlived-item
   pager_register firing-missed pager_eval_firing_missed owner-only \
-    "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
+    "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and no cycle-start of its own is left unmatched by a cycle-end within the four-hour bound) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
     "$firing_missed_file_after"
   pager_declare_events firing-missed cycle-start cycle-end cycle-skipped
   # node-stale, updater-stuck, dashboard-unreadable and memory-cgroup read
@@ -2152,7 +2166,7 @@ pager_register_builtin_invariants() {
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
   pager_declare_events dashboard-unreadable
   pager_register memory-cgroup pager_eval_memory_cgroup owner-only \
-    "A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked: nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class). Set memory.high on the node's own parent cgroup directly (see deploy/docker/compose.yaml for the recipe that survives a roll) — this is a host-configuration fix, never one this pipeline can perform on its own behalf."
+    "A live node's own hourly doctor pass reports its container cgroup as unbounded or livelocked, and — for an unbounded reading — the owner has not recorded acceptance of it (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, agent-ops#2885): nothing reclaims this container's memory before its hard ceiling (agent-ops#1569/#1579's own class). Set memory.high on the node's own parent cgroup directly (see deploy/docker/compose.yaml for the recipe that survives a roll), or, if this node's unbounded cgroup is a deliberate choice (agent-ops#2861's own case), record that acceptance in .env instead — this is a host-configuration fix either way, never one this pipeline can perform on its own behalf."
   pager_declare_events memory-cgroup
   # agent-ops#1281: the selection and ledger class.
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \

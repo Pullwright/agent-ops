@@ -6,7 +6,11 @@
 # carries its own HTTP status in the returned token rather than being
 # returned verbatim, and a model credential the API refuses for carrying no
 # workspace scope is named by its own stable token, `workspace_scope_refused`,
-# rather than falling through unclassified.
+# rather than falling through unclassified. Also covers agent-ops#2867: a
+# torn final line in `$out_file` (a backstop/inactivity kill landing mid-write)
+# must not propagate jq's parse failure to an unguarded `set -e`/`pipefail`
+# caller, and neither may the sibling path through `head -1`'s own `SIGPIPE`,
+# which more than a pipe-buffer of well-formed output reaches.
 #
 # Run directly: ./test/stage-api-refusal.test.sh — exit 0 iff all passed.
 
@@ -75,6 +79,90 @@ assert_eq "a bare api_error 503 still carries its status in the token" \
   "api_error_503" "$(stage_api_refusal "$tmp_dir/ockham-503.out")"
 assert_eq "…and is still classified transient, not refused" \
   "transient" "$(stage_api_refusal_class "$tmp_dir/ockham-503.out")"
+
+# --- agent-ops#2867: a torn final line must not propagate jq's parse
+#     failure to an unguarded set -e/pipefail caller. Reproduced exactly as
+#     the issue states it: under `set -euo pipefail`, a plain assignment
+#     `r="$(stage_api_refusal torn.json)"` must not exit the calling shell —
+#     which a bare `$(...)` inside this test file's own `set -uo pipefail`
+#     (no `-e`) can't exercise, so each case below runs in a fresh `bash -e`
+#     process and checks that it reaches the end rather than dying at the
+#     assignment. ---
+printf '%s\n' '{"type":"system"}' > "$tmp_dir/torn.out"
+printf '{"is_error":true,"terminal_reason":"api_error","api_error_status":503,"result":"This is a server-side iss' \
+  >> "$tmp_dir/torn.out"
+
+torn_refusal="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "a torn final line does not exit a set -e caller, and returns empty" \
+  "$(printf '\nreached-end')" "$torn_refusal"
+
+torn_msg="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_message "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal_message likewise returns empty and does not exit" \
+  "$(printf '\nreached-end')" "$torn_msg"
+
+torn_class="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_class "'"$tmp_dir"'/torn.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal_class likewise returns empty and does not exit" \
+  "$(printf '\nreached-end')" "$torn_class"
+
+# --- agent-ops#2867, the sibling path: `head -1` leaves the pipe as soon as
+#     it has its line, so a jq with more than a pipe-buffer still to write
+#     dies of SIGPIPE — 141, which pipefail hands to the caller exactly as it
+#     handed on a parse failure. Tolerant parsing alone does not close this,
+#     because nothing here is unparseable: every line is a well-formed
+#     refusal record. Same shape of check as the torn cases above. ---
+: > "$tmp_dir/many.out"
+for _i in $(seq 1 500); do
+  printf '{"is_error":true,"terminal_reason":"api_error","api_error_status":503,"result":"%s"}\n' \
+    "$(printf 'x%.0s' $(seq 1 600))" >> "$tmp_dir/many.out"
+done
+
+many_msg="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_message "'"$tmp_dir"'/many.out")"
+  printf "%s\nreached-end\n" "${#r}"
+')"
+assert_eq "many matching records do not exit a set -e caller, and the first wins" \
+  "$(printf '600\nreached-end')" "$many_msg"
+
+many_refusal="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal "'"$tmp_dir"'/many.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal likewise survives and returns the first token" \
+  "$(printf 'api_error_503\nreached-end')" "$many_refusal"
+
+many_class="$(bash -c '
+  set -euo pipefail
+  # shellcheck source=lib/stage-attempt.sh
+  . "'"$SCRIPT_DIR"'/lib/stage-attempt.sh"
+  r="$(stage_api_refusal_class "'"$tmp_dir"'/many.out")"
+  printf "%s\nreached-end\n" "$r"
+')"
+assert_eq "…stage_api_refusal_class likewise survives and classifies the first" \
+  "$(printf 'transient\nreached-end')" "$many_class"
 
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed.\n' "$failures"

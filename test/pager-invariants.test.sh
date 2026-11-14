@@ -664,12 +664,9 @@ fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 #        proves the lock is still held.
 #   n13  one real, cleanly completed cycle four days old, and a
 #        lock-contention skip tick (cycle-start/cycle-skipped/cycle-end
-#        under one `.cycle` id, a second apart) that is itself five and a
-#        half hours old — past the lock-staleness bound, so it is not
-#        trusted as live-lock evidence either, and the node fires. Its
-#        duration histogram carries only the one real cycle: the skip
-#        tick's own near-zero duration is excluded, never read as a
-#        further completed cycle.
+#        under one `.cycle` id, a second apart) — a lock-contention skip
+#        tick is never lock evidence, whatever its own age; its near-zero
+#        duration is still excluded from the histogram. The node fires.
 #   n14  one real, cleanly completed 20-minute cycle that outran a
 #        schedule slot and so logged its own requirement 11a overrun-slot
 #        `cycle-skipped` (`reason: "overlap"`, no lock-holding `detail`)
@@ -679,6 +676,14 @@ fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 #        lock-contention skip's `detail` excludes a group, because
 #        excluding every group carrying any `cycle-skipped` would drop
 #        precisely the long cycles this histogram exists to show.
+#   n15  agent-ops#2441's own trace: a long cycle that outran a slot, its
+#        chained continuation's lock-contention skip naming it as the lock
+#        holder, then the long cycle's own clean cycle-end, then silence.
+#        Both cycles are matched (no unmatched cycle-start survives), so
+#        nothing trusts the skip as lock evidence and the node fires once
+#        the silence passes 2x the interval — even though the skip itself
+#        is well within the four-hour bound. The pre-#2441 code read the
+#        skip as lock evidence and stayed silent instead.
 fm_log="$WORKDIR/firing-missed.jsonl"
 fm_events=(
   "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)"
@@ -707,6 +712,11 @@ fm_events=(
   "$(cycle_ev "$(rel -3000)" n14 cOverran cycle-skipped \
       '{"reason":"overlap","slot_ts":"2026-10-15T09:15:00Z","held_by":"cOverran","elapsed_s":900}')"
   "$(cycle_ev "$(rel -2800)" n14 cOverran cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -7200)" n15 cLong cycle-start)"
+  "$(cycle_ev "$(rel -7100)" n15 cShort cycle-start)"
+  "$(cycle_ev "$(rel -7090)" n15 cShort cycle-skipped '{"detail":"lock held by pid 4242, age 110s"}')"
+  "$(cycle_ev "$(rel -7085)" n15 cShort cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -6000)" n15 cLong cycle-end '{"exit_code":0}')"
 )
 for demoted in n6 n7 n8 n9 n10; do
   fm_events+=(
@@ -720,7 +730,7 @@ fm_nodes="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n2 false active)" \
   "$(fm_row n6 false standby)" "$(fm_row n7 false "STANDBY ")" \
   "$(fm_row n8 false Active)" "$(fm_row n9 false unknown)" "$(fm_row n10 false "")" \
   "$(fm_row n11 false active)" "$(fm_row n12 false active)" "$(fm_row n13 false active)" \
-  "$(fm_row n14 false active)")"
+  "$(fm_row n14 false active)" "$(fm_row n15 false active)")"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=15
 verdict="$(pager_eval_firing_missed "$fm_nodes" "$fm_log")"
@@ -742,14 +752,19 @@ assert_eq "  ... evidence carries n2's own cycle-duration histogram" "1" \
 assert_eq "  ... n11 (a single unmatched cycle-start, past the lock-staleness bound) is named" "1" \
   "$(named n11)"
 assert_eq "  ... n12 (agent-ops#1412's own chained-overlap sequence) is never named" "0" "$(named n12)"
-assert_eq "  ... n13 (a stale lock-contention skip tick, past the bound) is named" "1" "$(named n13)"
+assert_eq "  ... n13 (a lock-contention skip tick is never lock evidence) is named" "1" "$(named n13)"
 n13_segment="$(grep -oE 'n13 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
-assert_eq "  ... n13's histogram carries only its one real cycle, not the skip tick" \
+assert_eq "  ... n13's near-zero skip duration is still excluded from the histogram" \
   "n13 (329m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 1)" "$n13_segment"
 assert_eq "  ... n14 (a completed cycle that outran a slot, nothing since) is named" "1" "$(named n14)"
 n14_segment="$(grep -oE 'n14 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... n14's own overrun-slot cycle-skipped does not drop its cycle from the histogram" \
   "n14 (50m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 20)" "$n14_segment"
+assert_eq "  ... n15 (long cycle ended cleanly after a chained lock-contention skip) is named" "1" \
+  "$(named n15)"
+n15_segment="$(grep -oE 'n15 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... n15's evidence carries the long cycle's duration, not the skip tick's" \
+  "n15 (118m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 20)" "$n15_segment"
 assert_reduced_verdict_eq firing-missed "$fm_nodes" "$fm_log"
 
 # The #1686/#1768 fleet as the evaluating node saw it: one standby whose
@@ -934,10 +949,10 @@ PAGER_EVAL_DASHBOARD_FETCH_SECONDS=30
 
 # --- memory-cgroup (agent-ops#2698) ----------------------------------------
 
-mc_row() {  # mc_row NAME STALE MEMORY_CGROUP_OR_EMPTY
-  jq -nc --arg n "$1" --argjson stale "$2" --arg v "$3" \
+mc_row() {  # mc_row NAME STALE MEMORY_CGROUP_OR_EMPTY [ACCEPTED]
+  jq -nc --arg n "$1" --argjson stale "$2" --arg v "$3" --argjson accepted "${4:-false}" \
     '{node: $n, stale: $stale,
-      doctor: (if $v == "" then {} else {memory_cgroup: $v} end)}'
+      doctor: (if $v == "" then {} else {memory_cgroup: $v, memory_cgroup_accepted: $accepted} end)}'
 }
 mc_nodes="$(printf '%s\n%s\n%s\n%s\n%s\n' \
   "$(mc_row n1 false unbounded)" "$(mc_row n2 false livelocked)" \
@@ -959,6 +974,23 @@ assert_eq "bounded, unlimited and absent never fire" "false" \
 mc_nodes_stale="$(printf '%s\n' "$(mc_row n1 true unbounded)" | jq -sc '.')"
 assert_eq "a stale node's own reading is not trusted" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_stale" /dev/null)")"
+
+# --- memory-cgroup: owner acceptance of unbounded (agent-ops#2885) ---------
+
+mc_nodes_accepted="$(printf '%s\n' "$(mc_row n1 false unbounded true)" | jq -sc '.')"
+assert_eq "an unbounded node whose doctor.memory_cgroup_accepted is true does not fire" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_accepted" /dev/null)")"
+
+mc_nodes_mixed="$(printf '%s\n%s\n' \
+  "$(mc_row n1 false unbounded true)" "$(mc_row n2 false unbounded false)" | jq -sc '.')"
+mc_mixed_verdict="$(pager_eval_memory_cgroup "$mc_nodes_mixed" /dev/null)"
+assert_eq "...only the unaccepted sibling fires, never the accepted one" "true" \
+  "$(jq -r '.firing' <<<"$mc_mixed_verdict")"
+assert_eq "...naming only n2" "n2" "$(jq -r '.nodes | join(",")' <<<"$mc_mixed_verdict")"
+
+mc_nodes_livelocked_flag="$(printf '%s\n' "$(mc_row n1 false livelocked true)" | jq -sc '.')"
+assert_eq "a livelocked node still fires even if memory_cgroup_accepted somehow reads true" \
+  "true" "$(jq -r '.firing' <<<"$(pager_eval_memory_cgroup "$mc_nodes_livelocked_flag" /dev/null)")"
 
 # --- idle-with-demand (agent-ops#1281) -------------------------------------
 

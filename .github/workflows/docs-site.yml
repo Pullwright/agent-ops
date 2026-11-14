@@ -74,6 +74,19 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Pages accepts one deployment at a time: a second `deploy` starting while
+    # another is still in flight is refused outright (HTTP 400, "due to in
+    # progress deployment" — issue #2888), which the merge queue provokes every
+    # time it lands two pull requests within a minute of each other.
+    # `cancel-in-progress: false` lets the in-flight deployment finish and
+    # cancels only whatever pending run a newer one supersedes, so the newest
+    # commit on `main` is always the one that ends up deployed — the opposite of
+    # `true`, which would cancel the deployment already running and leave the
+    # site serving neither. Scoped to this job rather than the workflow, so
+    # `build` stays unserialised on pull requests and in the merge queue.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write

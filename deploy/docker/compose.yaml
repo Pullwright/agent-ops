@@ -165,6 +165,17 @@ x-agent-ops-env: &agent-ops-env
   # config.json governs. Named here for the allowlist reason every other
   # variable in this block is; .env.example describes it.
   STATE_SYNC_STREAMS_RETAINED: ${STATE_SYNC_STREAMS_RETAINED:-}
+  # The owner's own record that this node's unbounded memory cgroup
+  # (lib/memory.sh's `memory_cgroup_verdict`) is an accepted trade-off rather
+  # than an unexamined gap (agent-ops#2885, agent-ops#2861) — the one value it
+  # honours is the literal string "unbounded"; "livelocked" is never accepted,
+  # whatever is written here, and doctor.sh warns about it instead. Named
+  # here for the allowlist reason every other variable in this block is:
+  # there is no `env_file:`, so a value set only in `.env` and not named here
+  # never reaches the container. Left unset, `lib/pager-invariants.sh`'s
+  # `memory-cgroup` invariant keeps paging on an unbounded reading exactly as
+  # before this variable existed.
+  AGENT_OPS_MEMORY_CGROUP_ACCEPTED: ${AGENT_OPS_MEMORY_CGROUP_ACCEPTED:-}
   TZ: ${TZ:-UTC}
 
 x-agent-ops: &agent-ops
@@ -700,6 +711,15 @@ services:
       # no container at all, however it is spelled there. Left unset, the
       # script's own default (three times the interval above) applies.
       HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS: ${HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS:-}
+      # Optional: curl's own --max-time (seconds) for the viewer-vantage
+      # probe fetch above, and the curl command/binary it runs as. Named
+      # here for the same allowlist reason as every other variable in this
+      # file — there is no `env_file:` anywhere, so a variable an operator
+      # sets in .env and that no service names reaches no container at
+      # all, however it is spelled there. Left unset, lib/host-facts.sh's
+      # own defaults (5, curl) apply.
+      HOST_FACTS_VIEWER_PROBE_TIMEOUT: ${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-}
+      HOST_FACTS_CURL_CMD: ${HOST_FACTS_CURL_CMD:-}
       # Matches the cgroup mount below: this is where *this* container's
       # copy of the host's cgroup tree lands.
       HOST_FACTS_CGROUP_ROOT: /host/sys/fs/cgroup
@@ -948,6 +968,13 @@ services:
       # to the `https://{node}.<tailnet>.ts.net/data.js` form for the probe
       # to report anything but a failure. See .env.example's own entry.
       AGENT_OPS_VIEWER_URL_TEMPLATE: ${AGENT_OPS_VIEWER_URL_TEMPLATE:-}
+      # Same pair `collector`'s own environment block above names, for the
+      # same reason: this service runs the identical probe
+      # (lib/host-facts.sh's host_facts_viewer_probe_one) and needs the
+      # same allowlist entry to let either reach this container. Left
+      # unset, lib/host-facts.sh's own defaults (5, curl) apply.
+      HOST_FACTS_VIEWER_PROBE_TIMEOUT: ${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-}
+      HOST_FACTS_CURL_CMD: ${HOST_FACTS_CURL_CMD:-}
     volumes:
       # Read-write, like `collector`'s own mount of the same volume: this
       # is the one container that writes state_dir/viewer-probe/<node>.json,

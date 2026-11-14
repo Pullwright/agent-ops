@@ -927,7 +927,12 @@ What exists, and the requirements each part answers to:
    whose advisory warning reports it; plus `memory_cgroup_field`,
    `memory_cgroup_stat`, `memory_cgroup_verdict` and
    `memory_cgroup_describe`, the read-only cgroup v2 inspection doctor.sh
-   reports an unbounded container with. Unit-tested, `test/memory.test.sh`
+   reports an unbounded container with; plus `memory_cgroup_accepted_verdict`
+   and `memory_cgroup_accepted_describe` (agent-ops#2885), which compare an
+   owner-recorded `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` against the live verdict
+   so `doctor.sh` and `lib/pager-invariants.sh`'s `memory-cgroup` invariant
+   agree on when an `unbounded` reading is an accepted trade-off rather than
+   a gap. Unit-tested, `test/memory.test.sh`
    and `test/memory-wiring.test.sh`),
    `lib/disk-space.sh` (requirement 2.0c's `disk_space_free_kb`,
    `disk_space_verdict`, `disk_space_describe` and `disk_space_same_filesystem`

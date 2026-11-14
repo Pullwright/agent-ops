@@ -333,6 +333,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                      memory_cgroup:"unbounded"|"parented"|"livelocked"|
                                     "unconfirmed"|"bounded"|"unlimited"|
                                     "unknown" | null,
+                     memory_cgroup_accepted:true|false,
                      token_expiry:{expires_at,days_remaining} | null} | null,
                                     //   THIS node's most recent hourly
                                     //   `doctor.sh --unattended` pass
@@ -346,7 +347,20 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   `lib/pager-invariants.sh`'s
                                     //   `memory-cgroup` invariant can page a
                                     //   fleet-wide `unbounded`/`livelocked`
-                                    //   reading directly. token_expiry
+                                    //   reading directly.
+                                    //   memory_cgroup_accepted
+                                    //   (agent-ops#2885) is true only once
+                                    //   the owner has recorded acceptance of
+                                    //   an `unbounded` memory_cgroup via
+                                    //   AGENT_OPS_MEMORY_CGROUP_ACCEPTED
+                                    //   (.env) and the live verdict still
+                                    //   matches it — never true for
+                                    //   `livelocked` — and is what the
+                                    //   `memory-cgroup` invariant and the
+                                    //   dashboard's own fleet card both read
+                                    //   to tell an accepted trade-off apart
+                                    //   from an unexamined gap.
+                                    //   token_expiry
                                     //   (agent-ops#694)
                                     //   is this node's PAT's own
                                     //   expiry, read from GitHub's
