@@ -2860,6 +2860,42 @@ assert_eq "  ... carrying its evidence and the node it names" "data.js unreadabl
 assert_eq "  ... and only that one, of the twenty registered keys" "1" \
   "$(jq '.pager | length' <<<"$(data_of "$x")")"
 
+# --- pager_evaluate's own PEERS_STALE/PEERS_LAST_OK_TS wiring (agent-ops#2266/#2549) ---
+# fleet_peers_stale_flag/fleet_peers_last_ok_ts are hand-counted onto this
+# call's 27th/28th positional arguments; nothing else asserts the count stays
+# right under a later parameter insertion, and the failure mode is quiet — the
+# pager simply stops skipping on a stale peer view, with no signal
+# (agent-ops#2507's own incident). A tar copy of the tree with
+# `pager_evaluate`'s own definition overridden by a recorder — appended after
+# the real definition in the same sourced file, so it wins, the same trick
+# `$le_app`'s `item_lifecycle_fold` override above already uses — is what
+# lets the call's own argv be inspected without re-deriving `pager_evaluate`'s
+# own behaviour.
+pw_app="$tmp_dir/pager-wiring-app"
+mkdir -p "$pw_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$pw_app" -xf -
+pw_argv="$tmp_dir/pager-wiring-argv"
+cat >> "$pw_app/lib/pager.sh" <<OVERRIDE
+
+pager_evaluate() {
+  printf '%s\n' "\$@" > "$pw_argv"
+  return 0
+}
+OVERRIDE
+
+pw="$(new_home nodePW)"
+pw_peers="$pw/.cache/poetic-agents/workspaces/.agent-ops-peers"
+mkdir -p "$pw_peers"
+printf '{"ok":false,"ts":"2026-07-26T11:00:00Z","last_ok_ts":"2026-07-26T09:30:00Z"}\n' \
+  > "$pw_peers/.last-fetch.json"
+pw_calls="$tmp_dir/pager-wiring-gh-calls"
+: > "$pw_calls"
+env HOME="$pw" NODE_NAME=nodePW-self GH_CALL_LOG="$pw_calls" DASHBOARD_GH_CMD="$gh_stub" \
+  "$pw_app/scripts/publish-dashboard.sh" >/dev/null 2>&1
+assert_eq "pager_evaluate's PEERS_STALE/PEERS_LAST_OK_TS land at positions 27/28" \
+  "true 2026-07-26T09:30:00Z" \
+  "$(sed -n '27p;28p' "$pw_argv" | paste -sd' ' -)"
+
 # A --no-github tick carries the index forward like every other GitHub-sourced
 # panel; blanking it would empty every hover card on the page between fetches.
 run_publish "$x" NODE_NAME=nodeX-self

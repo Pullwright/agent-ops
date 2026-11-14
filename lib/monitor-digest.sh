@@ -54,6 +54,7 @@
 # digest under its own name the day it is first written, with no edit here.
 # This constant only fixes the *order* the known ones render in.
 MONITOR_DIGEST_EVENT_ORDER='[
+  "pager-evaluation-skipped",
   "limit-hit", "pager-fired", "pager-cleared", "pager-candidate",
   "stand-down", "cycle-skipped", "attempt-failed", "review-attempt-failed",
   "warning", "none-selected", "selection", "stage-end", "review-stage-end",
