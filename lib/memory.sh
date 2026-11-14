@@ -434,6 +434,63 @@ memory_cgroup_unconfirmed_describe() {
   printf 'this container'"'"'s parent cgroup has a memory.high ceiling, but its memory.max cannot be read from in here, so whether a hard ceiling would ever reclaim it is unmeasured, not confirmed ok — mount the parent'"'"'s memory.max (see deploy/docker/compose.yaml) and re-run scripts/cgroup-parent-setup.sh'
 }
 
+# --- Owner acceptance of an unbounded verdict (agent-ops#2885) --------------
+#
+# #2861 is a standing owner decision to keep the VM nodes' cgroups unbounded:
+# their parent slices carry `MemoryHigh=infinity`, chosen because the
+# measured fleet's unbounded VM nodes had its lowest inactivity-kill rate.
+# Without a way to record that decision, `pager_eval_memory_cgroup`
+# (lib/pager-invariants.sh) pages on a state the owner has already chosen to
+# keep, forever, since nothing short of changing the cgroup itself clears it.
+#
+# `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` (`.env`, named in `deploy/docker/
+# compose.yaml`'s `x-agent-ops-env` allowlist like every other variable that
+# reaches this container) is where that acceptance is recorded. No pipeline
+# stage writes `.env` — `lib/compose-reconcile.sh`'s own header is explicit
+# that it never touches the file — so accepting an unbounded cgroup stays an
+# owner act, never one this code can perform on its own behalf.
+
+# memory_cgroup_accepted_verdict SETTING VERDICT
+# Whether SETTING (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, verbatim) covers the live
+# VERDICT (memory_cgroup_verdict's own output):
+#
+#   accepted  SETTING equals VERDICT and VERDICT is `unbounded` — the one
+#             trade-off #2861 accepted. Judged fresh on every call: a node
+#             whose verdict later changes (a roll that lands a real ceiling,
+#             say) is no longer accepted merely because a stale setting still
+#             names its old reading.
+#   invalid   SETTING is `livelocked`, whatever VERDICT reads. A livelock is a
+#             wedge, not a trade-off (agent-ops#1305/#1620/#1643) — nothing
+#             reclaims or kills before the workload stalls — so it is never
+#             honoured, and the caller must warn about the setting itself
+#             rather than silently ignore it.
+#   none      SETTING is empty, or names anything else (including a verdict
+#             that no longer matches).
+memory_cgroup_accepted_verdict() {
+  local setting="${1:-}" verdict="${2:-}"
+  if [[ "$setting" == "livelocked" ]]; then
+    printf 'invalid'
+  elif [[ -n "$setting" && "$setting" == "$verdict" && "$verdict" == "unbounded" ]]; then
+    printf 'accepted'
+  else
+    printf 'none'
+  fi
+}
+
+# memory_cgroup_accepted_describe
+# The ok line doctor.sh's advisory uses in place of the unbounded warning once
+# memory_cgroup_accepted_verdict reads `accepted`, naming the acceptance so a
+# reader sees a decision rather than a quietly suppressed warning.
+memory_cgroup_accepted_describe() {
+  local current max
+  current="$(memory_cgroup_field memory.current)"
+  max="$(memory_cgroup_field memory.max)"
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  [[ "$max" =~ ^[0-9]+$ ]] || max=0
+  printf 'this container holds %d MiB of memory that never gets freed up as usage grows, against a %d MiB ceiling — AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded records that the owner has accepted this trade-off (agent-ops#2861)' \
+    $(( current / 1048576 )) $(( max / 1048576 ))
+}
+
 # --- The parent-cgroup throttle rate (agent-ops#2469) -----------------------
 #
 # `memory_cgroup_verdict` above answers "is anything bounded, and will it

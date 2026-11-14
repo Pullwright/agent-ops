@@ -9,12 +9,18 @@
    single-node operation behaves exactly as it did before the fleet existed.
 
    **What replicates.** Everything under `state_dir` except the live locks
-   (`lock.json`, `review-lock.json`, `dashboard.lck`), the roll-pending
+   (`lock.json`, `review-lock.json`, `dashboard.lck`, `monitor-lock.json` —
+   `monitor-cycle.sh`, agent-ops#1284), the roll-pending
    marker (`roll-pending.json`, requirement 68 (Finish-then-continue), agent-ops#1096), the
+   Compose reconciler's own per-host apply output (`compose-apply.log`,
+   `lib/compose-reconcile.sh`, the `reconciler` service), the
    dashboard's own
    machinery (`dashboard/`, `dashboard.log`, `dashboard-server.log`,
    `.dashboard-github.json`, `.dashboard-claims.json`,
-   `.image-drift-cache.json`), this node's own read-back of what the shared
+   `.image-drift-cache.json`, `.dashboard-tick-cost` — agent-ops#793,
+   `.dashboard-payload` — agent-ops#801/#803, `.dashboard-cycle-cache/` —
+   agent-ops#798, `.dashboard-cyclerows-cache/` — agent-ops#993), this
+   node's own read-back of what the shared
    state holds for its own branch (`.state-sync-published.json`, "Publication
    freshness" below, agent-ops#602), `state-sync.log`, the unattended doctor
    pass's own local artefacts (`doctor.log`, `.doctor-status.json` —
@@ -27,37 +33,74 @@
    tick's own local text output (`tech-debt-archive.log` — requirement
    2.6c, which has no structured sibling to except, since what it publishes
    lands directly in the state repository's own `tech-debt-archive/` tree),
-   the stage event streams
+   the resource sampler's own local text output, raw samples and
+   cumulative-reading cache (`resource-usage.log`, `.resource-samples.jsonl`,
+   `.resource-usage-state.json`, `.resource-usage.lock` — requirement 55,
+   D14, issue #606), the
+   stage event streams
    (`*.stream.jsonl`, requirement 4d), the fleet-log snapshot
    (`.fleet-log.jsonl`, "The union" below), the mirror's own durable
    rebuild record (`.mirror-rebuild-state.json`, "Mirror integrity" above),
+   the node-health check's own cached rate-limit read
+   (`.node-health-ratelimit-cache.json` — requirement 58, issue #608) and
+   the crontab's own liveness marker (`.node-alive`, same requirement),
    the two per-node caches whose own file mtimes *are* the schedule they
    gate — the label-ensure stamps (`labels-ensured/`, requirement 6a) and
    the expensive-gather cache (`expensive-gather/`, requirement 48) —
-   the updater's own invocation ledger (`updater-ledger/`, below), and the
+   the updater's own invocation ledger (`updater-ledger/`, below), the
    `gh` transport shim's stored response bodies and lock files
    (`gh-shim/http-cache/`, `gh-shim/*.lock`, requirement 2.0e — the ledger
-   and `budget.json` beside them excepted, below).
+   and `budget.json` beside them excepted, below), and the `viewer-probe`
+   sidecar's own intermediate (`viewer-probe/`, owner decision #1358,
+   agent-ops#1339).
    The exclusions are not tidiness: a copied `lock.json` is a lock no process
-   holds — peers read logs, never locks; `roll-pending.json` is this node's own
+   holds — peers read logs, never locks; a copied `monitor-lock.json` is the
+   same kind of lock, meaningful only in the PID namespace that minted it —
+   `monitor-log.jsonl` is deliberately not among these exclusions, since the
+   fleet unions it to decide whose turn the daily monitor run is and when the
+   last report was written, the same as `review-log.jsonl`; `roll-pending.json` is this node's own
    instruction to its own watchtower hook, earned by its own cycle boundary,
    and a copy on a peer would tell that peer's hook to allow a roll nothing
-   about that peer actually asked for; the
+   about that peer actually asked for; a copied `compose-apply.log` would be
+   the sibling container's own Compose output about one host's deployment
+   file — a diagnosis of a machine the peer cannot see, with nowhere else for
+   it to go, since the client capturing it dies with the container that
+   produced it — though the *fact* of a failed apply already travels, in the
+   `compose-reconcile-deferred` event and the drift verdict's own `detail`; the
    dashboard is generated from the state beside it, so copying it would be
    copying a derivative of what is already being copied; a copied
    `.image-drift-cache.json` would answer for a registry query nobody on the
    peer ran, and a copied `.mirror-rebuild-state.json` likewise would answer
-   for a rebuild nobody on the peer needed; a copied
+   for a rebuild nobody on the peer needed; `.dashboard-tick-cost` answers for
+   a tick timing nobody on the peer ran, on the same reasoning; `.dashboard-
+   payload` is itself a derivative of state already being copied, the same
+   reasoning the dashboard directory gets above; `.dashboard-cycle-cache/` and
+   `.dashboard-cyclerows-cache/` each answer for a render or a computation
+   nobody on the peer ran, the identical reasoning `.stage-health.json` and
+   `updater-ledger/` get below; a copied
    `.state-sync-published.json` would likewise answer for a fetch nobody on
    the peer ran — and unlike `.stage-health.json` below, no peer ever needs
    this node's own answer to "am I fresh", since a peer already judges this
    node by this node's own `heartbeat.json` `ts`, which a failed push simply
-   never advances, so nothing folds it into the heartbeat either;
-   `doctor.log`/`revert-rate.log`
+   never advances, so nothing folds it into the heartbeat either; a copied
+   `.node-health-ratelimit-cache.json` would likewise answer for a forge
+   budget nobody on the peer read — and unlike the image-drift cache, it is
+   never folded into the heartbeat either, since readiness is answered live;
+   a copied `.node-alive` would carry a checkout-fresh mtime and answer for
+   that peer's own replication lag, not for whether that peer's own
+   supercronic is still firing jobs, the same mtime-keyed-local reasoning
+   `labels-ensured/` gets below;
+   `doctor.log`/`revert-rate.log`/`resource-usage.log`
    are each a local pass's own text
    output, superseded for a reader by the structured sibling that pass also
-   writes (`.doctor-status.json` locally, `revert-rate.jsonl` fleet-wide —
-   the asymmetry is exactly why one is excluded and the other is not);
+   writes (`.doctor-status.json` locally, `revert-rate.jsonl` fleet-wide, and
+   `resource-usage.log`'s own derived report folded into `heartbeat.json`'s
+   `resources` field —
+   the asymmetry is exactly why each is excluded while its sibling is not);
+   `.resource-samples.jsonl`/`.resource-usage-state.json`/`.resource-usage.lock`
+   beside it are excluded on the identical reasoning as
+   `.image-drift-cache.json` — a peer's copy of any of the three would answer
+   for a container that is not there;
    `tech-debt-archive.log` is excluded on the same "local pass's own text
    output" reasoning, but with no structured sibling to be superseded by at
    all — what it publishes goes straight into the state repository's own
@@ -80,6 +123,18 @@
    `scripts/github-budget-report.sh` unions across nodes exactly as it
    unions `log.jsonl`, and `budget.json` is a reading of the one bucket
    every node shares, so both must travel.
+   `viewer-probe/` is excluded on the identical "answers for a vantage
+   nobody on the peer has" reasoning as `.image-drift-cache.json` above: it
+   is the `viewer-probe` sidecar's own node-local reading of the viewer-
+   vantage probe, taken from inside this node's own `tailscale` sidecar's
+   namespace, and a copy restored on a peer would answer for a fetch that
+   peer never made from a vantage it may not even have (a `local` or bare
+   node runs no sidecar at all). Its content still reaches every peer, the
+   same way `.stage-health.json`'s does: folded into
+   `host-facts/<node>.json`'s own `viewer_probe` object
+   (`lib/host-facts.sh`'s `host_facts_viewer_probe_fold_json`,
+   `docs/reference/host-facts-schema.md`), which replicates ordinarily, so only
+   the raw intermediate is held back.
    `labels-ensured/` and `expensive-gather/` carry a second reason on top of
    that one, and it is the sharper of the two: each schedules its own next
    run off its files' mtimes rather than off a timestamp written inside

@@ -50,14 +50,18 @@
     deferred — even though that skip is not itself a lock hold, and not on
     one whose published `role` is a standby's however old its newest cycle
     event — including a raw `"STANDBY "`, since the role is read
-    normalised. It does fire on a node whose only unmatched `cycle-start`,
-    or whose only `cycle-skipped` naming a lock-holding pid, is older than
-    the four-hour bound — a container-recreation orphan with nothing since
-    — and its cycle-duration histogram excludes a lock-contention skip
-    tick's own near-zero duration even when that tick is itself past the
-    bound, while still counting a genuinely completed long cycle that
-    logged its own requirement 11a overrun-slot `cycle-skipped` events
-    under the same `cycle` id. Five nodes sharing
+    normalised. It does fire on a node whose only unmatched `cycle-start`
+    is older than the four-hour bound — a container-recreation orphan with
+    nothing since — and its cycle-duration histogram excludes a
+    lock-contention skip tick's own near-zero duration even when that tick
+    is itself past the bound, while still counting a genuinely completed
+    long cycle that logged its own requirement 11a overrun-slot
+    `cycle-skipped` events under the same `cycle` id. It also fires on a
+    node whose long cycle ended cleanly after a chained continuation's own
+    lock-contention `cycle-skipped`, once the silence that follows passes
+    2× the interval — even while that skip is still younger than the
+    four-hour bound, since a lock-contention skip is never lock-held
+    evidence on its own (agent-ops#2441). Five nodes sharing
     that one ancient history and differing only in the role their row
     publishes pin the rest of the matrix: `"Active"` is named (requirement
     2.4 runs cycles on it, so a peer must not read it as a standby),
@@ -216,11 +220,14 @@
     nowhere when `PAGER_REMEDY_REPO` is unset.
 
     The same file also drives agent-ops#2698's `memory-cgroup` invariant: it
-    fires on a live row whose `doctor.memory_cgroup` reads `unbounded` or
-    `livelocked`, naming the affected node and its verdict in the evidence;
-    it does not fire on a row reading `parented`, `unconfirmed`, `bounded`,
-    or `unlimited`, on a row carrying no `memory_cgroup` field at all, or on
-    an otherwise-matching row that is stale.
+    fires on a live row whose `doctor.memory_cgroup` reads `livelocked`, or
+    reads `unbounded` with `doctor.memory_cgroup_accepted` not `true`, naming
+    the affected node and its verdict in the evidence; it does not fire on a
+    row reading `parented`, `unconfirmed`, `bounded`, or `unlimited`, on a row
+    carrying no `memory_cgroup` field at all, on an otherwise-matching row
+    that is stale, or on an `unbounded` row whose `memory_cgroup_accepted` is
+    `true` (agent-ops#2885) — never on a `livelocked` row, whatever that flag
+    reads.
 
     The same file also drives agent-ops#2781's `viewer-probe-unanimous`
     invariant: it fires when every live node's `host.viewer_probe` object is

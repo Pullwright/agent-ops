@@ -287,6 +287,57 @@ issue_state_reapply() {  # <candidates-json> <state-issues-json> <prior-excluded
     <<<"$docs"
 }
 
+# agent-ops#2916: the PR-keyed half of `issue_state_reapply`'s own currency
+# re-test (above), mirrored for every replayed band keyed on `pr_number`
+# rather than an issue number — `abandoned_drafts_raw`, `merge_conflicts_raw`,
+# `dequeued_raw` and `landing_refusals_raw` in the cached branch of
+# `gather_ordered_repos` (lib/candidate-gather.sh). Re-applies
+# `gather_source_state`'s own `open_prs` sample ({n, u, h, d}, already in
+# scope at zero further GitHub cost) to a band replayed from
+# `expensive_gather_cache_load`, dropping any entry whose pull request has
+# closed since the cached gather ran — and, when REQUIRE-DRAFT-JSON is
+# `true`, any entry whose matching pull request has since flipped from draft
+# to ready. Only `abandoned_drafts_raw` passes `true`: a draft flipping ready
+# is exactly the transition that retires it as an abandoned-draft candidate
+# (it is now review-feedback's or a human's to act on), while the other three
+# bands' candidacy never turns on draft state at all.
+#
+# Absence from `open_prs` is a drop here, unlike `issue_state_reapply`'s own
+# treatment of an issue the sampled state no longer names: that sample walks
+# every page (`api_json_paged`, scripts/gather-source-state.sh) and any page
+# that fails flips `ok` false, which this call is already gated on — so a
+# pull request the sample does not name is genuinely closed, never merely
+# unsampled. The fail-open direction is kept where the read itself is in
+# doubt rather than its content: malformed input — BAND-JSON or
+# OPEN-PRS-JSON not an array, or the filter itself failing — hands the band
+# straight back unmodified rather than reading "could not tell" as "nothing
+# is open" and dropping every entry.
+#
+# BAND-JSON and OPEN-PRS-JSON are each unbounded past this call (a repo's own
+# open-PR count sizes both), so, per requirement 4g, both arrive on stdin, one
+# document per line, bound positionally with `input as $name` in the order
+# printed, never in argv.
+pr_band_state_reapply() {  # <band-json> <open-prs-json> <require-draft:true|false>
+  local band="$1" open_prs="${2:-[]}" require_draft="${3:-false}" docs
+  jq -e 'type == "array"' <<<"$band" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  # A malformed OPEN-PRS-JSON is handed back exactly like a malformed band,
+  # never defaulted to `[]`: this sample drives a drop, so treating "could not
+  # read it" the same as "read it, and it is genuinely empty" would read every
+  # surviving candidate as closed and drop the lot — the "too eager" failure
+  # direction the header above warns against, not the safe one.
+  jq -e 'type == "array"' <<<"$open_prs" >/dev/null 2>&1 || { printf '%s' "$band"; return 0; }
+  [[ "$require_draft" == "true" ]] || require_draft="false"
+  docs="$(printf '%s\n' "$band" "$open_prs")"
+  jq -nc --argjson req "$require_draft" '
+    input as $band | input as $open
+    | ($open | map({key: (.n | tostring), value: (.d // false)}) | from_entries) as $drafts
+    | [$band[]
+       | . as $c
+       | ($drafts[($c.pr_number | tostring)]) as $d
+       | select($d != null and (($req | not) or $d == true))]
+  ' <<<"$docs" 2>/dev/null || printf '%s' "$band"
+}
+
 # Issue #248 acceptance 4 (TD-PPagop-26081405): log one `first-seen` per item
 # the very first time any node's gather ever reports it, so a later report can
 # subtract it from the `selection` that eventually claims it. Called on each
