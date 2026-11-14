@@ -73,6 +73,38 @@ live_td_refs_json="$(jq -c \
   '[.[] | .slug as $s | (.tech_debt // [])[] | ($s + "#" + .ref)]' \
   <<<"$ordered_repos_json" 2>/dev/null || true)"
 
+# --- Requirement 34p's circuit breaker (issue #2789) ---
+# Computed once, here, and reused below in this same function and in
+# `compute_enabler_eligible_set`: which repo+items have a void-refusal run
+# (`void_refusal_streaks`, lib/cycle-state.sh) that has already reached its
+# own escalation threshold. An item in this set gets no further re-check from
+# either stage — the whole point of the circuit breaker is that the re-check
+# itself is what was costing a wasted engagement every time, so computing
+# this before the band-eligibility pass below, rather than after, is what
+# lets that same pass drop it from every band in one place instead of a
+# second, later subtraction. `2` is requirement 34p's own fixed trigger
+# ("before paying for a 3rd wasted engagement" — a run of one is still the
+# ordinary case every other block already handles); this is not a tunable,
+# unlike `crash_loop_after`'s sibling knob, because the cost this bounds is
+# not a false-positive rate to trade off, it is "how many times must the
+# identical refusal repeat before a human's one-time look is cheaper than a
+# third attempt" — a question with one honest answer, not an installation
+# preference.
+# shellcheck disable=SC2154  # union_log is assigned by agent-cycle.sh before
+# this function is called (#771); enabler_assignee likewise, but read with a
+# `:-` fallback since a fixture exercising this function in isolation may
+# never set it. The same gate 1b-v's escalation filer uses, so exclusion and
+# the escalation issue stay paired: with no enabler_assignee configured
+# there is nowhere for the escalation to land, so a twice-refused item is
+# offered for the ordinary re-check instead of being excluded with no human
+# ever asked about it (issue #2806).
+if [[ -n "${enabler_assignee:-}" && -s "$union_log" ]]; then
+  void_refusal_escalated_json="$(void_refusal_escalation_candidates 2 "$union_log" "$repo_slug_aliases_json")"
+  [[ -n "$void_refusal_escalated_json" ]] || void_refusal_escalated_json='[]'
+else
+  void_refusal_escalated_json='[]'
+fi
+
 # --- 3c/3u. Pre-fetched-band eligibility, decided (requirement 3t, issue ---
 # --- #310; extended to every other pre-fetched band by requirement 3u, ---
 # --- issue #320) ---
@@ -115,7 +147,7 @@ for eligibility_band in findings review_feedback abandoned_drafts merge_conflict
       || { guard_warn "eb_current:$eb_slug:$eligibility_band" "$eb_current"; eb_current='[]'; }
     # shellcheck disable=SC2154  # blocked_json/void_json are assigned by
     # compute_skip_lists (lib/candidate-gather.sh, #771), called above.
-    eb_filtered="$(exclude_blocked_or_void_items "$eb_current" "$eb_slug" "$blocked_json" "$void_json")"
+    eb_filtered="$(exclude_blocked_or_void_items "$eb_current" "$eb_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
     ordered_repos_json="$(jq -c --arg r "$eb_slug" --arg f "$eligibility_band" --argjson v "$eb_filtered" \
       'map(if .slug == $r then .[$f] = $v else . end)' \
       <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
@@ -129,7 +161,7 @@ while IFS= read -r iss_slug; do
   iss_current="$(jq -c --arg s "$iss_slug" 'map(select(.slug == $s)) | .[0].issues // []' \
     <<<"$ordered_repos_json" 2>&1)" \
     || { guard_warn "iss_current:$iss_slug" "$iss_current"; iss_current='[]'; }
-  iss_filtered="$(exclude_blocked_or_void_issues "$iss_current" "$iss_slug" "$blocked_json" "$void_json")"
+  iss_filtered="$(exclude_blocked_or_void_issues "$iss_current" "$iss_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
   ordered_repos_json="$(jq -c --arg r "$iss_slug" --argjson iss "$iss_filtered" \
     'map(if .slug == $r then .issues = $iss else . end)' \
     <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
@@ -444,6 +476,30 @@ if (( open_blocked_by_n > 0 )); then
   enabler_eligible_json="$(jq -c --argjson skip "$open_blocked_by_json" '
     ($skip | map((.repo // "") + "#" + (.item // ""))) as $skipset
     | [ .[] | (.repo // "") as $repo | (.item // "") as $item
+            | select(($skipset | index($repo + "#" + $item)) == null) ]
+    ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+fi
+
+# --- Requirement 34p's circuit breaker, applied to the Enabler's own ---
+# --- eligible set (issue #2789) ---
+# `void_refusal_escalated_json` (computed once, above in
+# `compute_band_eligibility`, before this function's own loops run) is the
+# same set the Co-Ordinator's own bands already dropped. The Enabler needs
+# its own subtraction here, separate from that one: requirement 35a's whole
+# premise is that the Enabler re-examines blocked items the Co-Ordinator
+# cannot touch, so an item excluded from every Co-Ordinator band is exactly
+# the kind of thing that would otherwise still reach the Enabler on its own
+# schedule — and a fresh Enabler engagement re-deriving "this is already
+# done" and being refused by the same corroboration bar is the identical
+# wasted engagement requirement 34p exists to stop paying for, just paid by
+# the more expensive stage instead of the cheaper one.
+void_refusal_escalated_n="$(jq 'length' <<<"${void_refusal_escalated_json:-[]}" 2>/dev/null || printf 0)"
+[[ "$void_refusal_escalated_n" =~ ^[0-9]+$ ]] || void_refusal_escalated_n=0
+if (( void_refusal_escalated_n > 0 )); then
+  log_event "enabler-void-refusal-escalated-skipped" "$(jq -c '{skipped: [.[] | {repo, item}]}' <<<"$void_refusal_escalated_json")"
+  enabler_eligible_json="$(jq -c --argjson skip "$void_refusal_escalated_json" '
+    ($skip | map((.repo // "") + "#" + ((.item // "") | tostring))) as $skipset
+    | [ .[] | (.repo // "") as $repo | ((.item // "") | tostring) as $item
             | select(($skipset | index($repo + "#" + $item)) == null) ]
     ' <<<"$enabler_eligible_json" 2>/dev/null || printf '%s' "$enabler_eligible_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
 fi

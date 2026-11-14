@@ -25,10 +25,22 @@
     `shellcheck`.
 18. <a id="impl-c-18"></a>`scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
-    `pr_label`-labelled pull requests (bounded to the most recently updated),
-    and for each carrying an `agent-ops:closes-issue` marker whose named
-    issue is still open and not `state_reason: "reopened"`, closes it with a
-    `pipeline_comment_header`/
+    `pr_label`-labelled pull requests, both the most recently updated (bounded
+    to `pr_search_limit`) and, via a second listing walking a persistent
+    per-repo cursor (`<state-dir>/sweep-closed-issues-cursor.json`) across the
+    same pull requests in ascending creation order, whatever batch picks up
+    from where that cursor last reached — the two listings merged and
+    de-duplicated by pull request number before either is examined. The same
+    cursor file also carries, per repo slug, a consecutive-stall counter and a
+    skip-list (`stall: {pr_number, count}`, `skip_list: […]`) so a cursor-
+    sourced pull request whose issue can never actually be read or closed
+    stops holding the cursor back after three consecutive passes, rather than
+    wedging the walk behind it forever. For each
+    carrying an `agent-ops:closes-issue` marker, or a head branch of exactly
+    `agent/<N>`, naming an issue still open and not `state_reason:
+    "reopened"`, closes it, and does the same for every other same-repository
+    issue that pull request's own `closingIssuesReferences` names beyond that
+    single target, each closed with a `pipeline_comment_header`/
     `pipeline_comment_marker`-wrapped comment citing the merge as evidence,
     printing one JSON action per outcome (`closed`, `merge-observed`,
     `approver-escalation-retired`, `deferred`, `warning`)
@@ -761,12 +773,24 @@
       listing is newest-first. A listing that comes back at the cap is
       recorded in `tech-debt-file.err` rather than passed off as complete. A
       dedup hit gets `BODY`/`PROVENANCE`, plus
-      `techdebt_default_section`'s trailing section, as a comment on the
+      `techdebt_default_section`'s trailing section, plus — when
+      `PROVENANCE` names a pull request — a `Blocked-by: <owner/repo>#<n>`
+      line naming that same pull request (`_techdebt_blocked_by_line`,
+      agent-ops#2721), as a comment on the
       matched issue instead of a second filing, and returns that issue's own
       number/url untouched — no re-labelling, no re-titling. No dedup hit
       creates a fresh issue (`gh issue create --label pw::type:tech-debt`)
       whose body is `BODY` plus `techdebt_default_section`'s trailing `##
-      Default` section plus `PROVENANCE`. A labelled create that fails is
+      Default` section plus `PROVENANCE`, plus that same `Blocked-by:` line
+      under the same condition. Either way, that line engages requirement
+      34j's existing live `Blocked-by:` check, holding the filed or
+      commented-on issue out of the `tech-debt` band for as long as the
+      named pull request stays open and releasing it automatically once it
+      closes, a still-open pull request being the normal case here rather
+      than an edge one, since the Approver runs because one is in front of
+      it. `PROVENANCE`
+      naming no pull request at all (the Enabler's own wording) gets no
+      `Blocked-by:` line, leaving that caller unchanged. A labelled create that fails is
       retried once unlabelled (`issue_create_with_retry`, `lib/issue-file.sh`)
       — a repository whose `pw::type:tech-debt` label the ensure pass
       (requirement 6a) has not reached yet — exactly as `techdebt_file_issue`'s
@@ -828,7 +852,11 @@
     trailing path appended; a title match is
     still found ahead of a same-PR check naming a different pull request; an
     unusable dedup search (not a JSON array) is skipped rather than failing the
-    filing; a labelled
+    filing; a `PROVENANCE` naming a pull request earns the filed or
+    commented-on body a `Blocked-by: <owner/repo>#<n>` line naming that same
+    pull request, on both the fresh-filing and the dedup-comment path, while
+    a `PROVENANCE` naming no pull request carries no such line
+    (agent-ops#2721); a labelled
     create that fails is retried unlabelled and still succeeds; an unlabelled
     create that fails returns 1 with no output; a token is used for every call;
     and no call ever touches `git/refs` or `pr create`. `techdebt_file_issue`'s

@@ -321,6 +321,36 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
 
+      # Report-only (issue #2836): findings are logged for a human to read,
+      # but neither a scanner failure nor a found vulnerability fails this
+      # step or the job it's in, so nothing here yet blocks a merge or a
+      # publish. Converting it into a required check is deliberately
+      # deferred until report-only runs have proven the signal isn't noise.
+      # `continue-on-error: true` on top of Trivy's own non-failing exit
+      # code means a transient scanner failure can't block the build either.
+      #
+      # The official image rather than `aquasecurity/trivy-action`: that
+      # action's bundled installer fetches the Trivy binary straight from
+      # `aquasecurity/trivy`'s GitHub releases, which failed outright in
+      # testing (exit 6, after the installer had already resolved the
+      # release tag) — this pulls the same scanner from Docker Hub instead,
+      # a dependency this workflow already has throughout. Pinned by digest
+      # (resolved from the `0.70.0` tag) rather than the mutable tag itself,
+      # so a repoint of that tag on Docker Hub can't swap in a different
+      # scanner image. The target is a `docker save`d tarball passed via
+      # `--input`, not the running daemon: a `:ro` flag on a socket mount
+      # would not have restricted anything, since unix-socket API access
+      # isn't governed by the mount's read-only flag, so this drops the
+      # socket mount entirely instead of narrowing it.
+      - name: Scan the image for known vulnerabilities
+        if: env.DOCS_ONLY != 'true'
+        continue-on-error: true
+        run: |
+          docker save agent-ops:ci -o /tmp/agent-ops-ci.tar
+          docker run --rm -v /tmp/agent-ops-ci.tar:/tmp/agent-ops-ci.tar:ro \
+            aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+            image --exit-code 0 --input /tmp/agent-ops-ci.tar
+
       # The acceptance checks of docs/spec/implementation/acceptance-checks/acceptance-checks-01.md (1b), run
       # here so a broken image cannot reach a node. `docker run` goes through
       # the entrypoint, which is itself part of what is being tested: it must
@@ -391,6 +421,25 @@ jobs:
       # policy; the probe's `claude` runs as the stage user through the shim,
       # as every stage's does. The control run removes the policy first and
       # must see all four planted commands run, or the check proves nothing.
+      #
+      # The hook the policy names (requirement 4m) is only as tamper-proof as
+      # the policy itself if `agent` cannot rewrite it either (issue #2801),
+      # so its ownership and the write refusal are asserted here too. The
+      # Dockerfile's own `test -x` cannot stand in for this: it runs as root
+      # at build time and would pass just as happily on an agent-owned copy.
+      #
+      # The policy's own parent directory has to stay root-owned too (issue
+      # #2816): write access to /etc/claude-code would let a stage delete and
+      # recreate the policy even though the file's own mode and ownership,
+      # checked just above, read correctly on their own. Every directory
+      # holding one of the hook files has to stay root-owned for the same
+      # reason (issue #2821): such a directory would let a stage delete and
+      # recreate the hook — or the directory holding it — despite the file's
+      # own mode and ownership, checked just below, reading correctly on
+      # their own. `$guard` is checked beside its two children because
+      # deleting `$guard/scripts` needs write permission on `$guard`, not on
+      # `$guard/scripts`, so checking the two leaves alone would leave the
+      # link that actually governs them unmeasured.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |
@@ -401,6 +450,20 @@ jobs:
             if touch /etc/claude-code/managed-settings.json 2>/dev/null; then
               echo "agent can write the managed policy" >&2; exit 1
             fi
+            owner="$(stat -c %U:%a /etc/claude-code)"
+            [ "$owner" = "root:755" ] || { echo "/etc/claude-code is $owner, not root:755" >&2; exit 1; }
+            guard=/etc/claude-code/background-wait-guard
+            for dir in "$guard" "$guard/scripts" "$guard/lib"; do
+              owner="$(stat -c %U:%a "$dir")"
+              [ "$owner" = "root:755" ] || { echo "$dir is $owner, not root:755" >&2; exit 1; }
+            done
+            for hook in "$guard/scripts/background-wait-guard.sh" "$guard/lib/background-wait-guard.sh"; do
+              owner="$(stat -c %U:%a "$hook")"
+              [ "$owner" = "root:755" ] || { echo "$hook is $owner, not root:755" >&2; exit 1; }
+              if touch "$hook" 2>/dev/null; then
+                echo "agent can write $hook" >&2; exit 1
+              fi
+            done
             /app/scripts/claude-policy-probe.sh --expect blocked
           '
           docker run --rm --network none --user root --entrypoint bash agent-ops:ci -c '

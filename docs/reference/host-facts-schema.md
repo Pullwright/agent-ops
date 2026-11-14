@@ -159,7 +159,7 @@ unmeasured, so this is a driver-specific field rather than a degraded one.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `updater.ledger_tail` | array | The last five entries across **every** `updater-ledger/*.jsonl` on this node, merged, ordered by each entry's own `ts`, oldest first — the same ledger `lib/updater-health.sh` already reads from inside the scheduler container, read here from the host/cluster side instead. Every file, not one named for this node: the ledger's writer keys each file by the *writing container's* `$HOSTNAME` (a container ID on this stack), which `NODE_NAME` never equals, and a roll's replacement writes under a new one — so one node's updater history is spread across files by construction. Sibling services share the directory, so read each entry's own `service` field to tell them apart. Truncated, never the whole ledger: it is unbounded within its own 7-day prune, and five entries is enough to see a streak. |
-| `updater.last_session` | object \| null | `{"ts", "failed", "scanned", "updated"}` — the newest `Session done Failed=<n> Scanned=<n> Updated=<n>` line this collector can read from the updater container's own log, `null` when no such line exists (no updater on this node, or it has not completed a scan since the container last started). |
+| `updater.last_session` | object \| null | `{"ts", "failed", "scanned", "updated", "conflict_failed"}` — the newest `Session done Failed=<n> Scanned=<n> Updated=<n>` line this collector can read from the updater container's own log, `null` when no such line exists (no updater on this node, or it has not completed a scan since the container last started). `conflict_failed` is how many of `failed` are explained by a *different* compose project on the same shared host trying to recreate a container it does not own — counted from the log's own `Conflict. The container name "..." is already in use` lines (watchtower's wording for that case; see the "One disagreement no hook can close" comment in `deploy/docker/compose.yaml` and agent-ops#1099/#1944) — `0` when `failed` is `0`. `conflict_failed == failed` means the whole count is this known, non-paging noise; `conflict_failed < failed` leaves some unexplained. |
 
 ## `viewer_probe`
 
@@ -179,6 +179,38 @@ actually arrive, from a vantage that is not the dashboard's own container,"
 which is exactly the self-certification gap the 2026-08-08 four-day silent
 outage (`docs/ROADMAP.md`'s health bullet) already burned this installation
 once on a different signal.
+
+On a `tailnet` node, this section can be filled in from either of two
+vantages (owner decision #1358, agent-ops#2788). `collector` runs on every
+node under every profile and carries no tailnet route of its own, so its own
+direct fetch degrades to the honest failure described above. The
+`viewer-probe` service instead shares the `tailscale` sidecar's own network
+namespace — the same way `dashboard` does — and so does have a route; it
+runs the identical probe, on the same `AGENT_OPS_COLLECTOR_INTERVAL_SECONDS`
+cadence, and writes its own result to `state_dir/viewer-probe/<node>.json`.
+`collector` folds that file's `viewer_probe` object in whenever the file
+exists and its own `generated_at` is no older than
+`HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS` (default: three times
+`AGENT_OPS_COLLECTOR_INTERVAL_SECONDS` — `lib/host-facts.sh`'s
+`host_facts_viewer_probe_fold_json`), falling back to its own direct fetch
+otherwise. On `local` and bare nodes, which run no sidecar and so never
+have a file to fold, the direct fetch's own honest failure is this
+section's whole answer, exactly as it was before the fold existed.
+`AGENT_OPS_VIEWER_URL_TEMPLATE`, `HOST_FACTS_VIEWER_PROBE_TIMEOUT` and
+`HOST_FACTS_CURL_CMD` govern the fetch itself identically on both
+vantages, since both run the same `host_facts_viewer_probe_json`.
+
+A route is necessary but not sufficient, and the second half is a node's
+own configuration rather than anything either vantage can derive.
+`deploy/docker/ts-serve.json` publishes a node's dashboard on
+`${TS_CERT_DOMAIN}` alone — that node's `<name>.<tailnet>.ts.net` — so
+`AGENT_OPS_VIEWER_URL_TEMPLATE`'s own default, naming the bare `{node}`
+short name, matches neither that handler nor the certificate Tailscale
+serves for it, and every entry reports `ok: false` with a TLS or
+name-resolution `reason` however good the vantage's route is. A `tailnet`
+node sets the template to the `https://{node}.<tailnet>.ts.net/data.js`
+form (`deploy/docker/.env.example`) for this section to carry a real
+measurement.
 
 ## Degradation
 

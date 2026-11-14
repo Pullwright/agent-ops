@@ -60,7 +60,11 @@ declare -gA PROVIDER_SUBSTRATE=()
 # Last-write-wins on a bare id two different keys both resolve to: a known,
 # acceptable narrowing, and one it takes two providers whose own model ids
 # collide with the qualifier stripped to reach at all — see
-# `lib/stage-run.sh`'s own `stage_model_substrate`.
+# `lib/stage-run.sh`'s own `stage_model_substrate`. The narrowing stops at
+# the key boundary: a collision *within* one key — two members of the same
+# weighted set stripping to the same bare id — is refused outright by
+# `model_key_load_into` below rather than narrowed, since there the overwrite
+# would defeat a split the configuration explicitly asked for (issue #2677).
 declare -gA MODEL_PROVIDER=()
 
 # Populated by providers_load alongside PROVIDER_SUBSTRATE. The environment
@@ -130,16 +134,30 @@ providers_load() {
   PROVIDER_SUBSTRATE=()
   PROVIDER_CREDENTIAL_ENV=()
   PROVIDER_LANES=()
+  local name_b64 substrate_b64 lanes_b64 credential_env_b64
   local name substrate lanes_json credential_env default_env
-  # lanes_json (never empty — lane_defaults always fills both lanes) comes
-  # before credential_env (routinely empty) in both the jq row and this read:
-  # `read` with a tab IFS collapses a run of consecutive tabs into a single
-  # delimiter exactly as it does whitespace-default IFS, so an empty field
-  # anywhere but last silently merges into its neighbour and shifts every
-  # field after it — this field order is what keeps the one field that can
-  # be empty safely last.
-  while IFS=$'\t' read -r name substrate lanes_json credential_env; do
-    [[ -n "$name" ]] || continue
+  # Every column travels as base64, not as raw text (issue #2855, extending
+  # #2290's own fix for the lanes column alone): `@tsv` escapes a literal
+  # backslash to `\\`, and `read -r` keeps it doubled rather than
+  # un-escaping it, so a provider name, substrate, credential_env or lane
+  # value containing a backslash (or, for the lanes column's `tojson`
+  # encoding, a double quote) came out mangled or unparseable. Base64's
+  # alphabet contains neither character, so `@tsv` has nothing to escape and
+  # the round-trip is safe regardless of what any column's value is.
+  #
+  # lanes_b64 (never empty — lane_defaults always fills both lanes) comes
+  # before credential_env_b64 (routinely empty) in both the jq row and this
+  # read: `read` with a tab IFS collapses a run of consecutive tabs into a
+  # single delimiter exactly as it does whitespace-default IFS, so an empty
+  # field anywhere but last silently merges into its neighbour and shifts
+  # every field after it — this field order is what keeps the one field
+  # that can be empty safely last.
+  while IFS=$'\t' read -r name_b64 substrate_b64 lanes_b64 credential_env_b64; do
+    [[ -n "$name_b64" ]] || continue
+    name="$(base64 -d <<<"$name_b64" 2>/dev/null)"
+    substrate="$(base64 -d <<<"$substrate_b64" 2>/dev/null)"
+    lanes_json="$(base64 -d <<<"$lanes_b64" 2>/dev/null)"
+    credential_env="$(base64 -d <<<"$credential_env_b64" 2>/dev/null)"
     PROVIDER_SUBSTRATE["$name"]="$substrate"
     # An entry carrying no `substrate` at all is a config fault, but it is
     # `config_provider_errors`' fault to report, by name, one call *later*
@@ -164,10 +182,11 @@ providers_load() {
        balance_usd: null, balance_as_of: null, balance_floor_usd: null};
     (. // {}) | to_entries[] | . as $e |
     ($e.value.lanes // {}) as $lanes |
-    [$e.key, ($e.value.substrate // ""),
+    [($e.key | @base64),
+     ($e.value.substrate // "" | @base64),
      ({api: (lane_defaults("api") * ($lanes.api // {})),
-       subscription: (lane_defaults("subscription") * ($lanes.subscription // {}))} | tojson),
-     ($e.value.credential_env // "")
+       subscription: (lane_defaults("subscription") * ($lanes.subscription // {}))} | tojson | @base64),
+     ($e.value.credential_env // "" | @base64)
     ] | @tsv' \
     <<<"$providers_json" 2>/dev/null)
   if [[ -z "${PROVIDER_SUBSTRATE[anthropic]+set}" ]]; then
@@ -364,7 +383,13 @@ model_key_is_set() {
 # unresolvable member fails fast, naming KEY and the offending member's own
 # id, the identical message an ordinary key's bad value already prints —
 # before this returns 1 without touching MODEL_SET_JSON at all; a set this
-# function refuses is never half-recorded. A member's own `weight` defaults
+# function refuses is never half-recorded. Two members that strip to the
+# same bare id under different providers are refused the same way, naming
+# KEY and the colliding bare id (issue #2677): MODEL_PROVIDER is keyed by
+# bare id, so the second such member's write would overwrite the first's and
+# every launch would land on whichever provider resolved last whichever
+# member the draw picked — a split the launcher cannot deliver, refused here
+# rather than loaded silently. A member's own `weight` defaults
 # to 1 (requirement 1b's schema floors it at 0, which this treats as "never
 # drawn" rather than refusing — a zero-weight member configured today but
 # switched on by raising it tomorrow without edits elsewhere). On success,
@@ -379,10 +404,24 @@ model_key_load_into() {
     return $?
   fi
   local __mkl_id __mkl_weight __mkl_bare __mkl_qualified __mkl_rows="[]"
+  local -A __mkl_seen_bare=()
   while IFS=$'\t' read -r __mkl_id __mkl_weight; do
     [[ -n "$__mkl_id" ]] || continue
     [[ "$__mkl_weight" =~ ^[0-9]+$ ]] || __mkl_weight=1
     resolve_model_id_into __mkl_bare "$__mkl_key" "$__mkl_id" || return 1
+    # A set that lets two members strip to the same bare id (most often the
+    # same model split across two providers, e.g. "anthropic/claude-sonnet-5"
+    # and "openrouter/claude-sonnet-5") would have the second member's
+    # MODEL_PROVIDER[bare] write silently overwrite the first's — the
+    # launcher resolves every draw to whichever provider resolved last,
+    # never the configured split (issue #2677). Refused here, before
+    # MODEL_SET_JSON ever sees the set, rather than shipped as a split that
+    # cannot actually happen.
+    if [[ -n "${__mkl_seen_bare[$__mkl_bare]+set}" ]]; then
+      echo "model-id: $__mkl_key: model set names bare id '$__mkl_bare' more than once ('${__mkl_seen_bare[$__mkl_bare]}' and '$__mkl_id' both resolve to it) — each member must resolve to a distinct model" >&2
+      return 1
+    fi
+    __mkl_seen_bare["$__mkl_bare"]="$__mkl_id"
     __mkl_qualified="$(resolve_model_qualified "$__mkl_key" "$__mkl_id")" || return 1
     __mkl_rows="$(jq -c --argjson rows "$__mkl_rows" --arg id "$__mkl_qualified" \
       --argjson w "$__mkl_weight" -n '$rows + [{id: $id, weight: $w}]')"

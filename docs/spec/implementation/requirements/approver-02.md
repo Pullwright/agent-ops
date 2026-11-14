@@ -312,17 +312,25 @@
       excludes it), so "holds no lock" is derived purely from the union log:
       grouping a node's own cycle-start/cycle-end/cycle-skipped events by
       the `cycle` id they share, any group whose `cycle-start` has no
-      matching `cycle-end`, or any `cycle-skipped` whose own `detail` names
-      a pid holding the lock (`acquire_lock`'s own log format), is evidence
-      the lock is, or very recently was, held — whatever the node's newest
-      *event* happens to be, so a long *legitimate* cycle is never mistaken
-      for a missed one, and a chained continuation's own
+      matching `cycle-end` is evidence the lock is held — whatever the
+      node's newest *event* happens to be, so a long *legitimate* cycle is
+      never mistaken for a missed one, and a chained continuation's own
       `cycle-start`/`cycle-skipped`/`cycle-end` becoming the node's newest
       events never hides an older cycle that still holds the lock
       (agent-ops#1412: a second cycle chaining in while a first one is still
       running writes exactly that shape within a second or two of the
-      first). That evidence is trusted only while it is younger than a
-      four-hour bound — the same default `lock_stale_after` documents
+      first). A lock-contention `cycle-skipped` — one whose own `detail`
+      names a pid holding the lock (`acquire_lock`'s own log format) — is
+      **not** lock evidence: its own holder logs a `cycle-start` first, so
+      while that start is unmatched the skip changes nothing, and once the
+      holder has ended the skip only claims a lock nobody holds — in every
+      band the clause could apply it was either redundant or actively
+      suppressive, delaying a genuine missed-firing page by up to the
+      staleness bound below (agent-ops#2441). That same `detail` test still
+      excludes a lock-contention tick from the cycle-duration histogram
+      described below, which is a separate question from whether the lock
+      is held. Unmatched-start evidence is trusted only while it is younger
+      than a four-hour bound — the same default `lock_stale_after` documents
       elsewhere for how long a legitimate cycle may hold the lock — because a
       container recreation leaves its last `cycle-start` permanently
       unmatched, and nothing will ever write that cycle an end: trusting an
@@ -822,9 +830,9 @@
     any *live* node's `doctor.memory_cgroup` — `scripts/doctor.sh`'s hourly
     unattended pass, `lib/memory.sh`'s own `memory_cgroup_verdict`, now
     published in the heartbeat's `doctor` object alongside `timestamp`/
-    `verdict`/`fails` (`scripts/state-sync.sh`, additive) — reads `unbounded`
-    or `livelocked`: nothing reclaims that container's memory before its
-    hard ceiling. `bounded`/`unconfirmed`/`unlimited`/absent never fire it:
+    `verdict`/`fails` (`scripts/state-sync.sh`, additive) — reads `livelocked`,
+    or reads `unbounded` and the sibling `doctor.memory_cgroup_accepted` flag
+    is not `true`. `bounded`/`unconfirmed`/`unlimited`/absent never fire it:
     the first two are already reclaimed or uncapped, and `unconfirmed` is a
     measurement gap rather than a known-bad configuration. The remedy is
     owner-only because fixing it is a host-configuration change — setting
@@ -832,6 +840,45 @@
     never one this pipeline can perform on its own behalf. No new
     configuration: the invariant reads `fleet_nodes_json` alone, declared
     with no event types, on `node-stale`/`updater-stuck`'s own terms.
+
+    Issue #2885 adds the `doctor.memory_cgroup_accepted` flag itself: a
+    standing owner decision (#2861) to keep an unbounded cgroup on this
+    fleet's VM nodes otherwise had no way to retire this very page, since
+    nothing short of changing the cgroup clears an `unbounded`/`livelocked`
+    reading on its own. `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` (`.env`, never
+    written by any pipeline stage) names the one value the owner accepts;
+    `lib/memory.sh`'s `memory_cgroup_accepted_verdict` sets the flag only
+    while the setting reads `unbounded` and the live verdict matches it, so a
+    node whose verdict later changes is judged afresh, and never for
+    `livelocked`, which `doctor.sh` warns about instead of honouring. This
+    changes no configuration or event declaration of the invariant itself —
+    only what `pager_eval_memory_cgroup`'s own predicate now excludes.
+
+    Issues #2779/#2528 both describe the same shape going undetected for
+    weeks on the viewer-vantage probe (`docs/reference/host-facts-schema.md`'s
+    `viewer_probe`): every node's probe of every target failed identically,
+    indistinguishable from a legitimate but unlucky result since nothing
+    compared one node's reading against its peers'. Issue #2781 adds
+    `verdict-unanimous`'s own shape for that field: **`viewer-probe-unanimous`**
+    (pipeline-act). Fires when every *live* node's embedded host-facts
+    record — a fleet row's `host` key (`scripts/publish-dashboard.sh`) — has
+    a non-null, non-empty `viewer_probe` object (a *top-level sibling* field
+    of that record, not nested under the record's own, differently-shaped
+    `host` sub-object of disk/mem facts, so the path read is
+    `.host.viewer_probe`, never the bare `.viewer_probe`) whose every entry
+    reads `.ok == false`. A node whose `.host` is null (the collector hasn't
+    run, or hasn't replicated here yet) or whose `viewer_probe` object is
+    empty does not count as "all failing" by vacuous truth — it fails that
+    node's own all-false test exactly as an absent `.doctor`/`.stage_health`
+    fails `verdict-unanimous`'s own per-node test, which is enough to keep
+    the fleet-wide `all` from firing without a separate missing-data branch.
+    The pipeline-act remedy reuses `pager_remedy_verdict_unanimous` unchanged
+    — it is already generic over KEY/EVIDENCE and files a `pw::type:tech-debt`
+    issue against this pipeline's own repository, the reader living here
+    (`lib/stage-health.sh`/`lib/updater-health.sh`/`scripts/doctor.sh`'s own
+    rules being the thing most likely wrong), never in a target repo. No new
+    configuration: the invariant reads `fleet_nodes_json` alone, declared
+    with no event types, on `verdict-unanimous`'s own terms.
 
     `docs/spec/dashboard/publisher.md`'s "The Publisher" section documents the
     evaluation site and the `WITH_GITHUB`-not-merely-`FULL` gate; its own

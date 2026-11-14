@@ -370,7 +370,7 @@ approver_dismiss_review() {
 # more itself before conceding the verdict is dropped.
 approver_post_or_warn() {
   local pr_url="$1" event="$2" body="$3" token="$4"
-  local errlog before diag kind wait now reset_epoch retried=0
+  local errlog before diag kind wait waited now reset_epoch retried=0
   approver_last_post_ok=1
   errlog="$(_approver_err_log)"
   before=0
@@ -391,11 +391,31 @@ approver_post_or_warn() {
     if [[ "$kind" == "primary" ]] && declare -F github_limit_primary_reset_epoch >/dev/null 2>&1; then
       reset_epoch="$(github_limit_primary_reset_epoch "$now")"
     fi
-    wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$now" "${GITHUB_LIMIT_WAITED_SECONDS:-0}")"
+    # Read and debit through `github_limit_waited_total`/`github_limit_record_wait`
+    # (lib/github-limit.sh) rather than the bare `GITHUB_LIMIT_WAITED_SECONDS`,
+    # for the same reason `merge_autonomy_kill_state` does: that file-backed
+    # total is the authoritative one now, and it is where `gh()`'s own wait plan
+    # reads from. This function does run in the process's own top-level shell —
+    # so the bare variable would still see its own write — but a budget kept in
+    # two places is not a budget: a wait debited only to the variable is
+    # invisible to the next `gh()` call's plan, which would then grant a full
+    # wait against a budget this function had already spent. `github_limit_record_wait`
+    # mirrors back into the variable from a top-level shell anyway, so the
+    # variable keeps reading exactly as it always has for anything still
+    # watching it. The `declare -F` guards match the ones above: this file does
+    # not require lib/github-limit.sh to be sourced ahead of it, and the
+    # fallback is the bare-variable arithmetic this replaces.
+    waited="${GITHUB_LIMIT_WAITED_SECONDS:-0}"
+    declare -F github_limit_waited_total >/dev/null 2>&1 && waited="$(github_limit_waited_total)"
+    wait="$(github_limit_wait_plan "$kind" "$reset_epoch" "$now" "$waited")"
     if [[ -n "$wait" ]]; then
       retried=1
       sleep "$wait"
-      GITHUB_LIMIT_WAITED_SECONDS=$(( ${GITHUB_LIMIT_WAITED_SECONDS:-0} + wait ))
+      if declare -F github_limit_record_wait >/dev/null 2>&1; then
+        github_limit_record_wait "$wait"
+      else
+        GITHUB_LIMIT_WAITED_SECONDS=$(( ${GITHUB_LIMIT_WAITED_SECONDS:-0} + wait ))
+      fi
       if approver_post_review "$pr_url" "$event" "$body" "$token"; then
         return 0
       fi

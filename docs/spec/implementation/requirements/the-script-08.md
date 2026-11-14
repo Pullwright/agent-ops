@@ -272,6 +272,23 @@
    preflight (requirement 2.0h) reads it too, directly off its own probe's
    transcript rather than off a logged event.
 
+   **All three readers are total functions of the transcript, and never hand
+   a status to their caller (agent-ops#2867).** `stage_api_refusal`,
+   `stage_api_refusal_message` and `stage_api_refusal_class` answer with a
+   token, a message, a class, or nothing, and exit `0` whatever the file
+   holds — which they must, because `handle_stage_failure` and the four
+   stages that read a transcript directly (`monitor-cycle.sh`,
+   `lib/enabler.sh`, `lib/refinement.sh`, `lib/standdown.sh`) call them as
+   plain assignments with errexit live, on the very paths that exist to
+   record a failure. So each reads the transcript line by line and skips a
+   line it cannot parse (`jq -R -n 'inputs | … | fromjson? // empty'`, the
+   tolerance `lib/stage-health.sh` already gives a partial write), and
+   neither a `jq` that fails for any other reason nor the `SIGPIPE` that
+   taking only the first answer can deal it reaches `pipefail`. Both halves
+   are load-bearing: a torn transcript is what a backstop or inactivity kill
+   leaves, and before this the reader would have killed the caller at the
+   line that was about to log the kill.
+
 4j. <a id="impl-4j"></a>**The unsheddable half of the Co-Ordinator's input is bounded too, and
    `refinements` is bounded by candidacy.** Requirement 4i bounds the prompt
    and sheds `issues` and `tech_debt` to meet the bound. It says nothing about
@@ -408,17 +425,32 @@
      file outranks every other settings source, and project instructions and
      project skills load under it unchanged. The image build checks the three
      pins, and its acceptance step runs `scripts/claude-policy-probe.sh`
-     against the built image. A scratch checkout plants a hook; an MCP server,
-     approved by the MCP-approval keys the launcher admits; and inline shell
-     in a project command and in a project skill. The checkout must run none
-     of the four, and must run all four once the policy is removed.
+     against the built image. That acceptance step also asserts, as `agent`,
+     that `/etc/claude-code` itself — the policy file's own parent directory —
+     is `root:755` (issue #2816): a directory `agent` could write to would let
+     a stage delete and recreate the policy even though the file's own mode
+     and ownership read correctly on their own. A scratch checkout plants a
+     hook; an MCP server, approved by the MCP-approval keys the launcher
+     admits; and inline shell in a project command and in a project skill.
+     The checkout must run none of the four, and must run all four once the
+     policy is removed.
    - **The launcher's settings check.** No managed key can switch off a
      project's `env`, which sets variables in the runner's process and in
      every command it runs, or the settings that name commands the runner
      executes itself (`apiKeyHelper`, `awsAuthRefresh`,
      `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
      `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
-     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_model_stage`
+     (`enabledPlugins`, `extraKnownMarketplaces`). `scripts/claude-policy-probe.sh`'s
+     acceptance step plants `env` and all seven of those command-naming
+     keys in a checkout too (a second, Vertex-only checkout for
+     `gcpAuthRefresh`, since a checkout
+     cannot be switched onto both Bedrock and Vertex at once) and asserts
+     each still behaves as `lib/stage-run.sh`'s own provenance comment
+     claims — `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` and
+     `gcpAuthRefresh` run their planted command and `env` switches the
+     provider, while `otelHeadersHelper`, `proxyAuthHelper` and
+     `processWrapper` stay inert — in both `--expect` runs alike, since none
+     of the seven are gated by the managed policy either. So `run_model_stage`
      (requirement 4d) vets `.claude/settings.json` and
      `.claude/settings.local.json` in its working directory, the only place
      Claude reads project settings from, against an allowlist before it

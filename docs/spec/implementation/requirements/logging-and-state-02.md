@@ -1,6 +1,6 @@
 ## Requirements
 
-### Logging and state — requirements, continued (part 2 of 2; 34i–34o: A block whose work is gone is cleared without asking anyone…)
+### Logging and state — requirements, continued (part 2 of 2; 34i–34p: A block whose work is gone is cleared without asking anyone…)
 
 34i. <a id="impl-34i"></a>**A block whose work is gone is cleared without asking anyone.** The
     common way a block ends is not that the impediment lifts — it is that
@@ -463,19 +463,70 @@
     the engagement it would otherwise waste, regardless of which cache or
     race produced the stale ref.
 
-    A hit from any of the three done-signals logs `item-void` (stage
+    A fourth done-signal runs alongside the other three, scoped to
+    `abandoned-drafts` alone: **the claimed item's own pull request has
+    stopped being a draft** (`lib/preflight.sh`'s
+    `preflight_abandoned_draft_reason`, agent-ops#2840). `scripts/gather-
+    abandoned-drafts.sh`'s own definition of a candidate is "open and is a
+    draft — a draft is precisely the Implementer's own claim marker", so a
+    live `isDraft: false` read is, on its own, the complete and correct
+    signal that the candidate has moved past "abandoned", whether because
+    some other node already finished it, a human already un-drafted it, or
+    it merged and reopened under another ref. `prompts/coordinator.md`'s own
+    instruction to read a non-fresh candidate live before selecting it is a
+    *prompted* safeguard for the same fact, not a Script-enforced one, and
+    this deterministic check is the backstop for exactly the gap a prompted
+    instruction leaves open: PR #2838 was selected twice at a head already
+    open, non-draft and CI-green, each selection costing a full Implementer
+    engagement to rediscover that fact. One live `gh api repos/<slug>/
+    pulls/<n>` call, reading `.draft`, using the `pr_number` the claimed
+    candidate already carries (requirement 3v's `pr_number_for_candidate`) —
+    run only for `abandoned-drafts`, the one source whose claim marker is
+    specifically "is a draft".
+
+    A hit from any of the four done-signals logs `item-void` (stage
     `preflight`) with the reason `work_gone_clearances`,
-    `preflight_branch_merged_reason` or `preflight_review_feedback_reason`
+    `preflight_branch_merged_reason`, `preflight_review_feedback_reason` or
+    `preflight_abandoned_draft_reason`
     gives, releases the claim (requirement 17a's release rules) and ends the
     cycle — no Implementer engagement spent. None needs a corroboration
     guard of its own (requirement 34d exists to catch a model's fabricated
     citation, and there is no model in this path to fabricate one): the
     evidence is read directly off `gh`/the register file/the cycle's own
     pre-claim digest, the same ground truth requirement 34d's guard checks a
-    citation against. And all three are safe to make terminal for the same
-    reason the 34i signals are: each fact, once true, stays true — the
+    citation against. The first three are safe to make terminal for the
+    same reason the 34i signals are: each fact, once true, stays true — the
     staleness of a pre-claim digest can only delay such a fact's arrival,
     never assert one that later becomes false.
+
+    `preflight_abandoned_draft_reason` is the exception: draft status is
+    reversible in this system's own vocabulary (`convert_to_draft`, modelled
+    by `lib/reconciliation-gate.sh`'s own anchor logic and performed by the
+    decision-veto sweep itself, `lib/decision-veto.sh`), so a pull request
+    this signal voided for leaving draft can later be converted back to
+    draft at the same head, with no new commits, and re-abandoned. Because
+    `scripts/gather-abandoned-drafts.sh` scopes its candidate ref to the
+    head SHA alone (`pr-<n>-abandoned-<head-sha>`; see that script's own
+    "Why the ref is scoped to the head SHA" section), the re-abandoned pull
+    request re-mints the identical ref by design, and the terminal void
+    (requirement 34h) suppresses it — indefinitely, because
+    `scripts/close-void-github-items.sh`'s stage gate actions only `stage`
+    values `coordinator`, `enabler`, `implementer` and `decision`, never
+    `preflight`, so this void never closes the pull request itself and
+    requirement 34n's retirement criterion (actioned *and* old) never fires
+    for it. Recovery is a human's hand-appended `unvoided` label
+    (requirement 34c), or any new commit landing on the branch, which moves
+    the head SHA and lets the next gather mint a fresh, unvoided ref
+    instead of the suppressed one. The signal still voids rather than
+    defers (`preflight_defer_reason`, below): the defer path would re-pay
+    this same live read and re-release the claim every cycle the stale ref
+    is reoffered, whereas this void is paid once — once a new commit moves
+    the head, the next fresh gather does not re-mint the voided ref at all,
+    so nothing is lost by leaving the narrower re-draft-at-the-same-head
+    edge to the slower, human-mediated recovery routes above. Either way
+    this fails safe: the consequence is a stalled, recoverable draft
+    candidate left void longer than necessary, never live work silently
+    discarded.
 
     **An open pull request already carrying the just-claimed branch defers
     the claim instead of voiding it** (`preflight_defer_reason`, agent-ops
@@ -867,3 +918,124 @@
     Enabler, never this deterministic sweep, which reads a fact already on
     the log rather than asking anyone to re-decide anything.
 
+34p. <a id="impl-34p"></a>**A void `void_guard_reason` refuses twice in a row, with nothing clearing
+    it in between, is escalated once and then left alone (issue #2789).**
+    A refused void is recorded `blocked` (requirement 32a) so it gets the
+    ordinary re-check every other block does — on the theory that the
+    refusal was itself mistaken, or that corroborating evidence will
+    eventually appear. Neither is true of an item whose underlying work
+    landed by a route that can never again produce a checkable citation — a
+    direct commit predating a required-PR policy, work folded into an
+    unrelated pull request, a GitHub settings act — so the re-check reaches
+    the identical "already done" verdict forever, and `void_guard_reason`
+    refuses it for the identical reason forever: the "Done-ness inferred
+    from one channel" gotcha (`docs/spec/implementation/gotchas.md`), live
+    because nothing ever proves the refusal wrong. `Poetic-Poems/poetic#297`
+    paid for this three times before anything noticed the shape rather than
+    the individual attempt.
+
+    This is a circuit breaker on top of `void_guard_reason`'s own
+    corroboration bar, never a change to it — loosening what counts as
+    corroboration is a trust-boundary decision for a human, not something a
+    tech-debt item settles on its own authority.
+
+    **Detection.** `void_refusal_streaks` (`lib/cycle-state.sh`) walks the
+    log for the most recent run of consecutive `attempt-failed` events
+    whose `detail` carries the literal `void refused (` prefix every refusal
+    site writes (`lib/coordinator-phase.sh`'s Implementer-sourced refusal,
+    `lib/candidate-select.sh`'s Co-Ordinator-sourced one, `lib/enabler.sh`'s
+    Enabler-sourced one), for one repo+item, with no `unblocked` or
+    `item-void` event breaking the run — the identical set/clear discipline
+    requirement 34a's `_latest_unresolved` already applies to
+    `blocked`/`void`, extended here to count a run's length rather than only
+    its latest member. An ordinary block (a red check, an unmerged
+    dependency) never joins a run: only a `detail` carrying that literal
+    prefix does, so every other block keeps its ordinary re-check untouched.
+    A clearing event that names no repo breaks the run in *every* repo —
+    requirement 34a's own over-clearing rule, applied here for the reason it
+    exists there: the Co-Ordinator's own `unblocked` report carries a bare
+    item id and no repo (requirement 18), and so does a human's hand-appended
+    `unblocked`/`item-void` (requirements 34, 34c), so matching a clear
+    against a run's repo alone would leave this requirement's own escape
+    hatch (below) unreachable. `void_refusal_escalation_candidates THRESHOLD`
+    narrows that to the runs whose own count has reached THRESHOLD — fixed at
+    2, "before paying for a 3rd wasted engagement": a run of one is still the
+    ordinary case.
+
+    **Exclusion.** An item whose run has reached the threshold is dropped
+    from both actors' eligible sets — never returned by a later re-check,
+    including requirement 18a's own mandatory live re-read for a GitHub
+    issue, since this item's own repeated history is exactly what proves a
+    fresh thread will never settle it — but only when `enabler_assignee` is
+    configured (issue #2806). The exclusion and the escalation below share
+    the one gate the escalation filer already needed
+    (`[[ -n "$enabler_assignee" && -s "$union_log" ]]`), so an
+    Enabler-less installation — one with nowhere to send the escalation this
+    circuit breaker depends on to end the exclusion — never excludes an item
+    with no human ever asked about it; such an item instead gets the
+    ordinary re-check every other block gets, exactly as if this requirement
+    did not exist. With `enabler_assignee` configured, the exclusion applies
+    unconditionally, as below:
+
+    - `exclude_blocked_or_void_items` and `exclude_blocked_or_void_issues`
+      (`lib/candidate-select.sh`) each take a fifth, optional `escalated`
+      array (default `[]`, so every existing caller is unaffected) and drop
+      a matching candidate the identical way they already drop a `void` one
+      — unconditionally, before `exclude_blocked_or_void_issues`'s own
+      block-is-stale/block-is-fresh test ever runs. `coordinator_eligible_
+      items` takes the same array as a third argument and excludes it from
+      the `issues` band's own eligible count the identical way it already
+      excludes `blocked`, so a verdict is never asked to account for an item
+      neither function ever offered.
+    - `compute_enabler_eligible_set` (`lib/eligibility.sh`) drops the
+      identical set from `enabler_eligible_json` after its existing
+      stale-ref and open-`Blocked-by:` passes, logging
+      `enabler-void-refusal-escalated-skipped` — without this, an item every
+      Co-Ordinator band already excludes would still reach the Enabler on
+      requirement 35a's own schedule, and a fresh Enabler engagement
+      re-deriving "already done" and being refused by the identical
+      corroboration bar is the same wasted engagement this requirement
+      exists to stop paying for, just paid by the more expensive stage
+      instead of the cheaper one.
+
+    Both the Co-Ordinator's and the Enabler's exclusion read the identical
+    `void_refusal_escalation_candidates 2` computation
+    (`lib/eligibility.sh`'s `compute_band_eligibility`, and independently
+    `agent-cycle.sh`'s own pre-gather-phase block below, over the same
+    `$union_log` snapshot) — a deterministic function of the log, so
+    computing it twice in one cycle never disagrees with itself.
+
+    **Escalation.** `agent-cycle.sh` runs this detection early in the cycle
+    — before `run_gather_phase`, the same reason the requirement 2.7 crash-
+    loop block above it does: a cycle that stands down or no-ops inside the
+    gather phase must not skip the one escalation that would have stopped
+    it no-opping on a stale verdict forever. For every candidate at or past
+    the threshold, `void_refusal_escalate` (`lib/enabler.sh`) files one
+    escalation issue in the item's own repository — never a fleet-wide "home"
+    repository, since this is a fact about one item, not about the fleet's
+    health — through `create_escalation_issue`, the same dedup-guarded filer
+    every other escalation route in this codebase uses, never a second,
+    independent `gh issue create` call. The body quotes the most recent
+    refusal's own words, names the "Done-ness inferred from one channel"
+    gotcha, and asks the human to do exactly one of two things: close the
+    item directly if the repeated "already done" reading is right, or say
+    why it is not. Filing is idempotent two ways: `void_refusal_escalated_
+    since` (`lib/cycle-state.sh`) checks this cycle's own `$union_log` for a
+    `void-refusal-escalated` event keyed on the run's own `first_ts`, so an
+    already-escalated run costs no `gh` call at all; `create_escalation_
+    issue`'s own open-issue dedup is the second, live layer for the gap
+    between a peer's filing and its own event reaching this node's log. A
+    run that recurs long after its escalation issue closed gets a fresh
+    `first_ts` and so escalates afresh, rather than reading as already
+    handled forever.
+
+    **What ends the exclusion.** Nothing automatic — by design, the same
+    "only a human clears a void" asymmetry requirement 34c already states
+    for the state this circuit breaker sits on top of. A human closing the
+    item directly resolves it outright (the item, and so the escalation's
+    own premise, is gone). A human who instead appends `unblocked` or
+    `item-void` by hand — the same hand-appended convention every other
+    clearing event in this file already allows — breaks the run exactly as
+    an automatic one would, and the item is eligible again from the next
+    cycle on; nothing about this requirement makes that path harder to use
+    than it already was for an ordinary block.

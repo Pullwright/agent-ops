@@ -395,7 +395,8 @@ doctor_status_json="$(jq -c '.' "$doctor_status_file" 2>/dev/null || echo null)"
 # same way. The full record still reaches `status.doctor` above, where it is
 # local to this node and the page's own doctor panel reads `fails`/`warns`
 # from it.
-doctor_heartbeat_json="$(jq -c '{timestamp, verdict, memory_cgroup: (.memory_cgroup // null)}' \
+doctor_heartbeat_json="$(jq -c '{timestamp, verdict, memory_cgroup: (.memory_cgroup // null),
+                                 memory_cgroup_accepted: (.memory_cgroup_accepted // false)}' \
   "$doctor_status_file" 2>/dev/null || echo null)"
 # This node's own resource-budget report (scripts/resource-budget-report.sh,
 # requirement 55, D14, agent-ops#606) — read directly via the identical pure

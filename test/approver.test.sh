@@ -451,6 +451,12 @@ reset_rl_stub() {  # <fail-count> <fail-message>
   : >"$rl_dir/post-calls"; : >"$rl_dir/posts"
   events=()
   GITHUB_LIMIT_WAITED_SECONDS=0
+  # And the file-backed total, which is what approver_post_or_warn's own wait
+  # plan now reads (agent-ops#2011/#2739): a reset that cleared only the
+  # variable would leave a prior case's debit counting against this one's
+  # budget, so a late case would stop retrying for want of patience it never
+  # actually spent.
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
 }
 rl_posts() { wc -l <"$rl_dir/posts" 2>/dev/null | tr -d ' '; }
 rl_post_calls() { cat "$rl_dir/post-calls" 2>/dev/null || printf 0; }
@@ -470,6 +476,17 @@ assert_eq "a rate-limited write is retried rather than dropped" "1" "$approver_l
 assert_eq "  ... exactly two POST attempts were made" "2" "$(rl_post_calls)"
 assert_eq "  ... and the retry actually reached GitHub" "1" "$(rl_posts)"
 assert_eq "  ... logging no warning at all — the retry recovered it" "" "$(warning_events)"
+# agent-ops#2011/#2739: the wait just taken has to land in the one budget
+# `gh()`'s own wait plan reads (github_limit_waited_total's file), not only in
+# the GITHUB_LIMIT_WAITED_SECONDS this function used to write alone. Debited to
+# the variable alone it would be invisible to the next `gh` call, which would
+# then grant a fresh full wait against patience this process had already spent.
+assert_eq "  ... and the wait was debited to the process-wide budget gh() reads" \
+  "1" "$(( $(github_limit_waited_total) >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
+# Mirrored into the plain module variable too, since this call is made from the
+# process's own top-level shell — nothing that still reads it directly regresses.
+assert_eq "  ... and mirrored into the module variable, as a top-level call always was" \
+  "1" "$(( GITHUB_LIMIT_WAITED_SECONDS >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
 
 # A refusal that is still rate-limited on the retry: dropped, but the warning
 # names the cause distinguishably from a generic refusal, and says a retry

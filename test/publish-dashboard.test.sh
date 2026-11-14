@@ -2857,7 +2857,7 @@ assert_eq "a fired invariant in this node's own log reaches the payload's pager 
   "dashboard-unreadable" "$(jq -r '.pager[0].key' <<<"$(data_of "$x")")"
 assert_eq "  ... carrying its evidence and the node it names" "data.js unreadable nodeX-self" \
   "$(jq -r '.pager[0] | "\(.evidence) \(.nodes[0])"' <<<"$(data_of "$x")")"
-assert_eq "  ... and only that one, of the nineteen registered keys" "1" \
+assert_eq "  ... and only that one, of the twenty registered keys" "1" \
   "$(jq '.pager | length' <<<"$(data_of "$x")")"
 
 # A --no-github tick carries the index forward like every other GitHub-sourced
@@ -3847,10 +3847,13 @@ assert_eq "and its timestamp" "2026-08-18T09:00:00Z" \
 
 # The fleet self-row's doctor projection (doctor_heartbeat_json,
 # scripts/publish-dashboard.sh:398) is a narrower, peer-comparable subset of
-# the same file: timestamp, verdict and memory_cgroup only — never
-# warns/fails/skips, which stay local to status.doctor above (agent-ops#2705).
-assert_eq "the fleet self-row's doctor object carries exactly timestamp/verdict/memory_cgroup" \
-  '["memory_cgroup","timestamp","verdict"]' \
+# the same file: timestamp, verdict, memory_cgroup and memory_cgroup_accepted
+# only — never warns/fails/skips, which stay local to status.doctor above
+# (agent-ops#2705). memory_cgroup_accepted joined the projection in
+# agent-ops#2885, alongside memory_cgroup, for lib/pager-invariants.sh's
+# memory-cgroup invariant to read fleet-wide.
+assert_eq "the fleet self-row's doctor object carries exactly timestamp/verdict/memory_cgroup/memory_cgroup_accepted" \
+  '["memory_cgroup","memory_cgroup_accepted","timestamp","verdict"]' \
   "$(jq -c '.fleet.nodes[] | select(.self) | .doctor | keys' <<<"$ddata")"
 assert_eq "...with the same verdict as status.doctor" "warn" \
   "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.verdict' <<<"$ddata")"
@@ -3858,6 +3861,8 @@ assert_eq "...the same timestamp" "2026-08-18T09:00:00Z" \
   "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.timestamp' <<<"$ddata")"
 assert_eq "...and memory_cgroup defaulted to null when the status file has none" "null" \
   "$(jq -c '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup' <<<"$ddata")"
+assert_eq "...and memory_cgroup_accepted defaulted to false when the status file has none" "false" \
+  "$(jq -c '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup_accepted' <<<"$ddata")"
 
 cat > "$d/.local/state/poetic-agents/.doctor-status.json" <<'JSON'
 {"timestamp":"2026-08-19T09:00:00Z","verdict":"fail","fails":[],"warns":[],"skips":0,"memory_cgroup":"fail"}
@@ -3866,6 +3871,14 @@ run_publish "$d" NODE_NAME=nodeDoctor
 ddata="$(data_of "$d")"
 assert_eq "a populated memory_cgroup reaches the fleet self-row's doctor projection too" "fail" \
   "$(jq -r '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup' <<<"$ddata")"
+
+cat > "$d/.local/state/poetic-agents/.doctor-status.json" <<'JSON'
+{"timestamp":"2026-08-19T09:05:00Z","verdict":"warn","fails":[],"warns":[],"skips":0,"memory_cgroup":"unbounded","memory_cgroup_accepted":true}
+JSON
+run_publish "$d" NODE_NAME=nodeDoctor
+ddata="$(data_of "$d")"
+assert_eq "a populated memory_cgroup_accepted reaches the fleet self-row's doctor projection too" "true" \
+  "$(jq -c '.fleet.nodes[] | select(.self) | .doctor.memory_cgroup_accepted' <<<"$ddata")"
 
 # token_expiry (agent-ops#694) rides through the same verbatim read as
 # verdict/warns/timestamp above — no field-level plumbing of its own in

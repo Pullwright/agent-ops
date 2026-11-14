@@ -362,6 +362,30 @@ assert_contains "memory_cgroup_unconfirmed_describe says the state is unmeasured
 assert_contains "memory_cgroup_unconfirmed_describe points at the fix" \
   "cgroup-parent-setup.sh" "$desc"
 
+# --- memory_cgroup_accepted_verdict / _describe (agent-ops#2885) -----------
+
+assert_eq "an unbounded setting matching an unbounded verdict is accepted" \
+  "accepted" "$(memory_cgroup_accepted_verdict unbounded unbounded)"
+assert_eq "an empty setting is never accepted" \
+  "none" "$(memory_cgroup_accepted_verdict "" unbounded)"
+assert_eq "a setting that no longer matches the live verdict is none, not accepted" \
+  "none" "$(memory_cgroup_accepted_verdict unbounded bounded)"
+assert_eq "a setting of unbounded against a livelocked verdict is none, never accepted" \
+  "none" "$(memory_cgroup_accepted_verdict unbounded livelocked)"
+assert_eq "a setting naming livelocked is invalid, whatever the live verdict reads" \
+  "invalid" "$(memory_cgroup_accepted_verdict livelocked livelocked)"
+assert_eq "...even against an unbounded live verdict" \
+  "invalid" "$(memory_cgroup_accepted_verdict livelocked unbounded)"
+assert_eq "an unrecognised setting is none, not accepted and not invalid" \
+  "none" "$(memory_cgroup_accepted_verdict bogus unbounded)"
+
+stub_cgroup max 1610612736
+desc="$(memory_cgroup_accepted_describe)"
+assert_contains "memory_cgroup_accepted_describe names what is held" "750 MiB" "$desc"
+assert_contains "memory_cgroup_accepted_describe names the ceiling" "1536 MiB" "$desc"
+assert_contains "memory_cgroup_accepted_describe names the setting that recorded the acceptance" \
+  "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded" "$desc"
+
 # --- memory_cgroup_throttle_rate_per_min / _verdict / _describe
 #     (agent-ops#2469) --------------------------------------------------------
 

@@ -1174,8 +1174,73 @@
     no record of our own to keep, because the re-open is GitHub's record of
     it. The skip is reported as a warning, never silent.
 
-    Bounded to the most recently updated merged pull requests per repo, and
-    idempotent by construction — it only ever acts on an issue GitHub itself
+    A pull request can name more than one issue this way — PR #2812 closed
+    both #2801 and #2813 in the same body, but the marker/branch anchor above
+    only ever identifies a single target, so #2813 sat open for five days
+    after #2801 closed within the half hour (agent-ops#2851). Alongside that
+    single target, this sweep also checks every other same-repository issue
+    the pull request's own GitHub-reported `closingIssuesReferences` names —
+    already present on the same listing, at no extra cost — and closes each
+    one still open and not reopened the same way, counted under the same
+    `max_actions` budget as the single-target close.
+
+    Bounded, by default, to the most recently updated merged pull requests
+    per repo — but that ordering alone has a gap: a merged pull request
+    nobody touches again ages out of it for good once enough newer pull
+    requests merge, with nothing to reach back for it. PR #2425 merged
+    2026-10-20 and met every closing criterion above, but #2393 sat open for
+    three weeks because it never again surfaced near the top of that
+    ordering (agent-ops#2851). So alongside that window, this sweep also
+    walks a second, persistent cursor — `<state_dir>/sweep-closed-issues-
+    cursor.json`, keyed per repo slug — across the same merged, labelled pull
+    requests in ascending creation order, continuing each run from at or just
+    past wherever the cursor last reached (`created:>=`, not `created:>`, so
+    two pull requests sharing one `createdAt` second at that boundary cannot
+    let one slip past unexamined) rather than from the beginning, and bounded
+    by the same `pr_search_limit` per call. The two listings are merged and
+    de-duplicated by pull request number before either is examined, so a
+    pull request either call finds is processed exactly once.
+
+    The cursor advances past a batch the cursor listing examined only once
+    every cursor-sourced pull request in it actually finished — closed,
+    already closed, or left alone as a deliberate `state_reason: "reopened"`
+    skip. A close the shared `max_actions` budget deferred, or one a
+    transient `gh` read or close failure left alone, holds the cursor exactly
+    where it was instead: advancing past it regardless would make that pull
+    request's own issue permanently unreachable, since the next cursor search
+    starts strictly past this point and an old pull request by definition no
+    longer surfaces in the "most recently updated" window either
+    (agent-ops#2869). An exhausted cursor (an empty batch) is likewise left
+    exactly where it is: every pull request merging from that point on is
+    fresh enough to appear in the "most recently updated" window on its own.
+
+    That hold alone cannot tell a transient defer from a permanent one
+    (agent-ops#2891): a cursor-sourced pull request naming an issue that 404s
+    on every read, or whose close call fails every run, held the cursor
+    forever, wedging the whole walk behind it. So the cursor file also tracks,
+    per repo slug, a consecutive-stall counter keyed on whichever single
+    cursor-sourced pull request blocked the gate this pass, and a skip-list of
+    pull requests the walk has given up on. The counter increments only for a
+    real read/close failure — never for a close the shared budget merely
+    deferred, which already expects to resolve once more budget is available
+    — resets to 1 the moment a different pull request blocks the gate, and
+    clears entirely the moment no cursor-sourced row is incomplete and the
+    cursor listing itself actually ran. A pass whose cursor-side listing call
+    fails outright leaves no cursor-sourced row to find incomplete either,
+    which would otherwise look exactly like the gate genuinely resolving and
+    wipe out a persisted stall for a reason the blocking pull request was
+    never actually clear of (agent-ops#2908) — so that pass, like a
+    budget-deferred one, carries any persisted stall forward unchanged
+    instead. Once the
+    same pull request has blocked three consecutive passes this way, it is
+    added to the skip-list and the counter clears: a skip-listed pull
+    request's row stops holding the cursor, so the walk resumes past it,
+    with a louder warning naming which pull request it gave up on — while its
+    issue, never actually closed, is left exactly as unclosed as before.
+    There is no path back off the skip-list other than a human editing the
+    cursor file directly.
+
+    Idempotent by construction — it only ever acts on an issue GitHub itself
     still reports open and not reopened, so re-running it costs nothing once
     the backlog is cleared. Actions are capped per run (three per repo per cycle, the
     overflow reported, never silent), logged as `issue-closed-post-merge`

@@ -139,11 +139,35 @@ assert_eq "a missing ledger directory degrades to an empty array" \
 log_text='time="2026-09-08T09:00:00Z" level=info msg="Session done" Failed=0 Scanned=3 Updated=1
 time="2026-09-08T10:00:00Z" level=info msg="Session done" Failed=2 Scanned=3 Updated=0'
 assert_eq "the newest Session-done line wins, not the first" \
-  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0}' \
+  '{"ts":"2026-09-08T10:00:00Z","failed":2,"scanned":3,"updated":0,"conflict_failed":0}' \
   "$(host_facts_parse_last_session "$log_text")"
 assert_eq "no Session-done line at all reads null" "null" \
   "$(host_facts_parse_last_session 'nothing relevant here')"
 assert_eq "no log text at all reads null" "null" "$(host_facts_parse_last_session)"
+
+# A Failed count fully explained by the *other* compose project's own roll
+# window on a shared host (agent-ops#1099/#1944) — each Conflict line
+# counted, and conflict_failed lands equal to failed.
+conflict_log_text='time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"abc123\"."
+time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-scheduler-1\" is already in use by container \"def456\"."
+time="2026-09-03T21:06:56Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-egress-proxy-1\" is already in use by container \"ghi789\"."
+time="2026-09-03T21:06:56Z" level=info msg="Session done" Failed=3 Scanned=6 Updated=0'
+assert_eq "a Failed count matching its own Conflict lines reads conflict_failed equal to failed" \
+  '{"ts":"2026-09-03T21:06:56Z","failed":3,"scanned":6,"updated":0,"conflict_failed":3}' \
+  "$(host_facts_parse_last_session "$conflict_log_text")"
+
+# A prior session's own Conflict lines must not inflate the newest
+# session's count: the tail can span several polling cycles, and this
+# session's own Failed=1 is explained by its own single Conflict line, not
+# by the two left over from the session before it.
+multi_session_conflict_log_text='time="2026-09-08T09:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"abc123\"."
+time="2026-09-08T09:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-scheduler-1\" is already in use by container \"def456\"."
+time="2026-09-08T09:00:00Z" level=info msg="Session done" Failed=2 Scanned=6 Updated=0
+time="2026-09-08T10:00:00Z" level=error msg="Error response from daemon: Conflict. The container name \"/agent-ops-dashboard-1\" is already in use by container \"ghi789\"."
+time="2026-09-08T10:00:00Z" level=info msg="Session done" Failed=1 Scanned=6 Updated=0'
+assert_eq "a prior session's own Conflict lines are not counted against this one's Failed" \
+  '{"ts":"2026-09-08T10:00:00Z","failed":1,"scanned":6,"updated":0,"conflict_failed":1}' \
+  "$(host_facts_parse_last_session "$multi_session_conflict_log_text")"
 
 # --- updater section ----------------------------------------------------------
 assert_eq "no ledger dir and no log text: the whole updater section is null" \
@@ -219,6 +243,68 @@ assert_eq "a body that will not parse still reports what it received" \
 probe_json="$(host_facts_viewer_probe_json $'node-a\nnode-b' 'http://{node}/data.js' "$ok_curl")"
 assert_eq "the probe object is keyed by every node in the list" \
   '["node-a","node-b"]' "$(jq -c 'keys' <<<"$probe_json")"
+
+# --- Viewer probe URL template (agent-ops#2779/#2528) --------------------------
+# Regression: bash's `${VAR:-default}` expansion treats the first unescaped
+# `}` inside the default text as closing the expansion, so an unescaped
+# `{node}` placeholder in the default template used to be silently
+# truncated to `{node` whenever the override was unset or empty — curl's
+# own URL globbing then expanded that to the literal hostname `node` for
+# every target, which is exactly what made every probe fail 100% of the
+# time against every node.
+unset AGENT_OPS_VIEWER_URL_TEMPLATE
+assert_eq "the default template keeps its {node} placeholder intact when the override is unset" \
+  "https://{node}/data.js" "$(host_facts_viewer_url_template)"
+
+AGENT_OPS_VIEWER_URL_TEMPLATE=""
+assert_eq "an empty override also falls through to the same intact default" \
+  "https://{node}/data.js" "$(host_facts_viewer_url_template)"
+
+AGENT_OPS_VIEWER_URL_TEMPLATE="http://{node}:9999/viewer.js"
+assert_eq "a non-empty override is used verbatim" \
+  "http://{node}:9999/viewer.js" "$(host_facts_viewer_url_template)"
+unset AGENT_OPS_VIEWER_URL_TEMPLATE
+
+# --- Viewer probe fold (owner decision #1358, agent-ops#2788) -----------------
+# The `viewer-probe` sidecar writes {"generated_at":…, "viewer_probe":{…}} to
+# its own file on the shared state volume; `collect-host-facts.sh` folds it
+# in when fresh, and must fall back — printing nothing, returning 1 — on
+# every other shape: missing file, stale timestamp, no `viewer_probe` key,
+# unparseable JSON.
+fold_dir="$tmp_dir/viewer-probe"
+mkdir -p "$fold_dir"
+now_epoch=1793555200  # 2026-11-01T17:46:40Z, fixed so this needs no live clock
+
+fresh_file="$fold_dir/fresh.json"
+printf '{"generated_at":"2026-11-01T17:46:10Z","viewer_probe":{"poetic-1":{"ok":true,"bytes":42,"seconds":0.1,"reason":null}}}' \
+  > "$fresh_file"  # 30s before now_epoch
+assert_eq "a file present and fresh folds its own viewer_probe object in" \
+  '{"poetic-1":{"ok":true,"bytes":42,"seconds":0.1,"reason":null}}' \
+  "$(host_facts_viewer_probe_fold_json "$fresh_file" 900 "$now_epoch")"
+
+stale_file="$fold_dir/stale.json"
+printf '{"generated_at":"2026-11-01T17:30:00Z","viewer_probe":{"poetic-1":{"ok":true,"bytes":1,"seconds":0.1,"reason":null}}}' \
+  > "$stale_file"  # 970s before now_epoch, older than the 900s window
+assert_eq "a file older than the window falls back (non-zero)" \
+  "1" "$(host_facts_viewer_probe_fold_json "$stale_file" 900 "$now_epoch" >/tmp/fold-stale.$$ 2>/dev/null; echo $?)"
+assert_eq "a stale file's own stdout is empty, the caller's fall-back signal" \
+  "" "$(cat /tmp/fold-stale.$$)"
+rm -f /tmp/fold-stale.$$
+
+assert_eq "a missing file falls back (non-zero, no stdout)" \
+  "1" "$(host_facts_viewer_probe_fold_json "$fold_dir/no-such-file.json" 900 "$now_epoch" >/tmp/fold-missing.$$ 2>/dev/null; echo $?)"
+assert_eq "a missing file prints nothing to fall back on" "" "$(cat /tmp/fold-missing.$$)"
+rm -f /tmp/fold-missing.$$
+
+no_key_file="$fold_dir/no-key.json"
+printf '{"generated_at":"2026-11-01T17:46:10Z"}' > "$no_key_file"
+assert_eq "a fresh file with no viewer_probe key still falls back" \
+  "1" "$(host_facts_viewer_probe_fold_json "$no_key_file" 900 "$now_epoch" >/dev/null 2>&1; echo $?)"
+
+malformed_file="$fold_dir/malformed.json"
+printf 'not json at all' > "$malformed_file"
+assert_eq "malformed JSON falls back rather than aborting the caller" \
+  "1" "$(host_facts_viewer_probe_fold_json "$malformed_file" 900 "$now_epoch" >/dev/null 2>&1; echo $?)"
 
 printf '\n'
 if (( failures > 0 )); then

@@ -219,6 +219,12 @@ printf '{"findings":[]}\n' > "$state/expensive-gather/o_r.json"
 # expensive-gather/ above — no peer reads another node's copy.
 mkdir -p "$state/wake-poll/o_r"
 printf 'W/"deadbeef"\n' > "$state/wake-poll/o_r/issues.etag"
+# The viewer-probe sidecar's own intermediate (scripts/collect-viewer-probe.sh,
+# owner decision #1358, agent-ops#1339): this node's own viewer-vantage probe,
+# local on the same reasoning as expensive-gather/ above — it reaches the
+# fleet folded into host-facts/<node>.json instead.
+mkdir -p "$state/viewer-probe"
+printf '{"node":"active-node","viewer_probe":{}}\n' > "$state/viewer-probe/active-node.json"
 # The hourly unattended doctor pass's own artefacts (agent-ops#543): local to
 # this node, like the caches above, so neither file should replicate. Its
 # *verdict* is folded into the heartbeat (agent-ops#1278) and, as of
@@ -322,6 +328,7 @@ assert_eq "the derived lock-staleness cache does not replicate" "0" \
 assert_eq "the publication cache does not replicate" "0" "$(test -e "$pushed/.state-sync-published.json" && echo 1 || echo 0)"
 assert_eq "the expensive-gather cache does not replicate" "0" "$(test -e "$pushed/expensive-gather" && echo 1 || echo 0)"
 assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-poll" && echo 1 || echo 0)"
+assert_eq "the viewer-probe intermediate does not replicate" "0" "$(test -e "$pushed/viewer-probe" && echo 1 || echo 0)"
 assert_eq "the doctor log does not replicate" "0" "$(test -e "$pushed/doctor.log" && echo 1 || echo 0)"
 assert_eq "the doctor status cache does not replicate" "0" "$(test -e "$pushed/.doctor-status.json" && echo 1 || echo 0)"
 assert_eq "the stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.stage-health.json" && echo 1 || echo 0)"
@@ -444,6 +451,8 @@ assert_eq "and so does token_expiry, which only the node holding the credential 
   "$(jq -r '.doctor | has("token_expiry")' <<<"$hb")"
 assert_eq "but memory_cgroup does travel (agent-ops#2698): lib/pager-invariants.sh's memory-cgroup invariant reads it fleet-wide" "unbounded" \
   "$(jq -r '.doctor.memory_cgroup' <<<"$hb")"
+assert_eq "...and memory_cgroup_accepted travels alongside it, defaulting to false when the status file carries none (agent-ops#2885)" "false" \
+  "$(jq -r '.doctor.memory_cgroup_accepted' <<<"$hb")"
 
 # --- The heartbeat carries a mirror-rebuild verdict slot (#604) ---------------
 # lib/mirror-integrity.sh's own behaviour (a corrupted mirror is discarded
@@ -2152,6 +2161,54 @@ assert_eq "a fetch that waits out an ordinary hold exits 0" "0" "$?"
 assert_lacks "…never reporting the lock as contended at all" \
   "another state-sync holds the mirror" "$out"
 kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
+
+# --- the default lock wait is clamped to the fetch interval (agent-ops#2748) --
+# Deriving the default purely from push_interval_seconds (above) is short
+# enough to fit inside fetch's own cadence only while the push interval is
+# already the shorter of the two — true of the shipped 5/7-minute split, but
+# the schema does not require it: `state_sync_push_minutes` and
+# `state_sync_fetch_minutes` are independent `integer, 1..59` keys. That the
+# clamp is therefore a no-op at the shipped cadence is a property of
+# config.json rather than of this code, so it is stated here rather than
+# asserted — a routine change to either key must not fail a test, least of
+# all one covering the very push >= fetch configurations this clamp exists
+# to make safe.
+#
+# At a configuration where the push interval is the *longer* of the two, the
+# unclamped default (push_interval_seconds, 120s here) would let a fetch wait
+# past its own 60s interval — exactly the pile-up agent-ops#2748 describes.
+# Proven end to end, with no `STATE_SYNC_FETCH_LOCK_WAIT_SECONDS` override:
+# the hold below (90s) outlasts the clamped 60s default but not the
+# unclamped 120s one, so a fetch giving up within that window is the clamp
+# actually firing, not a coincidence of a short hold.
+cl_config="$tmp_dir/clamp-config.json"
+jq '.schedule.state_sync_push_minutes = 2 | .schedule.state_sync_fetch_minutes = 1' \
+  "$SCRIPT_DIR/config.json" > "$cl_config"
+
+cl_home="$(new_node clamp-node)"
+cl_state="$cl_home/.local/state/poetic-agents"
+cl_mirror="$cl_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-10-30T00:00:00Z","event":"cycle-start"}\n' > "$cl_state/log.jsonl"
+out="$(sync_as "$cl_home" active push AGENT_OPS_CONFIG="$cl_config")"
+assert_eq "the clamp node's first push exits 0" "0" "$?"
+
+jq -nc --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "push", pid: 1}' > "$cl_mirror.lock.holder"
+flock "$cl_mirror.lock" sleep 90 &
+cl_holder_parent=$!
+sleep 0.2
+cl_holder_child="$(pgrep -P "$cl_holder_parent" | head -1)"
+cl_start="$(date +%s)"
+out="$(sync_as "$cl_home" active fetch AGENT_OPS_CONFIG="$cl_config")"
+cl_rc=$?
+cl_elapsed=$(( $(date +%s) - cl_start ))
+kill "$cl_holder_parent" "$cl_holder_child" 2>/dev/null; wait "$cl_holder_parent" 2>/dev/null
+assert_eq "a fetch giving up against a hold outlasting both intervals still exits 0 — self-clearing" \
+  "0" "$cl_rc"
+assert_contains "…reporting the contention" \
+  "another state-sync holds the mirror — holding for" "$out"
+assert_eq "…giving up around the 60s fetch interval, not the longer 120s push interval" "1" \
+  "$(( cl_elapsed >= 45 && cl_elapsed < 100 ? 1 : 0 ))"
 
 # --- a single file's redaction failing does not wedge the whole push -----------
 # The root cause #1679 traced the incident to: a file `redact_file` cannot

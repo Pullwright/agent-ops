@@ -22,6 +22,11 @@
 #     own wording) never matches by this path, and neither does a PR number
 #     that is merely a digit prefix of one the body names (`#25` against a
 #     body naming only `#2567`).
+#   - **PROVENANCE naming a pull request earns the filed/commented body a
+#     `Blocked-by: <owner/repo>#<n>` line** naming that same pull request
+#     (agent-ops#2721), so requirement 34j's existing live check holds the
+#     record out of the band while it stays open. A provenance naming no PR
+#     (the Enabler's own wording) adds no such line.
 #   - **A TOKEN, given, is used for every gh call** (issue list, comment,
 #     create) — never the ordinary login.
 #   - **A labelled create that fails is retried once unlabelled** (a
@@ -188,6 +193,7 @@ reset_stub() {
   echo "https://github.com/o/r/issues/77" > "$tmp_dir/issue-url"
   echo '[]' > "$tmp_dir/issue-list-response"
   GITHUB_LIMIT_WAITED_SECONDS=0
+  rm -f "$(github_limit_waited_file)" 2>/dev/null || true
 }
 
 last_issue_body() {
@@ -246,6 +252,14 @@ assert_eq "  ... gh was invoked twice (the refusal, then the retry)" "2" \
   "$(grep -c '^<none> issue list -R o/r$' "$tmp_dir/calls")"
 assert_eq "  ... the shadow's own retry notice was printed" "1" \
   "$(grep -c 'secondary rate limit; waiting' "$tmp_dir/stderr")"
+# agent-ops#2739: that wait ran inside _techdebt_gh's own tokenless
+# `( unset GH_TOKEN; gh "$@" )` subshell — folded into agent-ops#2011's own
+# chosen fix (debit through a file, github_limit_record_wait) rather than a
+# second mechanism, per this item's own default. Read from outside both the
+# `( )` block and the `$(...)` that captured `out` above, which is exactly
+# where the bare GITHUB_LIMIT_WAITED_SECONDS was losing it before the fix.
+assert_eq "  ... and the process-wide wait budget was debited for it, not lost with the subshell" \
+  "1" "$(( $(github_limit_waited_total) >= GITHUB_LIMIT_SECONDARY_WAIT_SECONDS ? 1 : 0 ))"
 
 # --- The token path goes through the same shadow -- a companion case ------
 # showing no regression there.
@@ -427,6 +441,37 @@ out="$(techdebt_file_debt "o/r" "A finding worth filing" "New evidence." \
         "while the Approver was judging https://github.com/o/r/pull/999" "")"
 assert_eq "file_debt: title match still hits even when the PR differs" \
   "49	https://github.com/o/r/issues/49" "$out"
+
+# --- PROVENANCE naming a pull request -> the filed body also carries a ----
+# `Blocked-by:` line naming that same pull request (agent-ops#2721), so the
+# record is held out of the tech-debt band by requirement 34j's existing live
+# check for as long as that pull request stays open.
+reset_stub
+out="$(techdebt_file_debt "o/r" "A finding against an open PR" "The body." \
+        "while the Approver was judging https://github.com/o/r/pull/2652" "")"
+rc=$?
+assert_eq "file_debt: PR named in provenance, exit 0" "0" "$rc"
+assert_eq "  ... fresh issue filed" "77	https://github.com/o/r/issues/77" "$out"
+assert_eq "  ... the filed body carries a Blocked-by: line naming that PR" "1" \
+  "$(last_issue_body | grep -c '^Blocked-by: o/r#2652$')"
+
+# --- ... and the same line lands in the dedup comment, not just a fresh ----
+# filing -----------------------------------------------------------------
+reset_stub
+jq -nc '[{number: 52, url: "https://github.com/o/r/issues/52", title: "A finding worth filing"}]' \
+  > "$tmp_dir/issue-list-response"
+techdebt_file_debt "o/r" "A finding worth filing" "New evidence." \
+  "while the Approver was judging https://github.com/o/r/pull/2652" "" >/dev/null
+assert_eq "file_debt: dedup comment also carries the Blocked-by: line" "1" \
+  "$(last_issue_body | grep -c '^Blocked-by: o/r#2652$')"
+
+# --- PROVENANCE naming no pull request (the Enabler's own wording) -> no ---
+# Blocked-by: line at all -- the scope note's no-op stays a no-op -----------
+reset_stub
+techdebt_file_debt "o/r" "A finding from the Enabler" "The body." \
+  "during an Enabler engagement on 2721 (cycle c1)" "" >/dev/null
+assert_eq "file_debt: no PR in provenance -> no Blocked-by: line" "0" \
+  "$(last_issue_body | grep -c '^Blocked-by:')"
 
 # --- A dedup hit still carries DEFAULT_FIX/OWNER_DECISION into the comment --
 reset_stub

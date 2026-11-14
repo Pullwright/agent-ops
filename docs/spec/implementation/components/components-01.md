@@ -858,12 +858,17 @@ What exists, and the requirements each part answers to:
    via `lib/handoff.sh`'s `handoff_latest_positions` — the one
    standing-position-per-reviewer definition `scripts/gather-review-
    feedback.sh` (3c) also calls (requirement 34a, issue #1373) — and voiding
-   when the item's own review id no longer names it. `preflight_done_reason`
-   and `preflight_open_pr_reason` are pure — they read nothing themselves —
-   sourced after `lib/work-gone.sh`, whose function `preflight_done_reason`
-   wraps, and after `lib/handoff.sh`, whose `handoff_latest_positions`
-   `preflight_review_feedback_reason` calls. Unit-tested
-   (`test/preflight.test.sh`); must pass `shellcheck`.
+   when the item's own review id no longer names it. `preflight_abandoned_
+   draft_reason` is the fourth done-signal (requirement 34m, agent-ops#2840),
+   scoped to `abandoned-drafts` items alone: one live `gh api pulls/<n>`
+   call, reading `.draft` — `false` voids, since a draft is precisely that
+   source's own claim marker and its absence means some other node, or a
+   human, already moved the candidate past "abandoned". `preflight_done_
+   reason` and `preflight_open_pr_reason` are pure — they read nothing
+   themselves — sourced after `lib/work-gone.sh`, whose function
+   `preflight_done_reason` wraps, and after `lib/handoff.sh`, whose
+   `handoff_latest_positions` `preflight_review_feedback_reason` calls.
+   Unit-tested (`test/preflight.test.sh`); must pass `shellcheck`.
 3n. <a id="impl-c-3n"></a>`scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
    given a repo slug, examines every `<branch_prefix>*` and
    `td-record/*` ref, and
@@ -922,7 +927,12 @@ What exists, and the requirements each part answers to:
    whose advisory warning reports it; plus `memory_cgroup_field`,
    `memory_cgroup_stat`, `memory_cgroup_verdict` and
    `memory_cgroup_describe`, the read-only cgroup v2 inspection doctor.sh
-   reports an unbounded container with. Unit-tested, `test/memory.test.sh`
+   reports an unbounded container with; plus `memory_cgroup_accepted_verdict`
+   and `memory_cgroup_accepted_describe` (agent-ops#2885), which compare an
+   owner-recorded `AGENT_OPS_MEMORY_CGROUP_ACCEPTED` against the live verdict
+   so `doctor.sh` and `lib/pager-invariants.sh`'s `memory-cgroup` invariant
+   agree on when an `unbounded` reading is an accepted trade-off rather than
+   a gap. Unit-tested, `test/memory.test.sh`
    and `test/memory-wiring.test.sh`),
    `lib/disk-space.sh` (requirement 2.0c's `disk_space_free_kb`,
    `disk_space_verdict`, `disk_space_describe` and `disk_space_same_filesystem`
@@ -1175,9 +1185,13 @@ What exists, and the requirements each part answers to:
 8. <a id="impl-c-8"></a>`deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
 9. <a id="impl-c-9"></a>`.github/workflows/build-image.yml` — the build-and-publish path for
-   component 7's image: build, verify the toolchain, validate the crontab, run
-   the `test/` suite inside the image, and check the role guard; then publish
-   to GHCR on `main` only. It carries `packages: write` and authenticates as
+   component 7's image: build, scan it for known vulnerabilities, verify the
+   toolchain, validate the crontab, run the `test/` suite inside the image,
+   and check the role guard; then publish to GHCR on `main` only. The
+   vulnerability scan (Trivy) is report-only — `continue-on-error: true` and
+   its own non-failing exit code, so neither a finding nor a scanner failure
+   blocks the build or the merge — until its signal is proven and it is
+   promoted to a required check. It carries `packages: write` and authenticates as
    the workflow's own `GITHUB_TOKEN`, so nothing about publishing depends on a
    human's credentials. Its `changes` job decides whether there is an image
    worth building at all, through `scripts/is-docs-only.sh` — the allowlist of

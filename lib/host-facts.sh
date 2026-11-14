@@ -202,18 +202,35 @@ host_facts_updater_ledger_tail() {
     || printf '[]'
 }
 
-# host_facts_parse_last_session LOG-TEXT — {"ts","failed","scanned","updated"}
-# from the newest `Session done Failed=<n> Scanned=<n> Updated=<n>` line in
-# LOG-TEXT (a watchtower container's own log), `null` when no such line is
-# present. `ts` is whatever ISO-ish timestamp the log line itself leads
-# with, verbatim, `null` when the line carries none this can recognise —
-# never guessed from the collector's own clock, which describes when this
-# ran, not when the session finished.
+# host_facts_parse_last_session LOG-TEXT —
+# {"ts","failed","scanned","updated","conflict_failed"} from the newest
+# `Session done Failed=<n> Scanned=<n> Updated=<n>` line in LOG-TEXT (a
+# watchtower container's own log), `null` when no such line is present.
+# `ts` is whatever ISO-ish timestamp the log line itself leads with,
+# verbatim, `null` when the line carries none this can recognise — never
+# guessed from the collector's own clock, which describes when this ran,
+# not when the session finished. `conflict_failed` is how many of that
+# session's own `failed` are explained by a *different* compose project on
+# the same shared host trying to recreate a container it does not own —
+# counted from LOG-TEXT's `Conflict. The container name "..." is already in
+# use` lines, watchtower's own wording for that case (see the "One
+# disagreement no hook can close" comment in deploy/docker/compose.yaml and
+# agent-ops#1099/#1944). `conflict_failed == failed` means the whole count
+# is this known, non-paging noise; `conflict_failed < failed` leaves some
+# unexplained and worth a closer look. Only counted when `failed>0`; `0`
+# otherwise — never omitted, so a reader can always compare it to `failed`
+# without first checking whether the field is present. Counted only across
+# the newest session's own lines — from just after the *previous*
+# `Session done` line (if any) through the newest one — never the whole of
+# LOG-TEXT: a 200-line tail can span several polling cycles, and counting a
+# prior session's own Conflict lines against this one's `failed` is exactly
+# how `conflict_failed` ends up exceeding `failed`, which breaks the
+# `conflict_failed <= failed` invariant this field exists to provide.
 host_facts_parse_last_session() {
   local line=""
   line="$(grep -aF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 1)"
   [[ -n "$line" ]] || { printf 'null'; return 0; }
-  local ts="" failed="" scanned="" updated=""
+  local ts="" failed="" scanned="" updated="" conflict_failed=0
   # logrus's default text formatter fronts every line with `time="<ts>"
   # level=..."` — the timestamp watchtower itself stamped the session with,
   # never this collector's own clock.
@@ -222,10 +239,19 @@ host_facts_parse_last_session() {
   scanned="$(grep -aoE 'Scanned=[0-9]+' <<<"$line" | head -n 1 | cut -d= -f2)"
   updated="$(grep -aoE 'Updated=[0-9]+' <<<"$line" | head -n 1 | cut -d= -f2)"
   [[ "$failed" =~ ^[0-9]+$ && "$scanned" =~ ^[0-9]+$ && "$updated" =~ ^[0-9]+$ ]] || { printf 'null'; return 0; }
+  if (( failed > 0 )); then
+    local session_lines="" last_n="" prev_n=0
+    last_n="$(grep -anF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 1 | cut -d: -f1)"
+    prev_n="$(grep -anF 'Session done' <<<"${1:-}" 2>/dev/null | tail -n 2 | head -n 1 | cut -d: -f1)"
+    [[ "$prev_n" =~ ^[0-9]+$ && "$prev_n" != "$last_n" ]] || prev_n=0
+    session_lines="$(sed -n "$((prev_n + 1)),${last_n}p" <<<"${1:-}")"
+    conflict_failed="$(grep -acF 'Conflict. The container name' <<<"$session_lines" 2>/dev/null)"
+  fi
   jq -nc \
     --argjson ts "$( [[ -n "$ts" ]] && jq -nc --arg t "$ts" '$t' || printf 'null' )" \
     --argjson failed "$failed" --argjson scanned "$scanned" --argjson updated "$updated" \
-    '{ts:$ts, failed:$failed, scanned:$scanned, updated:$updated}'
+    --argjson conflict_failed "$conflict_failed" \
+    '{ts:$ts, failed:$failed, scanned:$scanned, updated:$updated, conflict_failed:$conflict_failed}'
 }
 
 # host_facts_updater_json STATE_DIR [LOG-TEXT] — the `updater` section: the
@@ -294,7 +320,7 @@ host_facts_viewer_probe_one() {
   local stderr_file="" stderr_text=""
   stderr_file="$(mktemp 2>/dev/null || printf '/dev/null')"
   start="$(date +%s.%N 2>/dev/null || date +%s)"
-  raw="$($curl_cmd -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" -w '\n%{http_code}' "$url" 2>"$stderr_file")"
+  raw="$($curl_cmd -g -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" -w '\n%{http_code}' "$url" 2>"$stderr_file")"
   rc=$?
   end="$(date +%s.%N 2>/dev/null || date +%s)"
   if [[ "$stderr_file" != /dev/null ]]; then
@@ -326,6 +352,21 @@ host_facts_viewer_probe_one() {
     '{ok:true, bytes:$bytes, seconds:$seconds, reason:null}'
 }
 
+# host_facts_viewer_url_template — the viewer-probe URL template,
+# AGENT_OPS_VIEWER_URL_TEMPLATE-overridable, scripts/collect-host-facts.sh's
+# only caller. Kept as its own function, rather than inlined at the call
+# site, because bash's `${VAR:-default}` expansion treats the first
+# unescaped `}` inside the *default* text as closing the expansion — the
+# embedded `{node}` placeholder's own `}` would otherwise close it early and
+# silently mangle the default to `https://{node/data.js}` whenever the env
+# var is unset or empty, which curl's own URL globbing then expands to the
+# literal hostname `node` for every target (agent-ops#2779/#2528). The
+# escaped `\}` below is what keeps the placeholder intact; do not "simplify"
+# it back to a bare `}`.
+host_facts_viewer_url_template() {
+  printf '%s' "${AGENT_OPS_VIEWER_URL_TEMPLATE:-https://{node\}/data.js}"
+}
+
 # host_facts_viewer_probe_json NODE-LIST URL-TEMPLATE [CURL-CMD] — the whole
 # `viewer_probe` object, one key per line of NODE-LIST (blank lines
 # skipped). URL-TEMPLATE carries a literal `{node}` this substitutes each
@@ -342,4 +383,38 @@ host_facts_viewer_probe_json() {
     out="$(jq -nc --argjson o "$out" --arg n "$node" --argjson e "$entry" '$o + {($n): $e}' 2>/dev/null || printf '%s' "$out")"
   done <<<"$node_list"
   printf '%s' "$out"
+}
+
+# host_facts_viewer_probe_fold_json FILE MAX_AGE_SECONDS [NOW_EPOCH] — the
+# `viewer_probe` object folded in from a sibling process's own record, when
+# FILE exists, parses, and its own `generated_at` is no older than
+# MAX_AGE_SECONDS; prints nothing and returns 1 otherwise, which tells the
+# caller to fall back to running `host_facts_viewer_probe_json` itself
+# exactly as it did before this function existed.
+#
+# FILE is `deploy/docker/compose.yaml`'s `viewer-probe` sidecar's own
+# output (owner decision #1358, agent-ops#2788): that service shares the
+# `tailscale` sidecar's namespace, the route `scripts/collect-host-facts.sh`'s
+# own container never has, and writes its result on the same interval this
+# reads against. On a `local` or bare node — no sidecar, so no file — this
+# always returns 1, and the caller's existing direct probe (which has no
+# route either, and says so honestly) is the whole answer, exactly as #1358
+# intended.
+#
+# NOW_EPOCH is overridable so the test suite can pin "now" without a live
+# clock race; every real caller leaves it unset and gets the system clock.
+host_facts_viewer_probe_fold_json() {
+  local file="${1:-}" max_age="${2:-}" now="${3:-}"
+  local generated_at="" gen_epoch="" age="" viewer_probe=""
+  [[ -f "$file" ]] || return 1
+  [[ "$max_age" =~ ^[0-9]+$ ]] || return 1
+  generated_at="$(jq -r '.generated_at // empty' "$file" 2>/dev/null)"
+  [[ -n "$generated_at" ]] || return 1
+  gen_epoch="$(date -u -d "$generated_at" +%s 2>/dev/null)" || return 1
+  now="${now:-$(date -u +%s)}"
+  age=$(( now - gen_epoch ))
+  (( age <= max_age )) || return 1
+  viewer_probe="$(jq -c '.viewer_probe // empty' "$file" 2>/dev/null)"
+  [[ -n "$viewer_probe" ]] || return 1
+  printf '%s' "$viewer_probe"
 }

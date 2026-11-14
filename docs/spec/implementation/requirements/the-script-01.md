@@ -134,11 +134,20 @@
    changes for a key no installation has turned into a set; an object
    resolves every member through that same resolution — an unresolvable
    member is the identical fail-fast config error an ordinary key's bad
-   value already is, naming the key and the offending member — and
-   normalizes the set into `MODEL_SET_JSON`, keyed by the config key's own
-   name, which becomes the "handle" value the key's own variable holds in
-   place of a single bare id. A member is drawn from the set once per
-   launch, by weight, *before* the lane requirement 4d's own draw chooses
+   value already is, naming the key and the offending member, and so is a
+   set whose members strip to the same bare id under different providers
+   (e.g. `anthropic/claude-sonnet-5` and `openrouter/claude-sonnet-5`, both
+   `claude-sonnet-5` with the qualifier stripped), naming the key and the
+   colliding bare id instead of the offending member — refused rather than
+   loaded and left to have the second such member's `MODEL_PROVIDER` write
+   silently overwrite the first's, which would have every launch land on
+   whichever provider resolved last regardless of which member the draw
+   actually picked, defeating the configured split without any error ever
+   surfacing (agent-ops#2677) — and normalizes the set into
+   `MODEL_SET_JSON`, keyed by the config key's own name, which becomes the
+   "handle" value the key's own variable holds in place of a single bare id.
+   A member is drawn from the set once per launch, by weight, *before* the
+   lane requirement 4d's own draw chooses
    (`lib/stage-run.sh`'s `stage_model_resolve_into`/`stage_model_draw_into`):
    the same seeded `cksum`-mod-total-weight-then-bucket rule D30's lane
    weights already use, reused rather than duplicated with a rule of its
@@ -212,8 +221,9 @@
    inside a lane, a `weight` that is not an integer >= 0, an `enabled` that
    is not a boolean, a `spend_cap_usd`/`balance_usd`/`balance_floor_usd` that
    is not a number or a `spend_window_hours` that is not a positive integer,
-   a `balance_as_of` that is not a string, a `balance_floor_usd` set without
-   both `balance_usd` and `balance_as_of`, a `spend_cap_usd` or
+   a `balance_as_of` that is not a string or is not an ISO 8601 date (or
+   date-time), a `balance_floor_usd` set without both `balance_usd` and
+   `balance_as_of`, a `spend_cap_usd` or
    `balance_floor_usd` set on a lane `lib/model-id.sh`'s
    `PROVIDER_LANE_NO_MEASURE` names as having no cost measure at all (no
    substrate-reported cost and no statement, #2248 — today: `xai/subscription`

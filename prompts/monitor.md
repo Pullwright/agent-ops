@@ -110,6 +110,12 @@ from holding several records side by side:
 - A number that is arithmetically impossible or self-defeating. A budget that
   resolves to a negative allowance; a cap below the floor it is compared
   against; a window that can never contain the event it waits for.
+- A backlog-reduction lever that names an issue already excluded from the
+  Co-Ordinator's eligible set (`blocked-label`/`blocked-by`/`assigned`,
+  applied *before* the fit ladder runs). Closing an already-excluded issue
+  frees no band space in the eligible set the lever claims to shrink — that
+  makes the lever arithmetically void, the same as the bullet above, and the
+  fix is to drop it, not to qualify it with "appears to" language.
 - A stand-down whose stated cause does not match the evidence beside it — the
   fleet's own record of *why* nothing happened is the single most reliable
   place a real limit shows up.
@@ -133,7 +139,12 @@ does with it:
   `filing_repositories`; a finding naming anything else is refused.
   Give it a title that reads as a work item and a body that says **what** is
   wrong, **why it matters**, **where** (file, function, event name), and a
-  **suggested fix**.
+  **suggested fix**. Where the suggested fix recommends closing specific
+  issues to reduce backlog size, check each named issue for a deliberate-park
+  signal first — a `blocked:needs-refinement`-class label whose own thread
+  records a roadmap-gated or owner-gated deferral. An issue carrying one is
+  correctly held open, not stale; name it as **parked, not closeable** in the
+  body rather than listing it as a closure candidate.
 - **`tactical`** — a configuration lever, where the right value is a
   judgement rather than a defect. Always state it in the report, with the key,
   its current value, the value you propose, and the evidence. Set

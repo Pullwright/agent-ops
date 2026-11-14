@@ -341,6 +341,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                      memory_cgroup:"unbounded"|"parented"|"livelocked"|
                                     "unconfirmed"|"bounded"|"unlimited"|
                                     "unknown" | null,
+                     memory_cgroup_accepted:true|false,
                      token_expiry:{expires_at,days_remaining} | null} | null,
                                     //   THIS node's most recent hourly
                                     //   `doctor.sh --unattended` pass
@@ -354,7 +355,20 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   `lib/pager-invariants.sh`'s
                                     //   `memory-cgroup` invariant can page a
                                     //   fleet-wide `unbounded`/`livelocked`
-                                    //   reading directly. token_expiry
+                                    //   reading directly.
+                                    //   memory_cgroup_accepted
+                                    //   (agent-ops#2885) is true only once
+                                    //   the owner has recorded acceptance of
+                                    //   an `unbounded` memory_cgroup via
+                                    //   AGENT_OPS_MEMORY_CGROUP_ACCEPTED
+                                    //   (.env) and the live verdict still
+                                    //   matches it — never true for
+                                    //   `livelocked` — and is what the
+                                    //   `memory-cgroup` invariant and the
+                                    //   dashboard's own fleet card both read
+                                    //   to tell an accepted trade-off apart
+                                    //   from an unexamined gap.
+                                    //   token_expiry
                                     //   (agent-ops#694)
                                     //   is this node's PAT's own
                                     //   expiry, read from GitHub's
@@ -972,11 +986,12 @@ function receives, as its `UNION_LOG_FILE`, the implementation union
 reduced to the event types its registration declares
 (`pager_declare_events`, `PAGER_EVAL_EVENTS`; `union_prefilter` makes the
 file under the working set before the evaluation and removes it after): a
-key declared with no types — `verdict-unanimous`, `page-outlived-item`,
-`node-stale`, `updater-stuck`, `dashboard-unreadable`, `memory-cgroup` and
-`review-pipeline-failing`, which read the heartbeats, GitHub or the review
-union — receives an empty file, a key with no declaration receives the
-whole union, and a prefilter that fails leaves the whole union in place.
+key declared with no types — `verdict-unanimous`, `viewer-probe-unanimous`,
+`page-outlived-item`, `node-stale`, `updater-stuck`, `dashboard-unreadable`,
+`memory-cgroup` and `review-pipeline-failing`, which read the heartbeats,
+GitHub or the review union — receives an empty file, a key with no
+declaration receives the whole union, and a prefilter that fails leaves the
+whole union in place.
 The remedy variables (`PAGER_REMEDY_UNION_LOG_FILE`) keep the whole union.
 The block also reads the two config keys agent-ops#1282 added —
 `pager_stale_file_after_minutes`, passed to

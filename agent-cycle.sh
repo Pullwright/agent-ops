@@ -1221,7 +1221,7 @@ schedule_json="$(cfg_json '.schedule')"
 # How long a draft PR this system raised may sit untouched before it counts as
 # abandoned and finishing it becomes selectable work (requirement 3e). Comfortably
 # beyond a whole cycle, so a draft merely being worked never qualifies.
-abandoned_draft_after_hours="$(cfg '.abandoned_draft_after_hours')"
+abandoned_draft_after_hours="$(cfg_int '.abandoned_draft_after_hours')"
 state_repo="$(cfg '.state_repo')"
 all_repos_json="$(cfg_json '.repos')"
 # The implementation-plan source has no path of its own in the prompt or the
@@ -2391,6 +2391,37 @@ if ! (( DRY_RUN )) && (( crash_loop_after > 0 )) \
       "Crash loop: cycles are dying before any stage starts" \
       "No stage transcript exists for a cycle that dies before any stage begins — start with the newest failing cycle's entry in \`cron.log\` (or \`cron.log.1\` after rotation) under \`state_dir/\`."
   fi
+fi
+
+# 1b-v. Requirement 34p's circuit breaker (issue #2789): a per-item void
+# corroboration that keeps repeating, rather than a fleet-wide crash loop —
+# `void_refusal_escalation_candidates` (lib/cycle-state.sh) walks the same
+# `$union_log` 1b's crash-loop block above just read, for the run of
+# consecutive void-refused `attempt-failed` events each repo+item carries
+# with no `unblocked`/`item-void` in between (requirement 32a's own refusal
+# path). Run here, before `run_gather_phase` (which reruns the identical,
+# deterministic computation for `lib/eligibility.sh`'s own exclusion —
+# issue #2789's other half, cheap enough to recompute rather than thread
+# through as a second global this early), for the same reason 1b runs here:
+# a cycle that stands down or no-ops inside the gather phase below must not
+# skip the one escalation that would have stopped it no-opping on a stale
+# verdict forever. `2` is this requirement's own fixed threshold — see that
+# function's own header for why it is not a tunable.
+#
+# Filed, not deferred-and-retried like 1b's crash loop: there is no
+# same-cycle race to lose here (nothing later in this cycle can "prove the
+# run over" the way a Co-Ordinator success proves a crash loop broken — an
+# item in this set is, by construction, not offered to the Co-Ordinator or
+# the Enabler this cycle or any later one), so `void_refusal_escalate`'s own
+# two-layered dedup (its own header) is the whole of what keeps this
+# idempotent, and a failed filing simply retries next cycle on the same
+# terms as every other escalation filer in this codebase.
+if ! (( DRY_RUN )) && [[ -n "$enabler_assignee" && -s "$union_log" ]]; then
+  while IFS= read -r void_refusal_candidate; do
+    [[ -n "$void_refusal_candidate" ]] || continue
+    void_refusal_escalate "$void_refusal_candidate"
+  done < <(void_refusal_escalation_candidates 2 "$union_log" "$repo_slug_aliases_json" \
+    | jq -c '.[]' 2>/dev/null || true)
 fi
 
 # 1c. Token-expiry escalation (agent-ops#694). GitHub states a personal

@@ -680,6 +680,17 @@ fi
 if [[ -z "$preflight_reason" && "$selected_source" == "review-feedback" ]]; then
   preflight_reason="$(preflight_review_feedback_reason "$selected_repo" "$selected_item")"
 fi
+# A third live call (agent-ops#2840): an abandoned-drafts candidate's own
+# claim marker — its pull request being a draft — may already be gone by
+# claim time, the gap that let PR #2838 burn two full Implementer engagements
+# confirming it was already non-draft and mergeable. Gated to
+# `abandoned-drafts` the same way the two checks above are each gated to
+# their own source. `pr_number` rides on `work_order_json` unchanged for this
+# source (lib/candidate-select.sh's `pr_number_for_candidate`).
+if [[ -z "$preflight_reason" && "$selected_source" == "abandoned-drafts" ]]; then
+  preflight_reason="$(preflight_abandoned_draft_reason "$selected_repo" \
+    "$(jq -r '.pr_number // ""' <<<"$work_order_json")")"
+fi
 if [[ -n "$preflight_reason" ]]; then
   log_item_void "preflight" "$preflight_reason" \
     "$(jq -nc --arg e "$preflight_reason" '{evidence: $e}')"
