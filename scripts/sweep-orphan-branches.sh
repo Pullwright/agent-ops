@@ -269,9 +269,12 @@ actions=0
 deferred=0
 
 # Every `draft-obsolete-flagged`/`void-object-closed` event the fleet has
-# ever logged, reduced to the bare `{repo, item}` pairs `retirement_reason`
+# ever logged, reduced to `{repo, item, pr}` triples `retirement_reason`
 # below matches against — read once here rather than per branch, since the
-# union log does not change mid-sweep. An unreadable or absent UNION_LOG
+# union log does not change mid-sweep. `pr` is `draft_obsolete_flags`'s own
+# `pr` field, or `void_object_closed_items`'s own `number` for a PR-shaped
+# void (`null` for an issue-shaped one, which closes a bare issue number and
+# names no separate pull request). An unreadable or absent UNION_LOG
 # degrades to "no retirement events known yet", never to a crash: a branch
 # this would have caught instead falls through to the ordinary flow below,
 # exactly as it did before this check existed.
@@ -290,7 +293,7 @@ if [[ -n "$union_log" && -r "$union_log" ]]; then
   retirement_events_json="$(jq -nc \
     --argjson a "$(draft_obsolete_flags "$union_log" 2>/dev/null </dev/null || echo '[]')" \
     --argjson b "$(void_object_closed_items "$union_log" 2>/dev/null </dev/null || echo '[]')" \
-    '($a + $b) | map({repo, item})' 2>/dev/null)" || retirement_events_json='[]'
+    '($a + $b) | map({repo, item, pr: (.pr // .number // null)})' 2>/dev/null)" || retirement_events_json='[]'
   [[ -n "$retirement_events_json" ]] || retirement_events_json='[]'
 fi
 
@@ -314,19 +317,25 @@ fi
 # `Obsolete` the other two already act on must not be a retirement this one
 # silently fails to see.
 #
-# Two keys answer the event test, because a claim branch reduces to its item
-# ref two different ways and the events are written under the unreduced one.
-# `$branch_prefix` stripped from the front is `gather_claimed`'s own
-# derivation and is the ref `lib/enabler.sh` logs (`pr-2913-abandoned-
-# 12c058202df8`, say — all four finishing sources mint a ref ending in a
-# 12-hex id by construction, requirements 3c/3e/3z/3g). `stem` strips that
-# trailing id as well, which is right for the rival-branch search below
-# (two branches for the same pull request under different head SHAs must
-# compare equal) and wrong here, where it would reduce the branch past every
-# such event's own `item` and never match one. Both are tried, so the plain
-# `<prefix><n>` case and the finishing-source case each resolve.
+# Two signals answer the event test, because the engagement that logs a
+# finishing-source retirement is never named after this branch at all. An
+# ordinary (non-finishing) item's own `draft-obsolete-flagged`/`void-object-
+# closed` event is logged under this branch's own item — `$branch_prefix`
+# stripped from the front, `gather_claimed`'s own derivation — and that
+# plain string match is tried first. But a finishing source (an Enabler
+# engagement, or `close-void-github-items.sh` acting on its void) works on
+# the *target pull request's own existing head branch*, so it logs its
+# event under its own engagement ref (`pr-2913-abandoned-12c058202df8`, say)
+# — a string that never equals any claim branch's name, no matter how it is
+# reduced. What it does share with the branch that wedges is the pull
+# request number: this branch's own most recent closed pull request is
+# exactly the one the finishing engagement worked on, so matching the
+# event's own `pr` (logged by `lib/enabler.sh`) or `number` (logged by
+# `close-void-github-items.sh` for a `pr-<n>-…` void; absent, and so never
+# matched, for a bare-issue void) against that pull request's number ties
+# the retirement to exactly the branch it wedges.
 retirement_reason() {
-  local branch="$1" closed_json latest obsolete item item_stem
+  local branch="$1" closed_json latest obsolete item number
   closed_json="$("$GH" pr list -R "$slug" --head "$branch" --state closed \
     --json number,state,labels,closedAt 2>/dev/null)" || return 1
   jq -e 'type == "array"' <<<"$closed_json" >/dev/null 2>&1 || return 1
@@ -344,10 +353,12 @@ retirement_reason() {
 
   item="$branch"
   [[ -n "$branch_prefix" && "$item" == "$branch_prefix"* ]] && item="${item#"$branch_prefix"}"
-  item_stem="$(stem "$branch")"
-  if jq -e --arg r "$slug" --arg i "$item" --arg s "$item_stem" \
+  number="$(jq -r '.number // empty' <<<"$latest" 2>/dev/null)"
+  [[ "$number" =~ ^[0-9]+$ ]] || number=""
+  if jq -e --arg r "$slug" --arg i "$item" --argjson n "${number:-null}" \
       'any(.[]; (.repo // "" | ascii_downcase) == ($r | ascii_downcase)
-                and ((.item // "" | tostring) == $i or (.item // "" | tostring) == $s))' \
+                and ((.item // "" | tostring) == $i
+                     or (($n != null) and (.pr // null) == $n)))' \
       <<<"$retirement_events_json" >/dev/null 2>&1; then
     printf 'a draft-obsolete-flagged or void-object-closed event already names this item'
     return 0

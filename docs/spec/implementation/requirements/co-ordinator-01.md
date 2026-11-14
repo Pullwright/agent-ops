@@ -1134,16 +1134,24 @@
     `void-object-closed` event, read from the union log an optional second
     argument now hands the sweep, already names this branch's own item.
     The label is matched case-insensitively, the same way
-    `lib/void-guard.sh` and `scripts/close-void-github-items.sh` read it;
-    the item is matched on `branch_prefix` stripped from the front — the
-    derivation `gather_claimed` uses, and the whole ref the events are
-    logged under, 12-hex id included for the four finishing sources — as
-    well as on the rival-branch search's own further-reduced stem, so
-    neither shape of ref is reduced past the event naming it. An omitted
-    or unreadable union log reads as "no retirement events known yet",
-    and is read as a file or not at all: the sweep never consumes its own
-    stdin, which from `lib/standdown.sh` is the repo-slug stream of the
-    loop the call sits inside.
+    `lib/void-guard.sh` and `scripts/close-void-github-items.sh` read it.
+    The item is matched two ways, because the engagement that logs a
+    finishing-source retirement is never named after the claim branch at
+    all: an ordinary item's event is logged under `branch_prefix` stripped
+    from the front — the derivation `gather_claimed` uses — and that string
+    is matched directly; a finishing source instead works on the target
+    pull request's own existing head branch and logs its event under its
+    own engagement ref (`pr-2913-abandoned-12c058202df8`, say), a string no
+    claim branch is ever named, so that case is matched instead on the pull
+    request number the event carries (`draft_obsolete_flags`'s own `pr`
+    field, or `void_object_closed_items`'s own `number` for a `pr-<n>-…`
+    void — absent, and so never matched, for a bare-issue void) against the
+    number of this branch's own most recent closed pull request, the one
+    the finishing engagement worked on. An omitted or unreadable union log
+    reads as "no retirement events known yet", and is read as a file or not
+    at all: the sweep never consumes its own stdin, which from
+    `lib/standdown.sh` is the repo-slug stream of the loop the call sits
+    inside.
     Recovering such a ref as a draft would re-file exactly the work the
     pipeline already judged unwanted, so it is deleted instead
     (`released`, `reason: "retired"`) — without ever reaching the
