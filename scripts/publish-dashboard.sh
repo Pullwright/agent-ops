@@ -3367,7 +3367,7 @@ if (( WITH_GITHUB )); then
           [[ -n "$pk" ]] || continue
           [[ "$(pager_state_for "$pk" < "$pager_events_file")" == "fired" ]] || continue
           pager_last_event "$pk" < "$pager_events_file"
-        done < <(pager_registered_keys)
+        done < <(pager_registered_keys; pager_direct_keys)
       } | jq -sc '[.[] | {key, first_seen, evidence, nodes: (.nodes // []),
                            issue_number: (.issue_number // null), issue_url: (.issue_url // null)}]' \
         2>/dev/null)"
