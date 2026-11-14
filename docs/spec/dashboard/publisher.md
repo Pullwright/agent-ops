@@ -964,12 +964,18 @@ node's peers-marker status: the identical `fleet_peers_stale_flag` and the
 marker's own `last_ok_ts` the fleet-strip badge above is built from, so the
 pager and the badge can never disagree about whether this node's own view is
 trustworthy. While that flag reads `true`, `pager_evaluate` makes no state
-transition for any key — every invariant it registers reads
+transition for any *registered* key — every invariant it registers reads
 `fleet_nodes_json` or the fleet union, both of which a broken fetch on this
 node alone can poison without any peer actually being dark — and logs one
-`pager-evaluation-skipped` event instead (`lib/pager.sh`'s own header). This
-is the requirement 2.5 "union readers" paragraph's pager row; see there for
-the incident (agent-ops#2507) that named it.
+`pager-evaluation-skipped` event instead (`lib/pager.sh`'s own header). One
+unregistered key, `pager-eval-frozen`, is driven directly from inside that
+same branch instead (agent-ops#2918): it fires once the peers marker's own
+`last_ok_ts` has not advanced for 2× `node_stale_after_minutes` — the raw
+`node_stale_after_minutes` this same block already reads for `node-stale`,
+below — and closes again once the flag next reads `false`. This is the
+requirement 2.5 "union readers" paragraph's pager row; see there for the
+incident (agent-ops#2507) that named the skip, and for the incident
+(agent-ops#2918) that named the one exception to it.
 
 One invariant needs a third artefact: `review-pipeline-failing`
 (agent-ops#1282) reads the review pipeline's own log, not the implementation

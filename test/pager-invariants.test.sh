@@ -595,6 +595,38 @@ assert_eq "  ... issue #7 (retired key) was closed" "1" "$(grep -c '^issue close
 assert_eq "  ... issue #8 (live key, own item still open) was left alone" "0" "$(grep -c '^issue close 8 ' "$GH_CALLS_FILE")"
 assert_eq "  ... issue #9 (live key, own item concluded) was closed" "1" "$(grep -c '^issue close 9 ' "$GH_CALLS_FILE")"
 
+# --- page-outlived-item: a directly-driven key is exempt (agent-ops#2918) --
+#
+# `pager-eval-frozen` is never in PAGER_KEYS — it is driven directly from
+# inside pager_evaluate's own peer-view-stale branch
+# (_pager_evaluate_frozen_guard, lib/pager.sh), never through
+# pager_register — so without pager_direct_keys' own exemption its page
+# would read exactly like #7's genuinely orphaned one above and be retired
+# within one evaluation pass of ever being filed (the defect found in
+# review on PR #2924). Page #10 carries no item footer at all — the real
+# shape pager_file leaves an owner-only page in, since the evidence it
+# files is prose about a frozen timestamp, not a PR or issue link — so a
+# regression here would show up as an orphaned-key retirement, never an
+# item-concluded one.
+: > "$GH_CALLS_FILE"
+STUB_GH_LIST_BY_LABEL=(
+  [enabler-escalation]="[]"
+  [pw::pager]="$(jq -nc \
+    --arg b10 'Pager: pager-eval-frozen fired.
+
+---
+Filed automatically by lib/pager.sh (issue #1278).
+ref: pager:pager-eval-frozen' \
+    '[{number:10,url:"https://github.com/o/r/issues/10",body:$b10}]')"
+)
+
+verdict="$(pager_eval_page_outlived_item "" "")"
+assert_eq "a directly-driven key's own open page: does not fire" "false" "$(jq -r '.firing' <<<"$verdict")"
+
+outcome="$(pager_remedy_page_outlived_item page-outlived-item "irrelevant, re-derived live")"
+assert_eq "the remedy leaves the directly-driven key's page alone" "closed 0 outlived page(s)" "$outcome"
+assert_eq "  ... issue #10 was not closed" "0" "$(grep -c '^issue close 10 ' "$GH_CALLS_FILE")"
+
 # --- firing-missed (agent-ops#1282) ---------------------------------------------
 
 cycle_ev() {  # cycle_ev TS NODE CYCLE EVENT [EXTRA_JSON]

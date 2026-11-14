@@ -73,6 +73,17 @@
 # and is never read by `pager_state_for`/`pager_last_event` — a skip is a
 # fact about this node's evaluation, not about any invariant's own state.
 #
+# One key, `pager-eval-frozen` (owner-only), is the sole exception to "every
+# registered key skips": `pager_evaluate`'s own peer-view-stale branch drives
+# it directly through the ordinary four transition events above
+# (`_pager_evaluate_frozen_guard`, agent-ops#2918), never through
+# `pager_register`/`PAGER_KEYS` — a key reached only from inside the branch
+# that skips the `PAGER_KEYS` loop entirely can never sit in that loop. It
+# catches the peers marker's own `last_ok_ts` having gone frozen for 2×
+# `node_stale_after_minutes`, the same doubling `node-stale` uses, directly —
+# rather than leaving it to `node-stale` to notice, up to ~15h later, that
+# the node behind the frozen marker has gone fully dark for publication too.
+#
 # `pager_state_for`/`pager_last_event` derive the current state purely from
 # the latest of these four event names for a key — no state file, no cache:
 # any node can evaluate any invariant in any window and agree with every
@@ -226,6 +237,27 @@ pager_declare_events() {
 pager_registered_keys() {
   local k
   for k in "${PAGER_KEYS[@]}"; do printf '%s\n' "$k"; done
+}
+
+# Keys driven directly from inside a branch of `pager_evaluate` itself
+# (`_pager_evaluate_frozen_guard`'s own header) rather than through
+# `pager_register`/`PAGER_KEYS` — a key reached only from a branch that
+# skips the `PAGER_KEYS` loop entirely can never sit in that loop, so it can
+# never appear in `pager_registered_keys` above either. Named here, once,
+# so `lib/pager-invariants.sh`'s orphaned-key check
+# (`pager_eval_page_outlived_item`/`pager_remedy_page_outlived_item`) can
+# tell "never registered because it is driven directly" apart from "was
+# registered once, then renamed or retired out from under an open page"
+# (agent-ops#2575) — without this list, a directly-driven key's own page is
+# indistinguishable from the latter and gets retired within one evaluation
+# pass of ever being filed (agent-ops#2918, caught in review on PR #2924).
+declare -ga PAGER_DIRECT_KEYS=("pager-eval-frozen")
+
+# pager_direct_keys — one directly-driven key per line (see PAGER_DIRECT_KEYS
+# above).
+pager_direct_keys() {
+  local k
+  for k in "${PAGER_DIRECT_KEYS[@]}"; do printf '%s\n' "$k"; done
 }
 
 # --- Event log helpers ---------------------------------------------------------
@@ -795,6 +827,82 @@ _pager_evaluate_one() {
   esac
 }
 
+# _pager_evaluate_frozen_guard LOG_FILE NODE CYCLE PAGER_REPO LABEL ASSIGNEE \
+#                               WEBHOOK_URL MIN_FIRING_MINUTES \
+#                               NODE_STALE_AFTER_MINUTES PEERS_LAST_OK_TS \
+#                               [NOTIFY_EVENTS_JSON] [NOTIFY_MIN_INTERVAL] \
+#                               [UNION_LOG_FILE]
+# `pager-eval-frozen` (owner-only), driven directly rather than through
+# `pager_register`/`PAGER_KEYS` (agent-ops#2918): called only from inside
+# `pager_evaluate`'s own peer-view-stale early return, the one branch that
+# skips the `PAGER_KEYS` loop entirely, so a key reached from here can never
+# sit in that loop the normal way every other key does. Catches the peers
+# marker's own `last_ok_ts` frozen for 2× NODE_STALE_AFTER_MINUTES — the same
+# doubling `pager_eval_node_stale` already uses for its own threshold —
+# directly, rather than leaving it to `node-stale` to notice, up to ~15h
+# later, that the node behind the frozen marker has gone fully dark for
+# publication too (the issue's own #2918 incident: both facts traced back to
+# the same stalled peers-view refresh on one host).
+#
+# An empty or non-numeric NODE_STALE_AFTER_MINUTES, or an empty
+# PEERS_LAST_OK_TS (every call site before this one) makes no transition at
+# all — `pager_evaluate`'s own `pager-evaluation-skipped` log line is the
+# only thing this evaluation pass records, exactly as before this guard
+# existed. Otherwise this is the ordinary candidate→fired hysteresis every
+# other key gets (`pager_state_for`/`pager_last_event` against UNION_LOG_FILE
+# — no separate extract exists here, since the early return this is called
+# from runs before `pager_evaluate` ever makes one), firing after
+# MIN_FIRING_MINUTES and calling `pager_file` directly once it does, and
+# resetting `candidate` back to `clear` with `pager-candidate-cleared` the
+# moment `last_ok_ts` is no longer overdue before it ever fired — the same
+# `candidate:false` reset `_pager_evaluate_one` gives every registered key,
+# so a `candidate` left over from an incident that cleared on its own never
+# lends its stale `first_seen` to a later, unrelated freeze. Closing a
+# `fired` key again is `pager_evaluate`'s own job, on its ordinary,
+# non-skipped path, since this guard is never called there.
+_pager_evaluate_frozen_guard() {
+  local log_file="$1" node="$2" cycle="$3" pager_repo="$4" label="$5" assignee="$6" \
+        webhook_url="$7" min_firing_minutes="$8" node_stale_after_minutes="$9" \
+        peers_last_ok_ts="${10}" notify_events_json="${11:-null}" \
+        notify_min_interval="${12:-600}" union_log_file="${13:-}"
+  [[ "$node_stale_after_minutes" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
+  [[ -n "$peers_last_ok_ts" ]] || return 0
+  local last_ok_epoch
+  last_ok_epoch="$(date -u -d "$peers_last_ok_ts" +%s 2>/dev/null)"
+  [[ -n "$last_ok_epoch" ]] || return 0
+  local age_min=$(( ( $(date -u +%s) - last_ok_epoch ) / 60 ))
+  local overdue="false"
+  jq -ne --argjson a "$age_min" --argjson t "$node_stale_after_minutes" \
+    '$a >= (2 * $t)' >/dev/null 2>&1 && overdue="true"
+  local key="pager-eval-frozen" state
+  state="$(pager_state_for "$key" < "$union_log_file")"
+  case "${state}:${overdue}" in
+    clear:true)
+      pager_log_event "$log_file" "$node" "$cycle" "pager-candidate" \
+        "$(jq -nc --arg k "$key" --arg fs "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{key: $k, first_seen: $fs}')"
+      ;;
+    candidate:true)
+      local cand first_seen first_seen_epoch cand_age_min evidence remedy_arg
+      cand="$(pager_last_event "$key" < "$union_log_file")"
+      first_seen="$(jq -r '.first_seen // empty' <<<"$cand" 2>/dev/null)"
+      [[ -n "$first_seen" ]] || first_seen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      first_seen_epoch="$(date -u -d "$first_seen" +%s 2>/dev/null || date -u +%s)"
+      cand_age_min=$(( ( $(date -u +%s) - first_seen_epoch ) / 60 ))
+      (( cand_age_min >= min_firing_minutes )) || return 0
+      evidence="this node's own peers-directory freshness marker's last_ok_ts has not advanced in over ${age_min}m — past 2x node_stale_after_minutes"
+      remedy_arg="This node's own pager evaluation has been skipped continuously because its peers-directory freshness marker's \`last_ok_ts\` has not advanced in over ${age_min}m. Confirm directly whether \`state-sync.sh fetch\` is still running and succeeding on this node's host, and check the collector/reconciler container logs on that host around the time \`last_ok_ts\` stopped advancing (agent-ops#2918)."
+      pager_file "$key" "owner-only" "$remedy_arg" "$evidence" "$first_seen" \
+        "$pager_repo" "$label" "$assignee" "$webhook_url" "$log_file" "$node" "$cycle" '[]' \
+        "$notify_events_json" "$notify_min_interval" "$union_log_file"
+      ;;
+    candidate:false)
+      pager_log_event "$log_file" "$node" "$cycle" "pager-candidate-cleared" \
+        "$(jq -nc --arg k "$key" '{key: $k}')"
+      ;;
+    *) ;;  # clear:false, fired:true/false — nothing new to write here
+  esac
+}
+
 # pager_evaluate CLAIM_SCRIPT PAGER_REPO LABEL ESCALATION_LABEL ASSIGNEE \
 #                WEBHOOK_URL MIN_FIRING_MINUTES LOG_FILE UNION_LOG_FILE \
 #                FLEET_NODES_JSON NODE CYCLE [CYCLE_INTERVAL_MINUTES] \
@@ -815,16 +923,23 @@ _pager_evaluate_one() {
 # (`lib/fleet.sh`), computed once by the caller before this call — this file
 # has no config reader and no business re-deriving a predicate its caller
 # already has in hand. `PEERS_STALE == "true"` makes NO transition at all
-# this pass, for any key: every invariant here reads `FLEET_NODES_JSON`
-# either directly (`node-stale`, `updater-stuck`) or through the union this
-# node fetched from its peers, and a node whose own peers directory is stale
-# cannot tell "my peer went dark" from "my own fetch did" (agent-ops#2507's
-# own node-stale page, fired and legitimately cleared by two different
-# nodes' honest but fetch-poisoned views of each other, is the incident that
-# named this). Omitted (every call site before #2266) reads as `false` —
+# this pass, for any *registered* key: every invariant here reads
+# `FLEET_NODES_JSON` either directly (`node-stale`, `updater-stuck`) or
+# through the union this node fetched from its peers, and a node whose own
+# peers directory is stale cannot tell "my peer went dark" from "my own
+# fetch did" (agent-ops#2507's own node-stale page, fired and legitimately
+# cleared by two different nodes' honest but fetch-poisoned views of each
+# other, is the incident that named this). One unregistered key,
+# `pager-eval-frozen`, is the sole exception — `_pager_evaluate_frozen_guard`,
+# called from inside this same branch (agent-ops#2918), catches the frozen
+# marker itself; see its own header for why driving it from here, rather
+# than through `PAGER_KEYS`, is the only place it can be driven from at all.
+# Omitted PEERS_STALE (every call site before #2266) reads as `false` —
 # `pager_evaluate` behaves exactly as it always has when the caller has no
 # peers marker to report, matching `_pager_evaluate_one`'s own omission
-# convention for every trailing parameter above it.
+# convention for every trailing parameter above it; an omitted or empty
+# NODE_STALE_AFTER_MINUTES/PEERS_LAST_OK_TS (every call site before #2918)
+# likewise leaves `_pager_evaluate_frozen_guard` a no-op.
 # Evaluates every registered invariant once, in registration order. One bad
 # EVAL_FN or one lost claim never stops the rest — each invariant's own
 # failure is contained to itself, the same isolation crash_loop_verdict's own
@@ -848,11 +963,17 @@ _pager_evaluate_one() {
 pager_evaluate() {
   local key union_log_file="${9:-}" pager_events_file \
         log_file="${8:-}" node="${11:-}" cycle="${12:-}" \
+        pager_repo="${2:-}" label="${3:-}" assignee="${5:-}" webhook_url="${6:-}" \
+        min_firing_minutes="${7:-}" node_stale_after_minutes="${14:-}" \
+        notify_events_json="${25:-null}" notify_min_interval="${26:-600}" \
         peers_stale="${27:-}" peers_last_ok_ts="${28:-}"
   if [[ "$peers_stale" == "true" ]]; then
     pager_log_event "$log_file" "$node" "$cycle" "pager-evaluation-skipped" \
       "$(jq -nc --arg r "peer-view-stale" --arg lo "$peers_last_ok_ts" \
           '{reason: $r, last_ok_ts: (if $lo == "" then null else $lo end)}' 2>/dev/null)"
+    _pager_evaluate_frozen_guard "$log_file" "$node" "$cycle" "$pager_repo" "$label" \
+      "$assignee" "$webhook_url" "$min_firing_minutes" "$node_stale_after_minutes" \
+      "$peers_last_ok_ts" "$notify_events_json" "$notify_min_interval" "$union_log_file"
     return 0
   fi
   pager_events_file="$(mktemp "${TMPDIR:-/tmp}/pager-events.XXXXXX" 2>/dev/null)" \
@@ -865,6 +986,26 @@ pager_evaluate() {
   for key in "${PAGER_KEYS[@]}"; do
     _pager_evaluate_one "$key" "$@" || true
   done
+  # `pager-eval-frozen` is never in PAGER_KEYS (it is unregistered — see
+  # `_pager_evaluate_frozen_guard`'s own header), so the loop above never
+  # transitions it: these are its own `fired:false`/`candidate:false`
+  # transitions, by hand, the moment evaluation reaches this ordinary,
+  # non-skipped path — the peers view that was frozen is fresh again. A
+  # `candidate` left standing (the guard's own hysteresis had not yet
+  # reached MIN_FIRING_MINUTES when `last_ok_ts` caught up) resets to
+  # `clear` rather than lingering as the latest event for the key: left
+  # alone, its `first_seen` would otherwise be handed to an unrelated, later
+  # freeze incident as that incident's own start time.
+  local frozen_state
+  frozen_state="$(pager_state_for "pager-eval-frozen" < "${pager_events_file:-$union_log_file}")"
+  if [[ "$frozen_state" == "fired" ]]; then
+    pager_close "pager-eval-frozen" "the peers view is fresh again" "$pager_repo" "$label" \
+      "$log_file" "$node" "$cycle" "$webhook_url" "$notify_events_json" "$notify_min_interval" \
+      "$union_log_file"
+  elif [[ "$frozen_state" == "candidate" ]]; then
+    pager_log_event "$log_file" "$node" "$cycle" "pager-candidate-cleared" \
+      "$(jq -nc --arg k "pager-eval-frozen" '{key: $k}')"
+  fi
   PAGER_EVAL_PAGER_EVENTS_FILE=""
   [[ -z "$pager_events_file" ]] || rm -f "$pager_events_file"
   return 0
