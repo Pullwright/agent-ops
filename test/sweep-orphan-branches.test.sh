@@ -695,32 +695,46 @@ assert_eq "an Obsolete-labelled retirement is released, not recovered" \
   '{"action":"released","branch":"agent/obsolete-cased","reason":"retired"}' \
   "$(jq -c 'select(.branch == "agent/obsolete-cased")' <<<"$out")"
 
-# --- Case 25: a finishing-source item ref keeps its 12-hex id when matched
-# against a logged retirement event (agent-ops#2923) --------------------------
-# All four finishing sources mint refs ending in a 12-hex id by construction
-# (`pr-<n>-abandoned-<sha>` and friends, requirements 3c/3e/3z/3g), and
-# `lib/enabler.sh` logs `draft-obsolete-flagged` under that whole ref. `stem`
-# deliberately strips such a suffix — right for the rival-branch search, which
-# must see two branches for the same pull request as the same work, and wrong
-# here, where it would reduce the branch past the event's own `item`. The
-# branch_prefix-stripped name is what has to match, the way `gather_claimed`
-# derives it.
-c="$tmp_dir/retired-finishing-ref"; mkdir -p "$c"
+# --- Case 25: a finishing-source retirement is matched by pull request
+# number, since its event is never logged under any claim branch's own name
+# (agent-ops#2923, review feedback on agent-ops#2929) -------------------------
+# A finishing source (an Enabler engagement flagging a draft, or
+# `close-void-github-items.sh` acting on its void) works on the *target pull
+# request's own existing head branch* — there is no separate branch named
+# after the engagement's own ref (`pr-60-abandoned-1a2b3c4d5e6f`, say) for
+# the sweep to find. The event it logs is keyed on that engagement ref, a
+# string the actual wedged claim branch (`agent/2910`, the motivating case)
+# never equals however it is reduced. What ties the two together is the pull
+# request number: this branch's own most recent closed pull request (here,
+# #60) is exactly the one the finishing engagement worked on, and that is
+# what `draft_obsolete_flags`'s own `pr` field, or `void_object_closed_
+# items`'s own `number` field, is matched against.
+c="$tmp_dir/retired-finishing-pr"; mkdir -p "$c"
 : > "$c/refs-td_tsv"
-printf 'agent/pr-99-abandoned-1a2b3c4d5e6f\tsha-fin\n' > "$c/refs-agent_tsv"
-echo "$stale" > "$c/date-sha-fin"
-compare_fixture "$c" agent/pr-99-abandoned-1a2b3c4d5e6f 1
-jq -n '[{number: 55, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
-  > "$c/closed-detail-agent_pr-99-abandoned-1a2b3c4d5e6f.json"
+printf 'agent/2910\tsha-fin-flag\nagent/2911\tsha-fin-void\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-fin-flag"
+echo "$stale" > "$c/date-sha-fin-void"
+compare_fixture "$c" agent/2910 1
+compare_fixture "$c" agent/2911 1
+jq -n '[{number: 60, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_2910.json"
+jq -n '[{number: 61, state: "CLOSED", labels: [], closedAt: "2026-01-01T00:00:00Z"}]' \
+  > "$c/closed-detail-agent_2911.json"
 union_log="$c/union.jsonl"
 printf '%s\n' \
-  '{"event":"draft-obsolete-flagged","repo":"x/y","item":"pr-99-abandoned-1a2b3c4d5e6f"}' \
+  '{"event":"draft-obsolete-flagged","repo":"x/y","item":"pr-60-abandoned-1a2b3c4d5e6f","pr":60}' \
+  '{"event":"void-object-closed","repo":"x/y","item":"pr-61-superseded-2b3c4d5e6f7a","number":61}' \
   > "$union_log"
 
 out="$(run_sweep "$c" "$union_log")"
-assert_eq "an event naming the whole finishing-source ref is matched, not reduced past" \
-  '{"action":"released","branch":"agent/pr-99-abandoned-1a2b3c4d5e6f","reason":"retired"}' \
-  "$(jq -c 'select(.branch == "agent/pr-99-abandoned-1a2b3c4d5e6f")' <<<"$out")"
+assert_eq "a draft-obsolete-flagged event is matched by pull request number, not recovered" \
+  '{"action":"released","branch":"agent/2910","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/2910")' <<<"$out")"
+assert_eq "and so is a void-object-closed event matched the same way" \
+  '{"action":"released","branch":"agent/2911","reason":"retired"}' \
+  "$(jq -c 'select(.branch == "agent/2911")' <<<"$out")"
+assert_not_contains "with no recovery draft opened for either" \
+  "pr create" "$(grep -E 'agent/2910|agent/2911' "$c/calls.log" || true)"
 
 # --- Case 26: an omitted union log reads no events, and never stdin
 # (agent-ops#2923) ------------------------------------------------------------
