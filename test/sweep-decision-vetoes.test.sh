@@ -92,6 +92,35 @@ case "$args" in
   "issue create -R acme/widgets --title "*"--label bug")
     [[ -f "$S/fail-revisit-create" ]] && exit 1
     echo "https://github.com/acme/widgets/issues/700" ;;
+  "api graphql -f query="*)
+    # issue_priority_apply (lib/issue-priority.sh, agent-ops#2422): the
+    # Priority field's own ids, then the ratchet's mutation. The --jq filter
+    # argument is scanned for dynamically (never a fixed position): the
+    # field-resolution call carries three "-f" pairs (query/owner/repo)
+    # ahead of it, the mutation call three different ones (issueId/fieldId/
+    # optionId), so its own argv position differs between the two calls.
+    jqfilter="."
+    shift_count=0
+    for a in "$@"; do
+      shift_count=$(( shift_count + 1 ))
+      if [[ "${prev:-}" == "--jq" ]]; then jqfilter="$a"; fi
+      prev="$a"
+    done
+    if [[ "$args" == *setIssueFieldValue* ]]; then
+      printf '1\n' >> "$S/priority-mutation-calls"
+      exit 0
+    fi
+    jq -c "$jqfilter" <<'FIELDJSON'
+{"data":{"repository":{"issueFields":{"nodes":[
+  {"id":"IFSS_priority","name":"Priority","options":[
+    {"id":"OPT_URGENT","name":"Urgent"},{"id":"OPT_HIGH","name":"High"},
+    {"id":"OPT_MEDIUM","name":"Medium"},{"id":"OPT_LOW","name":"Low"}]},
+  {"id":"IFSS_effort","name":"Effort","options":[{"id":"OPT_E_LOW","name":"Low"}]}
+]}}}}
+FIELDJSON
+    ;;
+  "api repos/acme/widgets/issues/700 --jq "*)
+    jq -c "$4" <<<'{"node_id":"I_700","issue_field_values":[]}' ;;
   *)
     echo "stub gh: unexpected call: $args" >&2; exit 1 ;;
 esac
@@ -177,6 +206,10 @@ assert_contains "the revisit issue names the decision title" "revisit: widgets: 
 assert_contains "the revisit issue quotes the veto's own comment" "I disagree with this decision after all." "$calls"
 assert_contains "the revisit issue is labelled bug" "--label bug" "$calls"
 assert_contains "the log issue itself is told a revisit issue was filed" "issue comment 503 -R acme/widgets" "$calls"
+# agent-ops#2422, requirement 1: a human overriding a tactical decision after
+# the fact is not routine, so the revisit issue files at High.
+assert_eq "the revisit issue's Priority is set to High" "1" \
+  "$([[ -f "$c/priority-mutation-calls" ]] && wc -l < "$c/priority-mutation-calls" || echo 0)"
 
 # --- Case 4: dedup — a log issue already in the processed set is skipped ----
 c="$tmp_dir/case4"; mkdir -p "$c"

@@ -104,6 +104,22 @@ if [[ "${2:-}" == "graphql" ]]; then
   jq -c "$filter" "$STUB_ISSUES"
   exit 0
 fi
+# `dependencies/blocked_by` (native Issue Dependencies, agent-ops#2422):
+# empty for every issue unless STUB_NATIVE_DEPS names one, so the ordinary
+# fixtures below never pay for the native check they never asked for. Every
+# such read is also logged to STUB_NATIVE_CALL_LOG where that is set — the
+# pre-filter section below asserts on *which* issues were asked about, which
+# no return value can show.
+if [[ "${2:-}" =~ ^repos/o/r/issues/([0-9]+)/dependencies/blocked_by$ ]]; then
+  n="${BASH_REMATCH[1]}"
+  [[ -n "${STUB_NATIVE_CALL_LOG:-}" ]] && echo "$n" >> "$STUB_NATIVE_CALL_LOG"
+  if [[ -n "${STUB_NATIVE_DEPS:-}" && -f "${STUB_NATIVE_DEPS}/$n.json" ]]; then
+    cat "${STUB_NATIVE_DEPS}/$n.json"
+  else
+    echo '[]'
+  fi
+  exit 0
+fi
 path="$2"
 case "$path" in
   repos/*/issues/*)
@@ -361,6 +377,114 @@ fi
 
 fp_same="$(fp_input "$candidates_json" | noop_fingerprint)"
 assert_eq "an unchanged array fingerprints identically" "$fp_before" "$fp_same"
+
+# --- Priority inheritance, end to end (agent-ops#2422, requirement 4): a Low
+#     item (#20) that a High item (#21) names as its own `Blocked-by:`
+#     dependency ranks as High in the Co-Ordinator's own input — the array
+#     scripts/gather-issues.sh actually hands it — not merely in the pure
+#     function test/dependency-gate.test.sh already covers. #21 itself is
+#     excluded (#20 is open, so the dependency is unresolved) — expected, and
+#     exactly how requirement 34j's own holding already behaves — while #20
+#     survives as an ordinary candidate, its own band raised. ---
+export STUB_ISSUES="$tmp_dir/issues-inherit.json"
+cat >"$STUB_ISSUES" <<'EOF'
+{"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
+  {"number": 20, "url": "https://github.com/o/r/issues/20", "title": "the blocker, banded Low",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": []},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "Low",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Nothing blocks this one.", "comments": {"nodes": []}},
+  {"number": 21, "url": "https://github.com/o/r/issues/21", "title": "the blocked item, banded High",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": []},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "High",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Needs #20 first.\n\nBlocked-by: #20", "comments": {"nodes": []}}
+]}}}}
+EOF
+inherit_json="$("$SCRIPT_DIR/scripts/gather-issues.sh" o/r)"
+inherit_candidates="$(jq -c '.candidates' <<<"$inherit_json")"
+assert_eq "the blocked item (#21) is held out, unresolved" \
+  "false" "$(jq '[.[] | select(.number == 21)] | length > 0' <<<"$inherit_candidates")"
+assert_eq "the blocker (#20) survives as an ordinary candidate" \
+  "true" "$(jq '[.[] | select(.number == 20)] | length > 0' <<<"$inherit_candidates")"
+assert_eq "...ranked High, not its own triaged Low" \
+  "High" "$(jq -r '.[] | select(.number == 20) | .priority' <<<"$inherit_candidates")"
+assert_eq "...naming the blocked item that raised it" \
+  '["#21"]' "$(jq -c '.[] | select(.number == 20) | .priority_raised_by' <<<"$inherit_candidates")"
+assert_eq "...priority_set still reflects #20's own triage, untouched by inheritance" \
+  "true" "$(jq -r '.[] | select(.number == 20) | .priority_set' <<<"$inherit_candidates")"
+assert_eq "#21 is reported excluded, naming the unresolved reference" \
+  "blocked-by: #20" "$(jq -r '.excluded[] | select(.number == 21) | .reason' <<<"$inherit_json")"
+
+# --- The native-dependency read is made for the issues that have one, and no
+#     others (agent-ops#2422, requirement 34j) ---
+#
+# The holding check's native half asks GitHub about one issue at a time, and
+# this loop is uncapped: a read per candidate is ~529 REST calls and ~10
+# minutes of wall clock on this repository's own backlog, which is the
+# one-call-per-surviving-candidate shape agent-ops#1085 removed. The listing
+# walk already reports each issue's own dependency counts, so
+# `issue_prefetch_native_dep_skip_set` (lib/issue-prefetch.sh) keeps the live
+# read for the issues that actually have a dependency.
+#
+# Asserted on the stub's own call log rather than on the verdict, because the
+# verdict is identical either way — an issue with no dependency is kept
+# whether the read was made and came back empty or was never made at all.
+# #30's summary reports none, #31's reports one (and the read then names an
+# open #42), and #32 carries no summary at all — the walk could not answer,
+# so the read is still made, which is what keeps every fixture above (none of
+# which carries the field) exercising the native path unchanged.
+export STUB_NATIVE_DEPS="$tmp_dir/native-deps"
+mkdir -p "$STUB_NATIVE_DEPS"
+cat >"$STUB_NATIVE_DEPS/31.json" <<'EOF'
+[{"number": 42, "state": "open", "repository": {"full_name": "o/r"}}]
+EOF
+export STUB_NATIVE_CALL_LOG="$tmp_dir/native-calls.log"
+: > "$STUB_NATIVE_CALL_LOG"
+export STUB_ISSUES="$tmp_dir/issues-prefilter.json"
+cat >"$STUB_ISSUES" <<'EOF'
+{"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
+  {"number": 30, "url": "https://github.com/o/r/issues/30", "title": "no native dependency",
+   "author": {"login": "warwick"}, "labels": {"nodes": []}, "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "issueDependenciesSummary": {"blockedBy": 0, "totalBlockedBy": 0},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Nothing blocks this one.", "comments": {"nodes": []}},
+  {"number": 31, "url": "https://github.com/o/r/issues/31", "title": "one native dependency",
+   "author": {"login": "warwick"}, "labels": {"nodes": []}, "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "issueDependenciesSummary": {"blockedBy": 1, "totalBlockedBy": 1},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Declared natively, with no text line anywhere.", "comments": {"nodes": []}},
+  {"number": 32, "url": "https://github.com/o/r/issues/32", "title": "no summary at all",
+   "author": {"login": "warwick"}, "labels": {"nodes": []}, "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "issueDependenciesSummary": null,
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "The walk could not say.", "comments": {"nodes": []}}
+]}}}}
+EOF
+prefilter_json="$("$SCRIPT_DIR/scripts/gather-issues.sh" o/r)"
+prefilter_calls="$(sort -u "$STUB_NATIVE_CALL_LOG" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "the native read is made only for the issue that has a dependency, and the one the walk could not answer for" \
+  "31 32" "$prefilter_calls"
+assert_eq "the issue whose summary reports no dependency is kept" \
+  "true" "$(jq '[.candidates[] | select(.number == 30)] | length > 0' <<<"$prefilter_json")"
+assert_eq "the issue whose native dependency is open is held out" \
+  "false" "$(jq '[.candidates[] | select(.number == 31)] | length > 0' <<<"$prefilter_json")"
+assert_eq "  ... and reported excluded, naming the native reference" \
+  "blocked-by: #42" "$(jq -r '.excluded[] | select(.number == 31) | .reason' <<<"$prefilter_json")"
+assert_eq "the issue with no summary is read live and, finding none, kept" \
+  "true" "$(jq '[.candidates[] | select(.number == 32)] | length > 0' <<<"$prefilter_json")"
+unset STUB_NATIVE_DEPS STUB_NATIVE_CALL_LOG
 
 # --- Degrading: a failing API yields the empty shape, exit 0, and says so
 #     on stderr ---
