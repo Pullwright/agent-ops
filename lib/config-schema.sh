@@ -841,8 +841,9 @@ config_model_tier_floor_violations() {
 # not an integer >= 0, an `enabled` that is not a boolean, a `spend_cap_usd`
 # that is not a number >= 0, a `spend_window_hours` that is not a positive
 # integer, a `balance_usd` that is not a number, a `balance_as_of` that is not
-# a string, a `balance_floor_usd` that is not a number, a `balance_floor_usd`
-# set without both `balance_usd` and `balance_as_of`, a `spend_cap_usd` or
+# a string or is not an ISO 8601 date (or date-time), a `balance_floor_usd`
+# that is not a number, a `balance_floor_usd` set without both `balance_usd`
+# and `balance_as_of`, a `spend_cap_usd` or
 # `balance_floor_usd` set on a lane `lib/model-id.sh`'s
 # `PROVIDER_LANE_NO_MEASURE` names as having no cost measure (today:
 # `xai/subscription` alone), and both lanes resolving (configured weight, or
@@ -883,6 +884,10 @@ config_provider_errors() {
          then ["providers.\($pkey).lanes.\($lname): balance_usd must be a number"]
          else [] end),
         (if ($lv | has("balance_as_of")) and (($lv.balance_as_of | type) != "string")
+         then ["providers.\($pkey).lanes.\($lname): balance_as_of must be an ISO 8601 date string"]
+         else [] end),
+        (if ($lv | has("balance_as_of")) and (($lv.balance_as_of | type) == "string")
+           and (($lv.balance_as_of | test("^\\d{4}-\\d{2}-\\d{2}([T ][0-9:.+Zz-]*)?$")) | not)
          then ["providers.\($pkey).lanes.\($lname): balance_as_of must be an ISO 8601 date string"]
          else [] end),
         (if ($lv | has("balance_floor_usd")) and (($lv.balance_floor_usd | type) != "number")

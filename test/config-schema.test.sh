@@ -1399,6 +1399,24 @@ assert_doctor "doctor names a balance_floor_usd set without balance_usd and bala
 assert_doctor "doctor passes a balance_floor_usd set alongside both balance_usd and balance_as_of" \
   '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_usd": 10, "balance_as_of": "2026-01-01", "balance_floor_usd": 5}}}}' 0 \
   "providers block is well-formed"
+assert_doctor "doctor names a balance_as_of that is not an ISO 8601 date string" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "banana"}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_as_of must be an ISO 8601 date string'
+assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-10-09"}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date-time" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-10-09T12:00:00Z"}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor passes a balance_as_of that is an ISO 8601 date-time with a numeric UTC offset" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-10-09T12:00:00+13:00"}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor names a balance_as_of containing a double quote in its tail" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-01-01 a\"b"}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_as_of must be an ISO 8601 date string'
+assert_doctor "doctor names a balance_as_of containing a backslash in its tail" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_as_of": "2026-01-01T\\oops"}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_as_of must be an ISO 8601 date string'
 assert_doctor "doctor names an enabled that is not a boolean" \
   '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"enabled": "yes"}}}}' 1 \
   'providers.anthropic.lanes.api: enabled must be a boolean'

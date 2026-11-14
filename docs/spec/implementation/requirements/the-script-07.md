@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 7 of 13; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)
+### The Script — requirements, continued (part 7 of 13; 3w–4m: Verdict quality is a rate, and every verdict pays for its …)
 
 3w. <a id="impl-3w"></a>**Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict
@@ -1282,4 +1282,119 @@
    the stage, the process is being stopped forcibly and whatever work already
    sits in its working directory is exactly as worth keeping regardless of
    which of the three stopped it.
+
+4m. <a id="impl-4m"></a>**A stage cannot end its own turn on a backgrounded `Bash`, `Agent` or
+   `Workflow` call (issues #2778, #2800).**
+   Every stage prompt states, in prose, that it must wait out a slow command
+   or subagent in the foreground rather than end its turn expecting a
+   background completion notification this single-invocation harness has no
+   later turn to deliver — but prose restated three times and still
+   disobeyed once (`claude-code` cycle `20261031T221414Z-poetic-2-897852`,
+   PR #2776: a Reviewer ended its turn on `gh pr checks --watch` launched with
+   `run_in_background: true`, idled until the watchdog (requirement 4e)
+   killed it, and the review it had already finished was recorded as nothing)
+   is an unenforced invariant, not a prompt gap a fourth restatement fixes.
+   `deploy/docker/claude-managed-settings.json`'s `hooks.PreToolUse` registers
+   `scripts/background-wait-guard.sh` (logic in `lib/background-wait-guard.sh`)
+   against the matcher `Bash|Agent|Workflow`, and `allowManagedHooksOnly`
+   (requirement 4k) is what makes this the one `PreToolUse` hook that can
+   ever fire, ahead of anything a checkout's own settings file might add.
+   Both files are installed root-owned at
+   `/etc/claude-code/background-wait-guard/{scripts,lib}/background-wait-guard.sh`,
+   outside `/app` (which `agent` owns), in the same `RUN` block that installs
+   the policy itself — otherwise a stage could disarm this hook by editing
+   its own checkout even though it could never touch the root-owned policy
+   that invokes it (issue #2801). `.github/workflows/build-image.yml`'s
+   "Verify Claude Code runs nothing a checkout plants" step measures that
+   ownership rather than only asserting it, reading each installed file's
+   `stat -c %U:%a` and requiring a `touch` of it to fail, as `agent` inside
+   the built image, exactly as it already does for the policy beside them —
+   the `RUN` block's own `test -x` checks cannot stand in for this, since
+   they run as `root` at build time and pass equally on a copy `agent` can
+   rewrite (issue #2813). The same step also asserts that each directory
+   holding one of those files is `root:755` — both hooks' own parent
+   directories, `/etc/claude-code/background-wait-guard/scripts` and
+   `/etc/claude-code/background-wait-guard/lib`, and
+   `/etc/claude-code/background-wait-guard` above them (issue #2821): a
+   directory `agent` could write to would let a stage delete and recreate
+   the hook, or the directory holding it, despite the file's own mode and
+   ownership, checked just above, reading correctly on their own. The
+   intermediate directory is measured rather than inferred from its own
+   parent's check because deleting `…/background-wait-guard/scripts` needs
+   write permission on `…/background-wait-guard`, not on `scripts` itself,
+   so the two leaf checks alone would leave the link that governs them
+   unmeasured. It
+   denies — exit code 2, Claude Code's own documented "show stderr to model
+   and block tool call" contract, with the stderr naming the exact foreground
+   retry — a `Bash` call whose `tool_input.run_in_background` is `true`; an
+   `Agent` call whose `tool_input.run_in_background` is `true` or absent (the
+   `Agent` tool backgrounds by default when the key is omitted, which is the
+   harness's own default working against it here) or whose
+   `tool_input.isolation` is `"remote"` (that mode always backgrounds, so it
+   denies even an explicit `run_in_background: false` — issue #2800); and
+   every `Workflow` call unconditionally, since that tool backgrounds by
+   construction with no `run_in_background` key to set at all. Every other
+   tool call, and a `Bash` or non-`isolation: "remote"` `Agent` call with
+   `run_in_background` explicitly `false`, passes through unexamined. The
+   denial is the mechanical backstop; the prose ban in every stage prompt
+   stays in place as defence in depth, since a stage that reads the denial
+   reason and retries in the foreground never needed the hook to begin with.
+   This covers exactly the three shapes named above — `CronCreate`,
+   `RemoteTrigger` and `Monitor` are not examined by this hook.
+
+   Three things sit between the shipped policy above and an actual denied
+   tool call: `allowManagedHooksOnly` admitting a managed `hooks` block
+   rather than suppressing it too, `matcher` being matched as a regex
+   (`"Bash|Agent|Workflow"` matching three tool names, not a literal string
+   matching none), and a `PreToolUse` hook's exit code 2 actually blocking
+   the call rather than only surfacing its stderr. None of these is
+   something a synthetic payload can measure, so
+   `scripts/claude-policy-probe.sh`'s acceptance step (requirement 4k)
+   reaches an actual tool call for this hook to weigh (issue #2799).
+   `scripts/claude-tool-call-stub.py` stands in for the model for exactly
+   that purpose: bound to 127.0.0.1 and named by `ANTHROPIC_BASE_URL`, it
+   answers a run's first turn with a canned tool call and every later turn
+   with a plain `end_turn`, so the run attempts exactly one real tool call
+   with no network egress and nothing billed. The probe reaches one
+   deniable call per alternative of the matcher, so that no alternation is
+   left asserted and unmeasured — a backgrounded `Bash` call, a
+   default-backgrounded `Agent` call and a `Workflow` call — plus a
+   foreground-equivalent control for the first two (`Workflow` has no
+   foreground shape to control against), in both `--expect` runs: with the
+   policy present the three deniable calls are denied and both controls
+   still run; with it removed (the `--expect ran` run) none of the three is
+   denied and both controls still run, which is what shows the probe can
+   see the tool calls it is checking rather than just their absence.
+
+   Each denial is measured as the guard's own, read back from the hook's
+   stderr — which Claude Code reports through the transcript's `tool_result`
+   as `PreToolUse:<tool> hook error: [<path>]: <reason>` — rather than
+   inferred from the absence of the call's side effect. A tool call that was
+   never attempted at all leaves behind exactly that same absence, so
+   inferring the denial from it would let the check pass over a probe that
+   had stopped working, which is the fail-open this requirement's own
+   verification exists to rule out. The side effects are asserted only in
+   the direction that is exact: that a denied call left none is a fact about
+   a run that has finished, whereas a call the guard lets through hands its
+   work to something outliving the turn — a detached background command, a
+   subagent — which `stage-exec` stops along with everything else below a
+   launch when the launch ends, so their absence under `--expect ran` would
+   say nothing. The two foreground controls, whose side effects are
+   synchronous, carry that in both runs instead.
+
+   The stub is named to each run by an `ANTHROPIC_BASE_URL` in a planted
+   `env` block in the run's own `.claude/settings.json`, not by the probe's
+   own environment: `claude` is the stage shim (requirement 45e), which
+   reaches the CLI through `sudo`, and the `env_keep` list in
+   `deploy/docker/sudoers-agent-ops` that bounds what crosses that
+   boundary does not carry it — nor should it be widened to, for a probe's
+   convenience. This is the same route by which the probe's other runs
+   already switch model provider, and the managed policy gates it no more
+   than it gates those.
+
+   The remaining deniable shape, an `Agent` call carrying `isolation:
+   "remote"`, is a variation of the guard's own decision logic rather than
+   of the matcher, and stays covered by
+   `test/background-wait-guard.test.sh` (acceptance check 7j) rather than
+   by this probe.
 

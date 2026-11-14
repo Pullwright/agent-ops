@@ -18,10 +18,10 @@ A local, single-page dashboard shows everything at a glance:
 
 ### View it locally
 
-Enable the `local` profile in `.env`:
+Add the `local` profile to `COMPOSE_PROFILES` in `.env`:
 
 ```bash
-COMPOSE_PROFILES=local
+COMPOSE_PROFILES=tailnet,auto-update,local
 ```
 
 Compose starts a `dashboard-local` service running `serve-dashboard.sh` inside the container, published to the host's loopback at `http://127.0.0.1:8787` (or the port set in `DASHBOARD_PORT`). Visit that address in your browser.

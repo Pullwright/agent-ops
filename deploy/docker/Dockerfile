@@ -52,11 +52,11 @@ ARG SHELLCHECK_SHA256_ARM64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261
 # deepest reach on a node (the same tool/token access the pipeline itself
 # has), so a bad release must not reach every subsequently-built node with no
 # local pin to fall back to. Bump deliberately, in its own PR.
-ARG CLAUDE_CODE_VERSION=2.1.314
+ARG CLAUDE_CODE_VERSION=2.1.319
 # Grok Build (issue #2134), pinned under the same policy and for the same
 # reason: docs/reviews/2026-10-06-grok-build-evaluation.md evaluated 1.0.46,
 # the npm `latest` dist-tag on 2026-10-06.
-ARG GROK_BUILD_VERSION=1.0.70
+ARG GROK_BUILD_VERSION=1.0.77
 # The container user's ids. They matter because the state, workspace and
 # Claude-config volumes outlive the container: mounting a host directory owned
 # by a different uid is the classic way to make a persistent volume read-only
@@ -459,10 +459,26 @@ RUN grep -vE '^[[:space:]]*(#|$)' /app/deploy/docker/egress-allowlist.txt > /tmp
 # owns), so nothing a stage runs can rewrite it. The pins are checked here so a
 # bad edit fails the build rather than a node; the image's own acceptance step
 # in build-image.yml checks that `claude` honours them.
+#
+# The policy's own hooks.PreToolUse entry (requirement 4m) names an
+# executable to run, so that executable — and the lib file it sources — is
+# installed root-owned alongside the policy here too, under the same
+# scripts/-sources-lib/ layout the repository itself uses, so
+# background-wait-guard.sh's own SCRIPT_DIR lookup needs no change. Without
+# this, the policy would still be tamper-proof but the hook it points at
+# would sit under /app, which `agent` owns — a stage could disarm the
+# backgrounded-wait guard by editing its own checkout even though it could
+# never touch the policy that invokes it (issue #2801).
 RUN install -D -m 0644 -o root -g root /app/deploy/docker/claude-managed-settings.json \
         /etc/claude-code/managed-settings.json \
-    && jq -e '.allowManagedHooksOnly == true and .allowedMcpServers == [] and .disableSkillShellExecution == true' \
-        /etc/claude-code/managed-settings.json >/dev/null
+    && install -D -m 0755 -o root -g root /app/scripts/background-wait-guard.sh \
+        /etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh \
+    && install -D -m 0755 -o root -g root /app/lib/background-wait-guard.sh \
+        /etc/claude-code/background-wait-guard/lib/background-wait-guard.sh \
+    && jq -e '.allowManagedHooksOnly == true and .allowedMcpServers == [] and .disableSkillShellExecution == true and .hooks.PreToolUse[0].hooks[0].command == "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh"' \
+        /etc/claude-code/managed-settings.json >/dev/null \
+    && test -x /etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh \
+    && test -x /etc/claude-code/background-wait-guard/lib/background-wait-guard.sh
 
 USER agent
 WORKDIR /app

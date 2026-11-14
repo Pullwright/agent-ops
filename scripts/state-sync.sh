@@ -589,6 +589,14 @@ EXCLUDES=(
   --exclude=.resource-samples.jsonl
   --exclude=.resource-usage-state.json
   --exclude=.resource-usage.lock
+  # viewer-probe/ (scripts/collect-viewer-probe.sh, the `viewer-probe`
+  # sidecar, owner decision #1358): this node's own intermediate — the
+  # viewer-vantage probe taken from inside its own tailscale sidecar's
+  # namespace, on its way into host-facts/<node>.json. It reaches the fleet
+  # folded into that file (lib/host-facts.sh's host_facts_viewer_probe_fold_json),
+  # so it must not also travel as a raw file, on the same reasoning
+  # .stage-health.json and .doctor-status.json are excluded above.
+  --exclude=/viewer-probe/
 )
 
 require() {
@@ -1252,7 +1260,8 @@ do_push() {
       "$updater_defer_stuck_after_seconds" "${HOSTNAME:-}" "${AGENT_OPS_SERVICE:-}" || echo null)" \
     --argjson doctor "$(jq -c '{timestamp, verdict,
                                 fails: ([(.fails // [])[] | .[0:200]] | .[0:3]),
-                                memory_cgroup: (.memory_cgroup // null)}' \
+                                memory_cgroup: (.memory_cgroup // null),
+                                memory_cgroup_accepted: (.memory_cgroup_accepted // false)}' \
                           "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
     --argjson resources "$heartbeat_resources_json" \
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,

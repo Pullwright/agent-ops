@@ -384,3 +384,37 @@ host_facts_viewer_probe_json() {
   done <<<"$node_list"
   printf '%s' "$out"
 }
+
+# host_facts_viewer_probe_fold_json FILE MAX_AGE_SECONDS [NOW_EPOCH] — the
+# `viewer_probe` object folded in from a sibling process's own record, when
+# FILE exists, parses, and its own `generated_at` is no older than
+# MAX_AGE_SECONDS; prints nothing and returns 1 otherwise, which tells the
+# caller to fall back to running `host_facts_viewer_probe_json` itself
+# exactly as it did before this function existed.
+#
+# FILE is `deploy/docker/compose.yaml`'s `viewer-probe` sidecar's own
+# output (owner decision #1358, agent-ops#2788): that service shares the
+# `tailscale` sidecar's namespace, the route `scripts/collect-host-facts.sh`'s
+# own container never has, and writes its result on the same interval this
+# reads against. On a `local` or bare node — no sidecar, so no file — this
+# always returns 1, and the caller's existing direct probe (which has no
+# route either, and says so honestly) is the whole answer, exactly as #1358
+# intended.
+#
+# NOW_EPOCH is overridable so the test suite can pin "now" without a live
+# clock race; every real caller leaves it unset and gets the system clock.
+host_facts_viewer_probe_fold_json() {
+  local file="${1:-}" max_age="${2:-}" now="${3:-}"
+  local generated_at="" gen_epoch="" age="" viewer_probe=""
+  [[ -f "$file" ]] || return 1
+  [[ "$max_age" =~ ^[0-9]+$ ]] || return 1
+  generated_at="$(jq -r '.generated_at // empty' "$file" 2>/dev/null)"
+  [[ -n "$generated_at" ]] || return 1
+  gen_epoch="$(date -u -d "$generated_at" +%s 2>/dev/null)" || return 1
+  now="${now:-$(date -u +%s)}"
+  age=$(( now - gen_epoch ))
+  (( age <= max_age )) || return 1
+  viewer_probe="$(jq -c '.viewer_probe // empty' "$file" 2>/dev/null)"
+  [[ -n "$viewer_probe" ]] || return 1
+  printf '%s' "$viewer_probe"
+}

@@ -113,6 +113,12 @@ scratch_enter monitor-cycle || exit 1
 . "$SCRIPT_DIR/lib/metering.sh"
 # shellcheck source=lib/stage-run.sh
 . "$SCRIPT_DIR/lib/stage-run.sh"
+# shellcheck source=lib/stage-attempt.sh
+# Only for its two standalone classification helpers, stage_api_refusal and
+# stage_api_refusal_message — both pure functions of out_file alone, with no
+# dependency on the implementation pipeline's claim/PR/cycle globals this
+# file otherwise reads and writes (agent-ops#2864).
+. "$SCRIPT_DIR/lib/stage-attempt.sh"
 # shellcheck source=lib/stage-budget.sh
 . "$SCRIPT_DIR/lib/stage-budget.sh"
 # shellcheck source=lib/stage-health.sh
@@ -986,10 +992,32 @@ result_json="$(extract_json_result "$result_text" 2>/dev/null || true)"
 
 if (( monitor_rc != 0 )) || [[ -z "$result_json" ]] \
    || [[ "$(jq -r '.status // empty' <<<"$result_json")" != "complete" ]]; then
-  if (( monitor_rc == 124 )); then detail="the Monitor timed out"
-  elif (( monitor_rc != 0 )); then detail="the Monitor exited $monitor_rc"
-  else detail="the Monitor returned no usable completion"; fi
-  log_event "attempt-failed" "$(jq -nc --arg d "$detail" '{stage: "monitor", detail: $d, stage_failure: true}')"
+  # A refused request (requirement 4i's own classification, shared with every
+  # implementation-pipeline stage via lib/stage-attempt.sh) is not a crash:
+  # "the Monitor exited 1" is a true but useless account of a lapsed login or
+  # an unscoped key, the same gap #641/#1073 closed for the Co-Ordinator et
+  # al. (agent-ops#2864). Checked ahead of the bare-exit-code branches below
+  # so a refusal is never misreported as a generic non-zero exit.
+  stage_refusal="$(stage_api_refusal "$out_file")"
+  stderr_tail=""
+  if [[ -n "$stage_refusal" ]]; then
+    detail="the Monitor was refused by the API before it could run: $stage_refusal: $(stage_api_refusal_message "$out_file")"
+  elif (( monitor_rc == 124 )); then
+    detail="the Monitor timed out"
+  elif (( monitor_rc != 0 )); then
+    # `detail` itself stays exactly "the Monitor exited $monitor_rc" — it is
+    # what crash-loop-style grouping counts consecutive failures on, and a
+    # moving stderr snippet folded into it would break that grouping the same
+    # way a moving token already did once (lib/stage-attempt.sh's own
+    # comments). The diagnostic goes in the sibling field below instead.
+    detail="the Monitor exited $monitor_rc"
+    [[ -s "$out_file.stderr" ]] && stderr_tail="$(tail -c 600 "$out_file.stderr")"
+  else
+    detail="the Monitor returned no usable completion"
+  fi
+  log_event "attempt-failed" "$(jq -nc --arg d "$detail" --arg st "$stderr_tail" \
+    '{stage: "monitor", detail: $d, stage_failure: true}
+     + (if $st == "" then {} else {stderr_tail: $st} end)')"
   exit 0
 fi
 

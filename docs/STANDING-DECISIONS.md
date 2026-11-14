@@ -239,6 +239,17 @@ principle it rests on.`
   layers between the images on a node, and a routine roll moves about
   4 MiB. Decided by the owner on 2026-10-02 on the investigation's
   findings (#1125).
+- 2026-10-02 · #2084/#2100 · **The public documentation site (Phase 3) is
+  brought forward, published with GitHub Pages' "GitHub Actions" source at
+  the default address `https://pullwright.github.io/agent-ops/`, and the
+  wiki is switched off.** #2084 asked whether to publish now and at which
+  address; the owner answered both at once rather than leaving the site for
+  Phase 3's own entry gate, so #2100 (Starlight, built and deployed by
+  `.github/workflows/docs-site.yml`) implements it immediately rather than
+  waiting. The wiki carried no content the repository's own `docs/` tree
+  did not already have, so switching it off loses nothing and removes a
+  second, unsearched place a reader might land. Decided by the owner on
+  2026-10-02.
 - 2026-10-03 · #2086/#2083 · **`docs-benchmark sources` becomes a required
   check at once** — without first running green for a while, as #2088 asks
   of its own check, because the pipeline lands past any check that is not
@@ -265,19 +276,24 @@ principle it rests on.`
   subscription login: the API key is primary, the subscription is the
   documented alternative with its constraints (own use only, among them),
   and the provider's terms may forbid unattended use outright — xAI's
-  consumer terms forbid automated means that send more requests than a
-  person could from a browser — so whether a fleet may run on a
-  subscription is the subscriber's question, which the product documents
-  and takes no position on. The API-key path ships first and the
-  subscription path follows it directly: the prospective customer is
-  likely to want their SuperGrok subscription, which under D4 and
-  Principle 9 runs on the customer's own nodes, and which of #2139's
-  mechanisms places its credential there is agreed with them. Decided by
-  the owner on 2026-10-03, on #2129. Amended 2026-10-17 under D31: the
-  interim rule issue #2198 built on this decision — that a provider's own
-  model-tier ranks are its own scale, compared only within that provider —
-  is replaced by one scale of capability spanning every provider; the
-  substrate boundary this entry decides is unaffected.
+  Acceptable Use Policy (effective 14 August 2026) prohibits accessing the
+  Services through unauthorized automated or non-human means and
+  circumventing rate limits, and Grok Build's own documentation authorises
+  headless use with an API key while staying silent on subscription use —
+  so whether a fleet may run on a subscription is the subscriber's
+  question, which the product documents and takes no position on. The
+  API-key path ships first and the subscription path follows it directly:
+  the prospective customer is likely to want their SuperGrok subscription,
+  which under D4 and Principle 9 runs on the customer's own nodes, and
+  which of #2139's mechanisms places its credential there is agreed with
+  them. Decided by the owner on 2026-10-03, on #2129. Amended 2026-10-17
+  under D31: the interim rule issue #2198 built on this decision — that a
+  provider's own model-tier ranks are its own scale, compared only within
+  that provider — is replaced by one scale of capability spanning every
+  provider; the substrate boundary this entry decides is unaffected.
+  Corrected 2026-11-05: the clause this entry cited for xAI's consumer
+  terms is not in the current terms; the Acceptable Use Policy citation
+  above is the operative text (agent-ops#2250).
 - 2026-10-08 · #2238 · **Each provider runs on its API key and its
   subscription at once, at a weighted share, and a stage switches lanes
   on its own at a limit or a spend threshold (D30).** A lane is one

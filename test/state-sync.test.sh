@@ -219,6 +219,12 @@ printf '{"findings":[]}\n' > "$state/expensive-gather/o_r.json"
 # expensive-gather/ above — no peer reads another node's copy.
 mkdir -p "$state/wake-poll/o_r"
 printf 'W/"deadbeef"\n' > "$state/wake-poll/o_r/issues.etag"
+# The viewer-probe sidecar's own intermediate (scripts/collect-viewer-probe.sh,
+# owner decision #1358, agent-ops#1339): this node's own viewer-vantage probe,
+# local on the same reasoning as expensive-gather/ above — it reaches the
+# fleet folded into host-facts/<node>.json instead.
+mkdir -p "$state/viewer-probe"
+printf '{"node":"active-node","viewer_probe":{}}\n' > "$state/viewer-probe/active-node.json"
 # The hourly unattended doctor pass's own artefacts (agent-ops#543): local to
 # this node, like the caches above, so neither file should replicate. Its
 # *verdict* is folded into the heartbeat (agent-ops#1278) and, as of
@@ -322,6 +328,7 @@ assert_eq "the derived lock-staleness cache does not replicate" "0" \
 assert_eq "the publication cache does not replicate" "0" "$(test -e "$pushed/.state-sync-published.json" && echo 1 || echo 0)"
 assert_eq "the expensive-gather cache does not replicate" "0" "$(test -e "$pushed/expensive-gather" && echo 1 || echo 0)"
 assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-poll" && echo 1 || echo 0)"
+assert_eq "the viewer-probe intermediate does not replicate" "0" "$(test -e "$pushed/viewer-probe" && echo 1 || echo 0)"
 assert_eq "the doctor log does not replicate" "0" "$(test -e "$pushed/doctor.log" && echo 1 || echo 0)"
 assert_eq "the doctor status cache does not replicate" "0" "$(test -e "$pushed/.doctor-status.json" && echo 1 || echo 0)"
 assert_eq "the stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.stage-health.json" && echo 1 || echo 0)"
@@ -444,6 +451,8 @@ assert_eq "and so does token_expiry, which only the node holding the credential 
   "$(jq -r '.doctor | has("token_expiry")' <<<"$hb")"
 assert_eq "but memory_cgroup does travel (agent-ops#2698): lib/pager-invariants.sh's memory-cgroup invariant reads it fleet-wide" "unbounded" \
   "$(jq -r '.doctor.memory_cgroup' <<<"$hb")"
+assert_eq "...and memory_cgroup_accepted travels alongside it, defaulting to false when the status file carries none (agent-ops#2885)" "false" \
+  "$(jq -r '.doctor.memory_cgroup_accepted' <<<"$hb")"
 
 # --- The heartbeat carries a mirror-rebuild verdict slot (#604) ---------------
 # lib/mirror-integrity.sh's own behaviour (a corrupted mirror is discarded

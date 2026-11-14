@@ -978,7 +978,32 @@
    left untouched, with no extra API call made for the unnamed case; an
    issue GitHub reports `state_reason: "reopened"` is left alone and the
    skip reported, so a human's re-open is never undone on the hour; and the
-   per-call action cap defers rather than floods.
+   per-call action cap defers rather than floods. On the PR #2812/#2801/#2813
+   shape (agent-ops#2851) — one marker-derived target already closed plus a
+   second, still-open issue named only by the pull request's own
+   `closingIssuesReferences` — both are checked independently and the second
+   is closed, citing `closingIssuesReferences` rather than the marker as its
+   evidence, while the first is never reclosed. On the PR #2425/#2393 shape
+   (agent-ops#2851) — a qualifying merged pull request absent from the
+   "most recently updated" window — the persistent, ascending-by-creation
+   cursor listing still finds and closes it, saves its own cursor past it,
+   and a second pass queries past that saved cursor rather than from the
+   start and closes the next stray batch along. On a cursor batch where the
+   shared `max_actions` budget is already spent by the time a cursor-sourced
+   pull request is reached (agent-ops#2869) — the batch's own close deferred,
+   not performed — the cursor is not advanced past it; a later pass, with the
+   cursor still at its prior position, finds and closes the same pull
+   request's issue, and only then does the cursor advance past it. On a
+   cursor-sourced pull request whose named issue 404s on every read
+   (agent-ops#2891) — three consecutive passes blocked at the same pull
+   request, the cursor held each time and the stall counter incrementing,
+   neither skipped nor advanced — the fourth pass skip-lists that pull
+   request with a warning distinguishable from the ordinary per-run one, and
+   only then does the cursor advance past it, the issue left exactly as
+   unclosed as before; a stall that instead resolves on its second pass (the
+   close succeeds) clears the counter rather than reaching the threshold, and
+   a different pull request blocking the very next pass resets the counter to
+   1 rather than accumulating across unrelated pull requests.
 8m. <a id="impl-ac-8m"></a>**The closing-keyword and changelog-section checks block, not just
    report (requirements 25a and 25c).** The one piece of requirements 25a
    and 25c that no file in this repository carries is the repo setting that
@@ -1031,7 +1056,11 @@
    when a different reviewer's later `CHANGES_REQUESTED` has taken its
    place; it decides nothing for an item not shaped `pr-<n>-review-<id>`, and
    nothing for an unreadable reviews read, without calling `gh` at all for
-   the former.
+   the former. `preflight_abandoned_draft_reason` (agent-ops#2840), against a
+   stubbed `gh api pulls/<n>`, reads a `.draft` of `false` as already done
+   (the item's own claim marker gone), `true` as still live, and an
+   unreadable read or a missing `slug`/`pr_number` as deciding nothing
+   without calling `gh` at all for the latter.
 8o. <a id="impl-ac-8o"></a>**A void that is both actioned and old drops out of the extract; every
    other one does not (requirement 34n).** `test/cycle-state.test.sh`'s
    `retire_void_items` section passes: an entry whose `{repo, item}` is in

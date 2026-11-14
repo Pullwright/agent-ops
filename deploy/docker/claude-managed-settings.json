@@ -1,5 +1,18 @@
 {
   "allowManagedHooksOnly": true,
   "allowedMcpServers": [],
-  "disableSkillShellExecution": true
+  "disableSkillShellExecution": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Agent|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/etc/claude-code/background-wait-guard/scripts/background-wait-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

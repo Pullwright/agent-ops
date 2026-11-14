@@ -228,6 +228,15 @@ assert_contains "  ... and the count reaches the badge's own title" \
 assert_eq "and only the one node with a rebuilt verdict gets the badge" \
   "1" "$(grep -o 'mirror rebuilt' <<<"$out" | wc -l | tr -d ' ')"
 
+# --- The accepted-memory-cgroup badge on the fleet strip (agent-ops#2885) ---
+# poetic-3 also carries an owner-accepted unbounded memory cgroup
+# (doctor.memory_cgroup_accepted: true); poetic-1, poetic-2 and poetic-4
+# carry no such flag and get no badge.
+assert_contains "a node whose unbounded cgroup is owner-accepted is flagged" \
+  "memory unbounded (accepted)" "$out"
+assert_eq "and only the one accepted node gets the badge" \
+  "1" "$(grep -o 'memory unbounded (accepted)' <<<"$out" | wc -l | tr -d ' ')"
+
 # --- The provider-unreachable badge on the fleet strip (issue #1073) --------
 # poetic-3 carries a `provider_unreachable` verdict (the transient class
 # lib/crash-loop.sh's `crash_loop_verdict` now emits instead of a crash-loop

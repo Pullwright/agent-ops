@@ -171,6 +171,101 @@ create_escalation_issue() {
   printf '%s\t%s' "$number" "$url"
 }
 
+# void_refusal_escalate ENTRY_JSON
+# Files (or finds already-filed, via `create_escalation_issue`'s own dedup)
+# the one-time escalation requirement 34p's circuit breaker raises once an
+# item's void-refusal run reaches its own threshold
+# (`void_refusal_escalation_candidates`, lib/cycle-state.sh) — ENTRY_JSON one
+# of that function's own entries, `{repo, item, count, first_ts, last_ts,
+# detail}` (issue #2789).
+#
+# Dedup is two-layered, the same shape `crash_loop_escalate` already uses for
+# the identical reason: `void_refusal_escalated_since` (lib/cycle-state.sh)
+# is checked first, against this cycle's own `$union_log`, so a run already
+# escalated by this node or a peer costs no `gh` call at all; `create_
+# escalation_issue`'s own open-issue dedup is the second, live layer, for the
+# gap between a peer's filing and its own event reaching this node's union
+# log. Filed in the item's own repo — never a fleet-wide "home" repo the way
+# `crash_loop_escalate` files into `crash_loop_repo` — since this is a fact
+# about one specific item in one specific repository, not about the fleet's
+# own health.
+#
+# Asks the human for exactly one of two things, and says so in the body:
+# close the item directly if the repeated "already done" verdict is right,
+# or say why it is not — either answer retires this escalation, and
+# `lib/eligibility.sh`'s own exclusion (requirement 34p) keeps the item out
+# of both the Co-Ordinator's and the Enabler's eligible sets for as long as
+# it stays open, so nothing pays for the discovery this escalation already
+# made a second time.
+void_refusal_escalate() {
+  local entry="$1"
+  local vr_repo vr_item vr_count vr_first_ts vr_detail vr_item_ref vr_body vr_created
+  vr_repo="$(jq -r '.repo // ""' <<<"$entry" 2>/dev/null || true)"
+  vr_item="$(jq -r '.item // ""' <<<"$entry" 2>/dev/null || true)"
+  vr_count="$(jq -r '.count // 0' <<<"$entry" 2>/dev/null || true)"
+  [[ "$vr_count" =~ ^[0-9]+$ ]] || vr_count=0
+  vr_first_ts="$(jq -r '.first_ts // ""' <<<"$entry" 2>/dev/null || true)"
+  vr_detail="$(jq -r '.detail // ""' <<<"$entry" 2>/dev/null || true)"
+  [[ -n "$vr_repo" && -n "$vr_item" ]] || return 0
+  if void_refusal_escalated_since "$vr_first_ts" "$vr_repo" "$vr_item" < "$union_log"; then
+    return 0
+  fi
+  vr_item_ref="void-refusal:${vr_repo}#${vr_item}"
+  vr_body="$cycle_dir/void-refusal-escalation-${vr_repo//\//-}-${vr_item}.md"
+  {
+    cat <<VOID_REFUSAL_BODY
+## What the fleet log shows
+
+$vr_repo#$vr_item has failed its own void corroboration $vr_count times in a
+row, with nothing clearing the block in between. Every attempt reached the
+same conclusion — the work described by this item is already done — and
+every attempt was refused for the same reason: no pull request or commit the
+guard can read ever references this item, so there is nothing left to
+corroborate against.
+
+The most recent refusal's own words:
+
+\`\`\`
+$vr_detail
+\`\`\`
+
+This is the "Done-ness inferred from one channel" gotcha
+(docs/spec/implementation/gotchas.md): the pipeline can see the work is
+likely done, but its own corroboration requirement — deliberately strict,
+after more than one false void reached \`main\` on a model's unchecked say-so
+— can never accept "I looked and it's done" on its own. Only a human can
+settle this now.
+
+**Please do one of:**
+- If the item really is already resolved, close it directly.
+- If it is not, say why — the repeated "already done" reading may itself be
+  wrong, or the work may be real but structurally unable to produce the
+  evidence this guard needs.
+
+Either answer retires this escalation. Until then, the pipeline will not
+re-select or re-examine this item — this issue is the whole of what it costs
+from here, not a recurring charge.
+
+---
+Filed automatically by agent-cycle.sh (requirement 34p).
+Item: \`$vr_item_ref\`
+VOID_REFUSAL_BODY
+  } > "$vr_body"
+  if vr_created="$(create_escalation_issue "$vr_repo" "$vr_item_ref" \
+        "$enabler_escalation_label" \
+        "Repeated void-refusal on $vr_repo#$vr_item needs a human decision" \
+        "$vr_body")" && [[ -n "$vr_created" ]]; then
+    log_event "void-refusal-escalated" "$(jq -nc --arg r "$vr_repo" --arg i "$vr_item" \
+      --argjson c "$vr_count" --arg fts "$vr_first_ts" \
+      --argjson n "${vr_created%%$'\t'*}" --arg u "${vr_created#*$'\t'}" \
+      '{repo: $r, item: $i, count: $c, first_ts: $fts, issue_number: $n, issue_url: $u}')"
+  else
+    log_event "warning" "$(jq -nc --arg r "$vr_repo" --arg i "$vr_item" \
+      --arg d "void-refusal escalation for $vr_repo#$vr_item (requirement 34p) could not be filed — will retry next cycle" \
+      '{detail: $d, repo: $r, item: $i}')"
+  fi
+}
+
 # escalation_recent_close REPO ITEM_REF
 # The live-read half of the requirement 8f/8c re-filing guard (agent-ops#779,
 # decided on #784): prints "<number>\t<url>\t<closedAt>" for the most

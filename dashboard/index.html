@@ -1519,6 +1519,26 @@
     return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"mirror rebuilt", title: title}));
   }
 
+  // Whether this node's own unbounded memory cgroup has been recorded by the
+  // owner as an accepted trade-off (AGENT_OPS_MEMORY_CGROUP_ACCEPTED, agent-
+  // ops#2885/#2861) rather than an unexamined gap — doctor.sh's own `doctor.
+  // memory_cgroup_accepted` flag, folded into heartbeat.json beside `doctor.
+  // memory_cgroup` for exactly this purpose: before this, the only way to see
+  // the acceptance was to read a node's own .env by hand. Grey, not amber:
+  // unlike mirrorLine above this is not a problem flagged for a human, it is
+  // a decision a human already made, which `lib/pager-invariants.sh`'s own
+  // `memory-cgroup` invariant now honours and does not page on. Renders
+  // nothing when the flag is absent or false — this node has no acceptance
+  // recorded, or its verdict is not the unbounded reading the acceptance
+  // would need to match.
+  function memoryCgroupLine(n) {
+    var d = n.doctor;
+    if (!d || !d.memory_cgroup_accepted) return null;
+    return el("div", {class:"ver"}, el("span", {class:"badge b-grey",
+      text: "memory unbounded (accepted)",
+      title: "AGENT_OPS_MEMORY_CGROUP_ACCEPTED=unbounded records that the owner has accepted this node's unbounded memory cgroup (agent-ops#2861) — the memory-cgroup pager invariant does not fire for it while the verdict stays unbounded"}));
+  }
+
   // Whether this node is caught up in a sustained run of Co-Ordinator
   // failures the Script has classified `transient` — the API itself
   // unreachable (a 5xx, a dropped connection), not refusing a considered
@@ -2062,6 +2082,8 @@
     if (resources) card.appendChild(resources);
     var mirror = mirrorLine(n);
     if (mirror) card.appendChild(mirror);
+    var memoryCgroup = memoryCgroupLine(n);
+    if (memoryCgroup) card.appendChild(memoryCgroup);
 
     // This line is about the freshness of the VERSION/compose/image info above
     // it, which for self is always read live regardless of n.stale (self's own

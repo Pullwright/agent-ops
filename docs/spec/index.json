@@ -1289,6 +1289,20 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
       "title": "The decision site folds in what requirement 2.2's count could not see"
     },
+    "IMPL AC 7j": {
+      "kind": "impl-ac",
+      "label": "7j",
+      "anchor": "impl-ac-7j",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
+      "title": "The backgrounded-wait ban is mechanical, not just prose, for `Bash`,"
+    },
+    "IMPL AC 34p": {
+      "kind": "impl-ac",
+      "label": "34p",
+      "anchor": "impl-ac-34p",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-10.md",
+      "title": "A repeated void-refusal is escalated once and stops re-selecting"
+    },
     "IMPL C 1": {
       "kind": "impl-c",
       "label": "1",
@@ -2745,6 +2759,13 @@
       "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
       "title": "A refined specification is exactly what a `needs-refinement` block was"
     },
+    "IMPL 34p": {
+      "kind": "impl",
+      "label": "34p",
+      "anchor": "impl-34p",
+      "file": "docs/spec/implementation/requirements/logging-and-state-02.md",
+      "title": "A void `void_guard_reason` refuses twice in a row, with nothing clearing"
+    },
     "IMPL 39": {
       "kind": "impl",
       "label": "39",
@@ -3255,6 +3276,13 @@
       "anchor": "impl-4l",
       "file": "docs/spec/implementation/requirements/the-script-07.md",
       "title": "Killing a stage never throws away uncommitted work it already did"
+    },
+    "IMPL 4m": {
+      "kind": "impl",
+      "label": "4m",
+      "anchor": "impl-4m",
+      "file": "docs/spec/implementation/requirements/the-script-07.md",
+      "title": "A stage cannot end its own turn on a backgrounded `Bash`, `Agent` or"
     },
     "IMPL 4i": {
       "kind": "impl",
@@ -3837,6 +3865,13 @@
       "file": "docs/spec/monitor.md",
       "title": "A stage-health verdict, from day one."
     },
+    "MON M17a": {
+      "kind": "mon",
+      "label": "M17a",
+      "anchor": "mon-m17a",
+      "file": "docs/spec/monitor.md",
+      "title": "A failed attempt names the failure it can, not just the bare exit"
+    },
     "MON M18": {
       "kind": "mon",
       "label": "M18",
@@ -3990,6 +4025,13 @@
       "anchor": "mon-ac-7",
       "file": "docs/spec/monitor.md",
       "title": "The stage-health verdict exists (M17)."
+    },
+    "MON AC 7a": {
+      "kind": "mon-ac",
+      "label": "7a",
+      "anchor": "mon-ac-7a",
+      "file": "docs/spec/monitor.md",
+      "title": "A failed attempt names the failure it can (M17a)."
     },
     "MON AC 8": {
       "kind": "mon-ac",

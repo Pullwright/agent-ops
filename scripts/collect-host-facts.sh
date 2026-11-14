@@ -139,7 +139,18 @@ if [[ -d "$peers_dir" ]]; then
   done
 fi
 url_template="$(host_facts_viewer_url_template)"
-viewer_probe_json="$(host_facts_viewer_probe_json "$node_list" "$url_template")"
+
+# On a `tailnet` node, the `viewer-probe` sidecar (owner decision #1358,
+# agent-ops#2788) runs this same probe from inside the `tailscale`
+# namespace this container cannot join, on this same interval, and writes
+# its own result to state_dir/viewer-probe/<node>.json. Fold that file in
+# when it is fresh; fall back to this container's own direct probe
+# otherwise — which on a `local`/bare node (no sidecar, so no file) is
+# this container's current, honest failure, exactly as before this fold
+# existed.
+viewer_probe_max_age="${HOST_FACTS_VIEWER_PROBE_MAX_AGE_SECONDS:-$(( ${AGENT_OPS_COLLECTOR_INTERVAL_SECONDS:-300} * 3 ))}"
+viewer_probe_json="$(host_facts_viewer_probe_fold_json "$state_dir/viewer-probe/$node.json" "$viewer_probe_max_age")" \
+  || viewer_probe_json="$(host_facts_viewer_probe_json "$node_list" "$url_template")"
 
 driver_section="{}"
 watchtower_log_tail=""
