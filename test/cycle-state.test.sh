@@ -1896,6 +1896,40 @@ printf '{"ts":"2026-08-14T06:00:00Z","event":"item-void","repo":"o/r","item":"pr
   >> "$flags_log"
 assert_eq "an unrelated event type is ignored" "0" "$(draft_obsolete_flags "$flags_log" | jq 'length')"
 
+# --- landing_armed_this_cycle (issue #2910) -------------------------------
+landed_log="$tmp_dir/landing-armed-log.jsonl"
+
+assert_eq "missing log yields nothing landed" "[]" \
+  "$(landing_armed_this_cycle "$tmp_dir/nonexistent.jsonl" "cycle-A")"
+: > "$landed_log"
+assert_eq "empty log yields nothing landed" "[]" "$(landing_armed_this_cycle "$landed_log" "cycle-A")"
+
+printf '{"ts":"2026-11-11T18:22:00Z","cycle":"cycle-A","node":"poetic-1","event":"landing-armed","repo":"org/a","pr_url":"https://github.com/org/a/pull/2907","source":"review-feedback"}\n' \
+  >> "$landed_log"
+assert_eq "this cycle's own landing-armed PR is reported" \
+  '[{"repo":"org/a","pr_number":"2907"}]' \
+  "$(landing_armed_this_cycle "$landed_log" "cycle-A")"
+assert_eq "an empty cycle id matches nothing, even against a real event" \
+  "[]" "$(landing_armed_this_cycle "$landed_log" "")"
+assert_eq "a different cycle's own event is not this cycle's" \
+  "[]" "$(landing_armed_this_cycle "$landed_log" "cycle-B")"
+
+# A pull-request URL this function cannot parse a number out of (malformed,
+# or simply absent) is dropped rather than carried through as a blank match
+# that would compare equal to every review-feedback entry whose own ref also
+# failed to parse.
+: > "$landed_log"
+printf '{"ts":"2026-11-11T18:22:00Z","cycle":"cycle-A","node":"poetic-1","event":"landing-armed","repo":"org/a","source":"review-feedback"}\n' \
+  >> "$landed_log"
+assert_eq "an event with no parseable pr_url is dropped" "0" \
+  "$(landing_armed_this_cycle "$landed_log" "cycle-A" | jq 'length')"
+
+# An event of any other type is not mistaken for a landing-armed fact.
+: > "$landed_log"
+printf '{"ts":"2026-11-11T18:22:00Z","cycle":"cycle-A","node":"poetic-1","event":"landing-refused","repo":"org/a","pr_url":"https://github.com/org/a/pull/2907"}\n' \
+  >> "$landed_log"
+assert_eq "an unrelated event type is ignored" "0" "$(landing_armed_this_cycle "$landed_log" "cycle-A" | jq 'length')"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

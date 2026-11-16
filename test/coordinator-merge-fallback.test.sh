@@ -75,7 +75,7 @@ extract_fn() {
   ' "$file"
 }
 
-unaccounted_items_fn="$(extract_fn 'unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json> [trimmed-json]' "$SCRIPT_DIR/lib/candidate-select.sh")"
+unaccounted_items_fn="$(extract_fn 'unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json> [trimmed-json] [landed-json]' "$SCRIPT_DIR/lib/candidate-select.sh")"
 log_unblocked_items_fn="$(extract_fn 'log_unblocked_items() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
 log_recheck_clean_items_fn="$(extract_fn 'log_recheck_clean_items() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
 log_needs_refinement_items_fn="$(extract_fn 'log_needs_refinement_items() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
@@ -167,6 +167,20 @@ draft_obsolete_flags() { printf '[]'; }
 # reads it.
 # shellcheck disable=SC2034
 log_file="$tmp_dir/log.jsonl"
+# Issue #2910: coordinator_corroborate_and_fallback now reads this cycle's
+# own landing-armed facts (lib/cycle-state.sh, never sourced here, same
+# "command not found" reason as the draft_obsolete_flags stub above) and
+# $cycle_id (a real global everywhere this function actually runs) to scope
+# that read. LANDING_ARMED_CALL records what it was asked for, so a scenario
+# below can assert the plumbing without re-testing landing_armed_this_cycle's
+# own logic, which test/cycle-state.test.sh already covers directly.
+# shellcheck disable=SC2034
+cycle_id="test-cycle-fallback"
+LANDING_ARMED_STUB_JSON="[]"
+landing_armed_this_cycle() {
+  record "landing_armed_this_cycle $1 $2"
+  printf '%s' "$LANDING_ARMED_STUB_JSON"
+}
 void_entry_evidence() { printf 'stub evidence'; }
 item_event_fields() { printf '{}'; }
 release_refinement_label() { record "release-refinement-label $1 ${2:-}"; }
@@ -530,6 +544,26 @@ assert_eq "…function returns 0 (candidates_json ready)" "0" "$fn_rc"
 assert_eq "…candidates_json is the mechanical pick" "TD1" "$(jq -r '.[0].item' <<<"$candidates_json")"
 # shellcheck disable=SC2154  # set by the eval'd coordinator_corroborate_and_fallback
 assert_eq "…selected_by_fallback is armed" "1" "$selected_by_fallback"
+
+# --- Issue #2910: a review-feedback item already armed into the landing
+#     path this cycle is not corroborated against, even though no verdict
+#     reported, voided, or needed to report it ----------------------------
+rf_eligible='[{"repo":"acme/widgets","item":"pr-2907-review-5861819486","source":"review-feedback"}]'
+LANDING_ARMED_STUB_JSON='[{"repo":"acme/widgets","pr_number":"2907"}]'
+run_corroborate "false repo's review-feedback item already landed this cycle" \
+  '["acme/widgets"]' "acme/widgets: nothing here" '[]' '[]' \
+  "$rf_eligible" 1 "$repos_tech_debt_only" > "$tmp_dir/scenario.out"
+calls="$(cat "$tmp_dir/scenario.out")"
+assert_eq "…landing_armed_this_cycle was consulted with this cycle's own log/cycle id" "1" \
+  "$(grep -cE "^landing_armed_this_cycle $tmp_dir/log\\.jsonl test-cycle-fallback\$" <<<"$calls")"
+assert_eq "…corroboration accepted — nothing unaccounted" "accepted" \
+  "$(events_named "$calls" corroboration | head -n1 | jq -r '.verdict')"
+assert_eq "…no fallback call — there was nothing to fall back for" "0" \
+  "$(grep -cE '^run_model_stage ' <<<"$calls")"
+assert_eq "…one none-selected, carrying the fingerprint (clean stand-down)" "fp-abc123" \
+  "$(events_named "$calls" none-selected | head -n1 | jq -r '.fingerprint')"
+assert_eq "…function returns 1 (caller should exit)" "1" "$fn_rc"
+LANDING_ARMED_STUB_JSON="[]"
 
 # --- The false repo's own report fully accounts for its band: clean stand-down ---
 accounted_recorded='[{"repo":"acme/widgets","item":"TD1","source":"tech-debt","reason":"r","missing":"m","evidence":"e"},
