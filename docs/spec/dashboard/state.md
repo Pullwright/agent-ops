@@ -133,17 +133,13 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
 - **`fleet-cache/{disabled,limit}.json`** — the fleet flags' cached copies
   (requirement 2.3a), maintained by `lib/toggle.sh` and refreshed by this
   Publisher's own GitHub tick. Read as plain files, so a `--no-github` tick and
-  a standby node surface them with no API call. Surfaced as `fleet.flags` and
-  rendered as banners: the fleet switch (suppressed when the local switch
-  banner already covers it — the setting node writes both levels), and the
-  fleet-wide usage-limit stand-down (shown when the local log union has not
-  caught up — a standby with no state yet, or a hit seconds old elsewhere).
-  Both banners name the flag's `actor` (falling back to the older `by` /
-  `node` fields on records that predate it) and its `kind` (requirement 2,
-  #244) — whose decision the stand-down is, and whether it was a decision at
-  all: a `manual` limit record renders in the operator's voice ("set by …
-  (manual)", never probed, `--clear-limit` lifts it early) rather than the
-  detector's estimated-retry phrasing.
+  a standby node surface them with no API call. Surfaced unchanged as
+  `fleet.flags.{disabled,limit}`: the fleet switch is rendered as a banner
+  directly from it (suppressed when the local switch banner already covers it
+  — the setting node writes both levels); `fleet.flags.limit` itself is not
+  rendered directly — it is one of the inputs `status.limits` below folds in,
+  alongside the log union, when a hit is fresh enough that the union has not
+  caught up to it yet.
 - **`fleet-cache/merge-autonomy-kill.json`** — the D18 merge-autonomy kill
   switch's own cached copy (D18 issue #576, `lib/merge-autonomy.sh`'s
   `MERGE_AUTONOMY_KILL_FLAG`). Narrower than the `disabled`/`limit` flags
@@ -193,7 +189,7 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   `lib/toggle.sh`: the same code the pipelines gate on, so the dashboard cannot
   disagree with them about whether cycles are meant to be running (requirement
   34a). Surfaced as `status.switch` and rendered as the *first* banner, ahead
-  of the usage-limit one.
+  of the usage-limit ones.
 
   This panel earns its place by being the one thing a disabled pipeline looks
   like. Everything else on the page renders a disabled pipeline exactly as it
@@ -417,28 +413,65 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   already tees the Publisher's own stderr there), and `github.error` names
   the log rather than inlining every message.
 
-**Usage-limit detection.** The pipeline's own detector and the Publisher share
-one phrase pattern and reset-time parser (`lib/limit-detect.sh`), so a
-weekly-limit message ("resets Jul 17, 4am …") or a monthly spend-cap message
-now gets logged as `limit-hit` by the Script itself, not just spotted by the
-dashboard. The Publisher still also scans recent transcripts for limit
-phrasing directly, as a backstop for any cycle where a `limit-hit` never made
-it into the log for some other reason (a crash before `log_event` ran, or a
-cycle from before this detector existed) — so the dashboard can still show a
-stand-down the log itself missed.
+**Usage-limit detection, scoped per provider (issue #2135).** The pipeline's
+own detector and the Publisher share one phrase pattern and reset-time parser
+(`lib/limit-detect.sh`), so a weekly-limit message ("resets Jul 17, 4am …") or
+a monthly spend-cap message gets logged as `limit-hit` — tagged with the
+provider whose account hit it — by the Script itself, not just spotted by the
+dashboard. The Publisher still also scans the most recent cycle's own
+transcript for limit phrasing directly, as a backstop for the gap before a
+`limit-hit` has made it into the log (ordinarily one process; a crash before
+`log_event` ran, or a cycle from before this detector existed, can widen it).
+That scan carries no provider of its own — it reads stage output text, not a
+structured record — so it only ever speaks for `anthropic`, and only when
+nothing else already does: neither an entry for `anthropic` itself nor a
+wildcard entry, which already speaks for every provider including that one.
 
-The banner is built from the same reduction the pipelines gate on
-(`limit_union_record`), so a `limit-cleared` event retires the banner at the
-moment it retires the stand-down; a dashboard still reporting a limit the
-pipelines have lifted would be exactly the disagreement requirement 34a
-exists to prevent. Its wording comes from `limit_describe`, which states
-whether `resume_at` is a reset the provider gave or an interval this system
-chose. An estimate presented as a deadline gets waited out instead of
-questioned — which is how a lifted spend cap kept the fleet down for a
-further 22 hours on 2026-07-26 — so an unstated reset is labelled as such and
-names both ways out: the plan's rollover, which needs nobody, and raising the
-cap then running `agent-cycle.sh --clear-limit`, which needs a human and only
-if sooner is wanted. Flags written by a node on the previous release carry
-`needs_human` instead of `reset_known`; the banner inverts it rather than
-treating its absence as "reset known".
+`status.limits` is an array with one entry per provider the fleet is
+currently standing down, not one fleet-wide verdict: a usage limit is a draw
+against one provider's own account, so a hit against one provider must not
+read as every provider's stages being frozen. Each entry is
+`{provider, resume_at, class, reset_known, kind, actor}`
+(or `{provider, resume_at: null, class: null, reset_known: null, kind: "auto",
+actor: null, note}` for the transcript-scan backstop above, which has only
+prose to offer). The candidate providers are every one the log union's
+`limit_union_frozen_providers` currently names a live `limit-hit` for (the
+wildcard bucket — every pre-#2133 event with no `provider` field — carried
+through as the empty string and rendered "every provider", never folded onto
+`anthropic`: such a record governs every provider by requirement 2.1's "a
+record without one applies to every provider" rule, so naming one of them
+would report the rest healthy while the whole fleet was down, and its
+recourse is the bare `--clear-limit` rather than a scoped one — the same
+bucket the Monitor's own digest names the same way, `docs/spec/monitor.md`
+M6) plus whatever provider `fleet.flags.limit`'s own cached copy names — the
+empty string again where that record names none — in case a
+hit is fresh enough that the union hasn't caught up to it yet. Each candidate
+is then resolved the same way `limit_governing_record_for` (`lib/limit-
+detect.sh`) resolves one — that provider's own union bucket (via
+`limit_union_state_for`) combined with the flag (`limit_flag_record_for`),
+"later resume wins" (`limit_later_record`) — except the flag half is read
+from its local cached copy rather than fetched fresh: this section runs
+unconditionally, including a fast `--no-github` tick, which must cost no API
+call (the same reason `fleet.flags.limit` itself is read as a plain file
+above). A provider whose resolved record's `resume_at` has already passed,
+with no `limit-cleared` logged yet, is left out: the fleet is not standing
+down on a limit it already outlived.
+
+Each entry carries the raw fields `limit_reset_known`/`limit_describe`
+(`lib/limit-detect.sh`) need — `resume_at`, `class`, `reset_known` (itself
+computed by `limit_reset_known`, which reads the superseded `needs_human` on
+a record from a node running an older release and inverts it, rather than
+treating its absence as "reset known") — plus `kind` and `actor`, so the
+Site's own script can draw the identical reset-known/deadline-versus-estimate
+distinction `limit_describe` encodes and name whose decision the stand-down
+is (requirement 2, #244): an estimate presented as a deadline gets waited out
+instead of questioned — which is how a lifted spend cap kept the fleet down
+for a further 22 hours on 2026-07-26 — so an unstated reset is labelled as
+such and names both ways out (the plan's rollover, which needs nobody, and
+raising the cap then running `agent-cycle.sh --clear-limit <provider>`, which
+needs a human and only if sooner is wanted), while a `manual` record renders
+in the operator's voice ("set by … (manual)", never probed, `--clear-limit
+<provider>` lifts it early) rather than the detector's estimated-retry
+phrasing. `actor` falls back to the older `node` field on a record that
+predates it.
 

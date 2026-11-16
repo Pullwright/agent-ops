@@ -40,12 +40,12 @@
      `enabled` events and `lib/manage.sh`'s `--enable`, requirement 2.3/2.3a)
      — and the merge-autonomy kill switch (`lib/manage.sh`'s
      `--kill-merge-autonomy`/`--restore-merge-autonomy`, requirement 2.3b).
-     `key` distinguishes the four instances (`standdown:usage-limit`,
-     `standdown:node-switch:<node>`, `standdown:fleet-switch`,
-     `standdown:merge-autonomy-kill`) so the coalescing below is per
-     stand-down, not one bucket for all of them — and each instance's
-     `begin` and `end` share that one key, which is why the coalescing
-     below keys on the event too.
+     `key` distinguishes the four instances (`standdown:usage-limit:<provider>`
+     — `anthropic`, `xai`, … (issue #2135) — `standdown:node-switch:<node>`,
+     `standdown:fleet-switch`, `standdown:merge-autonomy-kill`) so the
+     coalescing below is per stand-down, not one bucket for all of them — and
+     each instance's `begin` and `end` share that one key, which is why the
+     coalescing below keys on the event too.
 
    An event whose class is not a member of `notify_events` is dropped before
    `notify_webhook_url` is even read — never sent, never logged. Every
@@ -66,12 +66,12 @@
    re-filing `escalation-unfiled` every cycle for two days, arrives as one
    message and a count rather than thirty. The event is half of the key
    because the two halves of a transition pair share one `key` by
-   construction — `fleet-standdown-begin`/`-end` on `standdown:usage-limit`
-   and its three siblings, `pager-fired`/`pager-cleared` on the pager's own
-   key — and a stand-down in force re-posts its `begin` every cycle, so
-   keying on `key` alone would hold that key's last `notify-sent`
-   permanently younger than the interval and suppress the `end` an operator
-   is actually waiting on. A read log this node has not written yet is
+   construction — `fleet-standdown-begin`/`-end` on
+   `standdown:usage-limit:<provider>` and its three siblings,
+   `pager-fired`/`pager-cleared` on the pager's own key — and a stand-down in
+   force re-posts its `begin` every cycle, so keying on `key` alone would
+   hold that key's last `notify-sent` permanently younger than the interval
+   and suppress the `end` an operator is actually waiting on. A read log this node has not written yet is
    ordinary rather than an error (a freshly provisioned node, before its
    first cycle): the read falls back to `/dev/null`, so nothing is found and
    nothing is suppressed, rather than failing a redirect and aborting a
@@ -517,7 +517,10 @@
    that its body carries a different cycle id and node name and only the
    `_landing_notice_stamp` comparison can recognise it as unchanged; called
    with a changed class or reason PATCHes the same standing comment id rather
-   than posting a second one; called again for the protected-path cool-off
+   than posting a second one; sourcing `lib/reason-url.sh` first makes the
+   body additionally link the refusal class to its own `docs/reference/
+   reasons.md` entry (issue #2098), and without it the body carries no such
+   link; called again for the protected-path cool-off
    with the same `approved`/`landing_cool_off_hours` but a different embedded
    "<N>h remaining" figure — the live countdown
    `landing_protected_path_controls_ok` recomputes every pass — is also a

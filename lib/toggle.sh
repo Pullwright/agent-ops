@@ -973,9 +973,12 @@ fleet_disabled_state_cached() {
 }
 
 # fleet_limit_resume_at STATE_REPO STATE_DIR
-# Print fleet/limit.json's resume_at, or nothing. Garbage prints nothing: a
-# limit flag is machine-written, and an unreadable one failing open costs at
-# most one wasted attempt that re-hits the limit and republishes it.
+# Print fleet/limit.json's resume_at, fleet-wide, or nothing. Garbage prints
+# nothing: a limit flag is machine-written, and an unreadable one failing
+# open costs at most one wasted attempt that re-hits the limit and
+# republishes it. Unchanged since before issue #2135, for a caller that still
+# wants "is anything, anywhere, frozen" rather than one provider's own
+# answer — `fleet_limit_resume_at_for` below is the scoped form.
 fleet_limit_resume_at() {
   local raw
   raw="$(fleet_flag_fetch "$1" "$2" limit)"
@@ -984,12 +987,29 @@ fleet_limit_resume_at() {
   return 0
 }
 
+# fleet_limit_resume_at_for STATE_REPO STATE_DIR PROVIDER
+# fleet_limit_resume_at, narrowed to PROVIDER via limit_flag_record_for
+# (lib/limit-detect.sh): empty unless the live flag's own record applies to
+# PROVIDER — it is PROVIDER's own, or it carries no provider at all. The live,
+# fast-path re-check lib/enabler.sh and lib/refinement.sh make right before
+# their own stage launches, scoped the same way the main stand-down check is.
+fleet_limit_resume_at_for() {
+  local raw
+  raw="$(fleet_flag_fetch "$1" "$2" limit)"
+  [[ -n "$raw" ]] || return 0
+  raw="$(limit_flag_record_for "$raw" "$3")"
+  [[ -n "$raw" ]] || return 0
+  jq -r '.resume_at // empty' <<<"$raw" 2>/dev/null || true
+  return 0
+}
+
 # fleet_limit_publish STATE_REPO STATE_DIR RESUME_AT CLASS RESET_KNOWN NODE [EVIDENCE] [PROVIDER]
-# Publish a usage-limit stand-down, extend-only: a flag already resuming at
-# or after RESUME_AT is left alone. Two attempts — re-read between them — so
-# losing the CAS to a peer publishing the same limit converges instead of
-# failing. Returns non-zero only when the flag could not be written at all;
-# the caller logs that and relies on the log union to carry the signal.
+# Publish a usage-limit stand-down, extend-only for PROVIDER: a flag already
+# resuming PROVIDER (or every provider — a wildcard record) at or after
+# RESUME_AT is left alone. Two attempts — re-read between them — so losing the
+# CAS to a peer publishing the same limit converges instead of failing.
+# Returns non-zero only when the flag could not be written at all; the caller
+# logs that and relies on the log union to carry the signal.
 #
 # The record carries `kind: "auto"` and `actor` (the node), because every
 # writer of this flag is a detector responding to an observed limit — and
@@ -1004,15 +1024,25 @@ fleet_limit_resume_at() {
 # that parsed a shorter reset undercut a peer's longer one, which is the race
 # extend-only exists to prevent.
 #
-# PROVIDER (issue #2133) names which provider's account hit this limit — the
-# stand-down itself still covers the whole fleet regardless of provider
-# (scoping it per-provider is #2135), so this is informational only. Defaults
-# to `anthropic`: every caller before this issue, and every caller that
-# passes nothing, means the one provider that has ever existed.
+# PROVIDER (issue #2133, scoped by issue #2135) names which provider's
+# account hit this limit. Defaults to `anthropic`: every caller before issue
+# #2133, and every caller that passes nothing, means the one provider that
+# has ever existed. The flag still carries exactly one record — a second
+# provider's hit overwrites rather than joins it (limit_flag_record_for's own
+# header explains why that trade is acceptable: the log union, not this fast
+# path, is what stays correct for every provider at once). The "already
+# resuming at or after RESUME_AT" extend-only guard below only ever compares
+# against the *current* record when that record applies to this same
+# PROVIDER — limit_flag_record_for's own "a record without one applies to
+# every provider" rule — so a longer-running freeze for a *different*
+# provider is replaced outright rather than silently absorbing this one: the
+# alternative, comparing resume_at across providers, would let whichever
+# provider happened to have the longer freeze suppress every other provider's
+# own fast-path publication indefinitely.
 fleet_limit_publish() {
   local repo="$1" state_dir="$2" resume_at="$3" class="$4" reset_known="$5" node="$6"
   local evidence="${7:-}" provider="${8:-anthropic}"
-  local new_epoch body cur cur_at cur_epoch
+  local new_epoch body cur cur_own cur_at cur_epoch
   [[ -n "$repo" ]] || return 0
   new_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
   (( new_epoch > 0 )) || return 0
@@ -1027,8 +1057,9 @@ fleet_limit_publish() {
       evidence: (if $e == "" then null else $e end)}')"
   for _ in 1 2; do
     cur="$(fleet_flag_fetch "$repo" "$state_dir" limit)"
-    if [[ -n "$cur" ]]; then
-      cur_at="$(jq -r '.resume_at // empty' <<<"$cur" 2>/dev/null || true)"
+    cur_own="$(limit_flag_record_for "$cur" "$provider")"
+    if [[ -n "$cur_own" ]]; then
+      cur_at="$(jq -r '.resume_at // empty' <<<"$cur_own" 2>/dev/null || true)"
       if [[ -n "$cur_at" ]]; then
         cur_epoch="$(date -d "$cur_at" +%s 2>/dev/null || echo 0)"
         (( cur_epoch >= new_epoch )) && return 0

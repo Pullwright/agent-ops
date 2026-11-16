@@ -10,9 +10,11 @@ cycles cost nothing but a few `gh` calls — except under an *estimated*
 usage-limit stand-down, where each cycle also spends the 2.1b probe.
 That spend is self-limiting from both ends: while the limit is real the
 probe's answer is the limit message, which serves no tokens and costs
-nothing, and the first answered probe (a fraction of a cent of
-`implementer_model_trivial`) retires the stand-down fleet-wide, so at most
-one probe per stand-down is ever paid for. Because back-pressure caps open agent PRs
+nothing, and the first answered probe (a fraction of a cent of whichever
+model actually resolves to the frozen provider, `limit_probe_model_for` —
+`implementer_model_trivial` itself on a single-provider install, issue
+#2135) retires that provider's stand-down fleet-wide, so at most one probe
+per stand-down, per provider, is ever paid for. Because back-pressure caps open agent PRs
 at `max_open_agent_prs`, sustained spend is bounded by the rate at which pull
 requests land — a human's own merge click at `merge_autonomy: human` and
 `agent-approves`, the arming step (requirement 8d) from `agent-merges-routine`

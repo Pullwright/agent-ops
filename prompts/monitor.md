@@ -69,6 +69,11 @@ sections:
 - **Pager** — every `pager-fired` and `pager-cleared` transition in the
   window, and every currently-open `pw::pager` issue. Each open page is owed a
   triage verdict from you (see below).
+- **Currently frozen providers** — every provider whose account is standing
+  down on a usage limit *right now*, not every limit the window saw, with the
+  reset time and whether the provider stated it or this system guessed. A
+  record naming no provider covers them all and is listed as "every
+  provider". `_none_` is the healthy reading.
 - **Nodes** — each node's own published verdicts: per-stage health, the
   updater, compose drift, image drift, the state mirror, the unattended doctor
   pass, and its host-facts record where a collector has published one. This is

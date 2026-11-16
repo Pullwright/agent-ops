@@ -2198,6 +2198,30 @@ assert_eq "spend roll-ups are fleet-wide (one shared account)" "0.75" \
   "$(jq -r '.counts.spend_today_usd' <<<"$fdata")"
 assert_eq "the cached fleet limit flag is surfaced" "2031-01-01T00:00:00Z" \
   "$(jq -r '.fleet.flags.limit.resume_at' <<<"$fdata")"
+# …and folded into `status.limits` (issue #2135), which is the array the Site
+# renders banners from — `fleet.flags.limit` itself is never rendered
+# directly. This home's flag is deliberately the pre-#2133 shape with no
+# `provider` field at all, so it is the union's *wildcard* case: such a record
+# governs every provider by requirement 2.1's "a record without one applies to
+# every provider" rule, so it must stay the empty string — which the Site
+# renders "every provider", as `lib/monitor-digest.sh` names the same bucket —
+# rather than being folded onto `anthropic`. Folding it would tell an operator
+# one provider was frozen and imply every other was healthy, while in fact the
+# whole fleet was down: the mirror of the disagreement requirement 34a exists
+# to prevent.
+assert_eq "the flag's own record is one status.limits entry" "1" \
+  "$(jq '.status.limits | length' <<<"$fdata")"
+assert_eq "  ... a provider-less (wildcard) record stays the empty provider, never anthropic's" "" \
+  "$(jq -r '.status.limits[0].provider' <<<"$fdata")"
+assert_eq "  ... carrying the flag's own resume_at" "2031-01-01T00:00:00Z" \
+  "$(jq -r '.status.limits[0].resume_at' <<<"$fdata")"
+# The superseded `needs_human: true` inverts to reset_known: false, through
+# the same `limit_reset_known` the stand-down check reads it with — the
+# estimate-versus-deadline distinction the banner's wording turns on.
+assert_eq "  ... with needs_human inverted into reset_known" "false" \
+  "$(jq -r '.status.limits[0].reset_known' <<<"$fdata")"
+assert_eq "  ... and the writing node as its actor" "peer1" \
+  "$(jq -r '.status.limits[0].actor' <<<"$fdata")"
 assert_eq "claims default to empty without a GitHub tick" "[]" \
   "$(jq -c '.fleet.claims' <<<"$fdata")"
 assert_eq "the peers directory's own freshness marker surfaces as fleet.peers.ok" "false" \
@@ -2835,6 +2859,42 @@ assert_eq "  ... carrying its evidence and the node it names" "data.js unreadabl
   "$(jq -r '.pager[0] | "\(.evidence) \(.nodes[0])"' <<<"$(data_of "$x")")"
 assert_eq "  ... and only that one, of the twenty registered keys" "1" \
   "$(jq '.pager | length' <<<"$(data_of "$x")")"
+
+# --- pager_evaluate's own PEERS_STALE/PEERS_LAST_OK_TS wiring (agent-ops#2266/#2549) ---
+# fleet_peers_stale_flag/fleet_peers_last_ok_ts are hand-counted onto this
+# call's 27th/28th positional arguments; nothing else asserts the count stays
+# right under a later parameter insertion, and the failure mode is quiet — the
+# pager simply stops skipping on a stale peer view, with no signal
+# (agent-ops#2507's own incident). A tar copy of the tree with
+# `pager_evaluate`'s own definition overridden by a recorder — appended after
+# the real definition in the same sourced file, so it wins, the same trick
+# `$le_app`'s `item_lifecycle_fold` override above already uses — is what
+# lets the call's own argv be inspected without re-deriving `pager_evaluate`'s
+# own behaviour.
+pw_app="$tmp_dir/pager-wiring-app"
+mkdir -p "$pw_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$pw_app" -xf -
+pw_argv="$tmp_dir/pager-wiring-argv"
+cat >> "$pw_app/lib/pager.sh" <<OVERRIDE
+
+pager_evaluate() {
+  printf '%s\n' "\$@" > "$pw_argv"
+  return 0
+}
+OVERRIDE
+
+pw="$(new_home nodePW)"
+pw_peers="$pw/.cache/poetic-agents/workspaces/.agent-ops-peers"
+mkdir -p "$pw_peers"
+printf '{"ok":false,"ts":"2026-07-26T11:00:00Z","last_ok_ts":"2026-07-26T09:30:00Z"}\n' \
+  > "$pw_peers/.last-fetch.json"
+pw_calls="$tmp_dir/pager-wiring-gh-calls"
+: > "$pw_calls"
+env HOME="$pw" NODE_NAME=nodePW-self GH_CALL_LOG="$pw_calls" DASHBOARD_GH_CMD="$gh_stub" \
+  "$pw_app/scripts/publish-dashboard.sh" >/dev/null 2>&1
+assert_eq "pager_evaluate's PEERS_STALE/PEERS_LAST_OK_TS land at positions 27/28" \
+  "true 2026-07-26T09:30:00Z" \
+  "$(sed -n '27p;28p' "$pw_argv" | paste -sd' ' -)"
 
 # A --no-github tick carries the index forward like every other GitHub-sourced
 # panel; blanking it would empty every hover card on the page between fetches.

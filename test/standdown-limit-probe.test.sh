@@ -63,6 +63,18 @@ call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
 log_event() { printf '%s\t%s\n' "$1" "$2" >> "$call_log"; }
 
+# The extracted block's own first line now resolves the probe model through
+# `limit_probe_model_for` (issue #2135, lib/standdown.sh) rather than always
+# reading `implementer_model_trivial` directly; this stub stands in for it
+# the same way `run_model_stage` below stands in for a real launch — this
+# test is about the stage-end block's own shape, not about which provider's
+# model that resolver picks (test/limit-detect.test.sh and
+# test/guard-degradation.test.sh cover provider scoping directly), so it
+# always returns the same `implementer_model_trivial` every install before
+# that issue probed with.
+# shellcheck disable=SC2154  # set by run_probe's own env-prefixed eval, below
+limit_probe_model_for() { printf '%s' "$implementer_model_trivial"; }
+
 # The stub stands in for a real run_model_stage launch: it writes a stage
 # envelope and sets the two caller-visible globals a real run leaves (gaps,
 # lane), exactly as lib/stage-run.sh's own run_model_stage does — this test
@@ -115,6 +127,57 @@ STUB_RUN_RC=124 run_probe "$cycle_dir"
 event="$(grep -m1 '^stage-end'$'\t' "$call_log" | cut -f2-)"
 assert_eq "a killed probe's stage-end still carries the real (non-zero) exit_code" \
   "124" "$(jq -r '.exit_code' <<<"$event")"
+
+# --- limit_probe_model_for: which model the probe is actually spent on -----
+# The resolver the block above stubs out, exercised for real (issue #2135).
+# Requirement 2.1b names its fallback as part of the contract rather than an
+# implementation detail — it always returns a model, never nothing, so the
+# call site needs no third "could not even try" branch — and that is the one
+# branch nothing else covers: the scan's own hit on the frozen provider is
+# visible in the probed model id, but the fallback is only visible here.
+# Lifted verbatim out of lib/standdown.sh, the same technique the block above
+# uses, so this tests the shipped function rather than a copy of it.
+probe_model_fn="$(awk '
+  index($0, "limit_probe_model_for() {") { on = 1 }
+  on { print }
+  on && $0 == "}" { exit }
+' "$STANDDOWN")"
+if [[ -z "$probe_model_fn" || "$probe_model_fn" != *'MODEL_PROVIDER'* ]]; then
+  echo "FAIL - could not extract limit_probe_model_for from lib/standdown.sh — has it moved?" >&2
+  exit 1
+fi
+
+# The ten model variables it scans and the MODEL_PROVIDER map a cycle's own
+# resolve_model_id_into calls would have filled by the time it runs. Each
+# call is its own subshell, so the real function never replaces the stub the
+# extracted block above still depends on.
+# shellcheck disable=SC2034  # read by the eval'd limit_probe_model_for, not visible here
+probe_model_for() {  # probe_model_for <provider>
+  (
+    eval "$probe_model_fn"
+    declare -A MODEL_PROVIDER=(
+      [claude-haiku-4-5]=anthropic [claude-sonnet-5]=anthropic
+      [claude-opus-5]=anthropic [grok-4-fast]=xai [grok-4]=xai)
+    implementer_model_trivial=claude-haiku-4-5
+    implementer_model_default=claude-sonnet-5
+    coordinator_model=claude-sonnet-5
+    reviewer_model_default=grok-4-fast
+    reviewer_model_complex=claude-opus-5
+    enabler_model=claude-opus-5
+    refiner_model=grok-4
+    approver_model_default=claude-sonnet-5
+    approver_model_complex=claude-opus-5
+    approver_model_critical=claude-opus-5
+    limit_probe_model_for "$1"
+  )
+}
+
+assert_eq "limit_probe_model_for probes implementer_model_trivial when it is on the frozen provider" \
+  "claude-haiku-4-5" "$(probe_model_for anthropic)"
+assert_eq "...and the first configured model that does resolve to it otherwise" \
+  "grok-4-fast" "$(probe_model_for xai)"
+assert_eq "...falling back to implementer_model_trivial when no model resolves to it at all" \
+  "claude-haiku-4-5" "$(probe_model_for openai)"
 
 printf '\n'
 if (( failures )); then

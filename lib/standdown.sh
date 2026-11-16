@@ -635,39 +635,90 @@ if ! (( DRY_RUN )); then
 fi
 }
 
+# limit_probe_model_for PROVIDER
+# A bare, already-resolved model id on PROVIDER to spend requirement 2.1b's
+# probe against (issue #2135) — the frozen provider's own adapter, since a
+# probe on `implementer_model_trivial` proves nothing about whether a *different*
+# provider's limit has lifted. Every model this cycle might launch is already
+# resolved by the time `run_standdown_checks` runs (agent-cycle.sh's own
+# `resolve_model_id_into` calls, ahead of this file's one call site), so this
+# just scans them, cheapest-tier-shaped ones first, and returns the first
+# whose own `MODEL_PROVIDER` entry matches — `implementer_model_trivial`
+# itself first, so the single-provider install (every install before this
+# issue) probes exactly the model it always has. A candidate that is itself a
+# weighted-set handle (`lib/model-id.sh`'s `model_key_is_set`, issue #2247) is
+# skipped rather than matched against `MODEL_PROVIDER` — that table is keyed
+# by bare model ids, never by a config key's own name, so a handle can only
+# ever miss or coincidentally hit here; picking a member on PROVIDER out of a
+# mixed-provider set is tracked separately (agent-ops#2711) rather than
+# guessed at in this conflict resolution. Always prints something: no
+# configured model resolving to PROVIDER cannot happen for a provider this
+# system itself just froze (some model's own launch is what proved it
+# frozen), so rather than give the 2.1b call site below a third "could not
+# even try" outcome to handle, the one truly impossible case falls back to
+# `implementer_model_trivial` itself — the same model every install before
+# this issue always probed with, which answers nothing new about PROVIDER but
+# costs no more than the probe this replaces ever did.
+limit_probe_model_for() {
+  local provider="$1" m
+  for m in "$implementer_model_trivial" "$implementer_model_default" \
+           "$coordinator_model" "$reviewer_model_default" "$reviewer_model_complex" \
+           "$enabler_model" "$refiner_model" \
+           "$approver_model_default" "$approver_model_complex" "$approver_model_critical"; do
+    [[ -n "$m" ]] || continue
+    model_key_is_set "$m" && continue
+    if [[ "${MODEL_PROVIDER[$m]:-anthropic}" == "$provider" ]]; then
+      printf '%s' "$m"
+      return 0
+    fi
+  done
+  printf '%s' "$implementer_model_trivial"
+}
+
 _standdown_usage_limit_cooldown() {
-# 2.1 Usage-limit cooldown (fleet-wide: every node shares one Claude account,
-# so a limit any node hit stands this one down too). Two carriers of the same
-# signal, and the later resume wins: the log union is as fresh as the last
-# state-sync fetch, while fleet/limit.json is read live — it is what lets a
-# limit one node hit a minute ago stop this cycle now, not a fetch interval
-# from now. Either carrier can be retired early — automatically by the probe
-# of 2.1b below when the resume time is this system's own guess, or by hand
-# with `--clear-limit` (2.1) — and both retirements work the same way: the
-# union's reduction honours a `limit-cleared` event, and the flag is deleted
-# outright.
+# 2.1 Usage-limit cooldown, scoped to the provider that hit it (issue #2135):
+# every node shares one account per provider, so a limit any node hit stands
+# every node down for *that provider's own stages* — never for a different
+# provider's. This check gates the Co-Ordinator, the very next stage, so it
+# is scoped to the Co-Ordinator's own resolved provider; the Implementer
+# launch (lib/coordinator-phase.sh 5d), whose provider is chosen per item,
+# carries its own scoped check beside it. The Reviewer launch carries none
+# yet — agent-ops#2661.
+# Two carriers of the same signal, and the later resume wins: the log union
+# is as fresh as the last state-sync fetch, while fleet/limit.json is read
+# live — it is what lets a limit one node hit a minute ago stop this cycle
+# now, not a fetch interval from now. Either carrier can be retired early —
+# automatically by the probe of 2.1b below when the resume time is this
+# system's own guess, or by hand with `--clear-limit [<provider>]` (2.1) —
+# and both retirements work the same way: the union's reduction honours a
+# `limit-cleared` event, and the flag is deleted outright when it governs
+# this same provider.
 #
 # Both records are carried whole rather than reduced to a timestamp, so the
 # logged reason can say whether `resume_at` is a stated reset or this system's
 # own guess. Reporting a guess as a deadline is what let a stale stand-down
 # outlive the limit that caused it and go unquestioned.
 #
-# The union is read once, by `limit_union_state` (lib/limit-detect.sh), for
-# everything this check needs from it: the governing hit here, and the
-# freeze's start and escalation memory for the escalation below. The read
-# skips a line that does not parse, so it fails only when it could not read
-# at all (jq killed, say). That is reported rather than taken for "no limit
-# in force" (#2037), and a union the snapshot could not build
-# (`union_build_ok`, reported there) is treated exactly the same way without
-# being read: the flag carrier decides on its own, as it does when the union
-# simply holds no live hit, and `union_state_ok` tells the escalation that
-# the union's answers are unknown rather than empty.
+# The union is read once, by `limit_union_state_for` (lib/limit-detect.sh),
+# for everything this check needs from it, narrowed to $check_provider: the
+# governing hit here, and the freeze's start and escalation memory for the
+# escalation below — already folding in the wildcard bucket (every record
+# with no `provider` at all, from before issue #2133, and any fleet-wide
+# `limit-cleared`/escalation), so a pre-#2135 record still governs every
+# provider. The read skips a line that does not parse, so it fails only when
+# it could not read at all (jq killed, say). That is reported rather than
+# taken for "no limit in force" (#2037), and a union the snapshot could not
+# build (`union_build_ok`, reported there) is treated exactly the same way
+# without being read: the flag carrier decides on its own, as it does when the
+# union simply holds no live hit, and `union_state_ok` tells the escalation
+# that the union's answers are unknown rather than empty.
+check_provider="${MODEL_PROVIDER[$coordinator_model]:-anthropic}"
 union_state='{"record":null,"since":null,"escalated":[]}'
 union_state_ok=1
 if ! (( union_build_ok )); then
   union_state_ok=0
 elif [[ -s "$union_log" ]]; then
-  union_state="$(limit_union_state < "$union_log" 2>&1)" \
+  union_state="$(limit_union_state_for "${check_provider:-anthropic}" < "$union_log" 2>&1)" \
     || { guard_warn "cycle:union_record" "$union_state"; union_state=""; union_state_ok=0; }
 fi
 union_record=""
@@ -675,7 +726,8 @@ if (( union_state_ok )); then
   union_record="$(jq -c '.record // empty' <<<"$union_state" 2>&1)" \
     || { guard_warn "cycle:union_record" "$union_record"; union_record=""; union_state_ok=0; }
 fi
-governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
+governing="$(limit_later_record "$union_record" "$(limit_flag_record_for \
+  "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "${check_provider:-anthropic}")")"
 [[ -n "$governing" ]] || governing='{}'
 resume_at="$(jq -r '.resume_at // empty' <<<"$governing" 2>/dev/null || true)"
 resume_epoch=0
@@ -721,10 +773,22 @@ if (( resume_epoch > now_epoch )); then
   if [[ "$governing_kind" != "manual" && "$governing_known" != "true" ]] && ! (( DRY_RUN )); then
     probe_out="$cycle_dir/limit-probe.out"
     probe_rc=0
+    # The frozen provider's own adapter (issue #2135): a reply from
+    # $implementer_model_trivial proves nothing about an xai-provider freeze
+    # if that model itself resolves to anthropic. limit_probe_model_for scans
+    # every model this cycle resolved for the first on $check_provider,
+    # $implementer_model_trivial itself first — so a single-provider install
+    # probes exactly the model it always has (its own header explains why it
+    # always prints something rather than ever requiring a "no model to
+    # probe with" branch here).
+    probe_model="$(limit_probe_model_for "${check_provider:-anthropic}")"
     # Drawn once, before the lane (issue #2247) — see the identical comment
-    # on the credential probe above.
+    # on the credential probe above. limit_probe_model_for above never
+    # returns a weighted-set handle (its own header explains why), so this
+    # is a pass-through here, kept only for parity with every other
+    # probe/launch call site in this file.
     local limit_probe_model
-    stage_model_resolve_into limit_probe_model "$implementer_model_trivial" "${cycle_id:-}:limit-probe"
+    stage_model_resolve_into limit_probe_model "$probe_model" "${cycle_id:-}:limit-probe"
     run_model_stage limit-probe 180 "$limit_probe_model" \
       "Reply with the single word: ok" "$probe_out" "$cycle_dir" || probe_rc=$?
     # The probe's own spend, joined into the fleet-wide ledger like every
@@ -739,22 +803,25 @@ if (( resume_epoch > now_epoch )); then
       --argjson m "$(metering_fields "$limit_probe_model" "$probe_out" "$stage_gaps_json" "$stage_lane_json")" \
       '{stage: "limit-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
     probe_verdict="$(limit_probe_verdict "$(cat "$probe_out" 2>/dev/null || true)" \
-      "$(cat "$probe_out.stderr" 2>/dev/null || true)")"
+      "$(cat "$probe_out.stderr" 2>/dev/null || true)" "${check_provider:-anthropic}")"
     case "$probe_verdict" in
       clear)
         # The same two carriers --clear-limit retires, for the same reason it
         # retires both: the stand-down lifts only when the later of the two
         # says so. The `limit-cleared` event outranks every earlier hit in
-        # the union's reduction; the flag is deleted because
+        # the union's reduction, for this provider alone; the flag is deleted
+        # outright — not narrowed to this provider — because
         # fleet_limit_publish is extend-only and delete is the one write that
-        # legitimately moves a resume earlier.
+        # legitimately moves a resume earlier, and the flag holds only one
+        # provider's own record at a time in any case (limit_flag_record_for's
+        # own header).
         log_event "limit-cleared" "$(jq -nc --arg w "$resume_at" \
-          --arg by "auto-probe@$node_name" --arg n "$node_name" \
-          '{was: $w, reason: "probe answered: the limit behind this estimated stand-down is gone", by: $by, actor: $n, kind: "auto"}')"
-        notify_post_cycle "fleet-standdown-end" "standdown:usage-limit" \
-          "Usage-limit cooldown lifted" "" "" \
+          --arg by "auto-probe@$node_name" --arg n "$node_name" --arg p "${check_provider:-anthropic}" \
+          '{was: $w, reason: "probe answered: the limit behind this estimated stand-down is gone", by: $by, actor: $n, kind: "auto", provider: $p}')"
+        notify_post_cycle "fleet-standdown-end" "standdown:usage-limit:${check_provider:-anthropic}" \
+          "Usage-limit cooldown lifted (${check_provider:-anthropic})" "" "" \
           "probe answered: the limit behind this estimated stand-down (resume was $resume_at) is gone"
-        # node-state (docs/reference/flow-schema.md, D21): the fleet-wide block just
+        # node-state (docs/reference/flow-schema.md, D21): the block just
         # lifted and this cycle continues past this point — an immediate
         # transition, not a terminal one (this call does not exit).
         log_node_state_transition overhead
@@ -762,6 +829,11 @@ if (( resume_epoch > now_epoch )); then
           # >/dev/null: fleet_flag_delete now prints which of "deleted"/
           # "absent" it was (issue #426); this site only reads the return
           # code, and the raw word must not leak into the cycle's own stdout.
+          # Deletes the whole flag — never scoped to $check_provider — since
+          # the probe that just cleared is the one governing *this* provider;
+          # a different provider's own record, if the flag happened to be
+          # carrying one, was already superseded the moment this one hit
+          # (fleet_limit_publish's own single-slot trade).
           fleet_flag_delete "$state_repo" "$state_dir" limit >/dev/null || log_event "warning" \
             '{"detail": "could not clear fleet/limit.json after a clear probe — peers reading it live stand down until their own probes answer"}'
         fi
@@ -773,7 +845,9 @@ if (( resume_epoch > now_epoch )); then
         # moments after a limit was re-confirmed (requirement 35's guards),
         # and the probe's transcript may state what the original message did
         # not — a parseable reset upgrades `reset_known` to true and stops
-        # the probing until a time that is finally real.
+        # the probing until a time that is finally real. stage_provider was
+        # set by run_model_stage's own launch of $probe_model above, so
+        # detect_and_log_limit_hit records this hit under $check_provider.
         detect_and_log_limit_hit "$probe_out" || true
         probe_note=" (probe: still limited)"
         ;;
@@ -789,15 +863,16 @@ if (( resume_epoch > now_epoch )); then
       # resume_at or when the human runs --clear-limit (#244).
       governing_actor="$(jq -r '.actor // .node // "?"' <<<"$governing" 2>&1)" \
         || { guard_warn "cycle:governing_actor" "$governing_actor"; governing_actor='?'; }
-      standdown_reason="manual stand-down until $resume_at, set by $governing_actor — never probed or auto-cleared; 'agent-cycle.sh --clear-limit' lifts it early"
+      standdown_reason="manual stand-down (${check_provider:-anthropic}) until $resume_at, set by $governing_actor — never probed or auto-cleared; 'agent-cycle.sh --clear-limit ${check_provider:-anthropic}' lifts it early"
     else
-      standdown_reason="usage-limit cooldown $(limit_describe "$resume_at" \
+      standdown_reason="usage-limit cooldown (${check_provider:-anthropic}) $(limit_describe "$resume_at" \
         "$governing_class" "$governing_known")$probe_note"
-      # #244: a long-running *automatic* fleet-wide freeze is put in front of
-      # a human — the operator did not choose it, so nobody is watching it —
-      # while a manual stand-down never pages the person who set it. Aged
-      # from the start of the current freeze (`since`, from the union read
-      # above), not from its latest extension, and raised once per freeze:
+      # #244: a long-running *automatic* freeze for one provider is put in
+      # front of a human — the operator did not choose it, so nobody is
+      # watching it — while a manual stand-down never pages the person who
+      # set it. Aged from the start of the current freeze (`since`, from the
+      # union read above, already scoped to $check_provider), not from its
+      # latest extension, and raised once per freeze per provider:
       # the `limit-freeze-escalated` events in the union (`escalated`) are the
       # memory, and create_escalation_issue's open-issue guard catches the
       # cross-node race the union has not yet carried.
@@ -852,21 +927,21 @@ if (( resume_epoch > now_epoch )); then
             fi
             # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
             {
-              printf '## The fleet has been standing down automatically since %s\n\n' "$freeze_since_note"
-              printf 'Every cycle since then has stood down on an automatic usage-limit record, and the freeze has now outlived `limit_escalate_after_hours` (%s h). The governing record:\n\n' "$limit_escalate_after_hours"
+              printf '## The fleet has been standing down %s automatically since %s\n\n' "${check_provider:-anthropic}" "$freeze_since_note"
+              printf 'Every cycle since then has stood down on an automatic usage-limit record for `%s`, and the freeze has now outlived `limit_escalate_after_hours` (%s h). The governing record:\n\n' "${check_provider:-anthropic}" "$limit_escalate_after_hours"
               printf '```json\n%s\n```\n\n' "$governing"
-              printf 'If the limit is real, nothing is needed — the stand-down ends at its own resume time, and each cycle keeps probing an estimated one. If it has lapsed or was misread, `agent-cycle.sh --clear-limit <reason>` lifts it fleet-wide.\n\n'
-              printf -- '---\nItem: `usage-limit-freeze:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
-                "$freeze_since" "$cycle_id" "$node_name"
+              printf 'If the limit is real, nothing is needed — the stand-down ends at its own resume time, and each cycle keeps probing an estimated one. If it has lapsed or was misread, `agent-cycle.sh --clear-limit %s <reason>` lifts it for this provider.\n\n' "${check_provider:-anthropic}"
+              printf -- '---\nItem: `usage-limit-freeze:%s:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
+                "${check_provider:-anthropic}" "$freeze_since" "$cycle_id" "$node_name"
             } > "$freeze_body"
             if freeze_created="$(create_escalation_issue "$crash_loop_repo" \
-                 "usage-limit-freeze:$freeze_since" "$enabler_escalation_label" \
-                 "Usage-limit freeze: the fleet has stood down automatically since $freeze_since" \
+                 "usage-limit-freeze:${check_provider:-anthropic}:$freeze_since" "$enabler_escalation_label" \
+                 "Usage-limit freeze (${check_provider:-anthropic}): the fleet has stood down automatically since $freeze_since" \
                  "$freeze_body")" && [[ -n "$freeze_created" ]]; then
               log_event "limit-freeze-escalated" "$(jq -nc \
                 --argjson n "${freeze_created%%$'\t'*}" --arg u "${freeze_created#*$'\t'}" \
-                --arg s "$freeze_since" --arg b "$freeze_basis" \
-                '{issue_number: $n, issue_url: $u, since: $s, since_basis: $b}')"
+                --arg s "$freeze_since" --arg b "$freeze_basis" --arg p "${check_provider:-anthropic}" \
+                '{issue_number: $n, issue_url: $u, since: $s, since_basis: $b, provider: $p}')"
             else
               log_event "warning" "$(jq -nc \
                 --arg d "automatic usage-limit freeze since $freeze_since exceeds ${limit_escalate_after_hours}h but the escalation issue could not be filed — will retry next cycle" \
@@ -876,9 +951,10 @@ if (( resume_epoch > now_epoch )); then
         fi
       fi
     fi
-    log_event "stand-down" "$(jq -nc --arg r "$standdown_reason" '{reason: $r, cause: "usage-limit"}')"
-    notify_post_cycle "fleet-standdown-begin" "standdown:usage-limit" \
-      "Usage-limit cooldown in effect" "" "" "$standdown_reason"
+    log_event "stand-down" "$(jq -nc --arg r "$standdown_reason" --arg p "${check_provider:-anthropic}" \
+      '{reason: $r, cause: "usage-limit", provider: $p}')"
+    notify_post_cycle "fleet-standdown-begin" "standdown:usage-limit:${check_provider:-anthropic}" \
+      "Usage-limit cooldown in effect (${check_provider:-anthropic})" "" "" "$standdown_reason"
     set_node_state_terminal externally-blocked usage-limit
     exit 0
   fi
