@@ -2896,6 +2896,20 @@ assert_eq "pager_evaluate's PEERS_STALE/PEERS_LAST_OK_TS land at positions 27/28
   "true 2026-07-26T09:30:00Z" \
   "$(sed -n '27p;28p' "$pw_argv" | paste -sd' ' -)"
 
+# `pager-eval-frozen` is driven directly rather than through `PAGER_KEYS`
+# (lib/pager.sh's own `PAGER_DIRECT_KEYS`), so it is never one of the
+# "twenty registered keys" the assertion above counts. Without walking
+# `pager_direct_keys` too, a fired `pager-eval-frozen` never reaches this
+# payload's `pager` array at all, for the whole duration of the freeze
+# incident it exists to surface (agent-ops#2918, caught in review on #2924).
+printf '{"ts":"2026-07-26T12:05:00Z","cycle":"publisher-nodeX-self-0","node":"nodeX-self","event":"pager-fired","key":"pager-eval-frozen","first_seen":"2026-07-26T00:00:00Z","evidence":"the peers view has not advanced in 90m","issue_number":null,"issue_url":null,"remedy_class":"owner-only","nodes":[]}\n' \
+  >> "$xlog"
+run_gh_publish
+assert_eq "a fired pager-eval-frozen reaches the payload's pager array too, though it is never a registered key" \
+  "true" "$(jq '[.pager[].key] | index("pager-eval-frozen") != null' <<<"$(data_of "$x")")"
+assert_eq "  ... alongside the registered key already firing" "2" \
+  "$(jq '.pager | length' <<<"$(data_of "$x")")"
+
 # A --no-github tick carries the index forward like every other GitHub-sourced
 # panel; blanking it would empty every hover card on the page between fetches.
 run_publish "$x" NODE_NAME=nodeX-self
