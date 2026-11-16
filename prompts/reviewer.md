@@ -333,11 +333,16 @@ your review:
    already tracked, so cite the existing issue rather than filing a duplicate
    — otherwise `gh issue create` in the target repo, labelled
    `pw::type:tech-debt`, naming this pull request in its body (e.g. "Noticed
-   while reviewing #631"). Before writing that body, check any claim it makes
-   about *default-branch* state — a file, trigger, or other precondition
-   "already exists on `main`", "nothing to land first", or anything else true
-   only of the pull request you are reviewing — against the default branch
-   itself with one cheap read: `gh api
+   while reviewing #631"), with a `Priority: <band>` line — one of `Urgent`,
+   `High`, `Medium` or `Low`, one sentence naming why — so the band is set at
+   filing time rather than left for later triage: a defect that pages, blocks
+   other work, or affects correctness, safety or spend ranks above wording,
+   comment drift or tidying; `Medium` where you are unsure, the same default
+   an untriaged issue already carries. Before writing that body, check any
+   claim it makes about *default-branch* state — a file, trigger, or other
+   precondition "already exists on `main`", "nothing to land first", or
+   anything else true only of the pull request you are reviewing — against
+   the default branch itself with one cheap read: `gh api
    repos/<slug>/contents/<path>?ref=<default_branch>` or `git ls-tree
    origin/<default_branch> -- <path>`. Writing the pull request's own working
    tree into the body as though it were the default branch's is exactly how
@@ -349,6 +354,7 @@ your review:
    GitHub this PR finishes the deferred work too. Where the gap is a question
    rather than a
    scoped fix, `gh issue create` in the target repo instead, unlabelled, with
+   a `Priority: <band>` line the same way and
    no `Defers:` line. Either way, still leave a short pointer in your step-5
    comment for the human — the issue is the durable copy, the comment is what
    a reader notices first. A `Defers:` line with no code change alongside it
@@ -759,8 +765,8 @@ that is still alive; that stays step 4's own `Defers:`-line convention, which
 this exists beside rather than instead of:
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title"}
-"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title", "priority": "optional: one of Urgent, High, Medium, Low"}
+"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title", "priority": "optional: one of Urgent, High, Medium, Low"}
 ```
 
 Use `file_debt` for a gap with a knowable fix a future Implementer could act
@@ -788,6 +794,14 @@ performs the filing under the ordinary pipeline login — the same convention
 `lib/enabler.sh`'s own `file_debt`/`file_issue` handling already uses, since
 you carry no App identity of your own the way the Approver does. Omit both
 when the pass had not yet found anything worth a permanent record.
+
+**`priority` (agent-ops#2422).** Set it to one of `Urgent`, `High`, `Medium`
+or `Low` — the band the filed issue should carry from the moment it exists,
+through `lib/issue-priority.sh`'s own ratchet, rather than left unset for a
+later Refiner pass to triage. A defect that pages, blocks other work, or
+affects correctness, safety or spend ranks above wording, comment drift or
+tidying. Omit it, or name anything else, and the Script leaves the band
+alone.
 
 ## Ending
 

@@ -193,8 +193,8 @@ either, both, or neither, alongside any verdict — when step 5 turned up
 something worth a permanent record:
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title"}
-"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title", "priority": "optional: one of Urgent, High, Medium, Low"}
+"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title", "priority": "optional: one of Urgent, High, Medium, Low"}
 ```
 
 Use `file_debt` for a gap with a knowable fix a future Implementer could act
@@ -222,6 +222,15 @@ what lets a human, and the Refiner, act on it rather than merely see the
 flag. Leaving both unset when the body enumerates options is filed anyway —
 never lost — but as `## Default: not stated`, logged as a warning: state one
 or the other whenever there is a real choice in front of you.
+
+**`priority` (agent-ops#2422).** Set it to one of `Urgent`, `High`, `Medium`
+or `Low` — the band the filed issue should carry from the moment it exists,
+through `lib/issue-priority.sh`'s own ratchet, rather than left unset for a
+later Refiner pass to triage. A defect that pages, blocks other work, or
+affects correctness, safety or spend ranks above wording, comment drift or
+tidying. Omit it, or name anything else, and the Script leaves the band
+alone — the same "no opinion, leave it" terms `default_fix`'s own absence is
+held to above.
 
 ## Long-running commands
 

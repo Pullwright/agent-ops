@@ -92,11 +92,53 @@ issue_calls="$tmp_dir/issue-create-calls"
 : > "$issue_calls"
 pr_list_calls="$tmp_dir/pr-list-calls"
 : > "$pr_list_calls"
+priority_mutation_calls="$tmp_dir/priority-mutation-calls"
+: > "$priority_mutation_calls"
+export ISSUE_PRIORITY_CACHE_DIR="$tmp_dir/priority-cache"
+mkdir -p "$ISSUE_PRIORITY_CACHE_DIR"
 
 cat > "$stub_bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
 args=("$@")
+
+# --- gh api graphql ... (issue_priority_apply's Priority field/mutation,
+# agent-ops#2422) ---
+if [[ "${args[0]:-}" == "api" && "${args[1]:-}" == "graphql" ]]; then
+  query="" jqfilter="."
+  i=2
+  while (( i < ${#args[@]} )); do
+    case "${args[$i]}" in
+      -f) i=$((i+1)); case "${args[$i]}" in query=*) query="${args[$i]#query=}" ;; esac ;;
+      --jq) i=$((i+1)); jqfilter="${args[$i]}" ;;
+    esac
+    i=$((i+1))
+  done
+  if [[ "$query" == *setIssueFieldValue* ]]; then
+    printf '1\n' >> "$PRIORITY_MUTATION_CALLS"
+    exit 0
+  fi
+  jq -c "$jqfilter" <<'FIELDJSON'
+{"data":{"repository":{"issueFields":{"nodes":[
+  {"id":"IFSS_priority","name":"Priority","options":[
+    {"id":"OPT_URGENT","name":"Urgent"},{"id":"OPT_HIGH","name":"High"},
+    {"id":"OPT_MEDIUM","name":"Medium"},{"id":"OPT_LOW","name":"Low"}]}]}}}}
+FIELDJSON
+  exit 0
+fi
+# --- gh api repos/<slug>/issues/<n> (issue_priority_current) ---
+if [[ "${args[0]:-}" == "api" && "${args[1]:-}" == repos/*/issues/[0-9]* ]]; then
+  jqfilter="."
+  i=2
+  while (( i < ${#args[@]} )); do
+    case "${args[$i]}" in --jq) i=$((i+1)); jqfilter="${args[$i]}" ;; esac
+    i=$((i+1))
+  done
+  jq -c "$jqfilter" <<'CURJSON'
+{"node_id":"I_pf","issue_field_values":[]}
+CURJSON
+  exit 0
+fi
 
 # --- gh api ... (lib/toggle.sh's fleet_flag_* contents API) ---
 if [[ "${args[0]:-}" == "api" ]]; then
@@ -237,6 +279,7 @@ STUB
 chmod +x "$stub_bin/gh"
 
 export GH_BACKING="$gh_backing" GH_FIXTURES="$fixtures" ISSUE_CALLS="$issue_calls" \
+       PRIORITY_MUTATION_CALLS="$priority_mutation_calls" \
        PR_LIST_CALLS="$pr_list_calls" PATH="$stub_bin:$PATH"
 
 now="2026-08-16T12:00:00Z"
@@ -467,6 +510,10 @@ assert_eq "and the repo is now genuinely frozen" "disabled" \
   "$(merge_budget_freeze_state "acme/state-repo" "$fs" "acme/widgets" | jq -r '.state')"
 assert_eq "the escalation issue is filed against the repo itself, never a fleet-wide escalation repo" \
   "acme/widgets" "$(cut -f1 "$issue_calls" | tail -1)"
+# agent-ops#2422, requirement 1: the governor holding past its own cap is a
+# correctness invariant violated, so the escalation files at Urgent.
+assert_eq "the escalation issue's Priority is set to Urgent" "1" \
+  "$([[ -f "$priority_mutation_calls" ]] && wc -l < "$priority_mutation_calls" || echo 0)"
 
 before="$(wc -l < "$issue_calls" | tr -d ' ')"
 merge_budget_apply_decision "$anomaly_json" "acme/widgets" "acme/state-repo" "escalation" "octocat"

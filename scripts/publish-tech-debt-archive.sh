@@ -117,6 +117,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # meant for the Script's own Approver/Enabler filing path, not this reader.
 # shellcheck source=lib/tech-debt-file.sh
 . "$SCRIPT_DIR/lib/tech-debt-file.sh"
+# This script never calls a lib/tech-debt-file.sh function, and that file's
+# own `issue_priority_apply` sourcing is lazy — deferred to the branch that
+# actually applies a Priority band (agent-ops#2422 fallout) — so sourcing it
+# here never touches lib/issue-priority.sh's own cache directory at all;
+# there is nothing for this script to arm a cleanup trap for.
 
 CONFIG_FILE="$SCRIPT_DIR/config.json"
 SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"

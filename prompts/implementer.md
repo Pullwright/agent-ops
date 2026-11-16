@@ -836,7 +836,11 @@ see "Dependabot takeover" above.)*
      target repo, labelled `pw::type:tech-debt`, with the shortcut and its
      provenance in the body (e.g. "Noticed while working #631") — never a
      branch or a pull request of its own; filing a debt item is one API
-     call, nothing more. Then add a `Defers: #<n>` line to **this** pull
+     call, nothing more. Set its band at filing time (see "Issue priority"
+     below) with a `Priority: <band>` line in the body, one sentence naming
+     why — the Refiner adopts a stated band like this verbatim, rather than
+     leaving the item to sit untriaged until someone bands it by hand. Then
+     add a `Defers: #<n>` line to **this** pull
      request's body — never a closing keyword (`Closes`/`Fixes`/`Resolves`):
      deferring is not resolving, and a closing keyword would tell GitHub this
      PR finishes the deferred work too, when all it did was notice it. File
@@ -847,10 +851,21 @@ see "Dependabot takeover" above.)*
    - **GitHub issue.** Where the gap is a question or a decision rather than
      a scoped fix — nothing to defer, since there is no piece of work yet to
      come back to — `gh issue create` in the target repo instead, unlabelled,
-     and mention it in the pull request body; no `Defers:` line for one of
+     with a `Priority: <band>` line the same way, and
+     mention it in the pull request body; no `Defers:` line for one of
      these. There is no dedup tooling for a plain issue the way the label
      search above covers a debt item — search the tracker yourself before
      filing.
+
+   **Issue priority.** Either filing above carries a `Priority: <band>` line
+   — one of `Urgent`, `High`, `Medium` or `Low` — stating the band at filing
+   time rather than leaving it unset for someone or something else to triage
+   later. A defect that pages, blocks other work, or affects correctness,
+   safety or spend ranks above wording, comment drift or tidying; when in
+   doubt, `Medium` is the harmless default every untriaged issue already
+   gets. This has no bearing on how well the issue itself is specified or
+   how soon you should act on it here — it only decides when a later
+   cycle's walk reaches it.
    Either way this is a **note**, never the fix: leave the actual work for a
    future item to pick up on its own merits, the same way "leave it" already
    meant before this paragraph existed. A lone issue with no code change
@@ -1191,6 +1206,19 @@ model reading it fresh each time, and a stale note can outlive the thing it
 described. Do not edit the issue's body to add this; a comment is enough, and
 the item still needs your `reason` and `unblock_condition` above regardless —
 this is in addition to them, not instead.
+
+**Record the same dependency through GitHub's native Issue Dependencies too
+(agent-ops#2422), when both issues are in the same organisation** — the
+native feature does not reach across organisations, which is the one case
+the `Blocked-by:` text convention above still has to cover alone, so post it
+either way: `gh api -X POST repos/<repo>/issues/<n>/dependencies/blocked_by
+-F issue_id=<blocking-issue's-own-numeric-id>` (the issue's internal id, from
+`gh api repos/<repo>/issues/<n> --jq .id`, not the number everyone reads).
+`-F`, never `-f`: the endpoint types `issue_id` as an integer, and `gh`'s
+`-f` sends every value as a string, which earns a 422 the best-effort
+rule below would then swallow silently. `lib/dependency-gate.sh` honours a native dependency the same way
+it honours the text line. Best-effort: if the call fails, the text line
+alone still holds the block — never let it fail your own attempt.
 
 **If instead the work order itself is the problem** — you started, and the
 brief does not say enough to build against: no acceptance criterion you can

@@ -231,6 +231,17 @@ assert_contains "  ... a tech-debt-filed event, crediting the approver" \
   '"by":"approver"' "$(grep '^tech-debt-filed' "$tmp_dir/events" || true)"
 assert_eq "  ... no warning" "0" "$(warnings | grep -c .)"
 
+# --- file_debt/file_issue: priority (agent-ops#2422, requirement 1) --------
+verdict='{"verdict":"approve","reasons":["fine"],"file_debt":{"title":"A gap the Approver noticed","body":"The body.","default_fix":"Do the smaller fix","priority":"High"}}'
+run_case "$verdict" >/dev/null
+assert_contains "file_debt: priority is passed through as the trailing argument" \
+  "Do the smaller fix false High" "$(fd_calls)"
+
+verdict='{"verdict":"approve","reasons":["fine"],"file_issue":{"title":"A question the Approver noticed","body":"The body.","default_fix":"Answer it this way","priority":"Urgent"}}'
+run_case "$verdict" >/dev/null
+assert_contains "file_issue: priority is passed through as the trailing argument" \
+  "Answer it this way false Urgent" "$(fi_calls)"
+
 # --- file_debt: owner_decision true, no default_fix -> no "malformed" -----
 #     warning (owner_decision alone is enough)
 verdict='{"verdict":"approve","reasons":["fine"],"file_debt":{"title":"An owner call","body":"The body.","owner_decision":true}}'

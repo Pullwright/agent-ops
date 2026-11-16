@@ -422,9 +422,16 @@ decided about the item in front of you, so it may accompany `unblocked`,
 `still-blocked`, `escalate` or `void` alike.
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix"}
-"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "priority": "optional: one of Urgent, High, Medium, Low"}
+"file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "priority": "optional: one of Urgent, High, Medium, Low"}
 ```
+
+**`priority` (agent-ops#2422)**, where set, bands the filed issue from the
+moment it exists, through `lib/issue-priority.sh`'s own ratchet, rather than
+leaving it unset for a later Refiner pass to triage: a defect that pages,
+blocks other work, or affects correctness, safety or spend ranks above
+wording, comment drift or tidying. Omit it, or name anything else, and the
+Script leaves the band alone.
 
 Use `file_debt` for a gap with a knowable fix a future Implementer could act
 on; `file_issue` for a question or a decision that isn't a scoped piece of
