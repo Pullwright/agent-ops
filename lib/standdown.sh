@@ -647,18 +647,23 @@ fi
 # itself first, so the single-provider install (every install before this
 # issue) probes exactly the model it always has. A candidate that is itself a
 # weighted-set handle (`lib/model-id.sh`'s `model_key_is_set`, issue #2247) is
-# skipped rather than matched against `MODEL_PROVIDER` — that table is keyed
-# by bare model ids, never by a config key's own name, so a handle can only
-# ever miss or coincidentally hit here; picking a member on PROVIDER out of a
-# mixed-provider set is tracked separately (agent-ops#2711) rather than
-# guessed at in this conflict resolution. Always prints something: no
-# configured model resolving to PROVIDER cannot happen for a provider this
-# system itself just froze (some model's own launch is what proved it
-# frozen), so rather than give the 2.1b call site below a third "could not
-# even try" outcome to handle, the one truly impossible case falls back to
-# `implementer_model_trivial` itself — the same model every install before
-# this issue always probed with, which answers nothing new about PROVIDER but
-# costs no more than the probe this replaces ever did.
+# checked via `model_key_qualified_ids` instead of `MODEL_PROVIDER` — that
+# table is keyed by bare model ids, never by a config key's own name, so a
+# handle can only ever miss or coincidentally hit it — and when one or more
+# of the set's own members resolve to PROVIDER, the first such member (by
+# the set's own declared order, never a weighted draw) is returned: this is
+# a single diagnostic probe spending one invocation, not a real launch under
+# `stage_model_draw_into`'s weighted-by-lane contract, so determinism is
+# correct here (agent-ops#2711). A set with no member on PROVIDER falls
+# through to the next candidate exactly as a bare-id miss does. Always
+# prints something: no configured model resolving to PROVIDER cannot happen
+# for a provider this system itself just froze (some model's own launch is
+# what proved it frozen), so rather than give the 2.1b call site below a
+# third "could not even try" outcome to handle, the one truly impossible
+# case falls back to `implementer_model_trivial` itself — the same model
+# every install before this issue always probed with, which answers nothing
+# new about PROVIDER but costs no more than the probe this replaces ever
+# did.
 limit_probe_model_for() {
   local provider="$1" m
   for m in "$implementer_model_trivial" "$implementer_model_default" \
@@ -666,7 +671,16 @@ limit_probe_model_for() {
            "$enabler_model" "$refiner_model" \
            "$approver_model_default" "$approver_model_complex" "$approver_model_critical"; do
     [[ -n "$m" ]] || continue
-    model_key_is_set "$m" && continue
+    if model_key_is_set "$m"; then
+      local set_qid
+      set_qid="$(model_key_qualified_ids "" "$m" | jq -r --arg p "$provider/" \
+        'map(select(startswith($p))) | .[0] // ""')"
+      if [[ -n "$set_qid" ]]; then
+        printf '%s' "${set_qid#*/}"
+        return 0
+      fi
+      continue
+    fi
     if [[ "${MODEL_PROVIDER[$m]:-anthropic}" == "$provider" ]]; then
       printf '%s' "$m"
       return 0
