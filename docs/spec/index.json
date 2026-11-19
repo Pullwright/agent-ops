@@ -2248,20 +2248,6 @@
       "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
       "title": "The post-merge closing-keyword sweep."
     },
-    "IMPL 17g": {
-      "kind": "impl",
-      "label": "17g",
-      "anchor": "impl-17g",
-      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "title": "The reservation-release retry sweep."
-    },
-    "IMPL 18": {
-      "kind": "impl",
-      "label": "18",
-      "anchor": "impl-18",
-      "file": "docs/spec/implementation/requirements/co-ordinator-01.md",
-      "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
-    },
     "IMPL 18a": {
       "kind": "impl",
       "label": "18a",
@@ -2282,6 +2268,20 @@
       "anchor": "impl-20",
       "file": "docs/spec/implementation/requirements/co-ordinator-02.md",
       "title": "Emits its entire final message as one JSON object: `selected`,"
+    },
+    "IMPL 17g": {
+      "kind": "impl",
+      "label": "17g",
+      "anchor": "impl-17g",
+      "file": "docs/spec/implementation/requirements/co-ordinator-03.md",
+      "title": "The reservation-release retry sweep."
+    },
+    "IMPL 18": {
+      "kind": "impl",
+      "label": "18",
+      "anchor": "impl-18",
+      "file": "docs/spec/implementation/requirements/co-ordinator-03.md",
+      "title": "When it skips a blocked item, it may cheaply verify whether the recorded"
     },
     "IMPL 35": {
       "kind": "impl",

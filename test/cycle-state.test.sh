@@ -772,7 +772,17 @@ cat > "$log" <<'EOF'
 {"ts":"2026-08-08T09:00:00Z","event":"void-object-closed","repo":"o/r","item":"198","kind":"issue","closed_by":"sweep"}
 EOF
 assert_eq "a closed void item is recorded" \
-  '[{"repo":"o/r","item":"198"}]' "$(void_object_closed_items "$log")"
+  '[{"repo":"o/r","item":"198","number":null}]' "$(void_object_closed_items "$log")"
+
+# A `pr-<n>-…` void carries the closed pull request's own number alongside
+# its item ref (agent-ops#2929) — the one key a finishing-source void's own
+# item string never shares with the claim branch it retires.
+cat > "$log" <<'EOF'
+{"ts":"2026-08-08T09:00:00Z","event":"void-object-closed","repo":"o/r","item":"pr-2913-abandoned-12c058202df8","kind":"pull-request","number":2913,"closed_by":"sweep"}
+EOF
+assert_eq "a pull-request void carries its own number" \
+  '[{"repo":"o/r","item":"pr-2913-abandoned-12c058202df8","number":2913}]' \
+  "$(void_object_closed_items "$log")"
 
 # Once actioned, an item stays actioned even if it recurs — there is no
 # clearing event for this fact, unlike item-void/unvoided.

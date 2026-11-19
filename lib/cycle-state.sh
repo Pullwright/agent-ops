@@ -476,9 +476,17 @@ void_refusal_escalated_since() {
 }
 
 # void_object_closed_items [LOG_FILE] [ALIASES_JSON]
-# Print, as a JSON array of {repo, item}, every void item requirement 34k's
-# act-on-void sweep has already handled — closed the GitHub object for, or
-# found it already closed. Reads LOG_FILE, or stdin if it is omitted or "-".
+# Print, as a JSON array of {repo, item, number}, every void item
+# requirement 34k's act-on-void sweep has already handled — closed the
+# GitHub object for, or found it already closed. Reads LOG_FILE, or stdin
+# if it is omitted or "-". `number` is the pull request number
+# `close-void-github-items.sh` closed for a `pr-<n>-…` void (`null` for an
+# issue-shaped void, which closes a bare issue number and carries no
+# separate PR) — `agent-ops#2929`'s own retirement match in
+# `scripts/sweep-orphan-branches.sh` keys on it, since a finishing-source
+# void's own `item` (e.g. `pr-2913-abandoned-<sha>`) never equals any claim
+# branch's name, but `number` is the one thing it shares with that branch's
+# own closed pull request.
 #
 # This is the sweep's own idempotency: closing a void'd issue or pull request
 # is a one-shot action, deliberately never repeated even if a human reopens
@@ -518,7 +526,7 @@ void_object_closed_items() {
     def canon_repo($r): ($aliases[$r] // $r);
     [ .[] | select(.event == "void-object-closed"
                    and (.repo // "") != "" and (.item // "") != "")
-      | {repo: canon_repo(.repo | tostring), item} ] | unique'
+      | {repo: canon_repo(.repo | tostring), item, number: (.number // null)} ] | unique'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
       | jq -sc --argjson aliases "$aliases" "$jq_prog" 2>/dev/null || true)"

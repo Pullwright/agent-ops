@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Co-Ordinator — requirements, continued (part 2 of 2; 18a–20: Fresh evidence on a blocked issue makes requirement 18's r…)
+### The Co-Ordinator — requirements, continued (part 2 of 3; 18a–20: Fresh evidence on a blocked issue makes requirement 18's r…)
 
 18a. <a id="impl-18a"></a>**Fresh evidence on a blocked issue makes requirement 18's re-check
     mandatory, not discretionary.** For a blocked item that is a GitHub
