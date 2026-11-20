@@ -78,9 +78,9 @@
          every stand-down — switch, cooldown, no-op short-circuit,
          back-pressure — logs no coordinator `stage-end` and so ages nothing.
        - **`issue-closed`** — the item's latest escalation is no longer open,
-         and no examination has followed it *since it was raised*. This
-         bypasses the threshold deliberately: the human acted, and requirement
-         36a promised them that closing the issue is what restarts the work.
+         and no examination but the raising engagement's own has followed it
+         *since it was raised*. This bypasses the threshold: the human
+         acted, and requirement 36a promised closing it restarts the work.
          Ordinarily this means the escalation was raised after *B* — the block
          it answers is still the current one — but when *B* is instead a
          `needs-refinement` re-flag whose `refined_before` (the item's latest
