@@ -67,6 +67,10 @@ case "$args" in
     exit 0 ;;
   "api repos/x/y/issues/199 --jq .state")
     exit 1 ;;
+  "api repos/x/y/issues/220 --jq .state"|"api repos/x/y/issues/221 --jq .state"|"api repos/x/y/issues/222 --jq .state")
+    echo open ;;
+  "issue close 220 -R x/y --comment "*|"issue close 221 -R x/y --comment "*|"issue close 222 -R x/y --comment "*)
+    exit 0 ;;
   "api repos/x/y/pulls/205")
     state="open"; [[ -f "$S/pr-205-closed" ]] && state="closed"
     labels="[]"; [[ -f "$S/pr-205-obsolete" ]] && labels='[{"name":"obsolete"}]'
@@ -105,6 +109,30 @@ assert_eq "an empty reason still closes the issue" \
   "$(jq -c 'select(.item == "198")' <<<"$out")"
 assert_contains "and the evidence still reaches the comment" \
   "the fix merged in PR #206" "$calls"
+
+# --- Case 1c: an object-shaped evidence field does not crash the @tsv conversion ---
+# and drop the candidates sorted at or after it (issue #1882). The structured
+# `{ref, path, expect, pattern}` evidence shape `lib/void-guard.sh` requires is a
+# JSON object, not a string — @tsv refuses to serialise an object, and because
+# the jq pipeline streams with `.[] |`, everything already printed survives but
+# the object-evidence candidate and everything after it in the array are lost
+# with no warning. This pins all three candidates — before, at, and after the
+# object-shaped one — as read and closed.
+c="$tmp_dir/case1c"; mkdir -p "$c"
+out="$(run "$c" '[{"item":"220","detail":"a","evidence":"plain string evidence","stage":"coordinator"},
+                  {"item":"221","detail":"b","evidence":{"ref":"x","path":"y","expect":"present","pattern":"z"},"stage":"coordinator"},
+                  {"item":"222","detail":"c","evidence":"another plain string","stage":"coordinator"}]')"
+assert_eq "the candidate before the object-evidence one is closed" \
+  '{"action":"closed","item":"220","kind":"issue","closed_by":"sweep"}' \
+  "$(jq -c 'select(.item == "220")' <<<"$out")"
+assert_eq "the object-evidence candidate itself is closed, not dropped" \
+  '{"action":"closed","item":"221","kind":"issue","closed_by":"sweep"}' \
+  "$(jq -c 'select(.item == "221")' <<<"$out")"
+assert_eq "the candidate sorted after the object-evidence one is still closed" \
+  '{"action":"closed","item":"222","kind":"issue","closed_by":"sweep"}' \
+  "$(jq -c 'select(.item == "222")' <<<"$out")"
+assert_contains "the object evidence reaches the close comment as JSON text" \
+  '"ref":"x"' "$(cat "$c/calls.log" 2>/dev/null || true)"
 
 # --- Case 2: the object is already closed (a human, or another route) -------------
 c="$tmp_dir/case2"; mkdir -p "$c"
