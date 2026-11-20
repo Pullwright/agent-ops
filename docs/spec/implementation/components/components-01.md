@@ -873,13 +873,22 @@ What exists, and the requirements each part answers to:
    given a repo slug, examines every `<branch_prefix>*` and
    `td-record/*` ref, and
    prints one JSON action object per orphan handled (`recovered`, `released`,
-   `deferred`, `warning`) for the Script to log. `td-record/*` is delete-only,
-   never recovered: a filing pull request closed without merging releases that
-   ref (`reason: "filing-declined"`) and then, once `<id>`'s record is
-   confirmed absent from the default branch, its paired `td/<id>` reservation
-   too — a pair whose two actions are reserved against the per-run cap
-   together, so a run without room for both defers it whole rather than
-   deleting the record and stranding the release. Fail-closed on every
+   `skipped`, `deferred`, `warning`) for the Script to log. `td-record/*` is
+   delete-only, never recovered: a filing pull request closed without
+   merging releases that ref (`reason: "filing-declined"`) and then, once
+   `<id>`'s record is confirmed absent from the default branch, its paired
+   `td/<id>` reservation too — a pair whose two actions are reserved against
+   the per-run cap together, so a run without room for both defers it whole
+   rather than deleting the record and stranding the release. For every other
+   prefix, a branch whose own most recent pull request was closed without
+   merging — distinct from a merged PR (issue #302) or a merged rival
+   branch sharing the same stem (issue #500), both of which release the ref
+   — is left untouched rather than recovered into a new draft (`action:
+   "skipped"`, `reason: "declined"`, issue #1162): a human declined that
+   recovery, so filing an identical one again would hand back exactly what
+   they declined; unlike the `td-record/*` case, the ref itself is not
+   deleted, since a human is expected to delete it by hand when they mean to
+   discard it for good. Fail-closed on every
    unanswered question; `SWEEP_GH` stubs `gh` and `AGENT_OPS_CONFIG`
    overrides the config for tests. Unit-tested
    (`test/sweep-orphan-branches.test.sh`); must pass `shellcheck`.

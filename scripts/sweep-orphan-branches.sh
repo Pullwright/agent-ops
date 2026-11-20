@@ -249,7 +249,7 @@ deferred=0
 
 sweep_branch() {  # <branch> <tip-sha>
   local branch="$1" sha="$2"
-  local prs merged registry_err tip_date tip_epoch compare_json ahead
+  local prs merged closed registry_err tip_date tip_epoch compare_json ahead
   local pr_out pr_url body_file
   local my_stem first_commit_date first_commit_epoch rivals rival_lookup_failed
   local rival_ref rival_merged_at rival_url rival_merged_epoch superseded_by
@@ -350,6 +350,26 @@ sweep_branch() {  # <branch> <tip-sha>
     else
       warn "$branch" "could not delete the already-merged leftover ref"
     fi
+    return 0
+  fi
+
+  # A human can decline a recovery just as readily by closing this branch's
+  # own PR without merging it — the generic analogue of `sweep_record_branch`'s
+  # closed-unmerged skip for `td-record/` branches (TD-PPagop-26082310), same
+  # signal, different namespace, different action: that arm deletes the ref;
+  # this one must not (issue #369's action item 1 leaves deletion to a human).
+  # `merged` above is already known to be "0", so any closed PR this finds is
+  # necessarily unmerged — a plain non-zero count is enough, no need to sort
+  # for "most recent".
+  closed="$("$GH" pr list -R "$slug" --head "$branch" --state closed \
+              --json state --jq '[.[] | select(.state == "CLOSED")] | length' \
+              2>/dev/null)" || closed=""
+  if [[ -z "$closed" ]]; then
+    warn "$branch" "could not check for a closed pull request — leaving it alone"
+    return 0
+  fi
+  if [[ "$closed" != "0" ]]; then
+    jq -nc --arg b "$branch" '{action: "skipped", branch: $b, reason: "declined"}'
     return 0
   fi
 
