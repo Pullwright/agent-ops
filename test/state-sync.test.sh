@@ -1357,9 +1357,9 @@ assert_eq "…carrying an age past one push interval" "1" \
   "$(jq -c --argjson p "$il_push_s" \
        'select(.event == "state-sync-lock-cleared" and .file == "shallow.lock" and .age_s > $p)' \
        "$sl_state/log.jsonl" | wc -l)"
-sb_peers_dir="$(fleet_peers_dir "$sl_home/.cache/poetic-agents/workspaces")"
+sl_peers_dir="$(fleet_peers_dir "$sl_home/.cache/poetic-agents/workspaces")"
 assert_eq "…and the fetch that followed actually completed, materialising peers" "1" \
-  "$(test -d "$sb_peers_dir" && echo 1 || echo 0)"
+  "$(test -d "$sl_peers_dir" && echo 1 || echo 0)"
 
 # ==============================================================================
 # fetch — peers materialised whole, pruned when gone
