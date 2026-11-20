@@ -615,8 +615,13 @@
    neither collapses two unrelated same-scope items to one stem — both still
    yield the ordinary recovery draft, silently; and a failed or unparseable
    rival lookup also still yields the ordinary recovery draft, but with a
-   `warning` naming the branch, distinct from the silent no-match case; and
-   a backlog past the per-run cap acts on the cap's worth and reports the
+   `warning` naming the branch, distinct from the silent no-match case; a
+   stale ref with commits ahead, no merged PR of its own, but a closed,
+   unmerged PR of its own yields a `skipped` action (`reason: "declined"`)
+   rather than a new recovery draft, with the ref itself left untouched —
+   a human declining this branch's own PR without merging it (issue
+   #1162) — and a failure to determine that leaves the ref alone and says
+   so; and a backlog past the per-run cap acts on the cap's worth and reports the
    remainder (`deferred`) rather than flooding or staying silent. For the `td-record/*` namespace
    (TD-PPagop-26082310): a stale record branch whose only pull request was
    closed without merging yields a ref delete carrying
