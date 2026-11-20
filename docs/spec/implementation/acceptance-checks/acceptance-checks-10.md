@@ -615,9 +615,7 @@
    neither collapses two unrelated same-scope items to one stem — both still
    yield the ordinary recovery draft, silently; and a failed or unparseable
    rival lookup also still yields the ordinary recovery draft, but with a
-   `warning` naming the branch, distinct from the silent no-match case; and
-   a backlog past the per-run cap acts on the cap's worth and reports the
-   remainder (`deferred`) rather than flooding or staying silent. A stale
+   `warning` naming the branch, distinct from the silent no-match case. A stale
    ref with commits ahead, no merged PR of its own, whose most recent
    closed pull request carries the `obsolete` label yields a ref delete and
    a `released` action carrying `reason: "retired"`, with **no** `pr
@@ -630,11 +628,14 @@
    pull request number the event carries against the number of this
    branch's own most recent closed pull request (agent-ops#2929) — and the
    same holds for a label differing only in case; a run given no union-log
-   argument reads no events and leaves its own stdin unread; and a ref
-   whose most recent closed pull
-   request carries neither signal — an ordinary human decline — is
-   unaffected, still reaching the rival-branch search and the ordinary
-   recovery draft exactly as before this check existed. For the `td-record/*` namespace
+   argument reads no events and leaves its own stdin unread. A ref whose
+   most recent closed pull request carries neither signal — an ordinary
+   human decline — yields a `skipped` action (`reason: "declined"`) rather
+   than a new recovery draft, with the ref itself left untouched (issue
+   #1162), rather than reaching the rival-branch search; and a failure to
+   determine that leaves the ref alone and says so; and a backlog past the
+   per-run cap acts on the cap's worth and reports the
+   remainder (`deferred`) rather than flooding or staying silent. For the `td-record/*` namespace
    (TD-PPagop-26082310): a stale record branch whose only pull request was
    closed without merging yields a ref delete carrying
    `reason: "filing-declined"` and, on a clean 404 for `tech-debt/<id>.md` at

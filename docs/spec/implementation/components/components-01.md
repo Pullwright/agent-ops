@@ -874,21 +874,31 @@ What exists, and the requirements each part answers to:
    `<branch_prefix>*` and
    `td-record/*` ref, and
    prints one JSON action object per orphan handled (`recovered`, `released`,
-   `deferred`, `warning`) for the Script to log. `td-record/*` is delete-only,
-   never recovered: a filing pull request closed without merging releases that
-   ref (`reason: "filing-declined"`) and then, once `<id>`'s record is
-   confirmed absent from the default branch, its paired `td/<id>` reservation
-   too — a pair whose two actions are reserved against the per-run cap
-   together, so a run without room for both defers it whole rather than
-   deleting the record and stranding the release. An ordinary `<branch_prefix>*`
-   ref whose own head never merged but whose most recent closed pull request
-   carries the `obsolete` label, or whose item a logged
+   `skipped`, `deferred`, `warning`) for the Script to log. `td-record/*` is
+   delete-only, never recovered: a filing pull request closed without
+   merging releases that ref (`reason: "filing-declined"`) and then, once
+   `<id>`'s record is confirmed absent from the default branch, its paired
+   `td/<id>` reservation too — a pair whose two actions are reserved against
+   the per-run cap together, so a run without room for both defers it whole
+   rather than deleting the record and stranding the release. An ordinary
+   `<branch_prefix>*` ref whose own head never merged but whose most recent
+   closed pull request carries the `obsolete` label, or whose item a logged
    `draft-obsolete-flagged`/`void-object-closed` event (read off the union
-   log argument, via `lib/cycle-state.sh`) already names, is likewise deleted
-   rather than recovered (`reason: "retired"`, agent-ops#2923) — a deliberate
-   pipeline retirement, told apart from an ordinary human decline, which
-   still falls through to the ordinary recovery/superseded-rival flow
-   unchanged. Fail-closed on every
+   log argument, via `lib/cycle-state.sh`) already names, is likewise
+   deleted rather than recovered (`reason: "retired"`, agent-ops#2923) — a
+   deliberate pipeline retirement, told apart from an ordinary human
+   decline. A branch whose own most recent pull request was closed without
+   merging but carries neither the `obsolete` label nor a matching event —
+   an ordinary human decline, distinct from a merged PR (issue #302) or a
+   merged rival branch sharing the same stem (issue #500), both of which
+   release the ref — is left untouched rather than recovered into a new
+   draft (`action: "skipped"`, `reason: "declined"`, issue #1162): a human
+   declined that recovery, so filing an identical one again would hand back
+   exactly what they declined; unlike the `td-record/*` case, the ref
+   itself is not deleted, since a human is expected to delete it by hand
+   when they mean to discard it for good. A branch with no closed pull
+   request of its own at all still falls through to the ordinary
+   recovery/superseded-rival flow unchanged. Fail-closed on every
    unanswered question; `SWEEP_GH` stubs `gh` and `AGENT_OPS_CONFIG`
    overrides the config for tests. Unit-tested
    (`test/sweep-orphan-branches.test.sh`); must pass `shellcheck`.
