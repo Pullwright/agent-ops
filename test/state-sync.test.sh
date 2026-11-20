@@ -1302,6 +1302,66 @@ assert_eq "…including both events, which replicate like any other" "2" \
        "$il_pushed/log.jsonl" | sort -u | wc -l)"
 
 # ==============================================================================
+# fetch — an orphaned shallow.lock does not wedge it either (agent-ops#2265)
+# ==============================================================================
+# The fault this reproduces: both of this script's fetches take `--depth 1`,
+# which holds `.git/shallow.lock` rather than `index.lock`, and nothing
+# cleared it — a killed fetch wedged ockham-2's peer view for twelve hours on
+# 2026-10-08, and for days on two later occurrences, because `do_fetch` never
+# called the (then index.lock-only) clearer at all.
+sl_home="$(new_node shallow-lock-node)"
+sl_state="$sl_home/.local/state/poetic-agents"
+sl_mirror="$sl_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-11-11T19:40:00Z","event":"cycle-start"}\n' > "$sl_state/log.jsonl"
+out="$(sync_as "$sl_home" active push)"
+assert_eq "the shallow-lock node's first push exits 0" "0" "$?"
+
+# A fresh shallow.lock — younger than one push interval — may belong to a
+# live fetch, and is left alone: the real fetch then fails at the write
+# that needs it, exactly like a fresh index.lock does for a push.
+: > "$sl_mirror/.git/shallow.lock"
+out="$(sync_as "$sl_home" active fetch)"
+assert_eq "a fetch over a fresh shallow.lock exits non-zero" "1" "$?"
+assert_contains "…and says it left the young lock alone" \
+  "the mirror's shallow.lock is" "$out"
+assert_contains "…within one push interval" \
+  "within one push interval — leaving it" "$out"
+assert_eq "the fresh lock is still there" "1" \
+  "$(test -e "$sl_mirror/.git/shallow.lock" && echo 1 || echo 0)"
+
+# An old shallow.lock with a git process working in the mirror is a live
+# lock, whatever its age: never removed, and the fetch fails the same way.
+touch -d "@$(( $(date +%s) - il_push_s * 3 ))" "$sl_mirror/.git/shallow.lock"
+( cd "$sl_mirror" && exec -a git sleep 60 ) &
+sl_sleeper=$!
+sleep 0.2
+out="$(sync_as "$sl_home" active fetch)"
+assert_eq "a fetch over an old shallow.lock with a git process in the mirror exits non-zero" "1" "$?"
+assert_contains "…and says why the lock was left" \
+  "a git process is working in the mirror — leaving it" "$out"
+assert_eq "the lock a live process may hold is never removed" "1" \
+  "$(test -e "$sl_mirror/.git/shallow.lock" && echo 1 || echo 0)"
+kill "$sl_sleeper" 2>/dev/null; wait "$sl_sleeper" 2>/dev/null
+
+# The same old lock with no git process alive is the orphan: cleared, the
+# fetch then succeeds, and the event names the file it cleared.
+out="$(sync_as "$sl_home" active fetch)"
+assert_eq "a fetch over an orphaned shallow.lock exits 0" "0" "$?"
+assert_contains "…and reports clearing it" "cleared an orphaned shallow.lock" "$out"
+assert_eq "…the lock is gone" "0" \
+  "$(test -e "$sl_mirror/.git/shallow.lock" && echo 1 || echo 0)"
+assert_eq "…a state-sync-lock-cleared event names the file" "1" \
+  "$(jq -c 'select(.event == "state-sync-lock-cleared" and .file == "shallow.lock")' \
+       "$sl_state/log.jsonl" | wc -l)"
+assert_eq "…carrying an age past one push interval" "1" \
+  "$(jq -c --argjson p "$il_push_s" \
+       'select(.event == "state-sync-lock-cleared" and .file == "shallow.lock" and .age_s > $p)' \
+       "$sl_state/log.jsonl" | wc -l)"
+sl_peers_dir="$(fleet_peers_dir "$sl_home/.cache/poetic-agents/workspaces")"
+assert_eq "…and the fetch that followed actually completed, materialising peers" "1" \
+  "$(test -d "$sl_peers_dir" && echo 1 || echo 0)"
+
+# ==============================================================================
 # fetch — peers materialised whole, pruned when gone
 # ==============================================================================
 out="$(sync_as "$standby_home" standby fetch)"

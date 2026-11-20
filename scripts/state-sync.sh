@@ -653,7 +653,7 @@ mirror_lock() {
   trap 'mirror_lock_clear_started "$mirror"; scratch_release' EXIT
 }
 
-# --- The mirror's own index lock (agent-ops#1377) ------------------------------
+# --- The mirror's own git lock files (agent-ops#1377, #2265) ------------------
 # `$mirror.lock` above serialises this script's runs; `.git/index.lock` is
 # git's, taken by every command that writes the index and left behind by one
 # that died mid-write — a container stopped under it, a git the kernel
@@ -665,17 +665,16 @@ mirror_lock() {
 # voice was the doctor's hourly publication check (#602), into a file nothing
 # surfaced.
 #
-# The lock is cleared when three things hold: it exists; it is older than one
+# A lock is cleared when three things hold: it exists; it is older than one
 # push interval (`schedule.state_sync_push_minutes` — the interval this very
-# script runs on, and a live git holds the index lock for seconds, so one
-# older than the gap between two pushes belongs to a process that is not
-# coming back); and no git process is working in the mirror right now. That
-# last is read from /proc rather than inferred from the flock, because a git
-# run by hand inside the container, or a gc that detached, is not a state-sync
-# run and holds no `$mirror.lock`. Where /proc cannot be read the answer is
-# "busy" and the lock stays: an orphan that persists is the failure
-# `mirror_write` below now names, whereas a live lock removed is a corrupted
-# index.
+# script runs on, and a live git holds a lock for seconds, so one older than
+# the gap between two pushes belongs to a process that is not coming back);
+# and no git process is working in the mirror right now. That last is read
+# from /proc rather than inferred from the flock, because a git run by hand
+# inside the container, or a gc that detached, is not a state-sync run and
+# holds no `$mirror.lock`. Where /proc cannot be read the answer is "busy"
+# and the lock stays: an orphan that persists is the failure `mirror_write`
+# below now names, whereas a live lock removed is a corrupted index.
 mirror_git_busy() {
   local p cmd cwd
   [[ -d /proc/self ]] || return 0
@@ -691,26 +690,44 @@ mirror_git_busy() {
   return 1
 }
 
-mirror_clear_stale_index_lock() {
-  local lock="$mirror/.git/index.lock" now mtime age
-  [[ -e "$lock" ]] || return 0
+# mirror_clear_stale_locks: the same orphan-clearing `mirror_git_busy` above
+# describes, generalised from `.git/index.lock` alone (agent-ops#1377) to
+# every lock file a killed git can leave in the mirror. A `fetch --depth 1`
+# — both of this script's fetches take `.git/shallow.lock`, not
+# `index.lock` — left behind by a killed fetch wedged `ockham-2`'s peer view
+# for twelve hours on 2026-10-08, three weeks unnoticed from 2026-10-17, and
+# a fourth day from 2026-11-11 to -14 when watchtower's SIGTERM landed on a
+# fetch mid-write (agent-ops#2265): nothing cleared `shallow.lock`, and
+# `do_fetch` never called the index-lock clearer at all. The same orphan
+# also defeats the mirror's own auto-gc (`fatal: failed to run repack`),
+# which can hold `.git/packed-refs.lock` or a `.lock` under `.git/refs/` —
+# so this runs before every git write in the mirror, from `do_push` and
+# `do_fetch` alike, rather than only ahead of a fetch.
+mirror_clear_stale_locks() {
+  local lock relname now mtime age
   now="$(date +%s)"
-  mtime="$(stat -c %Y "$lock" 2>/dev/null)" || mtime="$now"
-  age=$(( now - mtime ))
-  if (( age <= push_interval_seconds )); then
-    say "the mirror's index.lock is ${age}s old, within one push interval — leaving it"
-    return 0
-  fi
-  if mirror_git_busy; then
-    say "WARNING: the mirror's index.lock is ${age}s old but a git process is working in the mirror — leaving it"
-    return 0
-  fi
-  rm -f "$lock"
-  say "WARNING: cleared an orphaned index.lock from the mirror (${age}s old, no git process alive)"
-  # Into log.jsonl, which replicates, rather than only this script's own log:
-  # the event is a fact about this node's publication the fleet should see.
-  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-lock-cleared \
-    "$(jq -nc --argjson age "$age" '{age_s: $age}')"
+  while IFS= read -r -d '' lock; do
+    [[ -e "$lock" ]] || continue
+    relname="${lock#"$mirror"/.git/}"
+    mtime="$(stat -c %Y "$lock" 2>/dev/null)" || mtime="$now"
+    age=$(( now - mtime ))
+    if (( age <= push_interval_seconds )); then
+      say "the mirror's $relname is ${age}s old, within one push interval — leaving it"
+      continue
+    fi
+    if mirror_git_busy; then
+      say "WARNING: the mirror's $relname is ${age}s old but a git process is working in the mirror — leaving it"
+      continue
+    fi
+    rm -f "$lock"
+    say "WARNING: cleared an orphaned $relname from the mirror (${age}s old, no git process alive)"
+    # Into log.jsonl, which replicates, rather than only this script's own
+    # log: the event is a fact about this node's publication the fleet
+    # should see.
+    log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-lock-cleared \
+      "$(jq -nc --arg file "$relname" --argjson age "$age" '{file: $file, age_s: $age}')"
+  done < <(find "$mirror/.git" -maxdepth 1 -name '*.lock' -print0 2>/dev/null; \
+           find "$mirror/.git/refs" -name '*.lock' -print0 2>/dev/null)
   return 0
 }
 
@@ -1057,7 +1074,7 @@ do_push() {
   require git
   mirror_lock
   mirror_init
-  mirror_clear_stale_index_lock
+  mirror_clear_stale_locks
 
   # Bound this node's own history before mirroring any of it: the local cap
   # (`state_local_cycles_retained`) sits deliberately far above the mirror's
@@ -1334,6 +1351,7 @@ do_fetch() {
   require tar
   mirror_lock
   mirror_init
+  mirror_clear_stale_locks
 
   # Probe before fetching: the bootstrap case (no node branches published
   # yet) and a real failure (bad credentials, network outage, a corrupt

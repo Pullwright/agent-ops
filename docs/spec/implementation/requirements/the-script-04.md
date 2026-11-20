@@ -779,29 +779,40 @@
    scratch directories under a dead pid, keeps a live process's, and logs
    the count.
 
-   **A push that cannot write says so, and an orphaned index lock does not
-   stop it (agent-ops#1377).** The `flock` above is state-sync's own;
-   `.git/index.lock` in the mirror is git's, taken by every command that
-   writes the index and left behind by one that died mid-write — a container
-   stopped under it, a git the kernel OOM-killed. Nothing examined it, so on
-   poetic-1 (2026-09-09 to -11, 27 hours) and poetic-2 (2026-09-13 to -15,
-   three days) every push failed at its first index write with `fatal:
-   Unable to create '…/.git/index.lock': File exists` while the push's own
-   progress lines kept printing, the node kept cycling, `--status` read every
-   stage `ok`, and the only node-side voice was the doctor's hourly
-   publication check (#602), into a file nothing surfaced. So, after
-   `mirror_init` and before the first write, `do_push` clears that lock when
-   three things hold — it exists, it is older than one push interval
+   **A push or fetch that cannot write says so, and an orphaned git lock
+   does not stop either (agent-ops#1377, agent-ops#2265).** The `flock`
+   above is state-sync's own; `.git/index.lock` in the mirror is git's,
+   taken by every command that writes the index and left behind by one that
+   died mid-write — a container stopped under it, a git the kernel
+   OOM-killed. Nothing examined it, so on poetic-1 (2026-09-09 to -11, 27
+   hours) and poetic-2 (2026-09-13 to -15, three days) every push failed at
+   its first index write with `fatal: Unable to create
+   '…/.git/index.lock': File exists` while the push's own progress lines
+   kept printing, the node kept cycling, `--status` read every stage `ok`,
+   and the only node-side voice was the doctor's hourly publication check
+   (#602), into a file nothing surfaced. Both of this script's fetches take
+   `--depth 1`, which holds `.git/shallow.lock` instead, and a killed fetch
+   leaves that lock behind the same way — wedging `ockham-2`'s peer fetch
+   for twelve hours on 2026-10-08, three weeks unnoticed from 2026-10-17,
+   and a fourth stretch from 2026-11-11 to -14 when a container roll's own
+   `SIGTERM` landed mid-fetch — because `do_fetch` never cleared any lock at
+   all, and the same orphan separately defeats the mirror's own auto-gc
+   (`fatal: failed to run repack`), which can hold `.git/packed-refs.lock`
+   or a `.lock` under `.git/refs/`. So, after `mirror_init` and before the
+   first write, both `do_push` and `do_fetch` clear every `*.lock` file
+   found directly under `.git/` or under `.git/refs/` when three things
+   hold for that file — it exists, it is older than one push interval
    (`schedule.state_sync_push_minutes`, the interval this script itself runs
-   on; a live git holds the index lock for seconds, so one older than the
-   gap between two pushes belongs to a process that is not coming back), and
-   no git process is working in the mirror (`mirror_git_busy`, read from
+   on; a live git holds a lock for seconds, so one older than the gap
+   between two pushes belongs to a process that is not coming back), and no
+   git process is working in the mirror (`mirror_git_busy`, read from
    `/proc`: any process named `git` whose working directory is the mirror or
    whose command line names it; where `/proc` cannot be read the answer is
-   "busy") — and logs `state-sync-lock-cleared` `{age_s}` to `log.jsonl`,
-   which replicates, rather than only to its own log. A lock any live git
-   may hold is never removed; a young one is left with a line saying so.
-   Independently, every writing git command of the push (`reset`, `clean`,
+   "busy") — and logs `state-sync-lock-cleared` `{file, age_s}` to
+   `log.jsonl`, once per file cleared, which replicates, rather than only to
+   its own log. A lock any live git may hold is never removed; a young one
+   is left with a line saying so. Independently, every writing git command of
+   the push (`reset`, `clean`,
    `add`, `commit`, `push`) runs through `mirror_write`: on failure the first
    `fatal:`/`error:` line is said and logged as `state-sync-push-failed`
    `{step, detail}`, git's full stderr is passed through as before, and the
@@ -823,8 +834,9 @@
    age from `.doctor-status.json`, with the count of failing checks and the
    first of them (the same bounded `fails` the heartbeat carries, #1397), or
    a plain sentence when no pass has run. `test/state-sync.test.sh` drives
-   the three lock cases (young, held by a live process, orphaned) and both
-   events; `test/manage-status.test.sh` the two lines. The same file covers
+   the three lock cases (young, held by a live process, orphaned) for both
+   `index.lock` on a push and `shallow.lock` on a fetch, and both events;
+   `test/manage-status.test.sh` the two lines. The same file covers
    the two `--status` readers of the fleet union: past a spliced peer line,
    `decisions:` still counts the last day's `decision-taken` events across
    the node and its peer, and `current_limit_record` still returns the
