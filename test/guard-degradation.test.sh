@@ -300,30 +300,35 @@ assert_eq "…and nothing is reported on the happy path" "0" "$(last_guard_event
 # =================================================================================
 
 resume_block_src="$(awk '
-    /^resume_epoch=0$/ { on = 1 }
+    /^if \[\[ -n "\$resume_at_api" \]\]; then$/ { on = 1 }
     on                 { print }
     on && /^fi$/        { exit }
   ' "$SCRIPT_DIR/lib/standdown.sh")"
-if [[ "$resume_block_src" != *"resume_epoch"* ]]; then
-  printf 'FAIL - could not extract the resume_epoch block from agent-cycle.sh (moved or reworded?)\n'
+if [[ "$resume_block_src" != *"resume_epoch_api"* ]]; then
+  printf 'FAIL - could not extract the resume_epoch block from lib/standdown.sh (moved or reworded?)\n'
   exit 1
 fi
 
-run_resume_block() {  # run_resume_block <resume_at>
-  # resume_at is consumed, and resume_epoch assigned, by the eval'd block
-  # above (another case shellcheck's own reach does not extend into).
+run_resume_block() {  # run_resume_block <resume_at_api>
+  # resume_at_api is consumed, and resume_epoch_api assigned, by the eval'd
+  # block above (another case shellcheck's own reach does not extend into) —
+  # issue #2242 scoped this parse to the api lane; the subscription lane's
+  # own parse immediately below it in lib/standdown.sh is byte-identical
+  # apart from its own variable names and site, so this one block stands for
+  # both.
   # shellcheck disable=SC2034
-  resume_at="$1"
+  resume_at_api="$1"
+  resume_epoch_api=0
   eval "$resume_block_src"
   # shellcheck disable=SC2154
-  printf '%s' "$resume_epoch"
+  printf '%s' "$resume_epoch_api"
 }
 
 : > "$log_file"
 out="$(run_resume_block 'not a date')"
 assert_eq "an unparseable resume_at still falls back to epoch 0" "0" "$out"
 assert_eq "…and the date-parse failure is reported, not swallowed" "1" "$(last_guard_events | jq -s 'length')"
-assert_eq "…under the right site" "cycle:resume_epoch" "$(last_guard_events | jq -r '.site')"
+assert_eq "…under the right site" "cycle:resume_epoch:api" "$(last_guard_events | jq -r '.site')"
 
 : > "$log_file"
 out="$(run_resume_block '2026-08-14T00:00:00Z')"
@@ -344,14 +349,23 @@ assert_eq "…and nothing is reported on the happy path" "0" "$(last_guard_event
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 
-# From `union_state=` up to, and not including, the `governing=` line that
-# hands the union's record to `limit_later_record`.
+# The extracted union_block_src now reaches one line past the union read
+# itself, into the live flag fetch that feeds `governing_api`/`governing_sub`
+# (issue #2242) — this file deliberately never sources lib/toggle.sh (the
+# fleet-flag machinery is not what it tests), so a bare stub stands in,
+# always reading "nothing live" with no state repo to ask.
+fleet_flag_fetch() { :; }
+
+# From `union_state_api=` up to, and not including, the `governing_api=`
+# line that hands the union's record to `limit_later_record` — the api
+# lane's own half of issue #2242's per-lane read; the subscription lane's is
+# byte-identical apart from its own variable names and site.
 union_block_src="$(awk '
-    /^union_state=/ { on = 1 }
-    /^governing=/   { exit }
+    /^union_state_api=/ { on = 1 }
+    /^governing_api=/   { exit }
     on              { print }
   ' "$SCRIPT_DIR/lib/standdown.sh")"
-if [[ "$union_block_src" != *"limit_union_state"* ]]; then
+if [[ "$union_block_src" != *"limit_union_state_for_lane"* ]]; then
   printf 'FAIL - could not extract the union_state block from lib/standdown.sh (moved or reworded?)\n'
   exit 1
 fi
@@ -370,12 +384,22 @@ fi
 spliced_line='{"ts":"2026-09-18T00:00:00Z","event":"github-budget","core":{"limit":5000,"{"ts":"2026-09-18T00:05:00Z","event":"cycle-end","exit_code":0}'
 union_log="$tmp_dir/union.jsonl"
 
-run_union_block() {  # run_union_block — prints union_record, then union_state_ok
-  # union_log and union_build_ok are read, and union_state, union_state_ok and
-  # union_record assigned, by the eval'd block.
+run_union_block() {  # run_union_block — prints union_record_api, then union_state_ok
+  # union_log and union_build_ok are read, and union_state_ok and
+  # union_record_api (among the subscription lane's own siblings) assigned,
+  # by the eval'd block. state_repo/state_dir empty: the extracted span's own
+  # fleet_flag_fetch call then reads "clear" with no network call
+  # (lib/toggle.sh's own fail-open-on-no-repo contract), same as the test's
+  # pre-#2242 run never needed to set them for at all.
+  # shellcheck disable=SC2034
+  state_repo=""
+  # shellcheck disable=SC2034
+  state_dir=""
+  union_state_ok=1
+  (( union_build_ok )) || union_state_ok=0
   eval "$union_block_src"
   # shellcheck disable=SC2154
-  printf '%s\n%s' "$union_record" "$union_state_ok"
+  printf '%s\n%s' "$union_record_api" "$union_state_ok"
 }
 
 printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}' \
@@ -389,11 +413,15 @@ assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard
 
 : > "$log_file"; reset_guard_counts
 # shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-out="$(limit_union_state_for() { echo "jq: killed" >&2; return 137; }; run_union_block)"
+out="$(limit_union_state_for_lane() { echo "jq: killed" >&2; return 137; }; run_union_block)"
 assert_eq "a union read that fails outright leaves the carrier empty" "" "$(head -n1 <<<"$out")"
 assert_eq "…marks the union's answers unknown, not empty" "0" "$(tail -n1 <<<"$out")"
-assert_eq "…and is reported, not read as no limit" "1" "$(last_guard_events | jq -s 'length')"
-assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
+# Both lanes' own reads fail against the same broken stub — the extracted
+# span covers api and subscription together (they are read as a pair) — so
+# this is reported once per lane, under each lane's own site.
+assert_eq "…and is reported once per lane, not read as no limit" "2" "$(last_guard_events | jq -s 'length')"
+assert_eq "…under each lane's own site" "cycle:union_record:api
+cycle:union_record:subscription" "$(last_guard_events | jq -r '.site' | sort)"
 
 # A union the snapshot could not build was reported where it was built
 # (`cycle:union_build`, agent-cycle.sh); here it is treated exactly as a failed
@@ -403,7 +431,7 @@ union_build_ok=0
 union_reads="$tmp_dir/union-reads"
 : > "$union_reads"
 # shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-out="$(limit_union_state_for() { echo read >> "$union_reads"; return 1; }; run_union_block)"
+out="$(limit_union_state_for_lane() { echo read >> "$union_reads"; return 1; }; run_union_block)"
 assert_eq "a union that could not be built is not read" "" "$(cat "$union_reads")"
 assert_eq "…leaves the carrier empty, so the flag decides alone" "" "$(head -n1 <<<"$out")"
 assert_eq "…and marks the union's answers unknown" "0" "$(tail -n1 <<<"$out")"
@@ -425,15 +453,26 @@ create_escalation_issue() { printf '%s\n' "$2" >> "$filed"; printf '42\thttps://
 run_freeze_block() {  # run_freeze_block <now_epoch> <governing record>
   # now_epoch and governing are read by the eval'd blocks; the union block
   # runs first, as it does in lib/standdown.sh, to give the freeze block its
-  # union_state and union_state_ok.
+  # union_state and union_state_ok. state_repo/state_dir empty, same as
+  # run_union_block above. The combined (single-record) path's own
+  # `union_state="$union_state_api"` assignment sits between the two
+  # extracted spans in lib/standdown.sh, so the harness repeats it here.
   # shellcheck disable=SC2034
   now_epoch="$1"
   # shellcheck disable=SC2034
   governing="$2"
+  # shellcheck disable=SC2034
+  state_repo=""
+  # shellcheck disable=SC2034
+  state_dir=""
   : > "$filed"
   : > "$log_file"
   reset_guard_counts
+  union_state_ok=1
+  (( union_build_ok )) || union_state_ok=0
   eval "$union_block_src"
+  # shellcheck disable=SC2034
+  union_state="$union_state_api"
   eval "$freeze_block_src"
 }
 freeze_events() { jq -c 'select(.event == "limit-freeze-escalated")' "$log_file"; }
@@ -472,9 +511,10 @@ assert_eq "an escalation already in the union past a spliced line is not filed a
 # passes, so every such cycle would file it again.
 printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
 # shellcheck disable=SC2317,SC2329  # the stub is called from $union_block_src via eval, invisible to a static reader
-(limit_union_state_for() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
+(limit_union_state_for_lane() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
 assert_eq "a failed union read files no escalation" "" "$(cat "$filed")"
-assert_eq "…reports the read under its own site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
+assert_eq "…reports each lane's own read under its own site" "cycle:union_record:api
+cycle:union_record:subscription" "$(last_guard_events | jq -r '.site' | sort)"
 assert_eq "…and says the escalation waits for the next cycle" "1" \
   "$(warning_events | jq -s '[.[] | select(.detail | test("not filed this cycle"))] | length')"
 

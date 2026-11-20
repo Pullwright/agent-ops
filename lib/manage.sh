@@ -71,10 +71,32 @@ current_limit_record_for() {
     "$(limit_flag_record_for "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$provider")"
 }
 
+# current_limit_record_for_lane PROVIDER LANE
+# current_limit_record_for, narrowed one level further to LANE (issue
+# #2242) — the answer `--clear-limit <provider>/<lane>` acts on, and what
+# `limit_status_report` below checks for each of a provider's two lanes.
+current_limit_record_for_lane() {
+  local provider="$1" lane="$2" union
+  union="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | limit_union_record_for_lane "$provider" "$lane"; } 2>&1)" \
+    || { guard_warn "current_limit_record:union" "$union"; union=""; }
+  limit_later_record "$union" \
+    "$(limit_flag_record_for "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$provider" "$lane")"
+}
+
 # The `--status` line for that stand-down. Reported alongside the switch
 # because they are two answers to one question — "why is nothing happening?"
 # — and a status that knew only about the switch is what let a stale limit
-# cooldown sit unexplained for a day.
+# cooldown sit unexplained for a day. The fleet-wide headline (unchanged
+# since before issue #2242) is followed by one line per currently-frozen
+# lane of every configured provider (`PROVIDER_LANES`, populated by
+# `providers_load` well before `run_manage_command` runs) — the finer
+# answer "which lane specifically, and until when" once a provider's two
+# lanes disagree, which the headline alone cannot give (a stage of that
+# provider that would have drawn the frozen lane simply falls through to the
+# other instead, `lib/stage-run.sh`'s `stage_lane_draw`, so this is
+# diagnostic, not a second "nothing is happening" warning).
 limit_status_report() {
   local rec resume_at resume_epoch rec_class
   rec="$(current_limit_record)"
@@ -92,14 +114,28 @@ limit_status_report() {
   fi
   if [[ -z "$resume_at" ]] || (( resume_epoch <= $(date +%s) )); then
     printf 'limit:    none in force\n'
-    return 0
+  else
+    # Same site class as above: `rec` can fail to parse, and "other" is
+    # exactly the class a well-formed-but-unset record also reports (test 2).
+    rec_class="$(jq -r '.class // "other"' <<<"$rec" 2>&1)" \
+      || { guard_warn "limit_status_report:rec_class" "$rec_class"; rec_class=other; }
+    printf 'limit:    STANDING DOWN — %s\n' \
+      "$(limit_describe "$resume_at" "$rec_class" "$(limit_reset_known "$rec")")"
   fi
-  # Same site class as above: `rec` can fail to parse, and "other" is exactly
-  # the class a well-formed-but-unset record also reports (test 2).
-  rec_class="$(jq -r '.class // "other"' <<<"$rec" 2>&1)" \
-    || { guard_warn "limit_status_report:rec_class" "$rec_class"; rec_class=other; }
-  printf 'limit:    STANDING DOWN — %s\n' \
-    "$(limit_describe "$resume_at" "$rec_class" "$(limit_reset_known "$rec")")"
+  local limit_status_name limit_status_lane limit_status_rec \
+    limit_status_resume_at limit_status_resume_epoch limit_status_class
+  for limit_status_name in $(printf '%s\n' "${!PROVIDER_LANES[@]}" anthropic | sort -u); do
+    for limit_status_lane in api subscription; do
+      limit_status_rec="$(current_limit_record_for_lane "$limit_status_name" "$limit_status_lane")"
+      limit_status_resume_at="$(jq -r '.resume_at // empty' <<<"${limit_status_rec:-{\}}" 2>/dev/null || true)"
+      [[ -n "$limit_status_resume_at" ]] || continue
+      limit_status_resume_epoch="$(date -d "$limit_status_resume_at" +%s 2>/dev/null || echo 0)"
+      (( limit_status_resume_epoch > $(date +%s) )) || continue
+      limit_status_class="$(jq -r '.class // "other"' <<<"$limit_status_rec" 2>/dev/null || echo other)"
+      printf '          %s/%s: STANDING DOWN — %s\n' "$limit_status_name" "$limit_status_lane" \
+        "$(limit_describe "$limit_status_resume_at" "$limit_status_class" "$(limit_reset_known "$limit_status_rec")")"
+    done
+  done
   return 0
 }
 
@@ -648,24 +684,40 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       refresh_dashboard
       exit 0
       ;;
-    clear-limit)
+clear-limit)
       # Which of up to two bare tokens (agent-cycle.sh's own argv parsing)
-      # is a provider and which is a reason cannot be told until now (issue
-      # #2135): providers_load runs well before run_manage_command, so
-      # PROVIDER_SUBSTRATE's keys — every provider config.json names, plus the
-      # always-implicit `anthropic` (lib/model-id.sh) — are what decide it.
-      # Two tokens are unambiguous in *shape* (provider, then reason), but the
-      # first still has to name a real provider — there is no second reading
-      # of two bare tokens to fall back on, and silently scoping the clear to
-      # a provider that does not exist would log a `limit-cleared` nothing
-      # reads and report a stand-down lifted that never was. One token is the
-      # provider only if it names one, exactly as before this issue otherwise
-      # (a single token is the reason).
+      # is a provider[/lane] and which is a reason cannot be told until now
+      # (issue #2135, extended to the lane by #2242): providers_load runs
+      # well before run_manage_command, so PROVIDER_SUBSTRATE's keys — every
+      # provider config.json names, plus the always-implicit `anthropic`
+      # (lib/model-id.sh) — are what decide it. Two tokens are unambiguous in
+      # *shape* (provider[/lane], then reason), but the first still has to
+      # name a real provider — there is no second reading of two bare tokens
+      # to fall back on, and silently scoping the clear to a provider that
+      # does not exist would log a `limit-cleared` nothing reads and report
+      # a stand-down lifted that never was. One token is the provider[/lane]
+      # only if its provider half names one, exactly as before this issue
+      # otherwise (a single token is the reason). The lane half, if given,
+      # must be `api` or `subscription`, the only two lanes this system
+      # knows.
+      CLEAR_LIMIT_LANE=""
+      clear_limit_arg1_provider="${CLEAR_LIMIT_ARG1%%/*}"
+      if [[ "$CLEAR_LIMIT_ARG1" == */* ]]; then
+        CLEAR_LIMIT_LANE="${CLEAR_LIMIT_ARG1#*/}"
+      fi
       if [[ -n "$CLEAR_LIMIT_ARG1" ]] \
-         && { [[ "$CLEAR_LIMIT_ARG1" == "anthropic" ]] \
-              || [[ -n "${PROVIDER_SUBSTRATE[$CLEAR_LIMIT_ARG1]:-}" ]]; }; then
-        CLEAR_LIMIT_PROVIDER="$CLEAR_LIMIT_ARG1"
+         && { [[ "$clear_limit_arg1_provider" == "anthropic" ]] \
+              || [[ -n "${PROVIDER_SUBSTRATE[$clear_limit_arg1_provider]:-}" ]]; } \
+         && { [[ -z "$CLEAR_LIMIT_LANE" ]] \
+              || [[ "$CLEAR_LIMIT_LANE" == "api" || "$CLEAR_LIMIT_LANE" == "subscription" ]]; }; then
+        CLEAR_LIMIT_PROVIDER="$clear_limit_arg1_provider"
         CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG2"
+      elif [[ -n "$CLEAR_LIMIT_ARG1" ]] && [[ "$CLEAR_LIMIT_ARG1" == */* ]] \
+           && { [[ "$clear_limit_arg1_provider" == "anthropic" ]] \
+                || [[ -n "${PROVIDER_SUBSTRATE[$clear_limit_arg1_provider]:-}" ]]; }; then
+        printf 'agent-cycle: --clear-limit: "%s" is not api or subscription, the only two lanes\n' \
+          "$CLEAR_LIMIT_LANE" >&2
+        exit 64
       elif [[ -n "$CLEAR_LIMIT_ARG2" ]]; then
         printf 'agent-cycle: --clear-limit: "%s" is not a configured provider (known: %s) — with two arguments the first must name one\n' \
           "$CLEAR_LIMIT_ARG1" \
@@ -673,12 +725,16 @@ if [[ -n "$MANAGE_ACTION" ]]; then
         exit 64
       elif [[ -n "$CLEAR_LIMIT_ARG1" ]]; then
         CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG1"
+        CLEAR_LIMIT_LANE=""
       fi
+      clear_limit_target="${CLEAR_LIMIT_PROVIDER}${CLEAR_LIMIT_LANE:+/$CLEAR_LIMIT_LANE}"
 
       # Both carriers of requirement 2.1, because the stand-down lifts only
       # when the later of the two says so. Clearing one alone reads as
       # success and changes nothing — the failure this command exists to end.
-      if [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+      if [[ -n "$CLEAR_LIMIT_LANE" ]]; then
+        governing="$(current_limit_record_for_lane "$CLEAR_LIMIT_PROVIDER" "$CLEAR_LIMIT_LANE")"
+      elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
         governing="$(current_limit_record_for "$CLEAR_LIMIT_PROVIDER")"
       else
         governing="$(current_limit_record)"
@@ -688,34 +744,40 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # Carrier 1: the log union. A `limit-cleared` event dated now outranks
       # every earlier limit-hit for this same scope, on this node immediately
       # and on its peers at their next state-sync fetch. A `provider` field
-      # scopes the clear to that provider alone; its absence means every
-      # provider, exactly as `--clear-limit` always has before this issue.
+      # scopes the clear to that provider alone, and a `lane` field within it
+      # to that lane alone (issue #2242); either absent means every
+      # provider, or every lane of the named provider, exactly as
+      # `--clear-limit` always has before the issue that added it.
       log_event "limit-cleared" "$(jq -nc --arg w "$was" --arg r "$CLEAR_LIMIT_REASON" \
-        --arg by "$(toggle_actor)" --arg p "$CLEAR_LIMIT_PROVIDER" \
+        --arg by "$(toggle_actor)" --arg p "$CLEAR_LIMIT_PROVIDER" --arg l "$CLEAR_LIMIT_LANE" \
         '{was: (if $w == "" then null else $w end),
           reason: (if $r == "" then "cleared by hand" else $r end),
           by: $by, actor: $by, kind: "manual"}
-         + (if $p == "" then {} else {provider: $p} end)')"
+         + (if $p == "" then {} else {provider: $p} end)
+         + (if $l == "" then {} else {lane: $l} end)')"
       notify_post_cycle "fleet-standdown-end" \
-        "standdown:usage-limit${CLEAR_LIMIT_PROVIDER:+:$CLEAR_LIMIT_PROVIDER}" \
-        "Usage-limit cooldown cleared by hand${CLEAR_LIMIT_PROVIDER:+ ($CLEAR_LIMIT_PROVIDER)}" "" "" \
+        "standdown:usage-limit${clear_limit_target:+:$clear_limit_target}" \
+        "Usage-limit cooldown cleared by hand${clear_limit_target:+ ($clear_limit_target)}" "" "" \
         "${CLEAR_LIMIT_REASON:-cleared by hand}"
 
       # Carrier 2: the live flag. Deleting it rather than shortening it,
       # because fleet_limit_publish is extend-only by design (concurrent hits
       # must converge on the latest resume) — a human lifting a stand-down is
       # the one case that legitimately moves it earlier, and delete is the
-      # only write that expresses that. With a named provider, the flag is
-      # only ever deleted outright when its own current record is exactly
-      # that provider's — never a wildcard or a different provider's, since
-      # the flag holds exactly one record and clearing one provider must not
-      # silently clear whichever other provider the flag happened to be
-      # carrying (limit_flag_record_for's own header).
+      # only write that expresses that. With a named provider[/lane], the
+      # flag is only ever deleted outright when its own current record names
+      # *exactly* that key — strict equality, never `limit_flag_record_for`'s
+      # own wildcard-tolerant match: a wildcard record (no `provider`, or, with
+      # a lane named, no `lane`) governs every provider/lane and must survive
+      # a scoped clear, which can only ever narrow one bucket of the union,
+      # never un-write "every provider/lane but this one" from the flag.
       clear_flag=1
       if [[ -n "$CLEAR_LIMIT_PROVIDER" && -n "$state_repo" ]]; then
-        flag_provider="$(jq -r '.provider // empty' \
-          <<<"$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" 2>/dev/null || true)"
-        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" ]] || clear_flag=0
+        flag_now="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
+        flag_provider="$(jq -r '.provider // empty' <<<"$flag_now" 2>/dev/null || true)"
+        flag_lane="$(jq -r '.lane // empty' <<<"$flag_now" 2>/dev/null || true)"
+        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" && "$flag_lane" == "$CLEAR_LIMIT_LANE" ]] \
+          || clear_flag=0
       fi
       if [[ -n "$state_repo" ]]; then
         if (( clear_flag )); then
@@ -730,45 +792,130 @@ if [[ -n "$MANAGE_ACTION" ]]; then
           fi
         elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
           printf 'agent-cycle: fleet/limit.json does not name %s — it is left in place; whether %s is still held down is reported below\n' \
-            "$CLEAR_LIMIT_PROVIDER" "$CLEAR_LIMIT_PROVIDER"
+            "$clear_limit_target" "$clear_limit_target"
         fi
       fi
 
       # Did the clear actually work? Asked of the carriers themselves rather
       # than inferred from what was written to them, because a *scoped* clear
       # has one case where both carriers legitimately refuse it: a wildcard
-      # record — no `provider` field at all, as every record written before
-      # issue #2133 is — governs every provider by the "a record without one
-      # applies to every provider" rule, and neither carrier can express
-      # "every provider but this one". The union's `limit-cleared` resets only
-      # this provider's own bucket, leaving the wildcard bucket standing; the
-      # flag is left alone by the guard above. So the stand-down survives a
-      # clear that otherwise reports success — which is the exact failure this
-      # command exists to end, and the reason it is re-read here instead of
-      # trusted. Only the scoped form can hit it: a bare `--clear-limit`
-      # writes a wildcard `limit-cleared` and deletes the flag outright.
-      if [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
+      # record — no `provider` (or, with a lane named, no `lane`) field at
+      # all — governs every provider or every lane by the "a record without
+      # one applies to every provider/lane" rule, and neither carrier can
+      # express "every provider/lane but this one". The union's
+      # `limit-cleared` resets only this key's own bucket, leaving the
+      # wildcard bucket standing; the flag is left alone by the guard above.
+      # So the stand-down survives a clear that otherwise reports success —
+      # which is the exact failure this command exists to end, and the
+      # reason it is re-read here instead of trusted. Only the scoped form
+      # can hit it: a bare `--clear-limit` writes a wildcard `limit-cleared`
+      # and deletes the flag outright.
+      if [[ -n "$CLEAR_LIMIT_LANE" ]]; then
+        still="$(current_limit_record_for_lane "$CLEAR_LIMIT_PROVIDER" "$CLEAR_LIMIT_LANE")"
+      elif [[ -n "$CLEAR_LIMIT_PROVIDER" ]]; then
         still="$(current_limit_record_for "$CLEAR_LIMIT_PROVIDER")"
-        still_at="$(jq -r '.resume_at // empty' <<<"${still:-{\}}" 2>/dev/null || true)"
-        still_epoch=0
-        if [[ -n "$still_at" ]]; then
-          still_epoch="$(date -d "$still_at" +%s 2>&1)" \
-            || { guard_warn "clear_limit:still_epoch" "$still_epoch"; still_epoch=0; }
-        fi
       else
-        still_at=""
-        still_epoch=0
+        still=""
+      fi
+      still_at="$(jq -r '.resume_at // empty' <<<"${still:-{\}}" 2>/dev/null || true)"
+      still_epoch=0
+      if [[ -n "$still_at" ]]; then
+        still_epoch="$(date -d "$still_at" +%s 2>&1)" \
+          || { guard_warn "clear_limit:still_epoch" "$still_epoch"; still_epoch=0; }
       fi
 
       if (( still_epoch > $(date +%s) )); then
-        printf 'agent-cycle: WARNING — the usage-limit stand-down for %s is NOT lifted: a fleet-wide record naming no provider still holds it down until %s, and a clear scoped to one provider cannot remove it. Re-run "agent-cycle.sh --clear-limit" with no provider to clear every provider at once.\n' \
-          "$CLEAR_LIMIT_PROVIDER" "$still_at" >&2
+        printf 'agent-cycle: WARNING — the usage-limit stand-down for %s is NOT lifted: a wider record still holds it down until %s, and a clear scoped to one %s cannot remove it. Re-run "agent-cycle.sh --clear-limit"%s with no %s to clear every %s at once.\n' \
+          "$clear_limit_target" "$still_at" \
+          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" \
+          "${CLEAR_LIMIT_LANE:+ $CLEAR_LIMIT_PROVIDER}" \
+          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" \
+          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" >&2
       elif [[ -n "$was" ]]; then
         printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)%s\n' "$was" \
-          "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
+          "${clear_limit_target:+ for $clear_limit_target}"
       else
         printf 'agent-cycle: no usage-limit stand-down was in force%s\n' \
-          "${CLEAR_LIMIT_PROVIDER:+ for $CLEAR_LIMIT_PROVIDER}"
+          "${clear_limit_target:+ for $clear_limit_target}"
+      fi
+      refresh_dashboard
+      exit 0
+      ;;
+    close-lane)
+      # `agent-cycle.sh --close-lane <provider>/<lane> [--for <d>|--until
+      # <ts>|forever] [--reason <text>]` (issue #2242): a manual, fail-closed
+      # stop for exactly one of a provider's two lanes — the operator's way
+      # to close one down by hand (a terms concern, say) without an image
+      # roll, naming the same lane grammar as --mix and --clear-limit.
+      #
+      # Fail-closed by construction, unlike --mix (which only ever opens a
+      # lane or restates a preference, never closes one, lib/mix.sh's own
+      # header): this writes to fleet/limit.json, whose "no lane named
+      # applies to every lane of its provider" rule means a node on an older
+      # image that cannot read this record's own `lane` field stands the
+      # whole provider down rather than reading nothing at all — the same
+      # "an old reader fails closed" direction #2135's own provider scoping
+      # chose. fleet/mix.json's own absence-means-default rule runs the
+      # other way (an old reader of a lever record simply sees the default,
+      # open, weight), which is why that lever is the wrong file for a
+      # closure.
+      close_lane_provider="${CLOSE_LANE_ARG%%/*}"
+      close_lane_lane=""
+      [[ "$CLOSE_LANE_ARG" == */* ]] && close_lane_lane="${CLOSE_LANE_ARG#*/}"
+      if [[ -z "$CLOSE_LANE_ARG" || "$CLOSE_LANE_ARG" != */* ]]; then
+        printf 'agent-cycle: --close-lane needs <provider>/<lane>, e.g. anthropic/subscription\n' >&2
+        exit 64
+      fi
+      if [[ "$close_lane_lane" != "api" && "$close_lane_lane" != "subscription" ]]; then
+        printf 'agent-cycle: --close-lane: "%s" is not api or subscription, the only two lanes\n' "$close_lane_lane" >&2
+        exit 64
+      fi
+      if [[ "$close_lane_provider" != "anthropic" && -z "${PROVIDER_SUBSTRATE[$close_lane_provider]:-}" ]]; then
+        printf 'agent-cycle: --close-lane: "%s" is not a configured provider (known: %s)\n' \
+          "$close_lane_provider" \
+          "$(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" anthropic | sort -u | paste -sd, -)" >&2
+        exit 64
+      fi
+      if [[ -z "$DISABLE_FOR" && -z "$DISABLE_UNTIL" ]]; then
+        printf 'agent-cycle: --close-lane needs a bound — --for <90m|4h|2d|forever>, or --until <timestamp>\n' >&2
+        exit 64
+      fi
+      if ! close_lane_spec="$(toggle_resolve_disable_spec "$DISABLE_FOR" "$DISABLE_UNTIL" \
+                                "$disable_default_ttl_hours")"; then
+        exit 64
+      fi
+      if ! close_lane_resume_at="$(toggle_parse_ttl "$close_lane_spec" "$disable_default_ttl_hours")"; then
+        exit 64
+      fi
+      # `toggle_parse_ttl` prints nothing for `forever`/`never`/`indefinite`
+      # — fleet/limit.json's own `resume_at` is never null (every epoch
+      # comparison in lib/limit-detect.sh assumes a parseable instant), so an
+      # indefinite closure is represented as a fixed far-future sentinel
+      # instead, the same way an indefinite --disable's own `expires_at:
+      # null` has no analogue here.
+      [[ -n "$close_lane_resume_at" ]] || close_lane_resume_at="9999-12-31T00:00:00Z"
+      close_lane_actor="$(toggle_actor)"
+      close_lane_reason="${CLOSE_LANE_REASON:-closed by hand}"
+      # The local record first — it always works — then the fleet, exactly
+      # as --disable writes both levels (requirement 2.3a): this node is
+      # closed to the lane immediately even if the fleet write below fails,
+      # and detect_and_log_limit_hit's own `log_event` then `fleet_limit_publish`
+      # ordering is the same "local first" shape, reused here rather than
+      # invented afresh.
+      log_event "limit-hit" "$(jq -nc --arg r "$close_lane_resume_at" --arg n "$close_lane_actor" \
+        --arg reason "$close_lane_reason" --arg p "$close_lane_provider" --arg l "$close_lane_lane" \
+        '{resume_at: $r, class: "manual", reset_known: true, kind: "manual", actor: $n, provider: $p, lane: $l,
+          evidence: $reason}')"
+      if [[ -n "$state_repo" ]]; then
+        if fleet_limit_close_lane "$state_repo" "$state_dir" "$close_lane_provider" "$close_lane_lane" \
+             "$close_lane_resume_at" "$close_lane_reason" "$close_lane_actor"; then
+          printf 'agent-cycle: %s/%s closed until %s\n' "$close_lane_provider" "$close_lane_lane" "$close_lane_resume_at"
+        else
+          printf 'agent-cycle: WARNING — could not write fleet/limit.json; peers reading it live will not see this closure until it reaches them through the log union.\n' >&2
+        fi
+      else
+        printf 'agent-cycle: %s/%s closed until %s (no state_repo configured — this node only)\n' \
+          "$close_lane_provider" "$close_lane_lane" "$close_lane_resume_at"
       fi
       refresh_dashboard
       exit 0

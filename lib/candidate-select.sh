@@ -1993,9 +1993,10 @@ detect_and_log_limit_hit() {
   # later extension must bring fresh (requirement 2; #244).
   evidence="${evidence:0:400}"
   log_event "limit-hit" "$(jq -nc --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" \
-    --arg n "$node_name" --arg e "$evidence" --arg p "${stage_provider:-anthropic}" \
+    --arg n "$node_name" --arg e "$evidence" --arg p "${stage_provider:-anthropic}" --arg l "${stage_lane:-}" \
     '{resume_at: $r, class: $c, reset_known: $k, kind: "auto", actor: $n, provider: $p,
-      evidence: (if $e == "" then null else $e end)}')"
+      evidence: (if $e == "" then null else $e end)}
+     + (if $l == "" then {} else {lane: $l} end)')"
   # node-state (docs/reference/flow-schema.md, D21): this is discovered mid-stage, not
   # at a cycle-ending stand-down, so it logs immediately rather than through
   # set_node_state_terminal — this cycle's own remaining overhead (failure
@@ -2004,8 +2005,11 @@ detect_and_log_limit_hit() {
   # Tell the fleet now, not a fetch interval from now: publish the stand-down
   # as fleet/limit.json (extend-only; requirement 2.1). Best-effort — the
   # limit-hit event above is already in this node's log, and the union carries
-  # it to every peer on their next fetch regardless.
-  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "$evidence" "${stage_provider:-anthropic}" \
+  # it to every peer on their next fetch regardless. `stage_lane` (issue
+  # #2242, lib/stage-run.sh) is the lane the hit's own stage was launched on
+  # — empty for a substrate that does not manage lanes, which scopes the
+  # publish to every lane of the provider, same as before this issue.
+  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "$evidence" "${stage_provider:-anthropic}" "${stage_lane:-}" \
     || log_event "warning" "$(jq -nc \
          '{detail: "could not publish fleet/limit.json — peers will pick the cooldown up from the log union instead"}')"
 }
