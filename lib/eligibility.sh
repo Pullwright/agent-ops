@@ -19,21 +19,74 @@
 # engagement in the same cycle can never disagree about what is already
 # spoken for.
 #
-# Sourced by agent-cycle.sh only, and its four functions called once each, in
+# A sixth function, `refresh_after_decision_veto_sweep` (requirement 36e,
+# agent-ops#1198), re-runs the two of these answers a same-cycle decision-veto
+# re-block can otherwise outrun — `blocked_json`'s own band exclusions
+# (`apply_blocked_void_band_exclusions`, the pass `compute_band_eligibility`
+# itself calls, factored out so both can call it without duplicating the
+# loop) and the Enabler/Refiner sets built on top of it — called separately,
+# from `lib/gather-phase.sh`, after `run_decision_veto_sweep`
+# (`lib/decision-veto.sh`) has run; see its own header for why it is not
+# simply folded into `compute_band_eligibility`.
+#
+# Sourced by agent-cycle.sh only, and its functions called once each, in
 # place, from where this text used to sit. Like `run_standdown_checks`
 # (lib/standdown.sh) they declare nothing `local` and read and write the
-# cycle's own globals directly — `refinements_json`, `decisions_json`,
-# `enabler_eligible_json`, `enabler_allowed`, `refiner_prefetch_source_json`,
-# `refiner_repos_json`, `refiner_candidates_json`, `refiner_allowed`,
-# `open_issues_json`, `live_pr_refs_json`, `live_td_refs_json`,
-# `stale_enabler_refs_json`/`_n`, `still_blocked_by_json`,
-# `open_blocked_by_json`/`_n` —
+# cycle's own globals directly — `blocked_json`, `refinements_json`,
+# `decisions_json`, `enabler_eligible_json`, `enabler_allowed`,
+# `refiner_prefetch_source_json`, `refiner_repos_json`,
+# `refiner_candidates_json`, `refiner_allowed`, `open_issues_json`,
+# `live_pr_refs_json`, `live_td_refs_json`, `stale_enabler_refs_json`/`_n`,
+# `still_blocked_by_json`, `open_blocked_by_json`/`_n` — plus, for
+# `refresh_after_decision_veto_sweep` alone, a read of
+# `decision_veto_blocks_recorded` (`lib/decision-veto.sh`'s own global) —
 # so each call is
 # indistinguishable, to the
 # rest of the cycle, from the inline block it replaces. Their bodies keep the
 # original top-level indentation for the same reason `lib/candidate-gather.sh`
 # does: these were never functions, and reformatting them would bury the move
 # in whitespace.
+
+# apply_blocked_void_band_exclusions — the second pass of requirements 3t/3u
+# (issues #310, #320): drop any entry `blocked_json`/`void_json`/
+# `void_refusal_escalated_json` names from every pre-fetched band of
+# `ordered_repos_json`, `issues` included (its own narrower pass via
+# `exclude_blocked_or_void_issues`). Factored out of `compute_band_eligibility`
+# (agent-ops#1198) so `refresh_after_decision_veto_sweep` below can re-run
+# exactly this pass, against a `blocked_json` the veto sweep has just
+# updated, without duplicating either loop. Pure jq over `ordered_repos_json`;
+# no GitHub read, so re-running it costs nothing beyond what it already cost
+# once this cycle.
+apply_blocked_void_band_exclusions() {
+for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt; do
+  while IFS= read -r eb_slug; do
+    [[ -n "$eb_slug" ]] || continue
+    eb_current="$(jq -c --arg s "$eb_slug" --arg f "$eligibility_band" \
+      'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
+      || { guard_warn "eb_current:$eb_slug:$eligibility_band" "$eb_current"; eb_current='[]'; }
+    # shellcheck disable=SC2154  # blocked_json/void_json are assigned by
+    # compute_skip_lists (lib/candidate-gather.sh, #771), called above.
+    eb_filtered="$(exclude_blocked_or_void_items "$eb_current" "$eb_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
+    ordered_repos_json="$(jq -c --arg r "$eb_slug" --arg f "$eligibility_band" --argjson v "$eb_filtered" \
+      'map(if .slug == $r then .[$f] = $v else . end)' \
+      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+  done < <(jq -r --arg f "$eligibility_band" \
+           '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
+           <<<"$ordered_repos_json" 2>/dev/null || true)
+done
+
+while IFS= read -r iss_slug; do
+  [[ -n "$iss_slug" ]] || continue
+  iss_current="$(jq -c --arg s "$iss_slug" 'map(select(.slug == $s)) | .[0].issues // []' \
+    <<<"$ordered_repos_json" 2>&1)" \
+    || { guard_warn "iss_current:$iss_slug" "$iss_current"; iss_current='[]'; }
+  iss_filtered="$(exclude_blocked_or_void_issues "$iss_current" "$iss_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
+  ordered_repos_json="$(jq -c --arg r "$iss_slug" --argjson iss "$iss_filtered" \
+    'map(if .slug == $r then .issues = $iss else . end)' \
+    <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+done < <(jq -r '[.[] | select(((.issues // []) | length) > 0) | .slug] | unique[]' \
+         <<<"$ordered_repos_json" 2>/dev/null || true)
+}
 
 # compute_band_eligibility — requirement 3t (issue #310), extended to every
 # other pre-fetched band by requirement 3u (issue #320). Called once from
@@ -139,34 +192,7 @@ fi
 # void — with no per-item judgement left for it to apply, and no room for a
 # verdict like "requires per-item evaluation against blocked/void/claimed
 # records" to be true of any of them.
-for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt; do
-  while IFS= read -r eb_slug; do
-    [[ -n "$eb_slug" ]] || continue
-    eb_current="$(jq -c --arg s "$eb_slug" --arg f "$eligibility_band" \
-      'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
-      || { guard_warn "eb_current:$eb_slug:$eligibility_band" "$eb_current"; eb_current='[]'; }
-    # shellcheck disable=SC2154  # blocked_json/void_json are assigned by
-    # compute_skip_lists (lib/candidate-gather.sh, #771), called above.
-    eb_filtered="$(exclude_blocked_or_void_items "$eb_current" "$eb_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
-    ordered_repos_json="$(jq -c --arg r "$eb_slug" --arg f "$eligibility_band" --argjson v "$eb_filtered" \
-      'map(if .slug == $r then .[$f] = $v else . end)' \
-      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
-  done < <(jq -r --arg f "$eligibility_band" \
-           '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
-           <<<"$ordered_repos_json" 2>/dev/null || true)
-done
-
-while IFS= read -r iss_slug; do
-  [[ -n "$iss_slug" ]] || continue
-  iss_current="$(jq -c --arg s "$iss_slug" 'map(select(.slug == $s)) | .[0].issues // []' \
-    <<<"$ordered_repos_json" 2>&1)" \
-    || { guard_warn "iss_current:$iss_slug" "$iss_current"; iss_current='[]'; }
-  iss_filtered="$(exclude_blocked_or_void_issues "$iss_current" "$iss_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
-  ordered_repos_json="$(jq -c --arg r "$iss_slug" --argjson iss "$iss_filtered" \
-    'map(if .slug == $r then .issues = $iss else . end)' \
-    <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
-done < <(jq -r '[.[] | select(((.issues // []) | length) > 0) | .slug] | unique[]' \
-         <<<"$ordered_repos_json" 2>/dev/null || true)
+apply_blocked_void_band_exclusions
 
 # The third extract (requirement 3h): what a previous Enabler engagement
 # specified for an item nobody had specified well enough to work on. For an
@@ -246,6 +272,48 @@ for decision_band in findings review_feedback abandoned_drafts merge_conflicts d
            <<<"$ordered_repos_json" 2>/dev/null || true)
 done
 fi
+}
+
+# refresh_after_decision_veto_sweep — requirement 36e (agent-ops#937,
+# agent-ops#1198). Called once from `lib/gather-phase.sh`, immediately after
+# `run_decision_veto_sweep` (`lib/decision-veto.sh`) — never reordered ahead
+# of it: `record_needs_refinement_block`'s own already-blocked dedup needs
+# `blocked_json` current at the moment the sweep runs, which is why the sweep
+# itself still runs after `compute_skip_lists`/`compute_band_eligibility`
+# rather than before (see that function's own header). What this function
+# closes is the gap that ordering otherwise leaves: a veto the sweep re-blocks
+# this cycle updates the log, but every set this cycle's own selection reads —
+# `blocked_json`, the pre-fetched bands, `decisions_json`, the Enabler's and
+# Refiner's own candidate sets — was already computed before the sweep ran,
+# so without this refresh the item stays selectable by this same cycle's own
+# Co-Ordinator, and the vetoed decision stays handed to this same cycle's own
+# Refiner, until the *next* cycle rebuilds them from scratch.
+#
+# Returns at once, doing no jq work and no GitHub read, unless the sweep
+# recorded a *fresh* block this cycle (`decision_veto_blocks_recorded`,
+# `lib/decision-veto.sh`, set only on a successful fresh
+# `record_needs_refinement_block` call — never on the ordinary
+# already-blocked case, which needs no refresh since `blocked_json` already
+# carries it). A veto is rare, so every ordinary cycle pays nothing here.
+#
+# Deliberately narrow: `prefetch_refiner_sources` is not re-run — its two
+# reads (`gather_project_review_candidates`, `gather_implementation_plan_candidates`)
+# are GitHub reads nothing the sweep did could have changed. Re-running
+# `compute_band_eligibility` whole is avoided too, on purpose: its own first
+# act snapshots `live_pr_refs_json` off `ordered_repos_json` *before* its
+# subtraction loop runs (requirement 35e, issue #1119), and re-snapshotting it
+# here, after that loop has already removed every blocked entry, would mark
+# every blocked SHA-scoped PR ref stale, permanently — the exact trap
+# `apply_blocked_void_band_exclusions` exists to let this function avoid, by
+# re-running only the subtraction itself.
+refresh_after_decision_veto_sweep() {
+  (( ${decision_veto_blocks_recorded:-0} )) || return 0
+
+  blocked_json="$(blocked_items "$union_log" "$repo_slug_aliases_json")"
+  apply_blocked_void_band_exclusions
+  decisions_json="$(decisions_map "$union_log" "$repo_slug_aliases_json")"
+  compute_enabler_eligible_set
+  compute_refiner_candidates
 }
 
 # compute_enabler_eligible_set — requirements 35a and 35b. Called once from
