@@ -427,6 +427,78 @@ assert_eq "limit_union_frozen_providers lists exactly the currently-recorded buc
   "$(printf '%s\n' "" anthropic | sort)" \
   "$(limit_union_frozen_providers <<<"$frozen_mixed" | sort)"
 
+# --- limit_union_record_for_lane / limit_union_state_for_lane /
+#     limit_union_frozen_lanes: issue #2242's lane fold, one level finer
+#     than the provider fold above --------------------------------------
+# Before this issue every limit-hit this system ever wrote carried no `lane`
+# field at all, and governed every lane of its own provider — the same
+# back-compat rule the provider fold already applies one level up. Two lanes
+# of the same provider hit independently: each lane's own query sees only
+# its own.
+two_lane_hits="$(printf '%s\n' \
+  '{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2099-06-01T00:00:00Z","provider":"anthropic","lane":"api"}' \
+  '{"ts":"2026-03-02T00:00:00Z","event":"limit-hit","resume_at":"2099-07-01T00:00:00Z","provider":"anthropic","lane":"subscription"}')"
+assert_eq "limit_union_record_for_lane sees only the api lane's own hit" \
+  "2099-06-01T00:00:00Z" "$(limit_union_record_for_lane anthropic api <<<"$two_lane_hits" | jq -r '.resume_at')"
+assert_eq "limit_union_record_for_lane sees only the subscription lane's own hit" \
+  "2099-07-01T00:00:00Z" "$(limit_union_record_for_lane anthropic subscription <<<"$two_lane_hits" | jq -r '.resume_at')"
+assert_eq "limit_union_record_for_lane is clear for a different provider entirely" \
+  "" "$(limit_union_record_for_lane xai api <<<"$two_lane_hits")"
+
+# A lane-wildcard (no-lane) hit governs every lane of its own provider — the
+# pre-#2242 record's own reach, preserved one level down from the pre-#2133
+# wildcard above.
+lane_wildcard_hit='{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2099-08-01T00:00:00Z","provider":"anthropic"}'
+assert_eq "a lane-wildcard limit-hit governs the api lane" \
+  "2099-08-01T00:00:00Z" "$(limit_union_record_for_lane anthropic api <<<"$lane_wildcard_hit" | jq -r '.resume_at')"
+assert_eq "…and the subscription lane too" \
+  "2099-08-01T00:00:00Z" "$(limit_union_record_for_lane anthropic subscription <<<"$lane_wildcard_hit" | jq -r '.resume_at')"
+# A fully-wildcard hit (no provider, no lane either) governs every lane of
+# every provider — both widenings stack.
+full_wildcard_hit='{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2099-09-01T00:00:00Z"}'
+assert_eq "a fully-wildcard limit-hit governs any provider's any lane" \
+  "2099-09-01T00:00:00Z" "$(limit_union_record_for_lane xai subscription <<<"$full_wildcard_hit" | jq -r '.resume_at')"
+
+# A lane-scoped limit-cleared clears only its own lane, leaving the sibling
+# lane's own hit standing — the one place this issue's own scoping actually
+# changes clearing behaviour, mirroring the provider-scoped clear above one
+# level down.
+lane_cleared="$two_lane_hits
+{\"ts\":\"2026-03-03T00:00:00Z\",\"event\":\"limit-cleared\",\"provider\":\"anthropic\",\"lane\":\"api\"}"
+assert_eq "a lane-scoped limit-cleared clears only that lane" \
+  "" "$(limit_union_record_for_lane anthropic api <<<"$lane_cleared")"
+assert_eq "…and leaves the sibling lane's own hit standing" \
+  "2099-07-01T00:00:00Z" "$(limit_union_record_for_lane anthropic subscription <<<"$lane_cleared" | jq -r '.resume_at')"
+
+# A lane-wildcard limit-cleared (provider named, no lane) clears every lane
+# of that provider seen so far at once.
+provider_wide_cleared="$two_lane_hits
+{\"ts\":\"2026-03-03T00:00:00Z\",\"event\":\"limit-cleared\",\"provider\":\"anthropic\"}"
+assert_eq "a provider-named, lane-wildcard limit-cleared clears the api lane too" \
+  "" "$(limit_union_record_for_lane anthropic api <<<"$provider_wide_cleared")"
+assert_eq "…and the subscription lane" \
+  "" "$(limit_union_record_for_lane anthropic subscription <<<"$provider_wide_cleared")"
+
+# limit_union_state_for_lane prints the same {"record":…,"since":…,
+# "escalated":[…]} shape, narrowed one level further than limit_union_state_for.
+assert_eq "limit_union_state_for_lane answers the same shape, scoped to one (provider, lane)" \
+  '{"resume_at":"2099-06-01T00:00:00Z","since":"2026-03-01T00:00:00Z"}' \
+  "$(limit_union_state_for_lane anthropic api <<<"$two_lane_hits" | jq -c '{resume_at: .record.resume_at, since}')"
+assert_eq "limit_union_state_for_lane over a lane with nothing recorded answers nothing for each field" \
+  '{"record":null,"since":null,"escalated":[]}' \
+  "$(limit_union_state_for_lane anthropic subscription <<<"$two_lane_hits
+{\"ts\":\"2026-03-04T00:00:00Z\",\"event\":\"limit-cleared\",\"provider\":\"anthropic\",\"lane\":\"subscription\"}")"
+
+# limit_union_frozen_lanes: every (provider, lane) pair currently recorded,
+# one compact object per line, naming which lane is frozen rather than only
+# which provider.
+assert_eq "limit_union_frozen_lanes names exactly the subscription lane for a cleared-api fixture" \
+  "anthropic subscription" \
+  "$(limit_union_frozen_lanes <<<"$lane_cleared" | jq -r '"\(.provider) \(.lane)"')"
+assert_eq "…and both lanes for the two-hit fixture, each under its own name" \
+  "$(printf '%s\n' 'anthropic api' 'anthropic subscription')" \
+  "$(limit_union_frozen_lanes <<<"$two_lane_hits" | jq -r '"\(.provider) \(.lane)"' | sort)"
+
 # --- limit_flag_record_for: fleet/limit.json's own record, narrowed --------
 # The flag holds exactly one record at a time. A record with no `provider`
 # field at all applies to every provider — the "before issue #2133" reading,
@@ -446,6 +518,27 @@ assert_eq "…and to xai too (it predates issue #2133, or was hand-written/migra
 
 assert_eq "empty RAW returns nothing" "" "$(limit_flag_record_for "" anthropic)"
 assert_eq "garbage RAW returns nothing" "" "$(limit_flag_record_for "not json at all" anthropic)"
+
+# limit_flag_record_for's own LANE argument (issue #2242): a record naming
+# one lane applies only to that lane when the caller names one, but a
+# 2-argument call (every caller before this issue, and every caller that
+# does not distinguish lanes) skips the lane test outright — a record scoped
+# to one lane of PROVIDER still answers a bare PROVIDER-only ask.
+rec_anthropic_api='{"provider":"anthropic","lane":"api","resume_at":"2030-01-01T00:00:00Z"}'
+assert_eq "a record scoped to anthropic/api is returned when anthropic/api asks" \
+  "$rec_anthropic_api" "$(limit_flag_record_for "$rec_anthropic_api" anthropic api)"
+assert_eq "…and withheld when anthropic/subscription asks" \
+  "" "$(limit_flag_record_for "$rec_anthropic_api" anthropic subscription)"
+assert_eq "…and withheld when a different provider's own lane asks" \
+  "" "$(limit_flag_record_for "$rec_anthropic_api" xai api)"
+assert_eq "…but still returned to a 2-argument (unscoped) ask for anthropic — the pre-#2242 reading" \
+  "$rec_anthropic_api" "$(limit_flag_record_for "$rec_anthropic_api" anthropic)"
+
+rec_no_lane='{"provider":"anthropic","resume_at":"2030-01-01T00:00:00Z"}'
+assert_eq "a record with no lane field applies to anthropic/api" \
+  "$rec_no_lane" "$(limit_flag_record_for "$rec_no_lane" anthropic api)"
+assert_eq "…and to anthropic/subscription too (it predates issue #2242, or was closed at the provider level)" \
+  "$rec_no_lane" "$(limit_flag_record_for "$rec_no_lane" anthropic subscription)"
 
 # --- limit_later_record: requirement 2.1's "later resume wins" -------------
 rec_early='{"resume_at":"2030-01-01T00:00:00Z","class":"weekly","reset_known":true}'

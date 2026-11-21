@@ -378,6 +378,44 @@ out="$(GH_STUB_MODE=down mix_status_report)"
 assert_contains "mix: an unreadable flag falls back to config" "anthropic api: weight=1 (config)" "$out"
 assert_contains "…for every field, not just weight" "enabled=default (config)" "$out"
 
+# --- limit_status_report: per-lane detail lines (issue #2242) -------------
+# A fresh fleet state for this section, so the stray wildcard fixture seeded
+# for the union-reader section above (resume 2099-01-01, naming no provider
+# or lane at all) cannot leak into what these assertions read — it would
+# otherwise apply to both of anthropic's lanes by the "a record without one
+# applies to every lane" rule and make every assertion below trivially true
+# regardless of what this section itself seeds.
+limit_status_workspace="$tmp_dir/limit-status-workspace"
+limit_status_state="$tmp_dir/limit-status-state"
+mkdir -p "$limit_status_workspace" "$limit_status_state"
+workspace_root="$limit_status_workspace"
+state_dir="$limit_status_state"
+# No live flag anywhere in this section — the log union alone governs it.
+fleet_flag_fetch() { :; }
+
+out="$(limit_status_report)"
+assert_contains "limit_status_report: nothing frozen reports none in force" \
+  "limit:    none in force" "$out"
+assert_lacks "…and no per-lane line is printed when nothing is frozen" \
+  "anthropic/" "$out"
+
+printf '{"ts":"%s","node":"self","event":"limit-hit","resume_at":"2150-01-01T00:00:00Z","class":"other","reset_known":true,"provider":"anthropic","lane":"subscription"}\n' \
+  "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" > "$limit_status_state/log.jsonl"
+out="$(limit_status_report)"
+assert_contains "…a lane-scoped hit prints that lane's own detail line" \
+  "anthropic/subscription: STANDING DOWN — until 2150-01-01T00:00:00Z" "$out"
+assert_lacks "…and leaves the sibling lane out, since a stage of it would simply fall through" \
+  "anthropic/api:" "$out"
+
+printf '{"ts":"%s","node":"self","event":"limit-hit","resume_at":"2160-01-01T00:00:00Z","class":"other","reset_known":true,"provider":"anthropic","lane":"api"}\n' \
+  "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$limit_status_state/log.jsonl"
+out="$(limit_status_report)"
+assert_contains "…both lanes frozen print both their own lines, the subscription one unchanged" \
+  "anthropic/subscription: STANDING DOWN — until 2150-01-01T00:00:00Z" "$out"
+assert_contains "…and the newly-frozen api lane alongside it" \
+  "anthropic/api: STANDING DOWN — until 2160-01-01T00:00:00Z" "$out"
+unset -f fleet_flag_fetch
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

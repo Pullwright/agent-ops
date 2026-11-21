@@ -797,6 +797,78 @@ assert_eq "a provider the flag doesn't name and the union says nothing about has
   "" "$(printf '%s\n' "$union_earlier_than_flag" | limit_governing_record_for "$slug" "$fs_a" anthropic | jq -r '.resume_at // empty')"
 rm -f "$gh_backing/fleet/limit.json"
 
+# --- fleet_limit_publish/fleet_limit_resume_at_for/limit_governing_record_for,
+#     one level finer: the LANE argument (issue #2242) --------------------
+# The flag still carries exactly one record at a time, now keyed by (provider,
+# lane) rather than provider alone — a hit on one lane must not suppress, or
+# be suppressed by, a longer-running freeze on the *other* lane of the same
+# provider, mirroring the provider-vs-provider test above one level down.
+fleet_limit_publish "$slug" "$fs_a" "2099-01-01T00:00:00Z" "monthly-spend" true node-a "" anthropic subscription
+assert_eq "a hit on anthropic/subscription creates the flag" "0" "$?"
+assert_eq "…scoped to anthropic" "anthropic" "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.provider')"
+assert_eq "…and to the subscription lane" "subscription" "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.lane')"
+
+fleet_limit_publish "$slug" "$fs_b" "2030-01-01T00:00:00Z" "weekly" false node-b "" anthropic api
+assert_eq "publishing a SHORTER-resuming hit for the OTHER lane of the same provider still succeeds" "0" "$?"
+assert_eq "…and OVERWRITES the flag rather than no-opping against subscription's longer freeze" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at "$slug" "$fs_a")"
+assert_eq "…the flag now names the api lane, not subscription" "api" \
+  "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.lane')"
+
+# Extend-only is still preserved WITHIN the same (provider, lane) key.
+fleet_limit_publish "$slug" "$fs_b" "2025-01-01T00:00:00Z" "weekly" false node-b "" anthropic api
+assert_eq "a shorter hit for the SAME (provider, lane) the flag already covers is a no-op" \
+  "0" "$?"
+assert_eq "…the flag still shows the api lane's own earlier (longer) publish" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at "$slug" "$fs_a")"
+
+assert_eq "fleet_limit_resume_at_for with a lane returns the resume_at for the lane the flag currently names" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic api)"
+assert_eq "…and is empty for the sibling lane the current record doesn't name and isn't a wildcard" \
+  "" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic subscription)"
+assert_eq "…while the 3-argument (unscoped) form still answers for the provider, the pre-#2242 reading" \
+  "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# A record with no lane field at all (every flag written before issue #2242)
+# is the lane-wildcard case: it governs whichever lane asks, one level below
+# the provider-wildcard case above.
+legacy_provider_rec="$(jq -nc '{resume_at: "2045-01-01T00:00:00Z", class: "monthly-spend", reset_known: true, node: "node-a", kind: "auto", actor: "node-a", provider: "anthropic"}')"
+fleet_flag_write "$slug" limit "$legacy_provider_rec" "legacy record, written before issue #2242 named a lane"
+assert_eq "fleet_limit_resume_at_for honours a lane-wildcard (pre-#2242) record for api" \
+  "2045-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic api)"
+assert_eq "…and for subscription too" \
+  "2045-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic subscription)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# fleet_limit_close_lane: the manual, fail-closed record --close-lane writes.
+close_lane_rec="$(fleet_limit_close_lane "$slug" "$fs_a" anthropic subscription "2099-12-31T00:00:00Z" "terms concern" operator-a; fleet_flag_fetch "$slug" "$fs_a" limit)"
+assert_eq "fleet_limit_close_lane writes the resume_at given" "2099-12-31T00:00:00Z" \
+  "$(jq -r '.resume_at' <<<"$close_lane_rec")"
+assert_eq "…scoped to the provider and lane given" "anthropic subscription" \
+  "$(jq -r '"\(.provider) \(.lane)"' <<<"$close_lane_rec")"
+assert_eq "…with a manual kind, never probed or auto-cleared" "manual" "$(jq -r '.kind' <<<"$close_lane_rec")"
+assert_eq "…naming the actor given" "operator-a" "$(jq -r '.actor' <<<"$close_lane_rec")"
+assert_eq "…and the reason as its evidence" "terms concern" "$(jq -r '.evidence' <<<"$close_lane_rec")"
+# Unlike fleet_limit_publish, this write is never extend-only: an operator's
+# own act always wins over whatever auto record the flag currently carries.
+fleet_limit_publish "$slug" "$fs_a" "2200-01-01T00:00:00Z" "monthly-spend" true node-a "" anthropic subscription
+fleet_limit_close_lane "$slug" "$fs_a" anthropic subscription "2026-08-01T00:00:00Z" "closing anyway" operator-a
+assert_eq "fleet_limit_close_lane overwrites even a longer-running automatic record" \
+  "2026-08-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic subscription)"
+rm -f "$gh_backing/fleet/limit.json"
+
+# limit_governing_record_for, with a lane: the union and the flag combined,
+# one level finer than the provider-only form above.
+xai_api_hit_only="$(printf '%s\n' \
+  '{"ts":"2026-03-01T00:00:00Z","event":"limit-hit","resume_at":"2099-06-01T00:00:00Z","provider":"xai","lane":"api"}')"
+assert_eq "limit_governing_record_for with a lane and no state repo reads the log union alone" \
+  "2099-06-01T00:00:00Z" \
+  "$(printf '%s\n' "$xai_api_hit_only" | limit_governing_record_for "" "$fs_a" xai api | jq -r '.resume_at')"
+assert_eq "…and answers nothing for the sibling lane the same fixture never named" \
+  "" "$(printf '%s\n' "$xai_api_hit_only" | limit_governing_record_for "" "$fs_a" xai subscription | jq -r '.resume_at // empty')"
+rm -f "$gh_backing/fleet/limit.json"
+
 # ===== The credit mix's live lever, lib/mix.sh (issue #2244, D30) =============
 # `fleet/mix.json` is a fifth member of this file's own fleet-flag family —
 # `mix_write`/`mix_reset` below are thin wrappers over `fleet_flag_write`/
@@ -1622,6 +1694,65 @@ assert_contains "...naming the resume time still in force" '2031-01-01T00:00:00Z
 clear_all_out="$(run_node "$b_home" agent-cycle.sh --clear-limit 2>&1)"
 assert_contains "while the bare --clear-limit lifts that same wildcard record" \
   'stand-down lifted' "$clear_all_out"
+
+# --- --close-lane / --clear-limit <provider>/<lane> (issue #2242) ---------
+# The operator's own way to stop one lane by hand, without an image roll —
+# a manual, fail-closed record scoped one level finer than --disable/
+# --clear-limit's own provider scoping above. `--until`, not `--for 2d`:
+# `--for` resolves relative to this file's own pinned `TOGGLE_NOW_EPOCH`
+# clock (2026-07-17T12:00:00Z, set above for the TTL-expiry tests and still
+# exported here), which real wall-clock time has long since passed — a
+# relative duration would close the lane until a moment already behind us,
+# never reading as frozen below. `--until` takes a literal instant and
+# needs no such anchor.
+close_lane_out="$(run_node "$a_home" agent-cycle.sh --close-lane anthropic/subscription --until 2099-01-01T00:00:00Z --reason "terms concern" 2>&1)"
+assert_contains "--close-lane reports the lane closed" "anthropic/subscription closed until 2099-01-01T00:00:00Z" "$close_lane_out"
+assert_eq "--close-lane publishes fleet/limit.json" "1" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+assert_eq "...scoped to anthropic/subscription" "anthropic subscription" \
+  "$(jq -r '"\(.provider) \(.lane)"' "$gh_backing/fleet/limit.json")"
+assert_eq "...with a manual kind, never probed or auto-cleared" "manual" \
+  "$(jq -r '.kind' "$gh_backing/fleet/limit.json")"
+assert_contains "the local record closes this node to the lane immediately too (requirement 2.3a)" \
+  '"event":"limit-hit"' "$(cat "$a_log" 2>/dev/null)"
+
+# A pre-#2242 (unscoped) reader cannot see which lane is closed — only that
+# *something* is — and fails closed exactly as an old reader of a bare
+# provider-wide record always has: the fleet-wide `limit:` headline still
+# reports the provider standing down on a single closed lane, never "none in
+# force", while the per-lane detail line beneath it says which one.
+unscoped_status_out="$(run_node "$b_home" agent-cycle.sh --status 2>&1)"
+assert_contains "a pre-#2242 (unscoped) reader stands the whole provider down on a single closed lane" \
+  "limit:    STANDING DOWN" "$unscoped_status_out"
+assert_contains "...and the per-lane line names which one" \
+  "anthropic/subscription: STANDING DOWN" "$unscoped_status_out"
+
+# With the sibling lane *also* frozen — automatically, with an unstated
+# reset — the fleet genuinely has no open lane left, and the two are judged,
+# and probed, independently: the manual lane is never probed, the automatic
+# one is, exactly as 2.1b's own single-lane probe already is.
+rm -f "$b_log"
+printf '%s\n' \
+  '{"ts":"2026-01-01T00:00:00Z","cycle":"seed","node":"node-b","event":"limit-hit","resume_at":"2030-06-01T00:00:00Z","class":"other","reset_known":false,"provider":"anthropic","lane":"api"}' \
+  > "$b_log"
+run_node "$b_home" agent-cycle.sh >/dev/null 2>&1
+assert_eq "a cycle under both lanes frozen -- one manual, one automatic -- exits cleanly" "0" "$?"
+assert_contains "the stand-down reason names every lane frozen" \
+  'every lane is frozen' "$(cat "$b_log" 2>/dev/null)"
+assert_contains "...the automatic api lane, probed and inconclusive" \
+  'api with no stated reset' "$(cat "$b_log" 2>/dev/null)"
+assert_contains "...and the manual subscription lane, never probed, naming the operator who closed it" \
+  'subscription manual, set by' "$(cat "$b_log" 2>/dev/null)"
+assert_not_contains "...the manual lane is never auto-cleared by a probe" \
+  '"event":"limit-cleared"' "$(cat "$b_log" 2>/dev/null)"
+
+clear_lane_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic/subscription 2>&1)"
+assert_contains "--clear-limit <provider>/<lane> reports the lane lifted" "stand-down lifted" "$clear_lane_out"
+assert_eq "...and deletes fleet/limit.json, since it named exactly this (provider, lane)" "0" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+assert_contains "...logging a limit-cleared event scoped to that lane" \
+  '"lane":"subscription"' "$(cat "$b_log" 2>/dev/null)"
+rm -f "$b_log"
 
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing
