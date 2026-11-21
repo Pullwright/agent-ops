@@ -99,6 +99,15 @@ jq -n '{repos: [{slug: "acme/widgets"}]}' > "$CONFIG_FILE"
 union_log="$tmp_dir/union.jsonl"
 : > "$union_log"
 
+# `run_decision_veto_sweep` (agent-ops#1198) now brackets its own `log_event`
+# calls into `$union_log` by reading `$log_file` directly — present here, as
+# in production, even though the stubbed `log_event` below never writes to
+# it: an empty, existing file keeps `wc -l`/`tail` reading zero lines rather
+# than failing under `set -u`, and every case above the dedicated refresh
+# section further down leaves it untouched.
+log_file="$tmp_dir/log.jsonl"
+: > "$log_file"
+
 cycle_dir="$tmp_dir/cycle"
 mkdir -p "$cycle_dir"
 node_name="node-1"
@@ -607,6 +616,95 @@ assert_eq_n "reach (c) bound: ...with its warning" "1" "^warning" "$calls"
 unset decision_veto_window_hours
 RF_ORIG_FAIL=""
 : > "$union_log"
+
+# ============================================================================
+# refresh_after_decision_veto_sweep (lib/eligibility.sh, agent-ops#1198): a
+# veto re-block must take effect in the cycle that records it, not only from
+# the next cycle's own rebuild — so an item `run_decision_veto_sweep` just
+# re-blocked is gone from this same cycle's own `ordered_repos_json` bands
+# and present in `blocked_json` the moment the sweep returns.
+#
+# `compute_enabler_eligible_set` and `compute_refiner_candidates` are stubbed
+# below: their own eligibility rules are covered end-to-end by
+# test/enabler-eligibility.test.sh and test/refiner-eligibility.test.sh, and
+# this case is about the wiring that makes the refresh fire and reach
+# `ordered_repos_json`/`blocked_json`, not re-proving either stage's rules.
+# `apply_blocked_void_band_exclusions` and `blocked_items` run for real,
+# against a `$log_file`/`$union_log` the sweep's own bracketing actually
+# wrote to — the mechanism this issue exists to prove, not a stand-in for it.
+# ============================================================================
+
+# shellcheck source=lib/eligibility.sh
+. "$REPO_ROOT/lib/eligibility.sh"
+# shellcheck source=lib/candidate-select.sh
+. "$REPO_ROOT/lib/candidate-select.sh"
+
+guard_warn() { :; }
+# shellcheck disable=SC2317,SC2034  # stubbed: covered by their own test suites, see the block comment above; enabler_allowed is read only by the real function's own caller, not by this fixture
+compute_enabler_eligible_set() { enabler_allowed=1; }
+# shellcheck disable=SC2317,SC2034
+compute_refiner_candidates() { refiner_allowed=1; }
+
+: > "$log_file"
+: > "$union_log"
+# A real `log_event`, this time — appends an actual JSONL line to `$log_file`
+# the way production does, so `run_decision_veto_sweep`'s own union-log
+# bracketing has something real to carry into `$union_log`.
+# shellcheck disable=SC2317  # invoked only by run_decision_veto_sweep
+log_event() {
+  jq -nc --arg ev "$1" --argjson f "$2" --arg ts "2026-11-01T00:00:00Z" \
+    '{ts: $ts, event: $ev} + $f' >> "$log_file"
+}
+# A recorder that emits the same shaped `attempt-failed` line the real
+# `record_needs_refinement_block` would, so `blocked_items` — re-read by
+# `refresh_after_decision_veto_sweep` off `$union_log` — actually sees a
+# fresh block for the item the sweep just vetoed.
+# shellcheck disable=SC2317  # invoked only by run_decision_veto_sweep
+record_needs_refinement_block() {
+  jq -nc --argjson e "$1" --arg s "$2" --arg ts "2026-11-01T00:00:01Z" \
+    '{ts: $ts, event: "attempt-failed", stage: $s, repo: $e.repo, item: $e.item, detail: $e.reason}' \
+    >> "$log_file"
+  return 0
+}
+
+blocked_json='[]'
+decisions_json='{}'
+void_json='[]'
+void_refusal_escalated_json='[]'
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"ref":"42","title":"x"}]}]'
+
+# The trailing `comment-posted` line matters beyond matching case 1's own
+# shape above: `run()`'s `printf '%s'` writes no trailing newline, and
+# `while read` silently drops a final line that arrives without one — so the
+# line that actually carries the assertion must not be last.
+refresh_actions='{"action":"vetoed","repo":"acme/widgets","item":"42","issue_number":501,"issue_url":"https://github.com/acme/widgets/issues/501","by":"warwickallen","terminal":false}
+{"action":"needs-refinement","repo":"acme/widgets","item":"42","reason":"a human vetoed the pipeline decision by reopening https://github.com/acme/widgets/issues/501","missing":"the owner decision, posted as a comment","evidence":"decision-log issue https://github.com/acme/widgets/issues/501 was reopened"}
+{"action":"comment-posted","repo":"acme/widgets","item":"42","url":"https://github.com/acme/widgets/issues/42#issuecomment-1"}'
+run "$refresh_actions"
+assert_eq "the sweep flags a fresh block for the refresh to act on" "1" "${decision_veto_blocks_recorded:-0}"
+
+refresh_after_decision_veto_sweep
+assert_eq "the item is gone from ordered_repos_json's tech_debt band this same cycle" \
+  "[]" "$(jq -c '.[0].tech_debt' <<<"$ordered_repos_json")"
+assert_eq "blocked_json now carries the fresh block, this same cycle" "1" \
+  "$(jq '[.[] | select(.repo == "acme/widgets" and .item == "42")] | length' <<<"$blocked_json")"
+
+# A cycle with nothing to refresh (the ordinary case: no veto at all, or a
+# veto whose item was already blocked) does no jq work: the flag stays unset,
+# and a sentinel left in `ordered_repos_json`/`blocked_json` proves the
+# refresh returned at once rather than silently recomputing from empty state.
+reset_log_event_calls
+reset_record_calls
+: > "$log_file"
+: > "$union_log"
+unset decision_veto_blocks_recorded
+blocked_json='[{"sentinel": true}]'
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"ref":"43","title":"y"}]}]'
+refresh_after_decision_veto_sweep
+assert_eq "no fresh block recorded: the refresh is a no-op" \
+  '[{"sentinel": true}]' "$blocked_json"
+assert_eq "...and ordered_repos_json is untouched" \
+  '[{"ref":"43","title":"y"}]' "$(jq -c '.[0].tech_debt' <<<"$ordered_repos_json")"
 
 echo
 if (( failures > 0 )); then

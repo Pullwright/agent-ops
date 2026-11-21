@@ -1328,12 +1328,9 @@
     second, legitimate decide verdict over a distinct reason (permitted —
     the per-reason bound counts passes, not decisions) would silently reuse
     the first decision's own closed issue rather than filing a fresh one
-    (agent-ops#1198) — its body would go on showing the first decision's
-    text while the second is the decision of record, and a veto of the first
-    would leave `decision_vetoes_processed_items` (keyed on that one issue
-    number) refusing to ever process a veto of the second.
+    (agent-ops#1198).
     `scripts/sweep-decision-vetoes.sh`'s own marker read treats `reason_key`
-    as optional, so a log issue filed before this fix still parses. `decision-taken`
+    as optional. `decision-taken`
     (requirement 36d) carries the log issue's own `issue_number`/`issue_url`
     once filed — merged in conditionally, the same way it already carries
     `comment_url` — and `decisions_map` (`lib/cycle-state.sh`) threads both
@@ -1418,6 +1415,12 @@
     this escalation is logged in the very same pass — often the same
     whole-second `log_event` timestamp — as the block it registers, unlike an
     ordinary escalation which is always filed cycles after its own block.
+
+    The re-block takes effect the same cycle, not the next:
+    `refresh_after_decision_veto_sweep` (`lib/eligibility.sh`), called after
+    `run_decision_veto_sweep`, re-derives `blocked_json` and the
+    Enabler/Refiner sets on a fresh block (agent-ops#1198) — a no-op
+    otherwise.
 
     The owner then comments their own decision on the log issue and closes it
     again: the very next cycle reads the issue closed and, through that same
