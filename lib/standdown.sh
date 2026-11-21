@@ -1128,12 +1128,19 @@ elif (( limit_frozen_api && limit_frozen_sub )); then
     fi)"
     standdown_reason="usage-limit cooldown (${check_provider:-anthropic}): every lane is frozen — $lane_reason_api; $lane_reason_sub"
 
-    # The escalation (requirement 2; #244) ages from the first hit of the
-    # current freeze across whichever lane(s) are automatic — a manual
-    # closure never pages the operator who set it, on either lane, so a
-    # provider frozen by one manual and one automatic lane still escalates
-    # on the automatic lane's own age alone; a provider frozen by two manual
-    # closures never escalates at all.
+    # The escalation (requirement 2; #244) ages from the LATER of its
+    # automatic lanes' own freeze starts — the moment the provider genuinely
+    # had no open lane left, not the moment either lane individually froze.
+    # Anchoring on the earlier one instead would escalate a lane that has
+    # been frozen beside an open sibling for days the instant the sibling
+    # also froze, even a second ago — exactly the "share shift, not an
+    # outage" case issue #2242's own body says must not page: "fires while
+    # the provider has had no open lane for that long" is the LATER lane's
+    # own age, since before it froze too the earlier one's freeze was never
+    # a full outage. A manual closure never pages the operator who set it,
+    # on either lane, so a provider frozen by one manual and one automatic
+    # lane still escalates on the automatic lane's own age alone; a provider
+    # frozen by two manual closures never escalates at all.
     if (( limit_escalate_after_hours > 0 )) && ! (( DRY_RUN )) \
        && [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]] \
        && { [[ "$governing_kind_api" != "manual" ]] || [[ "$governing_kind_sub" != "manual" ]]; }; then
@@ -1158,7 +1165,7 @@ elif (( limit_frozen_api && limit_frozen_sub )); then
           [[ -n "$freeze_since_sub" ]] || freeze_since_sub="$(jq -r 'if (.ts | type) == "string" and .ts != "" then .ts else empty end' \
             <<<"$governing_sub" 2>/dev/null || true)"
           if [[ -n "$freeze_since_sub" ]] \
-             && { [[ -z "$freeze_since" ]] || [[ "$freeze_since_sub" < "$freeze_since" ]]; }; then
+             && { [[ -z "$freeze_since" ]] || [[ "$freeze_since_sub" > "$freeze_since" ]]; }; then
             freeze_since="$freeze_since_sub"
             freeze_lanes="${freeze_lanes:+$freeze_lanes, }subscription"
           elif [[ -n "$freeze_since_sub" ]]; then
