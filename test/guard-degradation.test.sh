@@ -354,6 +354,7 @@ assert_eq "…and nothing is reported on the happy path" "0" "$(last_guard_event
 # (issue #2242) — this file deliberately never sources lib/toggle.sh (the
 # fleet-flag machinery is not what it tests), so a bare stub stands in,
 # always reading "nothing live" with no state repo to ask.
+# shellcheck disable=SC2317,SC2329  # called from $union_block_src via eval, invisible to a static reader
 fleet_flag_fetch() { :; }
 
 # From `union_state_api=` up to, and not including, the `governing_api=`

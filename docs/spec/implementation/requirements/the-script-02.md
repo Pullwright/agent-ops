@@ -903,259 +903,156 @@
 
    1. *Usage-limit cooldown*, scoped to the provider that hit it (issue
       #2135) and, within it, to the lane that hit it (issue #2242 — the
-      credential path, `api` or `subscription`, `lib/lane.sh`): every node
-      shares one account per provider *and* per lane within it, so a limit
-      any node hits stands every node down only for that (provider, lane)
-      key, and a stage of that provider falls through to its other lane
-      (`lib/stage-run.sh`'s `stage_lane_draw`, which this check never calls
-      into) rather than wait. The provider as a whole stands down only once
-      *every* lane of it is frozen. This check gates the Co-Ordinator
-      against its own resolved provider (`check_provider`); later
-      re-checks cover the Implementer, Enabler and Refiner against theirs —
-      conservatively, by provider alone (requirement 5d et al.): a lane
-      split on a provider those checks have not themselves been updated
-      for still idles correctly, since "any lane of my provider is frozen"
-      remains a safe, if coarser, answer to "should I launch".
+      credential path, `api` or `subscription`): every node shares one
+      account per (provider, lane), so a limit any node hits stands every
+      node down only for that key, and a stage of that provider falls
+      through to its other lane (`lib/stage-run.sh`'s `stage_lane_draw`,
+      which this check never calls into) rather than wait. The provider as
+      a whole stands down only once *every* lane of it is frozen. This
+      check gates the Co-Ordinator against its own resolved provider
+      (`check_provider`); the Implementer, Enabler and Refiner re-checks
+      cover their own provider conservatively — by provider alone, not yet
+      the lane — so "any lane of my provider is frozen" remains a safe,
+      coarser, answer to "should I launch" for those; the Reviewer launch
+      carries none yet (agent-ops#2661).
 
       The same signal arrives on two carriers per lane, and the **later**
       `resume_at` wins: the log union's most recent `limit-hit` for
-      (`check_provider`, that lane), as fresh as the last state-sync fetch,
-      and `fleet/limit.json` narrowed the same way, read live, letting a
-      limit one node hit a minute ago stop this cycle now rather than a
-      fetch interval from now. Both carriers fold in a provider-wildcard
-      bucket (every pre-#2133 `limit-hit`) *and* a lane-wildcard bucket
-      (every pre-#2242 `limit-hit`, naming a provider but no lane) — so an
-      old, provider-only, or fleet-wide record still governs every lane it
-      is wide enough to reach (`limit_union_state_for_lane`/
-      `limit_flag_record_for`, each widening read applied again one level
-      down from the provider-only form #2135 shipped). `api` and
-      `subscription` are read as two independent whole-record comparisons,
-      not folded together into one answer — when they resolve to the
-      identical record (every hit before this issue named no lane at all,
-      so both land in the lane-wildcard bucket; so does a provider whose
-      substrate manages no lanes at all, e.g. xai) this collapses onto the
-      single-record form #2135 shipped, spending one probe and one
-      escalation read, not two, for a provider this issue changes nothing
-      about in practice. If both lanes' governing `resume_at` are still in
-      the future, stand down.
+      (`check_provider`, that lane), and `fleet/limit.json` narrowed the
+      same way, read live. Both carriers fold in a provider-wildcard bucket
+      (every pre-#2133 `limit-hit`) *and* a lane-wildcard bucket (every
+      pre-#2242 `limit-hit`, naming a provider but no lane) — so an old,
+      provider-only, or fleet-wide record still governs every lane it is
+      wide enough to reach (`limit_union_state_for_lane`/
+      `limit_flag_record_for`, each widening applied one level down from
+      #2135's own provider-only form). `api` and `subscription` are read as
+      two independent whole-record comparisons; when they resolve to the
+      identical record (every pre-#2242 hit, or a substrate with no lanes
+      at all, e.g. xai) this collapses onto #2135's single-record form,
+      spending one probe and one escalation read, not two. If both lanes'
+      governing `resume_at` are still future, stand down.
 
       The flag is written by whichever node hits a limit (requirement 10's
       `limit_decide` supplies `resume_at`/`class`/`reset_known`, the node's
-      name, its own provider, its own lane — `stage_lane`, alongside
-      `stage_provider` — and a timestamp), **extend-only for that
-      (provider, lane) key**: a writer never shortens a `resume_at` already
-      applying to the same (provider, lane), the same (or every) lane of
-      that provider, or every provider; a different key's freeze is
-      replaced outright, since the flag holds one key's record at a time
-      (`fleet_limit_publish`, `lib/toggle.sh`) — trading the fast path's
-      speed away for whichever key is not the most recently hit, in favour
-      of the slower (one fetch interval) but always-correct log union. The
-      write is best-effort — on failure the node logs a `warning` and
-      relies on the union to carry its `limit-hit` to the fleet.
+      own provider and lane — `stage_lane`, alongside `stage_provider` —
+      and a timestamp), **extend-only for that (provider, lane) key**: a
+      different key's freeze is replaced outright, since the flag holds one
+      key's record at a time (`fleet_limit_publish`, `lib/toggle.sh`).
+      Best-effort — on failure the node logs a `warning` and relies on the
+      union.
 
       Both carriers retire early — by 1b's probe, independently per lane,
-      when a lane's own `reset_known` is false, or by hand with
-      `--clear-limit [<provider>[/<lane>]]` or `--close-lane` (requirement
-      12) — and both log a `limit-cleared` event, carrying `provider` when
-      named (absent means every provider) and `lane` when named (absent
-      means every lane of the named provider), which the union's reduction
-      treats as superseding every earlier hit in that bucket
-      (`lib/limit-detect.sh`'s `limit_union_record_for_lane`/
-      `limit_standdown_since`/`limit_union_state_for_lane`). The flag is
-      always deleted outright: the probe's retirement (1b) clears it, since
-      it already carried that (provider, lane)'s record; a hand
-      `--clear-limit <provider>[/<lane>]` deletes it only when the flag
-      already names exactly that key — by strict equality, never the
-      wildcard-tolerant match the carriers themselves apply when deciding
-      whether they are frozen — leaving a different or wider record
-      untouched; with no provider (or, with a provider but no lane) it
-      deletes it on the widest match that still applies.
+      or by hand with `--clear-limit [<provider>[/<lane>]]` or
+      `--close-lane` (requirement 12) — logging a `limit-cleared` event
+      carrying `provider`/`lane` when named (absent means every provider,
+      or every lane of the named provider), which supersedes every earlier
+      hit in that bucket (`limit_union_record_for_lane`/
+      `limit_union_state_for_lane`). The flag is deleted outright: the
+      probe (1b) always can, since it already carried that key's record; a
+      hand `--clear-limit` deletes it only when the flag names exactly the
+      scope asked for — by strict equality, never the wildcard-tolerant
+      match the carriers apply when deciding whether they are frozen.
 
-      The reduction folds the union with `reduce` over the tolerant raw-line
-      event stream every union reader shares (`union_events`,
-      `lib/union-stream.sh`: `jq -nR`, each line parsed on its own,
-      malformed lines skipped, the reader holding one record at a time
-      rather than the whole union). The stand-down reads the union once per
-      lane, with `limit_union_state_for_lane`, which answers that lane's
-      governing hit, its freeze's start and the `since` of every
-      `limit-freeze-escalated` event naming it, from one pass, for this
-      check and for 1c alike. A read that fails outright — `jq` killed, or
-      its input unreadable — exits non-zero, and the caller reports it
-      rather than reading it as "no limit in force": a `guard-degraded`
-      event (site `cycle:union_record:api`/`cycle:union_record:
-      subscription`) here, and the flag carrier then decides alone for that
-      lane, exactly as when the union holds no live hit for it. A union the
-      cycle could not build (requirement 2.5, `union_build_ok`) is treated
-      the same way, for both lanes, without being read.
+      The stand-down reads the union once per lane, with
+      `limit_union_state_for_lane`, answering that lane's governing hit,
+      freeze start and escalation memory in one pass, for this check and
+      1c alike. A read that fails outright is reported (`guard-degraded`,
+      site `cycle:union_record:api`/`:subscription`) and the flag decides
+      alone for that lane; a union the cycle could not build (requirement
+      2.5) is treated the same way for both lanes.
 
-      A stand-down must have an exit that does not depend on a cycle
-      running: while it holds, no cycle can reach a success, so nothing
-      inside the pipeline can clear it. Without `--clear-limit` the only
-      exit was `resume_at` passing — and when `reset_known` is false that
-      is an invented time, so a stand-down could outlive its limit by up to
-      `LIMIT_LONG_COOLDOWN_HOURS` with no way to say so. It did: a spend
-      cap lifted on 2026-07-26 left the fleet down 22 further hours, and
-      again on 2026-07-28, when a spend-cap message recording a 5-hour
-      window stood the fleet down 24 hours over a limit that cleared
-      within one. Requirement 1b is the automatic exit those incidents
-      argue for; `--clear-limit`/`--close-lane`'s own lift remain the
-      manual override.
+      A stand-down must exit without a cycle running to clear it — an
+      estimated `resume_at` could otherwise outlive the real limit by up to
+      `LIMIT_LONG_COOLDOWN_HOURS` (two 2026-07 incidents did, 22h and 24h
+      over). Requirement 1b is the automatic exit; `--clear-limit`/
+      `--close-lane` remain the manual one. The logged reason states, per
+      lane, whether `resume_at` is stated or estimated, and `--status`
+      reports the fleet-wide headline (unchanged since before this issue)
+      followed by one line per currently-frozen lane of every configured
+      provider — the headline alone cannot say which lane, or that a stage
+      would simply fall through to the other.
 
-      The logged reason states, for each lane, whether its `resume_at` is a
-      stated reset or an estimate, and `--status` reports the stand-down
-      alongside the switch — the fleet-wide headline unchanged since before
-      this issue, followed by one line per currently-frozen lane of every
-      configured provider, since the headline alone cannot say which lane
-      specifically, or that a stage of this provider would simply fall
-      through to the other. Both answer "why is nothing happening?", and a
-      status that knew only about the switch is how a stale cooldown went a
-      day unexplained.
-
-      Every `limit-hit` event and `fleet/limit.json` record carries `kind:
-      "auto"`, `actor` (the detecting node — `limit-hit` events also keep
-      logging it as the event's own `node`), `provider` (the provider the
-      stage that hit the limit was running on — `lib/stage-run.sh`'s
-      `stage_provider`; issue #2133), `lane` when the launch drew one
-      (`stage_lane`; issue #2242 — absent for a substrate that manages no
-      lanes, which then governs every lane of its own provider, there being
-      only one), and `evidence` — the API's own response, truncated to 400
-      characters (the structured `rate_limit_info` object where the runner
-      supplied one, else the first matching limit line of the transcript).
-      An extension of the flag is therefore always accompanied by the
-      fresh observation that justified it, because the only writer is the
-      detector responding to a hit. `provider`/`lane` are what this check
-      scopes on: a record names only its own (provider, lane)'s stages, or
-      wider when one or both are absent. xAI's Grok Build (issue #2134) now
-      writes this path too, under its own phrase table (requirement 10),
-      naming no lane (its substrate manages none); a transient refusal on
-      either provider remains requirement 2.7's business. A `kind: manual`
-      record only ever enters `fleet/limit.json` by an operator's hand —
-      either a detector's own write re-tagged by `--clear-limit`'s sibling,
-      or `--close-lane`'s own direct write, scoped to exactly the lane
-      named and never extend-only, since an operator's act always
-      overrides whatever auto record the flag currently carries — honoured
-      until its `resume_at` passes or `--clear-limit` lifts it, never
-      probed (1b) or escalated (1c), its reason naming its `actor`,
-      provider, lane, and that it is manual; no `kind` reads as `auto`.
-      `limit-cleared` events record their own `actor` and `kind`
-      (`manual`/`auto`). This check gates only `check_provider`, both of
-      its lanes; the Implementer-launch, Enabler and Refiner re-checks
-      cover their own provider conservatively (issue #2135, not yet #2242)
-      — except the Reviewer launch, which carries none (agent-ops#2661).
+      Every `limit-hit`/`fleet/limit.json` record carries `kind: "auto"`,
+      `actor`, `provider` (`stage_provider`; issue #2133), `lane` when the
+      launch drew one (`stage_lane`; issue #2242 — absent for a substrate
+      with no lanes, governing the one it has), and `evidence` (truncated
+      to 400 characters). xAI's Grok Build (issue #2134) writes this path
+      too, naming no lane. A `kind: manual` record only ever enters
+      `fleet/limit.json` by an operator's hand — `--clear-limit`'s sibling
+      re-tag, or `--close-lane`'s own direct write scoped to exactly the
+      lane named, never extend-only, since an operator's act always
+      overrides whatever auto record is current — honoured until its
+      `resume_at` passes or `--clear-limit` lifts it, never probed (1b) or
+      escalated (1c).
    1b. *An estimated stand-down probes its own exit, independently per lane.*
-      When a lane's own governing record has `reset_known` false,
-      `resume_at` is this system's invented time and carries no information
-      about the limit — so before standing down on that lane, the Script
-      spends one minimal headless invocation of a model resolving to the
-      frozen provider (`limit_probe_model_for`, issue #2135):
-      `implementer_model_trivial` first, then this cycle's other resolved
-      models, for whichever one's `MODEL_PROVIDER` matches `check_provider`,
-      or that first one again if none does — the same resolution run once
-      when both lanes collapse onto the identical record, or once per lane
-      (through `run_model_stage`'s own lane override, issue #2242) when
-      they do not, so a provider with both lanes genuinely, independently
-      frozen can spend up to two probes in the one cycle that first notices.
-      A fixed one-line prompt, 180 s timeout, transcript kept as
-      `limit-probe.out` (or `limit-probe-api.out`/`limit-probe-
-      subscription.out` when probed per lane), through the same
-      provider-neutral `run_model_stage` (requirement 4d) every other stage
-      launches on. It is not a stage — it logs no `stage-start`, like 0h's
-      credential probe and a `<stage>-salvage` resume — but it still spends
-      real tokens, so `lib/standdown.sh` logs its own `stage-end`,
-      `stage: "limit-probe"`, carrying requirement 33a's metering record
-      (issue #2239, D30) so this spend reaches the fleet-wide ledger like
-      any other launch's. `lib/stage-health.sh`'s stage list omits
-      `limit-probe`, so this carries no verdict risk. The Script
-      classifies each probe with `limit_probe_verdict` (`lib/limit-
-      detect.sh`), against `check_provider`'s phrase table
-      (`limit_phrase_regex_for`, requirement 10): that provider's limit
-      phrase anywhere in the transcript is `limited`; a well-formed
-      envelope with `is_error: false` and a non-empty `result` is `clear`;
-      anything else — a timeout, network failure, or empty file — is
-      `inconclusive`. `clear` retires both carriers for that one
-      (provider, lane) as `--clear-limit <provider>/<lane>` would (the
-      `limit-cleared` event names `auto-probe@<node>` as `by`, carries
-      `provider` and `lane`, and deletes the flag outright only when the
-      flag's own current record still names exactly that key — strict
-      equality, never the wildcard-tolerant match, so a clear on one lane
-      never deletes a record the flag may now be carrying for the sibling
-      lane instead) and that lane opens; `limited` records the re-observed
-      hit (requirement 10) under this (provider, lane), upgrading
-      `reset_known` to true if the message states a reset; `inconclusive`
-      changes nothing. A lane still frozen after its own probe keeps the
-      provider down only if its sibling is frozen too; one lane clearing
-      while the other stays down lets the cycle proceed on the open one
-      rather than stand down at all.
+      When a lane's own governing record has `reset_known` false, the
+      Script spends one minimal headless invocation of a model resolving
+      to the frozen provider (`limit_probe_model_for`, issue #2135) before
+      standing down on that lane — once, when both lanes collapse onto the
+      identical record, or once per lane (through `run_model_stage`'s own
+      lane override, issue #2242) when they genuinely differ, so a
+      provider with both lanes independently frozen can spend up to two
+      probes the cycle that first notices. A fixed one-line prompt, 180 s
+      timeout, transcript kept as `limit-probe.out` (or `limit-probe-
+      api.out`/`limit-probe-subscription.out` per lane), through the same
+      `run_model_stage` every stage launches on; not a stage itself (no
+      `stage-start`), but its own `stage-end` carries requirement 33a's
+      metering record (issue #2239, D30) regardless. The Script classifies
+      each probe with `limit_probe_verdict` against `check_provider`'s
+      phrase table: `limited`, `clear` (a well-formed envelope with
+      `is_error: false` and a non-empty `result`), or `inconclusive`
+      (anything else). `clear` retires both carriers for that one
+      (provider, lane) as `--clear-limit <provider>/<lane>` would — the
+      flag deleted only by strict equality, so a clear on one lane never
+      touches a record the flag may be carrying for the sibling — and that
+      lane opens; `limited` records the re-observed hit under this
+      (provider, lane); `inconclusive` changes nothing. A lane still frozen
+      after its own probe keeps the provider down only if its sibling is
+      too; one lane clearing while the other stays down lets the cycle
+      proceed on the open one instead of standing down at all.
 
-      The economics run the right way round on both sides: a limited account
-      answers the probe with the limit message at no token cost, and an
-      unlimited one answers once for a fraction of a cent — the first `clear`
-      verdict retires that lane's stand-down fleet-wide, so its gate stops
-      firing. A *stated* reset is never probed (the message named the time; asking
-      earlier is the one spend that buys nothing), and `--dry-run` never
-      probes (a cycle that promises to change nothing must not write
-      `limit-cleared`, and a verdict it would have to ignore is pure cost).
-      Nor is a `kind: manual` record ever probed, on either lane: it is an
-      operator's decision, not a detector's inference, and no verdict is
-      evidence about whether the human still means it — a probe must never
-      clear a deliberate human stand-down (#244), including one written by
-      `--close-lane`.
+      The first `clear` verdict retires that lane's stand-down
+      fleet-wide. A *stated* reset is never probed, nor is `--dry-run`
+      ever probed. Nor is a `kind: manual` record, on either lane: no
+      probe verdict is evidence the human still means it (#244), including
+      a closure `--close-lane` wrote.
    1c. *A long-running automatic freeze escalates; a manual stand-down never
       pages; one open lane is a share shift, not an outage.* While an
       automatic stand-down holds — every lane of `check_provider` frozen —
       the Script ages it from the moment the provider genuinely had no open
-      lane left, not from whichever lane froze first: when both lanes
-      collapse onto the identical record (the common case: a hit before
-      issue #2242 named no lane at all, or the provider's own substrate
-      manages none), this is simply `limit_union_state_for_lane`'s own
-      `since` for that one record — the `ts` of the first `limit-hit` after
-      the last `limit-cleared` in that bucket, the start of the current
-      freeze, not its latest extension — exactly as before this issue. When
-      the two lanes are genuinely frozen under different records, the
-      escalation ages from the **later** of their own two `since` values
-      (restricted to whichever lane(s) are automatic — a `kind: manual`
-      lane contributes no `since` at all), never the earlier: anchoring on
-      the earlier lane would escalate the moment its sibling also froze,
-      even a second ago, for a freeze that spent most of its own age as one
-      lane down beside an open sibling — a share shift a stage simply fell
-      through around, not an outage, and paging for it would page the
-      owner for the fallthrough mechanism working exactly as designed. When
-      the union holds no live hit for either lane — the stand-down rests on
-      `fleet/limit.json` alone — it ages from the governing record's own
-      `ts` instead: when `fleet_limit_publish`/`fleet_limit_close_lane`
-      (`lib/toggle.sh`) last wrote it, i.e. the latest extension (or, for a
-      manual closure, the time it was set). A provider frozen by two manual
-      closures never escalates at all, on either lane. Once the resulting
-      age reaches `limit_escalate_after_hours` (0 disables the check), it
-      files an escalation issue in `crash_loop_repo` — label
-      `enabler_escalation_label`, assignee `enabler_assignee`, body
-      carrying both lanes' own governing records and resumes, the
-      provider, which lane(s) aged it, and the item ref
-      `usage-limit-freeze:<provider>:<since>` — through the same
-      duplicate-guarded `create_escalation_issue` the Enabler and the
-      crash-loop check use, and logs `limit-freeze-escalated` with the
-      issue, the provider, the automatic lane(s) that aged it (`lanes`),
-      and the time/basis it aged from (`since`/`since_basis`: `union` or
-      `flag`). This makes the escalation once-per-freeze-per-provider: a
-      cycle finding one naming this provider whose `since` matches does not
-      file again — folded into every lane bucket the event's own
-      (lane-)wildcard reaches, so either lane's own read finds the same
-      memory — and the open-issue guard catches the cross-node race the
-      union has not yet carried. A flag-only freeze that is extended gets a
-      new `since`, and so is aged and escalated afresh from that extension.
-      A failed filing logs a `warning` and retries next cycle. Skipped on
-      `--dry-run`, when `crash_loop_repo` or `enabler_assignee` is unset,
-      and always when every automatic-lane gate above leaves nothing to
-      age (both lanes manual). Skipped too, for that cycle, when the union
-      could not be built or read for either lane (1's `union_state_ok`):
-      whether this freeze was already escalated cannot then be told, so
-      nothing is filed, a `warning` says so, and the next cycle tries
-      again — filing anyway would rest on the open-issue guard alone,
-      which a closed escalation passes. And when a record carries no
-      usable `ts`, the age test is skipped and reported (`guard-degraded`,
-      site `freeze_since:flag`, or `freeze_since:api`/`freeze_since:
-      subscription` for the split-lane form); it never runs on an empty
-      time, since GNU `date -d ""` answers midnight today.
+      lane left, not from whichever lane froze first. When both lanes
+      collapse onto the identical record this is simply that one record's
+      own `since` — the `ts` of the first `limit-hit` after the bucket's
+      last `limit-cleared` — exactly as before this issue. When the two
+      lanes genuinely differ, the escalation ages from the **later** of
+      their own two `since` values (restricted to whichever lane(s) are
+      automatic), never the earlier: anchoring on the earlier lane would
+      escalate the instant its sibling also froze, even a second ago, for a
+      freeze that spent most of its age as one lane down beside an open
+      sibling — a share shift a stage simply fell through around, not an
+      outage, and paging for it would page the owner for the fallthrough
+      mechanism working as designed. When the union holds no live hit for
+      either lane, it ages from the governing record's own `ts` instead —
+      the latest extension, or a manual closure's own set time. A provider
+      frozen by two manual closures never escalates.
+
+      Once the resulting age reaches `limit_escalate_after_hours` (0
+      disables it), it files an escalation issue in `crash_loop_repo` —
+      body carrying both lanes' own records/resumes, the provider, which
+      lane(s) aged it, and item ref `usage-limit-freeze:<provider>:<since>`
+      — through the same duplicate-guarded `create_escalation_issue` the
+      Enabler uses, and logs `limit-freeze-escalated` with the issue, the
+      provider, the automatic lane(s) that aged it (`lanes`), and
+      `since`/`since_basis` (`union` or `flag`). Once-per-freeze-per-
+      provider: the event names no lane, so it folds into every lane bucket
+      seen so far, and either lane's own read finds the same memory. A
+      flag-only freeze that is extended gets a new `since` and escalates
+      afresh. Skipped on `--dry-run`, when `crash_loop_repo` or
+      `enabler_assignee` is unset, when both lanes are manual, or when the
+      union could not be built or read for either lane — reported
+      (`guard-degraded`, site `freeze_since:flag`, or `freeze_since:api`/
+      `:subscription` for the split-lane form) rather than run on an empty
+      time.
    1a. *Claim GC*: run `lib/claim.sh gc` (requirement 17a) — best-effort,
       skipped on `--dry-run` — so registry entries a dead node left behind
       are swept before back-pressure counts them. Every node runs it; no
