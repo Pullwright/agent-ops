@@ -360,9 +360,13 @@ if [[ "$standdown_block" != *"standdown_cause="* ]]; then
 fi
 
 # run_standdown ATTEMPTS UNREACHABLE SKIPS RACE_LOSSES TRACE_FAULTS \
-#   ONCE CHAIN_COUNT MAX ORDERED
+#   ONCE CHAIN_COUNT MAX ORDERED [VOID_SKIPS]
 # Prints the block's own stand-down event line as "EVENT stand-down <payload>
 # chain=<chain_eligible as the block left it>".
+# VOID_SKIPS (requirement 4g's backstop, issue #2876) is trailing and
+# defaults to 0 so that every case predating it reads unchanged — which is
+# itself the assertion that the new rung cannot fire where nothing was
+# refused as void.
 run_standdown() {
   (
     # Consumed by the eval'd block, which shellcheck cannot see into.
@@ -374,6 +378,8 @@ run_standdown() {
     trace_faults="$5"
     # shellcheck disable=SC2034
     ONCE="$6" chain_count="$7" max_chained_cycles="$8" ordered_repos_json="${9}"
+    # shellcheck disable=SC2034
+    void_skips="${10:-0}"
     chain_eligible=0
     # Called only from inside the eval'd block, which shellcheck cannot see.
     # shellcheck disable=SC2317,SC2329
@@ -434,6 +440,36 @@ assert_eq "…carrying its own fault count" "3" \
 
 out="$(run_standdown 1 0 0 1 2 0 1 3 "$sources_remain")"
 assert_eq "a genuine loss beside untraceable faults still reads raced" "raced" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.cause')"
+assert_eq "…and chains like any raced stand-down" "chain=1" "${out##* }"
+
+# Requirement 4g's backstop refusing every candidate (issue #2876). Folding
+# these refusals into `claim_skips` made this shape report `pre-claimed`,
+# which node_time_state_for_cause translates to `peer-claimed` — a peer
+# holding an item no peer ever saw, and the opposite of the signal a failed
+# band write-back should raise.
+out="$(run_standdown 0 0 0 0 0 0 1 3 "$sources_remain" 2)"
+assert_eq "every candidate void or 34p-escalated stands down void-or-escalated" "void-or-escalated" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.cause')"
+assert_eq "…and never chains into the same leaked band" "chain=0" "${out##* }"
+assert_eq "…carrying its own refusal count" "2" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.void_skips')"
+assert_eq "…and no claim_skips key, since nothing was pre-claimed" "null" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.claim_skips')"
+
+# Ranked above pre-claimed where a cycle saw both: a pre-claimed candidate is
+# work the fleet is doing elsewhere, a void one is work nothing should do.
+out="$(run_standdown 0 0 3 0 0 0 1 3 "$sources_remain" 1)"
+assert_eq "a void refusal beside pre-claimed skips names the void one" "void-or-escalated" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.cause')"
+assert_eq "…still carrying both counts for a reader" "3 1" \
+  "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" \
+     | jq -r '"\(.claim_skips) \(.void_skips)"')"
+
+# But a real attempt outranks both: a cycle that actually raced is reporting
+# contention, whatever its unattempted candidates were.
+out="$(run_standdown 1 0 0 1 0 0 1 3 "$sources_remain" 2)"
+assert_eq "a genuine loss beside void refusals still reads raced" "raced" \
   "$(sed 's/^EVENT stand-down //; s/ chain=.*$//' <<<"$out" | jq -r '.cause')"
 assert_eq "…and chains like any raced stand-down" "chain=1" "${out##* }"
 

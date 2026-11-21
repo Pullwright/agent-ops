@@ -985,6 +985,20 @@
       sources; this closes the derived ones), and counting it as a race
       would corrupt the contention signal 17d exists to keep honest. Skips
       count toward neither `claim_attempts` nor `race_losses`.
+    - A candidate still **void**, or still carrying a 34p repeated-void-
+      refusal escalation, is **refused without an attempt** on the same
+      principle, as requirement 4g's second line of defence (issue #2876):
+      `candidate_void_or_escalated` (`lib/candidate-select.sh`) checks its
+      repo+item against the void and 34p-escalated sets ahead of 17h's
+      compose, logs `claim-skipped` with `cause: "void-or-escalated"`, and
+      moves on. Requirements 3t/3u should have dropped it already, so one
+      reaching here means that subtraction did not take effect — the failure
+      4g's `lib/eligibility.sh` write-backs are converted against.
+      `blocked_json` is deliberately **not** checked here: a plain block may
+      still be owed its 18a live re-read, where a void or an escalation
+      drops a candidate unconditionally. Counted as `void_skips`, apart from
+      `claim_skips` above and toward neither `claim_attempts` nor
+      `race_losses`.
     - Claims **fail closed** per candidate: any outcome other than a won
       claim (a lost race, or GitHub unreachable) moves to the next
       candidate. Each miss logs `claim-lost` with a `cause` — `held` for
@@ -1007,16 +1021,29 @@
       could not have pushed the work either. A cycle that attempted nothing
       at all because every candidate was skipped as pre-claimed stands down
       with reason "every candidate was already claimed before this cycle's
-      Co-Ordinator ran — skipped without an attempt". This `stand-down`
+      Co-Ordinator ran — skipped without an attempt". One that attempted
+      nothing because every candidate was refused by the backstop above
+      stands down with "every candidate was still void or 34p-escalated —
+      refused without an attempt" instead, named ahead of the pre-claimed
+      reason where a cycle saw both. This `stand-down`
       event also carries the same distinction structured, as `cause` —
-      `raced`, `unreachable`, `pre-claimed` or `untraceable` (requirement
-      17f, and requirement 17h's own fail-closed refusal, name the last one,
+      `raced`, `unreachable`, `pre-claimed`, `untraceable` or
+      `void-or-escalated` (requirement
+      17f, and requirement 17h's own fail-closed refusal, name `untraceable`,
       with its own reason and its own counter) — so a reader (the dashboard
       included) does not have to re-parse the reason text (issue #245), plus
-      `claim_skips` whenever any candidate was skipped and `trace_faults`
-      whenever the traceability check faulted one, whatever the cause. A
+      `claim_skips` whenever a candidate was skipped as pre-claimed,
+      `void_skips` whenever one was refused void/34p-escalated, and
+      `trace_faults`
+      whenever the traceability check faulted one, whatever the cause.
+      `void-or-escalated` alone is an **alias**, translating onto the
+      canonical `coordinator-declined` token (`node_time_state_for_cause`,
+      `lib/node-time-state.sh`) exactly as `untraceable` does, so the closed
+      vocabulary `docs/reference/reasons.md` catalogues does not grow.
+      A
       `raced` stand-down chains another selection cycle under requirement
-      39 (Finish-then-continue)'s ordinary bounds; `unreachable`, `pre-claimed` and `untraceable`
+      39 (Finish-then-continue)'s ordinary bounds; `unreachable`,
+      `pre-claimed`, `untraceable` and `void-or-escalated`
       never chain — re-running into the same outage or the same selection
       defect buys a second Co-Ordinator engagement and the same ending.
       A win that followed one or more

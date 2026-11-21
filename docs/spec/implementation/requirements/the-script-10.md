@@ -669,7 +669,9 @@
     exhausts every candidate — before it stood down. Carried as
     `race_losses` on the `selection` event (only when it is greater than
     zero — 17a) and on that stand-down's event. Candidates skipped as
-    pre-claimed (17a's `claim-skipped`) are deliberately *not* race
+    pre-claimed, and candidates refused as void or 34p-escalated (both
+    17a's `claim-skipped`, counted as `claim_skips` and `void_skips`
+    respectively), are deliberately *not* race
     losses and never inflate this count: a loss knowable from the cycle's
     own gather is a selection defect wearing contention's clothes, and
     folding it in would make the fleet look busier against itself than it

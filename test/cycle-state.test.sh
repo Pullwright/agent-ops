@@ -804,6 +804,37 @@ assert_eq "an item in neither set is not refused" "false" "$(cat "$tmp_dir/cve-n
 assert_eq "malformed void/escalated input fails open (not refused)" "false" \
   "$(cat "$tmp_dir/cve-malformed.flag")"
 
+# --- …and the claim loop's wiring of it (requirement 17a) ------------------
+# Pinned against the library source, the way test/refinement-traceability.
+# test.sh pins requirement 17f's own counter: driving the whole claim loop
+# here would need a live GitHub and a won claim, and what matters is the one
+# thing a reader cannot see from `candidate_void_or_escalated` alone — that
+# its refusals are counted apart from the pre-claimed ones, so the stand-down
+# ladder names them. Folding them into `claim_skips` instead made a cycle
+# that refused its own void work report `pre-claimed`, which
+# `node_time_state_for_cause` translates to `peer-claimed` — a peer holding
+# an item no peer had ever seen, and the opposite of the signal the band
+# write-back's own failure is supposed to raise.
+coordinator_phase_lib="$SCRIPT_DIR/lib/coordinator-phase.sh"
+cve_loop_src="$(sed -n '/^  if candidate_void_or_escalated /,/^  fi$/p' "$coordinator_phase_lib")"
+assert_eq "the claim loop counts a void/escalated refusal as void_skips, not claim_skips" "yes" \
+  "$(# shellcheck disable=SC2016  # the literal source text is what is being matched
+     [[ "$cve_loop_src" == *'void_skips=$(( void_skips + 1 ))'* \
+       && "$cve_loop_src" != *'claim_skips=$(( claim_skips + 1 ))'* ]] && echo yes || echo no)"
+assert_eq "...and logs the refusal under its own claim-skipped cause" "yes" \
+  "$([[ "$cve_loop_src" == *'cause: "void-or-escalated"'* ]] && echo yes || echo no)"
+assert_eq "a void/escalated stand-down has its own cause, never pre-claimed" "yes" \
+  "$(grep -q 'standdown_cause="void-or-escalated"' "$coordinator_phase_lib" && echo yes || echo no)"
+assert_eq "...decided by void_skips alone, ahead of the pre-claimed rung" "yes" \
+  "$(sed -n '/claim_attempts == 0 \&\& void_skips > 0/,/claim_attempts == 0 \&\& claim_skips > 0/p' \
+       "$coordinator_phase_lib" | grep -q 'standdown_cause="void-or-escalated"' && echo yes || echo no)"
+assert_eq "...and the count reaches the stand-down event for a reader" "yes" \
+  "$(# shellcheck disable=SC2016  # a literal jq variable reference, not a shell one
+     grep -q 'void_skips: \$vs' "$coordinator_phase_lib" && echo yes || echo no)"
+# The cause is an alias, not a nineteenth code — that it translates onto an
+# existing canonical token is pinned in test/node-time-state.test.sh, beside
+# the other three aliases.
+
 # --- void_refusal_escalated_since (the escalation filer's own dedup) ---
 cat > "$log" <<'EOF'
 {"ts":"2026-11-02T06:00:00Z","event":"void-refusal-escalated","repo":"Poetic-Poems/poetic","item":"297"}

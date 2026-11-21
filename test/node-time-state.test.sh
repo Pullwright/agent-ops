@@ -14,10 +14,11 @@
 #   balances            the sum of every state plus `unaccounted`, asserted
 #                        on a fixture exercising every state at once.
 #   the cause           idle-with-demand seconds are split by the four D21
-#   translation         causes; the three pre-existing stand-down causes this
+#   translation         causes; the four stand-down causes this
 #                        requirement does not rename (raced, pre-claimed,
-#                        untraceable) translate to peer-claimed/
-#                        coordinator-declined via node_time_state_for_cause.
+#                        untraceable, void-or-escalated) translate to
+#                        peer-claimed/coordinator-declined via
+#                        node_time_state_for_cause.
 #   absence is down     a node with zero events in the window, and a node
 #                        whose first event lands partway through it, both
 #                        score `down` for the ungoverned stretch.
@@ -116,6 +117,12 @@ assert_eq "pre-claimed translates to idle-with-demand/peer-claimed" \
   "idle-with-demand	peer-claimed" "$(node_time_state_for_cause pre-claimed)"
 assert_eq "untraceable translates to idle-with-demand/coordinator-declined" \
   "idle-with-demand	coordinator-declined" "$(node_time_state_for_cause untraceable)"
+# Issue #2876: requirement 4g's void/34p-escalated backstop refusing every
+# candidate is the Co-Ordinator declining eligible-looking work, not a peer
+# holding it — so it shares `untraceable`'s canonical token rather than
+# `pre-claimed`'s, and adds no nineteenth code to the closed vocabulary.
+assert_eq "void-or-escalated translates to idle-with-demand/coordinator-declined" \
+  "idle-with-demand	coordinator-declined" "$(node_time_state_for_cause void-or-escalated)"
 assert_eq "no-demand maps to idle-without-demand" \
   "idle-without-demand	no-demand" "$(node_time_state_for_cause no-demand)"
 assert_eq "an unrecognised cause maps to nothing — never guessed at" \

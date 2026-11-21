@@ -167,6 +167,13 @@ Every candidate failed the refinement traceability or compose check; no claim wa
 - **Is a fault?** Yes. Check refinement configuration and work-order composition.
 - **What to do:** Review the Refiner stage output and check for configuration drift.
 
+### `void-or-escalated`
+
+Every candidate was still void, or still carried a repeated-void-refusal escalation; all were refused before a claim was attempted.
+
+- **Is a fault?** Yes. The band-eligibility pass should have dropped these candidates before the Co-Ordinator ever saw them, so reaching the claim loop means that subtraction did not take effect.
+- **What to do:** Check the union log for a `guard-degraded` warning naming a repo and band (`eb_write`, `iss_write` or `db_write`): the band write-back failed, and the unfiltered band was kept. Translates to `coordinator-declined` on the `node-state` event.
+
 ### `no-demand`
 
 No eligible work exists. The pipeline has nothing to do.
