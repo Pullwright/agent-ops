@@ -183,16 +183,24 @@ M3. <a id="mon-m3"></a>**CronJob-shaped.** The Monitor uses no Docker socket, no
    that the pipeline's runtime container holds neither the Docker socket nor
    the Kubernetes API.
 
-M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check, in full, scoped to
+M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check, scoped to
    `monitor_model`'s own provider (issue #2135) — this pipeline runs one
    stage against one model, resolved before this check, so there is nothing
    else here to scope separately the way the implementation pipeline's
    Implementer launch is: the log union (as fresh as the
    last fetch), narrowed to that provider, and `fleet/limit.json` (read
-   live, narrowed the same way), later resume wins. A cooldown in force
-   stands the run down before the digest is built. The union is read with
-   requirement 2.1's reduction, which skips a line that does not parse; a
-   read that fails outright, or a union that could not be built
+   live, narrowed the same way), later resume wins. Deliberately not
+   scoped one level further to the lane (issue #2242): this run reads
+   `limit_union_state_for`/`fleet_limit_resume_at_for`'s own 3-argument,
+   provider-only form, the same conservative "any lane of my provider is
+   frozen" answer requirement 2.1's own Enabler/Refiner re-checks give,
+   rather than `monitor_model`'s own lane-aware fallthrough — a single-stage
+   pipeline has no sibling launch to fall through to within the same run in
+   any case, so the extra precision would cost a second read and a second
+   probe for an answer this check would still only use coarsely. A cooldown
+   in force stands the run down before the digest is built. The union is
+   read with requirement 2.1's reduction, which skips a line that does not
+   parse; a read that fails outright, or a union that could not be built
    (`fleet_logs` failing, requirement 2.5), is logged as a `warning` and
    leaves the flag to decide alone. Both of the run's snapshots, of
    `log.jsonl` and of `monitor-log.jsonl`, are built by `fleet_logs`, which

@@ -457,6 +457,23 @@ above). A provider whose resolved record's `resume_at` has already passed,
 with no `limit-cleared` logged yet, is left out: the fleet is not standing
 down on a limit it already outlived.
 
+Deliberately not scoped one level further, to the lane the hit actually
+named (issue #2242 — the credential path, `api` or `subscription`): this
+badge stays the provider's own "any lane frozen" verdict, the same
+conservative reading requirement 2.1's own Enabler and Refiner re-checks
+give, rather than the finer "every lane frozen" the pipeline's own
+stand-down gate now computes. A provider reported here as standing down may
+in fact have one lane still open, with its stages quietly falling through
+to it rather than actually idling — which `agent-cycle.sh --status` and
+`scripts/node-health.sh --metrics` both say plainly, one line per
+currently-frozen lane, because an operator deciding whether to intervene
+needs exactly that distinction and this badge is not where they would look
+for it. Widening the badge itself to match would cost a second union read
+per candidate for a verdict the Site renders no differently either way —
+the badge's own job is "is anything here worth a human's attention", and a
+provider with one lane down and one running normally answers that no more
+urgently than one with neither frozen at all.
+
 Each entry carries the raw fields `limit_reset_known`/`limit_describe`
 (`lib/limit-detect.sh`) need — `resume_at`, `class`, `reset_known` (itself
 computed by `limit_reset_known`, which reads the superseded `needs_human` on

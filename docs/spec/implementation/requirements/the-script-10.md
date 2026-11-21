@@ -455,41 +455,77 @@
     included: a flag the parser honours but the usage omits is one an
     operator can only find by reading the source.
 
-    `--clear-limit [<provider>] [<reason>]` lifts a usage-limit stand-down
-    (2.1) and runs no cycle either. With no provider, every provider's own
-    stand-down lifts, as before issue #2135; naming one (matched against
-    `PROVIDER_SUBSTRATE`'s configured keys, plus the always-valid
-    `anthropic`) lifts only that provider's, leaving a different provider's
-    own freeze untouched. Which of up to two bare tokens is the provider and
-    which the reason is resolved against that same set, after
-    `providers_load`: one token is the provider only if it names one and the
-    reason otherwise, exactly as before the issue; two tokens are provider
-    then reason, and a first token naming no configured provider is rejected
-    (exit 64) rather than scoped to a provider that does not exist — there is
-    no second reading of two bare tokens, and a silent mis-scope would log a
-    `limit-cleared` nothing reads. It is deliberately not `--enable`: the switch and
-    the stand-down are separate states with separate causes, and one command
-    for both would let an operator clearing a spend cap silently re-enable a
-    pipeline another agent had disabled to edit these files. It clears both
-    carriers for the named scope, reports what it lifted and what it could
-    not, and warns loudly on a failed flag delete — a flag left set keeps
-    every node down after the operator believes they have resumed; naming a
-    provider deletes the flag only when the flag's own current record already
-    names that provider, leaving a different or wildcard record untouched.
-    A scoped clear then re-reads both carriers for that provider rather than
-    inferring success from what it wrote, and warns that the stand-down is
-    *not* lifted when one still holds it down, naming the bare
-    `--clear-limit` that can clear it. That is not a defensive extra: a
-    wildcard record — carrying no `provider`, as every record before issue
-    #2133 does — governs every provider by requirement 2.1's "a record
-    without one applies to every provider" rule, and *neither* carrier can
-    express "every provider but this one", so a scoped clear genuinely
-    cannot lift one. The union's `limit-cleared` resets only the named
-    provider's own bucket and leaves the wildcard bucket standing; the flag
-    is left in place by the rule just above. Reporting that as lifted is the
-    failure this command exists to end. The reason is
-    optional, unlike `--disable`'s: a stand-down being lifted is
-    self-explanatory in a way one being imposed is not.
+    `--clear-limit [<provider>[/<lane>]] [<reason>]` lifts a usage-limit
+    stand-down (2.1) and runs no cycle either. With no provider, every
+    provider's own stand-down lifts, as before issue #2135; naming one
+    (matched against `PROVIDER_SUBSTRATE`'s configured keys, plus the
+    always-valid `anthropic`) lifts only that provider's, leaving a
+    different provider's own freeze untouched; naming `<provider>/<lane>`
+    (`api` or `subscription`, issue #2242) narrows it one level further, to
+    only that lane, leaving the sibling lane's own freeze — and every other
+    provider's — untouched. Which of up to two bare tokens is the
+    provider[/lane] and which the reason is resolved against that same
+    configured set, after `providers_load`: one token is the
+    provider[/lane] only if its provider half names one, and the lane half
+    (if given) is `api` or `subscription`, and the reason otherwise, exactly
+    as before the issue; two tokens are provider[/lane] then reason, and a
+    first token naming no configured provider, or naming one with a lane
+    half that is neither `api` nor `subscription`, is rejected (exit 64)
+    rather than scoped to something that does not exist — there is no
+    second reading of two bare tokens, and a silent mis-scope would log a
+    `limit-cleared` nothing reads. It is deliberately not `--enable`: the
+    switch and the stand-down are separate states with separate causes, and
+    one command for both would let an operator clearing a spend cap
+    silently re-enable a pipeline another agent had disabled to edit these
+    files. It clears both carriers for the named scope, reports what it
+    lifted and what it could not, and warns loudly on a failed flag delete
+    — a flag left set keeps every node down after the operator believes
+    they have resumed; naming a provider (or provider/lane) deletes the
+    flag only when the flag's own current record already names exactly
+    that key — by strict equality, never the wildcard-tolerant match the
+    stand-down check itself applies — leaving a different or wider record
+    untouched. A scoped clear then re-reads both carriers for that same key
+    rather than inferring success from what it wrote, and warns that the
+    stand-down is *not* lifted when a wider record still holds it down,
+    naming the less-scoped `--clear-limit` form that can clear it (bare, or
+    with no lane, depending on which widening still applies). That is not a
+    defensive extra: a wildcard record — carrying no `provider`, as every
+    record before issue #2133 does, or carrying a provider but no `lane`, as
+    every record before issue #2242 does — governs every provider, or
+    every lane of the named provider, by requirement 2.1's "a record
+    without one applies to every provider/lane" rule, and *neither* carrier
+    can express "every provider/lane but this one", so a scoped clear
+    genuinely cannot lift one. The union's `limit-cleared` resets only the
+    named key's own bucket and leaves the wider bucket standing; the flag is
+    left in place by the rule just above. Reporting that as lifted is the
+    failure this command exists to end. The reason is optional, unlike
+    `--disable`'s: a stand-down being lifted is self-explanatory in a way
+    one being imposed is not.
+
+    `--close-lane <provider>/<lane> [--for <90m|4h|2d|forever>] [--until
+    <timestamp>] [--reason <text>]` (issue #2242) stops one lane of one
+    provider by hand — a terms concern with that credential path, say —
+    without an image roll, and runs no cycle either. A required bound
+    (`--for`/`--until`, same grammar as `--disable`/`--drain`): an unbounded
+    closure with no reminder is how a terms concern becomes a silent,
+    permanent half-outage, and `--for forever` states that choice
+    explicitly rather than leaving it the default the way a bare
+    `--clear-limit` or `--disable` would. Writes the local record first,
+    then a `kind: "manual"` record to `fleet/limit.json` for exactly that
+    (provider, lane) — never extend-only, unlike every other write to this
+    file: an operator's own act always overrides whatever automatic record
+    the flag currently carries for that key. It is on `fleet/limit.json`
+    and not `fleet/mix.json` (the credit-mix lever, D30) because a closure
+    must fail *closed*: `fleet/limit.json`'s own "no lane named applies to
+    every lane of its provider" rule means a node on an older image, which
+    cannot read this record's own `lane` field at all, stands the whole
+    provider down rather than reading nothing — the same "an old reader
+    fails closed" direction issue #2135's own provider scoping chose —
+    whereas the lever fails *open* to its configured share for exactly that
+    same old-reader case (issue #2244), which is the wrong default for a
+    closure. Never probed (1b) or auto-cleared (requirement 2, #244) — a
+    manual record never is — and lifted only by `--clear-limit
+    <provider>/<lane>` or its own bound passing.
 
     `--kill-merge-autonomy [<reason>]` and `--restore-merge-autonomy`
     (requirement 2.3b) manage the D18 kill switch and run no cycle either. Like
