@@ -308,18 +308,22 @@ limit_probe_verdict() {
 #
 # `limit_union_fold(NAMES)` folds UNION_STREAM_JQ's `union_events` over the
 # events LIMIT_UNION_EVENTS declares, into one bucket per `provider` (issue
-# #2135) — `.by["anthropic"]`, `.by["xai"]`, … — plus the empty-string bucket
-# `.by[""]` for an event with no `provider` field at all: every `limit-hit`
-# this system wrote before issue #2133, and any `limit-cleared`/
-# `limit-freeze-escalated` written with no provider named, because clearing
-# or escalating "every provider" is still how `--clear-limit`/a freeze with
-# no live hit behave with no argument. A wildcard `limit-cleared`/
+# #2135) *and then* per `lane` within it (issue #2242) —
+# `.by["anthropic"]["api"]`, `.by["anthropic"]["subscription"]`, … — plus the
+# empty-string bucket at each level for an event naming no provider (every
+# `limit-hit` this system wrote before issue #2133) or no lane (every
+# `limit-hit` written before this issue, and any `limit-cleared`/
+# `limit-freeze-escalated` naming no lane, since "every lane" is still how
+# `--clear-limit <provider>`/a freeze with no live hit behave with no lane
+# named): "a record without one applies to every provider/lane" is the one
+# rule, applied at both levels. A wildcard `limit-cleared`/
 # `limit-freeze-escalated` resets or marks every bucket the fold has seen so
-# far, not only `""` — `limit_union_state_for` below is what re-widens a
-# single provider's answer to also honour that bucket, so a pre-#2133 record
-# (or an explicit fleet-wide clear) still governs every provider, the same
-# "a record without one applies to every provider" rule requirement 2.1's own
-# `fleet/limit.json` carries (`limit_flag_record_for` below). Each bucket
+# far at the level(s) it names, not only the empty bucket — `limit_union_fold_for`/
+# `limit_union_fold_for_lane` below are what re-widen a single
+# provider's (or provider/lane's) answer to also honour the wildcard buckets,
+# so a pre-#2133 or pre-#2242 record (or an explicit wildcard clear) still
+# governs every provider or every lane, the same rule requirement 2.1's own
+# `fleet/limit.json` carries (`limit_flag_record_for` below). Each leaf bucket
 # answers three things, the same three `limit_union_state`/
 # `limit_union_state_for` have always printed for the single-record fold this
 # replaces:
@@ -357,24 +361,37 @@ limit_probe_verdict() {
 # the second (`guard_warn` in agent-cycle.sh, a `warning` event in the review
 # and monitor cycles) rather than act on it silently.
 LIMIT_UNION_EVENTS='limit-hit limit-cleared limit-freeze-escalated'
-# shellcheck disable=SC2016  # jq's own $names/$e/$prov
+# shellcheck disable=SC2016  # jq's own $names/$e/$prov/$lane
 LIMIT_UNION_JQ='
   def limit_union_bucket: {record: null, first: null, escalated: []};
+  # The lane sub-buckets a provider bucket has already seen, plus the
+  # lane-wildcard bucket itself — what a wildcard-lane clear/escalation
+  # targets within one provider, mirroring limit_union_fold'\''s own
+  # provider-wildcard targeting one level up.
+  def limit_union_seen_lanes($prov_bucket):
+    (($prov_bucket // {}) | keys_unsorted) + [""] | unique;
   def limit_union_fold($names):
     reduce union_events($names) as $e ({by: {}};
       ($e.provider // "") as $p |
+      ($e.lane // "") as $l |
       if $e.event == "limit-hit" then
-        .by[$p] = ((.by[$p] // limit_union_bucket) | .record = $e | .first = (.first // $e))
+        .by[$p][$l] = ((.by[$p][$l]? // limit_union_bucket) | .record = $e | .first = (.first // $e))
       elif $e.event == "limit-cleared" then
-        (if $p == "" then (.by | keys_unsorted) else [$p] end) as $ks |
-        reduce $ks[] as $k (.; .by[$k] = ((.by[$k] // limit_union_bucket) | .record = null | .first = null))
+        (if $p == "" then (.by | keys_unsorted) else [$p] end) as $pks |
+        reduce $pks[] as $pk (.;
+          (if $l == "" then limit_union_seen_lanes(.by[$pk]?) else [$l] end) as $lks |
+          reduce $lks[] as $lk (.;
+            .by[$pk][$lk] = ((.by[$pk][$lk]? // limit_union_bucket) | .record = null | .first = null)))
       elif $e.event == "limit-freeze-escalated" then
-        (if $p == "" then (.by | keys_unsorted) else [$p] end) as $ks |
-        reduce $ks[] as $k (.; .by[$k] = ((.by[$k] // limit_union_bucket) | .escalated += [$e.since | strings]))
+        (if $p == "" then (.by | keys_unsorted) else [$p] end) as $pks |
+        reduce $pks[] as $pk (.;
+          (if $l == "" then limit_union_seen_lanes(.by[$pk]?) else [$l] end) as $lks |
+          reduce $lks[] as $lk (.;
+            .by[$pk][$lk] = ((.by[$pk][$lk]? // limit_union_bucket) | .escalated += [$e.since | strings])))
       else . end)
-    | .by |= map_values({record, since: (.first.ts // null), escalated});
-  def limit_union_bucket_or_empty($by; $key):
-    $by[$key] // {record: null, since: null, escalated: []};
+    | .by |= map_values(map_values({record, since: (.first.ts // null), escalated}));
+  def limit_union_bucket_or_empty($by; $prov; $lane):
+    ($by[$prov][$lane]?) // {record: null, since: null, escalated: []};
   # The later of two buckets by resume_at, lexicographically — every
   # resume_at this system ever writes is the same fixed-width
   # `date -u ... +%Y-%m-%dT%H:%M:%SZ` shape, which sorts the same as text as
@@ -383,19 +400,44 @@ LIMIT_UNION_JQ='
   def limit_bucket_later($a; $b):
     if ($a.record != null) and (($b.record == null) or (($a.record.resume_at // "") > ($b.record.resume_at // "")))
     then $a else $b end;
+  def limit_bucket_combine($buckets):
+    ($buckets | reduce .[] as $c ({record: null, since: null, escalated: []}; limit_bucket_later(.; $c))) as $top |
+    {record: $top.record, since: $top.since, escalated: ($buckets | map(.escalated) | add // [])};
+  # limit_union_fold_for_lane: the exact (provider, lane) bucket, widened by
+  # both wildcards — provider-wildcard/lane-wildcard, provider-wildcard/this
+  # lane, this provider/lane-wildcard, this provider/this lane — "later
+  # resume wins" applied across all four (issue #2242).
+  def limit_union_fold_for_lane($names; $prov; $lane):
+    limit_union_fold($names) as $u |
+    limit_bucket_combine([
+      limit_union_bucket_or_empty($u.by; ""; ""),
+      limit_union_bucket_or_empty($u.by; ""; $lane),
+      limit_union_bucket_or_empty($u.by; $prov; ""),
+      limit_union_bucket_or_empty($u.by; $prov; $lane)
+    ]);
+  # limit_union_fold_for: PROV'\''s own answer collapsed across both of its
+  # lanes (api/subscription) plus the lane-wildcard bucket — the answer every
+  # caller that does not distinguish lanes (the dashboard, lib/enabler.sh,
+  # lib/refinement.sh, review-cycle.sh, monitor-cycle.sh) has always read, now
+  # folded one level deeper without changing what it means: a pre-#2242
+  # record (no lane at all) lands in the lane-wildcard bucket and is found
+  # here exactly as before.
   def limit_union_fold_for($names; $prov):
     limit_union_fold($names) as $u |
-    limit_union_bucket_or_empty($u.by; "") as $wild |
-    limit_union_bucket_or_empty($u.by; $prov) as $own |
-    limit_bucket_later($wild; $own) as $top |
-    {record: $top.record, since: $top.since, escalated: ($wild.escalated + $own.escalated)};
+    limit_bucket_combine([
+      limit_union_bucket_or_empty($u.by; ""; ""),
+      limit_union_bucket_or_empty($u.by; $prov; ""),
+      limit_union_bucket_or_empty($u.by; $prov; "api"),
+      limit_union_bucket_or_empty($u.by; $prov; "subscription")
+    ]);
   def limit_union_fold_collapsed($names):
     limit_union_fold($names) as $u |
-    ($u.by | to_entries | map(select(.value.record != null))) as $withrec |
-    if ($withrec | length) == 0 then {record: null, since: null, escalated: ([$u.by[] | .escalated[]?])}
+    ([$u.by[] | .[]]) as $all |
+    ($all | map(select(.record != null))) as $withrec |
+    if ($withrec | length) == 0 then {record: null, since: null, escalated: ([$all[] | .escalated[]?])}
     else
-      ($withrec | sort_by(.value.record.resume_at // "") | last .value) as $top |
-      {record: $top.record, since: $top.since, escalated: ([$u.by[] | .escalated[]?])}
+      ($withrec | sort_by(.record.resume_at // "") | last) as $top |
+      {record: $top.record, since: $top.since, escalated: ([$all[] | .escalated[]?])}
     end;
 '
 
@@ -413,14 +455,27 @@ limit_union_record() {
 }
 
 # limit_union_record_for PROVIDER  < JSONL on stdin
-# limit_union_record, narrowed to PROVIDER: the later of its own bucket and
-# the wildcard bucket (every pre-#2133 event, and any fleet-wide
-# limit-cleared/escalation) — requirement 2.1's "later resume wins", applied
-# a second time inside the union itself.
+# limit_union_record, narrowed to PROVIDER: the later of its own bucket
+# (collapsed across both lanes — issue #2242) and the wildcard bucket (every
+# pre-#2133 event, and any fleet-wide limit-cleared/escalation) —
+# requirement 2.1's "later resume wins", applied a second time inside the
+# union itself. `limit_union_record_for_lane` below is the lane-scoped form.
 limit_union_record_for() {
   # shellcheck disable=SC2086  # a word list by design
   jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold_for($ARGS.positional; $prov) | .record | values' \
     --arg prov "${1:-}" --args $LIMIT_UNION_EVENTS
+}
+
+# limit_union_record_for_lane PROVIDER LANE  < JSONL on stdin
+# limit_union_record_for, narrowed one level further to LANE (issue #2242):
+# the later of the exact (PROVIDER, LANE) bucket and every bucket either
+# field's own wildcard widens to — a record naming no lane applies to every
+# lane of its provider, and a record naming no provider (every pre-#2133
+# event) applies to every provider's every lane.
+limit_union_record_for_lane() {
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold_for_lane($ARGS.positional; $prov; $lane) | .record | values' \
+    --arg prov "${1:-}" --arg lane "${2:-}" --args $LIMIT_UNION_EVENTS
 }
 
 # limit_standdown_since  < JSONL on stdin
@@ -451,33 +506,73 @@ limit_union_state() {
 }
 
 # limit_union_state_for PROVIDER  < JSONL on stdin
-# limit_union_state's own answer narrowed to one provider: the later of its
-# wildcard bucket ("", every pre-#2133 record and every explicit
-# fleet-wide --clear-limit/escalation) and its PROVIDER-named bucket, by
-# resume_at — the same "later resume wins" limit_later_record applies across
-# the union and the flag carrier, applied a second time inside the union
-# itself. Prints the same `{"record":…,"since":…,"escalated":[…]}` shape
-# limit_union_state has always printed, so a caller narrowing by provider
-# changes nothing about how it reads the answer.
+# limit_union_state's own answer narrowed to one provider, collapsed across
+# both of its lanes (issue #2242): the later of its wildcard bucket ("",
+# every pre-#2133 record and every explicit fleet-wide
+# --clear-limit/escalation), its lane-wildcard bucket (every pre-#2242
+# record, naming this provider but no lane) and its two lane-named buckets,
+# by resume_at — the same "later resume wins" limit_later_record applies
+# across the union and the flag carrier, applied a second time inside the
+# union itself. Prints the same `{"record":…,"since":…,"escalated":[…]}`
+# shape limit_union_state has always printed, so a caller narrowing by
+# provider alone — the dashboard, lib/enabler.sh, lib/refinement.sh,
+# review-cycle.sh, monitor-cycle.sh — changes nothing about how it reads the
+# answer. `limit_union_state_for_lane` below is the lane-scoped form
+# lib/standdown.sh's own stand-down check uses instead.
 limit_union_state_for() {
   # shellcheck disable=SC2086  # a word list by design
   jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold_for($ARGS.positional; $prov)' \
     --arg prov "${1:-}" --args $LIMIT_UNION_EVENTS
 }
 
+# limit_union_state_for_lane PROVIDER LANE  < JSONL on stdin
+# limit_union_state_for, narrowed one level further to LANE (issue #2242):
+# the later of the exact (PROVIDER, LANE) bucket and every bucket either
+# field's own wildcard widens to (see limit_union_record_for_lane above for
+# the same widening, read for its own record alone). This is what
+# lib/standdown.sh's stand-down check folds once per lane to decide whether
+# *that* lane is open, and what its freeze escalation ages each lane's own
+# `since` from.
+limit_union_state_for_lane() {
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold_for_lane($ARGS.positional; $prov; $lane)' \
+    --arg prov "${1:-}" --arg lane "${2:-}" --args $LIMIT_UNION_EVENTS
+}
+
 # limit_union_frozen_providers  < JSONL on stdin
 # Every provider (the wildcard bucket included, printed as the empty string)
-# the union currently names a live `limit-hit` for — i.e. every bucket whose
-# own `.record` is non-null — one per line, for a caller enumerating
+# the union currently names a live `limit-hit` for in *any* of its lanes —
+# i.e. every provider bucket with at least one lane sub-bucket whose own
+# `.record` is non-null — one per line, for a caller enumerating
 # currently-frozen providers (the dashboard's badge, the Monitor's digest)
 # rather than checking one at a time. Says nothing about whether that record
-# has actually lapsed (`resume_at` in the past) or about fleet/limit.json's
-# own live flag — a caller wanting a provider's true current state still
-# calls limit_governing_record_for for that provider.
+# has actually lapsed (`resume_at` in the past), about which of its lanes is
+# the frozen one (`limit_union_frozen_lanes` below answers that), or about
+# fleet/limit.json's own live flag — a caller wanting a provider's true
+# current state still calls limit_governing_record_for for that provider.
 limit_union_frozen_providers() {
   # shellcheck disable=SC2086  # a word list by design
   jq -nRr "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold($ARGS.positional) | .by
-    | to_entries | map(select(.value.record != null) | .key) | .[]' \
+    | to_entries | map(select([.value[].record] | any(. != null)) | .key) | .[]' \
+    --args $LIMIT_UNION_EVENTS
+}
+
+# limit_union_frozen_lanes  < JSONL on stdin
+# Every (provider, lane) pair the union currently names a live `limit-hit`
+# for, one compact `{"provider":…,"lane":…,"record":…}` object per line
+# (issue #2242) — the lane-scoped counterpart of limit_union_frozen_providers
+# above, for a caller that wants to name which lane is frozen rather than
+# only which provider (scripts/node-health.sh's own `--metrics`). The
+# lane-wildcard bucket is printed with `lane: ""`, exactly as
+# limit_union_frozen_providers prints a provider-wildcard record with
+# `provider: ""` — a caller that cares to tell "every lane of this provider"
+# apart from one specific lane reads that field.
+limit_union_frozen_lanes() {
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold($ARGS.positional) | .by
+    | to_entries[] | .key as $p | .value
+    | to_entries[] | select(.value.record != null)
+    | {provider: $p, lane: .key, record: .value.record}' \
     --args $LIMIT_UNION_EVENTS
 }
 
@@ -506,38 +601,51 @@ limit_later_record() {
   return 0
 }
 
-# limit_flag_record_for RAW PROVIDER
+# limit_flag_record_for RAW PROVIDER [LANE]
 # fleet/limit.json's own record (RAW — fleet_flag_fetch's raw bytes, the one
 # record the flag ever carries) narrowed to PROVIDER: itself when its own
 # `provider` field is PROVIDER or is absent entirely (every record before
 # issue #2133, and a hand-written or migrated fixture — "a record without one
 # applies to every provider"), never otherwise, since the flag holds exactly
 # one record and a different provider's own hit must not borrow it to stand a
-# healthy provider down. Prints nothing when RAW is empty, unparseable, or
-# scoped to a different provider.
+# healthy provider down. With LANE given (issue #2242), additionally narrowed
+# to LANE the same way one level down: the record's own `lane` field must be
+# LANE or absent entirely (every record before this issue — "a record without
+# one applies to every lane of its provider"). LANE omitted (every caller
+# before this issue, and every caller that does not distinguish lanes) skips
+# that second test outright, so a 2-argument call reads exactly as it always
+# has — a record scoped to one lane of PROVIDER still answers it, the same
+# "an old reader fails closed" direction #2135's own provider scoping chose.
+# Prints nothing when RAW is empty, unparseable, or scoped to a different
+# provider or (when LANE is given) a different lane.
 #
-# The flag therefore still carries only ever one provider's own fast,
-# live-read stand-down at a time — writing a second provider's hit overwrites
-# it (`fleet_limit_publish` below), trading away the fast path's own speed
-# advantage for whichever provider is not the most recently hit, in favour of
-# the slower (one fetch interval) but always-correct log union. Two providers
-# frozen at once is the rare case; the common one is a single provider's own
-# account, for which the flag works exactly as it always has.
+# The flag therefore still carries only ever one (provider, lane) key's own
+# fast, live-read stand-down at a time — writing a second provider's hit, or
+# a second lane of the same provider's, overwrites it (`fleet_limit_publish`
+# below), trading away the fast path's own speed advantage for whichever key
+# is not the most recently hit, in favour of the slower (one fetch interval)
+# but always-correct log union. Two keys frozen at once is the rare case; the
+# common one is a single provider's single lane, for which the flag works
+# exactly as it always has.
 limit_flag_record_for() {
-  local raw="$1" provider="$2"
+  local raw="$1" provider="$2" lane="${3:-}"
   [[ -n "$raw" ]] || return 0
-  jq -c --arg p "$provider" \
-    'if (type == "object") and ((.provider // "") == "" or .provider == $p) then . else empty end' \
+  jq -c --arg p "$provider" --arg l "$lane" \
+    'if (type == "object") and ((.provider // "") == "" or .provider == $p)
+        and ($l == "" or (.lane // "") == "" or .lane == $l)
+     then . else empty end' \
     <<<"$raw" 2>/dev/null || true
   return 0
 }
 
-# limit_governing_record_for STATE_REPO STATE_DIR PROVIDER  < JSONL on stdin
-# The one record requirement 2.1's "later resume wins" governs PROVIDER by,
-# combining the log union's own answer for PROVIDER (limit_union_state_for,
-# itself already folding in the wildcard bucket) with the live flag, narrowed
-# to PROVIDER by limit_flag_record_for above. Prints the governing record, or
-# nothing when neither carrier names a live stand-down for PROVIDER.
+# limit_governing_record_for STATE_REPO STATE_DIR PROVIDER [LANE]  < JSONL on stdin
+# The one record requirement 2.1's "later resume wins" governs PROVIDER (or,
+# with LANE given, that one lane of PROVIDER — issue #2242) by, combining the
+# log union's own answer (limit_union_state_for, or limit_union_state_for_lane
+# when LANE is given — both already folding in their own wildcard buckets)
+# with the live flag, narrowed the same way by limit_flag_record_for above.
+# Prints the governing record, or nothing when neither carrier names a live
+# stand-down for the key asked about.
 #
 # The canonical statement of that resolution, for a caller that wants only
 # the record and can afford a fresh flag fetch — and the one
@@ -547,17 +655,22 @@ limit_flag_record_for() {
 # rather than an oversight: the stand-down checks themselves
 # (lib/standdown.sh, review-cycle.sh, monitor-cycle.sh) also need the union's
 # own `since`/`escalated` for their freeze-escalation step, so they call
-# limit_union_state_for directly rather than read the union twice; the live
-# pre-launch re-checks (lib/enabler.sh, lib/refinement.sh,
-# lib/coordinator-phase.sh) want the flag alone and take
+# limit_union_state_for/limit_union_state_for_lane directly rather than read
+# the union twice; the live pre-launch re-checks (lib/enabler.sh,
+# lib/refinement.sh, lib/coordinator-phase.sh) want the flag alone and take
 # fleet_limit_resume_at_for; and scripts/publish-dashboard.sh must not fetch
 # the flag at all, so it assembles the same two halves around its own cached
 # copy. Kept, and regression-tested in test/toggle.test.sh, so those four
 # spellings have one definition to agree with rather than four to drift from.
 limit_governing_record_for() {
-  local state_repo="$1" state_dir="$2" provider="$3" union_record flag_record
-  union_record="$(jq -c '.record // empty' <<<"$(limit_union_state_for "$provider")" 2>/dev/null)"
-  flag_record="$(limit_flag_record_for "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$provider")"
+  local state_repo="$1" state_dir="$2" provider="$3" lane="${4:-}" union_record flag_record union_state
+  if [[ -n "$lane" ]]; then
+    union_state="$(limit_union_state_for_lane "$provider" "$lane")"
+  else
+    union_state="$(limit_union_state_for "$provider")"
+  fi
+  union_record="$(jq -c '.record // empty' <<<"$union_state" 2>/dev/null)"
+  flag_record="$(limit_flag_record_for "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "$provider" "$lane")"
   limit_later_record "$union_record" "$flag_record"
 }
 
