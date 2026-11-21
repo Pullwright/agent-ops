@@ -191,6 +191,18 @@ printf 'review\n' > "$state/reviews/20260720T020000Z-1/review.out"
 # The things that must stay behind, one per reason in the exclude list.
 printf '{"pid":999}\n' > "$state/lock.json"
 printf '{"pid":998}\n' > "$state/review-lock.json"
+# The per-log lock a NUL repair and every appender into one of state_dir's
+# JSONL logs take against each other (lib/fleet.sh's fleet_repair_log,
+# lib/log-event.sh's log_event_append, agent-ops#1196): a lock file on the
+# same reasoning as the two above, and one that exists on every node whether
+# or not a repair ever had anything to do, since the redirection that opens it
+# is what creates it. One per log, so the exclusion is a glob — these four
+# stand in for it, including one whose log this fixture does not carry, while
+# the logs above must still travel.
+: > "$state/.log.jsonl.lock"
+: > "$state/.review-log.jsonl.lock"
+: > "$state/.monitor-log.jsonl.lock"
+: > "$state/.revert-rate.jsonl.lock"
 # This node's own instruction to its own watchtower hook (agent-ops#1096): a
 # copy on a peer would tell that peer's hook to allow a roll nothing about
 # that peer actually earned, on the same reasoning as the locks above.
@@ -319,6 +331,10 @@ assert_eq "the cron log replicates" "1" "$(test -f "$pushed/cron.log" && echo 1 
 
 assert_eq "the lock does not replicate" "0" "$(test -e "$pushed/lock.json" && echo 1 || echo 0)"
 assert_eq "the review lock does not replicate" "0" "$(test -e "$pushed/review-lock.json" && echo 1 || echo 0)"
+# The JSONL logs' own per-log locks (agent-ops#1196), one assertion for the
+# glob that excludes all of them — the logs they guard replicate above.
+assert_eq "the JSONL logs' own locks do not replicate" "0" \
+  "$(find "$pushed" -maxdepth 1 -name '.*.jsonl.lock' | wc -l)"
 assert_eq "the roll-pending marker does not replicate" "0" "$(test -e "$pushed/roll-pending.json" && echo 1 || echo 0)"
 assert_eq "the dashboard log does not replicate" "0" "$(test -e "$pushed/dashboard.log" && echo 1 || echo 0)"
 assert_eq "the GitHub cache does not replicate" "0" "$(test -e "$pushed/.dashboard-github.json" && echo 1 || echo 0)"

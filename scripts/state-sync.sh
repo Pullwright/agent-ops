@@ -425,6 +425,19 @@ EXCLUDES=(
   # when the last report was written, so it must travel, the same as
   # `review-log.jsonl`.
   --exclude=monitor-lock.json
+  # .<basename>.jsonl.lock (lib/fleet.sh's fleet_repair_log,
+  # lib/log-event.sh's log_event_append, agent-ops#1196): the lock a repair
+  # and every appender into one of `state_dir`'s JSONL logs take against each
+  # other, one per log, created by the redirection that opens it — so it
+  # exists on every node whether or not a repair ever had anything to do. A
+  # lock file, meaningful only in the namespace that minted it, on exactly the
+  # reasoning the three above carry: peers read logs, never locks. Globbed
+  # rather than enumerated because the name is derived from each log's own
+  # basename, so a JSONL log added later is covered without a second edit
+  # here; the logs themselves (`log.jsonl`, `review-log.jsonl`,
+  # `monitor-log.jsonl`, `revert-rate.jsonl`) are deliberately absent from
+  # this list, since the fleet unions every one of them.
+  --exclude=/.*.jsonl.lock
   # .lock-stale-after-sec-cache (agent-cycle.sh, requirement 1,
   # agent-ops#2321): this node's own read-back of the `lock_stale_after_sec`
   # its last cycle derived, so the pre-lock freshness check can see the real
