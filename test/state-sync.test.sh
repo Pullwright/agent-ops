@@ -1931,6 +1931,41 @@ fleet_repair_swap "$swap_target" "$swap_copy" "$(stat -c %s "$swap_target")"
 assert_eq "a file that has not changed size is replaced by its repaired copy" "repaired" \
   "$(jq -r '.event' < "$swap_target")"
 
+# A concurrent append during the repair's read-write-rename window is
+# preserved, not lost (#1196): `fleet_repair_log` and `log_event_append`
+# (lib/log-event.sh) take the same `flock` on `.{basename}.lock`, so one
+# waits out the other rather than racing it. `awk` is PATH-shimmed to sleep
+# on every call `fleet_repair_jsonl` makes, holding the repair's lock open
+# for long enough that a concurrent `log_event_append` against the same path
+# — launched a moment after the repair starts, so it reliably loses the race
+# for the lock — is still queued behind it when the repair finishes.
+# shellcheck source=lib/log-event.sh
+. "$SCRIPT_DIR/lib/log-event.sh"
+conc_jsonl="$tmp_dir/repair-concurrent.jsonl"
+{ printf '{"ts":"2026-09-16T20:30:00Z","event":"before"}\n'
+  printf '\0%.0s' $(seq 5)
+  printf '{"ts":"2026-09-16T20:31:00Z","event":"after"}\n'; } > "$conc_jsonl"
+real_awk="$(command -v awk)"
+slow_awk_dir="$tmp_dir/slow-awk"
+mkdir -p "$slow_awk_dir"
+cat > "$slow_awk_dir/awk" <<SHIM
+#!/usr/bin/env bash
+sleep 0.4
+exec "$real_awk" "\$@"
+SHIM
+chmod +x "$slow_awk_dir/awk"
+( PATH="$slow_awk_dir:$PATH" fleet_repair_log "$conc_jsonl" "repair-node" ) &
+repair_pid=$!
+sleep 0.1
+log_event_append "$conc_jsonl" cycle "conc-cycle" "conc-node" "concurrent-append"
+wait "$repair_pid"
+assert_eq "the repair still completes with the concurrent writer present" "before after log-repaired concurrent-append" \
+  "$(jq -rs 'map(.event) | join(" ")' < "$conc_jsonl" 2>/dev/null)"
+assert_eq "  ... the concurrent append landed after the repair's own rename, not before it" \
+  "concurrent-append" "$(jq -r '.event' <<<"$(tail -n1 "$conc_jsonl")")"
+assert_eq "  ... and no lock file is left where a snapshot of the directory would see it as a stray working copy" \
+  "" "$(find "$tmp_dir" -maxdepth 1 -name 'repair-concurrent.jsonl.*')"
+
 # ==============================================================================
 # node identity in pipeline events (requirement 33, offline path)
 # ==============================================================================

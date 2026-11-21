@@ -448,12 +448,20 @@ log_event() { log_event_append "$review_log_file" review "$review_id" "$node_nam
 # The one shared signal: a usage-limit hit is written to log.jsonl in the exact
 # shape agent-cycle.sh's stand-down and the dashboard already read, so a limit
 # hit in either pipeline stands both down. A single-line O_APPEND write is
-# atomic even if the implementation pipeline appends concurrently.
+# atomic even if the implementation pipeline appends concurrently; the
+# `flock` below is for a different writer — `fleet_repair_log` (lib/fleet.sh),
+# which takes the same lock around its own rename of `log.jsonl`, so this
+# append can never land on the copy a NUL repair is about to discard (#1196).
 log_shared_limit_hit() {
-  local resume_at="$1" class="$2" reset_known="$3" ts provider="${stage_provider:-anthropic}"
+  local resume_at="$1" class="$2" reset_known="$3" ts provider="${stage_provider:-anthropic}" lock
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  jq -nc --arg ts "$ts" --arg cycle "$review_id" --arg node "$node_name" --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" --arg p "$provider" \
-    '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k, provider: $p}' >> "$log_file"
+  lock="${log_file%/*}"
+  [[ "$lock" == "$log_file" ]] && lock="."
+  lock="$lock/.${log_file##*/}.lock"
+  ( flock -w "${FLEET_LOG_LOCK_WAIT_SECONDS:-5}" 200 || exit 0
+    jq -nc --arg ts "$ts" --arg cycle "$review_id" --arg node "$node_name" --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" --arg p "$provider" \
+      '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k, provider: $p}' >> "$log_file"
+  ) 200>"$lock"
   # And to the fleet flag (extend-only, best-effort), so peers stand down now
   # rather than at their next state-sync fetch — REVIEW-PIPELINE-SPEC R3.
   fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "" "$provider" \
