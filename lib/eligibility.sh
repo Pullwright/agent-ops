@@ -148,9 +148,21 @@ for eligibility_band in findings review_feedback abandoned_drafts merge_conflict
     # shellcheck disable=SC2154  # blocked_json/void_json are assigned by
     # compute_skip_lists (lib/candidate-gather.sh, #771), called above.
     eb_filtered="$(exclude_blocked_or_void_items "$eb_current" "$eb_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
-    ordered_repos_json="$(jq -c --arg r "$eb_slug" --arg f "$eligibility_band" --argjson v "$eb_filtered" \
-      'map(if .slug == $r then .[$f] = $v else . end)' \
-      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+    # $eb_filtered is bound on stdin, never via --argjson (requirement 4g,
+    # issue #2876): agent-ops's own tech_debt/issues bands routinely exceed
+    # MAX_ARG_STRLEN (131072 bytes), and an argv-bound value past that cap
+    # fails execve silently ("Argument list too long") — the exact failure
+    # TD-PPagop-26081406 names for this write-back. `lib/candidate-gather.sh`'s
+    # `expensive_gather_cache_docs` already binds its own oversized band this
+    # way: `printf '%s\n' doc1 doc2 … | jq -n '... input as $x ...'`.
+    eb_write="$(jq -nc --arg r "$eb_slug" --arg f "$eligibility_band" \
+      'input as $repos | input as $v | $repos | map(if .slug == $r then .[$f] = $v else . end)' \
+      <<<"$(printf '%s\n' "$ordered_repos_json" "$eb_filtered")" 2>&1)" \
+      || { guard_warn "eb_write:$eb_slug:$eligibility_band" "$eb_write"; eb_write=""; }
+    # TD-PPagop-26081407: passes test 2 -- a write-back failure logs via
+    # guard_warn above (naming the repo and band) and falls back to the
+    # unchanged prior aggregate, not a fabricated empty.
+    [[ -n "$eb_write" ]] && ordered_repos_json="$eb_write"
   done < <(jq -r --arg f "$eligibility_band" \
            '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
            <<<"$ordered_repos_json" 2>/dev/null || true)
@@ -162,9 +174,17 @@ while IFS= read -r iss_slug; do
     <<<"$ordered_repos_json" 2>&1)" \
     || { guard_warn "iss_current:$iss_slug" "$iss_current"; iss_current='[]'; }
   iss_filtered="$(exclude_blocked_or_void_issues "$iss_current" "$iss_slug" "$blocked_json" "$void_json" "$void_refusal_escalated_json")"
-  ordered_repos_json="$(jq -c --arg r "$iss_slug" --argjson iss "$iss_filtered" \
-    'map(if .slug == $r then .issues = $iss else . end)' \
-    <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+  # $iss_filtered on stdin, not --argjson, for the identical reason as the
+  # eligibility_band write-back above (requirement 4g, issue #2876): this is
+  # the write-back the issue's own #1792/#2668 history traces its cost to.
+  iss_write="$(jq -nc --arg r "$iss_slug" \
+    'input as $repos | input as $iss | $repos | map(if .slug == $r then .issues = $iss else . end)' \
+    <<<"$(printf '%s\n' "$ordered_repos_json" "$iss_filtered")" 2>&1)" \
+    || { guard_warn "iss_write:$iss_slug" "$iss_write"; iss_write=""; }
+  # TD-PPagop-26081407: passes test 2 -- a write-back failure logs via
+  # guard_warn above (naming the repo) and falls back to the unchanged prior
+  # aggregate, not a fabricated empty.
+  [[ -n "$iss_write" ]] && ordered_repos_json="$iss_write"
 done < <(jq -r '[.[] | select(((.issues // []) | length) > 0) | .slug] | unique[]' \
          <<<"$ordered_repos_json" 2>/dev/null || true)
 
@@ -238,9 +258,16 @@ for decision_band in findings review_feedback abandoned_drafts merge_conflicts d
       'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
       || { guard_warn "db_current:$db_slug:$decision_band" "$db_current"; db_current='[]'; }
     db_filtered="$(exclude_decision_pending_items "$db_current" "$db_slug" "$decisions_json" "$refinement_policy_json")"
-    ordered_repos_json="$(jq -c --arg r "$db_slug" --arg f "$decision_band" --argjson v "$db_filtered" \
-      'map(if .slug == $r then .[$f] = $v else . end)' \
-      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+    # $db_filtered on stdin, not --argjson, for the identical reason as the
+    # eligibility_band write-back above (requirement 4g, issue #2876).
+    db_write="$(jq -nc --arg r "$db_slug" --arg f "$decision_band" \
+      'input as $repos | input as $v | $repos | map(if .slug == $r then .[$f] = $v else . end)' \
+      <<<"$(printf '%s\n' "$ordered_repos_json" "$db_filtered")" 2>&1)" \
+      || { guard_warn "db_write:$db_slug:$decision_band" "$db_write"; db_write=""; }
+    # TD-PPagop-26081407: passes test 2 -- a write-back failure logs via
+    # guard_warn above (naming the repo and band) and falls back to the
+    # unchanged prior aggregate, not a fabricated empty.
+    [[ -n "$db_write" ]] && ordered_repos_json="$db_write"
   done < <(jq -r --arg f "$decision_band" \
            '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
            <<<"$ordered_repos_json" 2>/dev/null || true)

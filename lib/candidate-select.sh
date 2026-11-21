@@ -1519,6 +1519,39 @@ candidate_preclaimed() {  # <repo> <item> <claims-at-gather-json> -> 0 iff alrea
     || return 1
 }
 
+# Requirement 4g's second line of defence (issue #2876): exclude_blocked_
+# or_void_items/_issues above already drop a void or 34p-escalated entry from
+# every pre-fetched band before the Co-Ordinator ever sees it — but that
+# subtraction's own write-back (lib/eligibility.sh) used to deliver the
+# filtered band to `jq` via `--argjson`, which fails silently past
+# MAX_ARG_STRLEN and left the unfiltered band in place with nothing logged.
+# This is the backstop for exactly that failure mode, and for any other path
+# that could hand the claim loop a composed candidate the band pass never
+# reached: a candidate still void, or still carrying a 34p escalation, must
+# never be claimed regardless of which band write-back let it through.
+# Matched the identical way exclude_blocked_or_void_items matches an entry
+# against a candidate's own ref (`$r` = $item, no repo on the entry means
+# fleet-wide): $void and $escalated are checked together, since both drop a
+# candidate unconditionally, never on a re-check allowance the way a plain
+# block does — `blocked_json` is deliberately not checked here, which would
+# wrongly refuse an `issues` candidate still due its requirement-18a live
+# re-read.
+candidate_void_or_escalated() {  # <repo> <item> <void-json> <escalated-json> -> 0 iff void or 34p-escalated
+  local repo="$1" item="$2" void="${3:-[]}" escalated="${4:-[]}" docs
+  jq -e 'type == "array"' <<<"$void" >/dev/null 2>&1 || void='[]'
+  jq -e 'type == "array"' <<<"$escalated" >/dev/null 2>&1 || escalated='[]'
+  docs="$(printf '%s\n' "$void" "$escalated")"
+  # Exactly 0 or 1, whatever jq's own exit code says: malformed void/escalated
+  # JSON must read as "not void" (fail open — the band pass upstream is still
+  # the correctness gate), never as a distinct status this loop could misread.
+  jq -ne --arg r "$repo" --arg i "$item" '
+    input as $void | input as $escalated
+    | ($void + $escalated)
+    | any(.[]; ((.item // "") | tostring) == $i
+               and ((.repo // "") == "" or (.repo // "") == $r))
+  ' <<<"$docs" >/dev/null 2>&1
+}
+
 # Requirement 17a/issue #238: which PR a finishing-source candidate targets, for
 # the PR-keyed claim below to key on. The candidate's own `pr_number` when it
 # carries a usable one — prompts/coordinator.md requires it on all four

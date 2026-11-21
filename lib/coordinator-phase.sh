@@ -287,11 +287,14 @@ claim_unreachable=0
 # frequency for (#248).
 race_losses=0
 # claim_skips: candidates dropped without an attempt because this cycle's own
-# gather already saw them claimed (candidate_preclaimed above). Deliberately
-# not folded into race_losses: a loss knowable from data in hand is the
-# Co-Ordinator proposing claimed work — a selection defect — where a race
-# loss is healthy contention, and the dashboard's `↻ raced` badge must keep
-# meaning only the second.
+# gather already saw them claimed (candidate_preclaimed above), or because the
+# candidate is void or 34p-escalated — a backstop against the same class of
+# selection defect (candidate_void_or_escalated, requirement 4g's second line
+# of defence, issue #2876). Deliberately not folded into race_losses: a loss
+# knowable from data in hand is the Co-Ordinator proposing claimed (or void,
+# or escalated) work — a selection defect — where a race loss is healthy
+# contention, and the dashboard's `↻ raced` badge must keep meaning only the
+# second.
 claim_skips=0
 # trace_faults: candidates dropped by requirement 17f that the repair above
 # could not rescue, or by requirement 17h (agent-ops#769) failing to compose
@@ -311,6 +314,21 @@ for (( ci = 0; ci < n_cand; ci++ )); do
   c_db="$(jq -r '.default_branch // "main"' <<<"$cand")"
   c_takeover="$(jq -r '.takeover // false' <<<"$cand")"
   [[ -n "$c_repo" && -n "$c_item" ]] || continue
+  # Requirement 4g's second line of defence (issue #2876), checked before
+  # requirement 17h's compose below for the same reason 17f is checked before
+  # the pre-claimed check further down: cheaper, and unrelated to either. The
+  # band write-backs (lib/eligibility.sh) already drop a void or
+  # 34p-escalated candidate before the Co-Ordinator ever sees one — this is
+  # the backstop for the one write-back whose own argv delivery could fail
+  # silently and leave such a candidate in place regardless (requirement 4g),
+  # and for any other path that could hand this loop one the band pass never
+  # reached.
+  if candidate_void_or_escalated "$c_repo" "$c_item" "$void_json" "${void_refusal_escalated_json:-[]}"; then
+    claim_skips=$(( claim_skips + 1 ))
+    log_event "claim-skipped" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg s "$c_source" \
+      '{repo: $r, item: $i, source: $s, cause: "void-or-escalated"}')"
+    continue
+  fi
   # Requirement 17h (agent-ops#769, resolving #844 option (b)): for every
   # source the Script already gathers as structured data, `context`/
   # `acceptance`/`title` are composed here — from a live fetch for
