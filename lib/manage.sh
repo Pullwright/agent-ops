@@ -684,7 +684,7 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       refresh_dashboard
       exit 0
       ;;
-clear-limit)
+    clear-limit)
       # Which of up to two bare tokens (agent-cycle.sh's own argv parsing)
       # is a provider[/lane] and which is a reason cannot be told until now
       # (issue #2135, extended to the lane by #2242): providers_load runs
@@ -824,13 +824,21 @@ clear-limit)
           || { guard_warn "clear_limit:still_epoch" "$still_epoch"; still_epoch=0; }
       fi
 
+      # The scope word the warning names — the level a narrower clear could
+      # not reach past. Spelled as its own variable rather than inline:
+      # `${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}` reads as
+      # "lane when a lane was named, provider otherwise" but is not — the
+      # second expansion yields the lane's own *value* when it is set, so a
+      # lane-scoped clear printed "one laneapi" rather than "one lane".
+      clear_limit_scope=provider
+      [[ -z "$CLEAR_LIMIT_LANE" ]] || clear_limit_scope=lane
       if (( still_epoch > $(date +%s) )); then
         printf 'agent-cycle: WARNING — the usage-limit stand-down for %s is NOT lifted: a wider record still holds it down until %s, and a clear scoped to one %s cannot remove it. Re-run "agent-cycle.sh --clear-limit"%s with no %s to clear every %s at once.\n' \
           "$clear_limit_target" "$still_at" \
-          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" \
+          "$clear_limit_scope" \
           "${CLEAR_LIMIT_LANE:+ $CLEAR_LIMIT_PROVIDER}" \
-          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" \
-          "${CLEAR_LIMIT_LANE:+lane}${CLEAR_LIMIT_LANE:-provider}" >&2
+          "$clear_limit_scope" \
+          "$clear_limit_scope" >&2
       elif [[ -n "$was" ]]; then
         printf 'agent-cycle: usage-limit stand-down lifted (resume_at was %s)%s\n' "$was" \
           "${clear_limit_target:+ for $clear_limit_target}"
