@@ -830,6 +830,20 @@ assert_eq "…while the 3-argument (unscoped) form still answers for the provide
   "2030-01-01T00:00:00Z" "$(fleet_limit_resume_at_for "$slug" "$fs_a" anthropic)"
 rm -f "$gh_backing/fleet/limit.json"
 
+# A longer-running LANE-SPECIFIC record must not suppress a shorter-running
+# PROVIDER-WIDE (wildcard-lane) publish: the two scopes are not comparable
+# by resume_at alone, since the wildcard covers a lane the narrower record
+# says nothing about. Reading the narrower record as "already resuming
+# later" and dropping the wildcard write would leave the other lane's own
+# stand-down unpublished even though this hit covers it.
+fleet_limit_publish "$slug" "$fs_a" "2099-01-01T00:00:00Z" "monthly-spend" true node-a "" anthropic api
+fleet_limit_publish "$slug" "$fs_b" "2050-01-01T00:00:00Z" "weekly" false node-b "" anthropic
+assert_eq "a provider-wide publish is not suppressed by a longer-running lane-specific record" \
+  "2050-01-01T00:00:00Z" "$(fleet_limit_resume_at "$slug" "$fs_a")"
+assert_eq "…and the flag now names no lane at all, covering every lane of the provider" \
+  "" "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '.lane // empty')"
+rm -f "$gh_backing/fleet/limit.json"
+
 # A record with no lane field at all (every flag written before issue #2242)
 # is the lane-wildcard case: it governs whichever lane asks, one level below
 # the provider-wildcard case above.

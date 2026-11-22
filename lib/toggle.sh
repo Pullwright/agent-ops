@@ -1075,7 +1075,21 @@ fleet_limit_publish() {
      + (if $l == "" then {} else {lane: $l} end)')"
   for _ in 1 2; do
     cur="$(fleet_flag_fetch "$repo" "$state_dir" limit)"
-    cur_own="$(limit_flag_record_for "$cur" "$provider" "$lane")"
+    # Not `limit_flag_record_for`: that helper's own "a record without a
+    # lane applies to every lane" rule reads $lane=="" as matching *any*
+    # current record's lane, which is right for applying a record to an ask
+    # but wrong here — it would let a narrower current record (one naming a
+    # specific lane) suppress this wildcard-lane write, leaving the lane it
+    # does not name uncovered by a publish that was meant to freeze every
+    # lane of the provider. The extend-only guard only ever wants a current
+    # record whose own scope is as wide as this write's: this write's own
+    # lane when it names one, or, when it names none (wildcard), only a
+    # current record that is wildcard too.
+    cur_own="$(jq -c --arg p "$provider" --arg l "$lane" \
+      'if (type == "object") and ((.provider // "") == "" or .provider == $p)
+          and (if $l == "" then (.lane // "") == ""
+               else ((.lane // "") == "" or .lane == $l) end)
+       then . else empty end' <<<"$cur" 2>/dev/null || true)"
     if [[ -n "$cur_own" ]]; then
       cur_at="$(jq -r '.resume_at // empty' <<<"$cur_own" 2>/dev/null || true)"
       if [[ -n "$cur_at" ]]; then
