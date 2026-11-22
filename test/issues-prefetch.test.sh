@@ -230,6 +230,14 @@ cat >"$STUB_ISSUES" <<'EOF'
       "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
    "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
    "body": "This belongs to the tech-debt band instead (issue #875).", "comments": {"nodes": []}},
+  {"number": 15, "url": "https://github.com/o/r/issues/15", "title": "Decision log: Decision taken by the pipeline",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": [{"name": "pw::decision"}]},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": []},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "The Enabler's own decision-log record, unassigned by design, kept out of this source by its label (issue #1204).",
+   "comments": {"nodes": []}},
   {"number": 16, "url": "https://github.com/o/r/issues/16", "title": "Pager: blocked-label-orphaned",
    "author": {"login": "warwick"},
    "labels": {"nodes": [{"name": "pw::pager"}]},
@@ -269,6 +277,10 @@ assert_eq "a pw::type:tech-debt-labelled issue is dropped (issue #875)" \
   "false" "$(jq 'any(.[]; .number == 14)' <<<"$candidates_json")"
 assert_eq "  ... and never reported as excluded either — it belongs to the other band" \
   "false" "$(jq 'any(.[]; .number == 14)' <<<"$excluded_json")"
+assert_eq "a pw::decision-labelled issue is dropped (issue #1204)" \
+  "false" "$(jq 'any(.[]; .number == 15)' <<<"$candidates_json")"
+assert_eq "  ... and never reported as excluded either — it was never issues work to begin with" \
+  "false" "$(jq 'any(.[]; .number == 15)' <<<"$excluded_json")"
 assert_eq "the pw::pager-labelled issue is dropped (agent-ops#2564)" \
   "false" "$(jq 'any(.[]; .number == 16)' <<<"$candidates_json")"
 assert_eq "the Blocked-labelled-and-also-Blocked-by issue is dropped too" \
