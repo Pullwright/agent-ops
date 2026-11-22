@@ -909,18 +909,14 @@
       through to its other lane (`lib/stage-run.sh`'s `stage_lane_draw`,
       which this check never calls into) rather than wait. The provider as
       a whole stands down only once every lane it could fall through to is
-      frozen — counting exactly the lanes `stage_lane_draw` itself would
-      draw from (`lane_effective_open`, requirement 34a's one predicate,
-      via `limit_lane_configured_open`), since a lane whose credential is
-      absent on this node, or which that provider's own `lanes` config
-      closes, is no fallthrough for a frozen sibling's stages. A provider
-      whose *only* open lane freezes therefore stands down at once, exactly
-      as it did before #2242 scoped the record to a lane; that is the
-      ordinary shape rather than an edge case, since `enabled` unset — every
-      provider whose `config.json` names no `lanes` block — opens
-      `subscription` only when `api` is absent, leaving one open lane. Two
-      lanes shut by configuration alone is not this: it owes no usage-limit
-      stand-down, and stays requirement 4d's own `no-open-lane` refusal.
+      frozen — exactly the lanes `stage_lane_draw` draws from
+      (`lane_effective_open`, requirement 34a's one predicate, via
+      `limit_lane_configured_open`): a lane absent here or closed by config
+      is no fallthrough, so a provider whose *only* open lane freezes
+      stands down at once, as before #2242. That is the ordinary shape, not
+      an edge case: `enabled` unset opens `subscription` only when `api` is
+      absent. Both lanes shut by config alone is not this and stays
+      requirement 4d's `no-open-lane` refusal.
       This check gates the Co-Ordinator against its own resolved provider
       (`check_provider`); the Implementer, Enabler and Refiner re-checks
       cover their own provider conservatively — by provider alone, not yet
@@ -1001,10 +997,16 @@
       Script spends one minimal headless invocation of a model resolving
       to the frozen provider (`limit_probe_model_for`, issue #2135) before
       standing down on that lane — once, when both lanes collapse onto the
-      identical record, or once per lane (through `run_model_stage`'s own
-      lane override, issue #2242) when they genuinely differ, so a
+      identical record, or once per lane when they genuinely differ, so a
       provider with both lanes independently frozen can spend up to two
-      probes the cycle that first notices. A fixed one-line prompt, 180 s
+      probes the cycle that first notices. Every probe **forces** its lane
+      through `run_model_stage`'s lane override (#2242): the draw excludes
+      a frozen lane, the only kind probed here, so an unforced probe is
+      refused `no-open-lane` and never launches. The split case names its
+      lanes literally; the single-record case asks `limit_probe_lane` for
+      the record's own `lane`, else the lane `lane_effective_open` reports
+      open, `api` first, else nothing (no lanes managed, or neither
+      credential present — an unmanaged launch). A fixed one-line prompt, 180 s
       timeout, transcript kept as `limit-probe.out` (or `limit-probe-
       api.out`/`limit-probe-subscription.out` per lane), through the same
       `run_model_stage` every stage launches on; not a stage itself (no

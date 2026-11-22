@@ -675,6 +675,61 @@ limit_probe_model_for() {
   printf '%s' "$implementer_model_trivial"
 }
 
+# limit_lane_managed PROVIDER
+# True (exit 0) iff lane management is actually running for PROVIDER on this
+# node (issue #2242): its substrate declares a `substrate_<name>_lane_present`
+# at all (`claude-code` today; xai's Grok Build does not — #2246), at least
+# one of its two credentials is present (`stage_lane_any_present`'s own
+# contract — with neither, `run_model_stage` launches unmanaged and
+# `stage_lane` is left empty), and this process sourced the lane machinery in
+# the first place (lib/lane.sh, lib/model-id.sh — this file's own tests
+# source neither, the same gap its header's `model_key_is_set`/
+# `stage_model_resolve_into` fallbacks already document). False is "this
+# provider's launches carry no lane", which is exactly the shape every
+# pre-#2242 record has.
+limit_lane_managed() {
+  local provider="$1" substrate fn
+  declare -F lane_effective_open >/dev/null 2>&1 || return 1
+  # `declare -p`, not a `${...:-}` default: reading one key of an associative
+  # array this process never declared makes bash take it for an indexed one
+  # and evaluate the key arithmetically, which under `set -u` is an unbound-
+  # variable error rather than the empty default it looks like.
+  declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || return 1
+  declare -p PROVIDER_LANES >/dev/null 2>&1 || return 1
+  substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
+  fn="substrate_${substrate//-/_}_lane_present"
+  declare -F "$fn" >/dev/null 2>&1 || return 1
+  "$fn" api && return 0
+  "$fn" subscription
+}
+
+# limit_probe_lane PROVIDER RECORD
+# The lane requirement 2.1b's own probe must be *forced* onto (issue #2242),
+# printed bare, or nothing at all where this provider's launches carry no
+# lane. 2.1b probes exactly the lane this check has just judged frozen, and
+# `stage_lane_draw` refuses to draw a frozen lane by design — so a probe left
+# to the ordinary draw is refused `no-open-lane` and never launches, which
+# would silently retire 2.1b itself. The split path below forces its lane
+# literally, one probe per lane; the combined path asks this instead, since
+# its one record may name no lane at all.
+#
+# RECORD's own `lane` when it names one (the lending above gives the combined
+# path the frozen lane's own record); otherwise the lane a launch would have
+# drawn had nothing been frozen — `api` first, matching `lane_effective_open`'s
+# own precedence and `stage_lane_draw`'s default weighting. Nothing, where
+# `limit_lane_managed` is false: `run_model_stage` then launches unmanaged
+# exactly as it did before this issue, which is the right answer for a
+# substrate with no lanes (xai) and for a node holding neither credential.
+limit_probe_lane() {
+  local provider="$1" rec="$2" lane
+  lane="$(jq -r '.lane // empty' <<<"$rec" 2>/dev/null || true)"
+  [[ -z "$lane" ]] || { printf '%s' "$lane"; return 0; }
+  limit_lane_managed "$provider" || return 0
+  limit_lane_configured_open "$provider" api && { printf 'api'; return 0; }
+  limit_lane_configured_open "$provider" subscription && { printf 'subscription'; return 0; }
+  return 0
+}
+
 # limit_lane_configured_open PROVIDER LANE
 # True (exit 0) iff LANE is open for PROVIDER on this node by credential
 # presence and `lanes` configuration alone (issue #2242) — exactly
@@ -685,31 +740,18 @@ limit_probe_model_for() {
 # never think a lane is available to fall through to that the next launch
 # would refuse to draw (requirement 34a's own reason for that file existing).
 #
-# Permissive — open — in every case where lane management is not running at
-# all: the substrate declares no `substrate_<name>_lane_present` (xai today),
-# neither of its two credentials is present (`stage_lane_any_present`'s own
-# contract: an unmanaged launch, `stage_lane` left empty), or this process
-# never sourced lib/lane.sh/lib/model-id.sh (this file's own tests, the same
-# gap its header's `model_key_is_set`/`stage_model_resolve_into` fallbacks
-# already document). Each of those is a provider whose hits name no lane, so
-# both lanes resolve to the same lane-wildcard bucket and the combined path
-# below handles it as the single record it is — the caller's own guard never
-# fires, and behaviour is identical to before this issue.
+# Permissive — open — in every case `limit_lane_managed` above calls false:
+# each of those is a provider whose hits name no lane, so both lanes resolve
+# to the same lane-wildcard bucket and the combined path below handles it as
+# the single record it is — the caller's own guard never fires, and behaviour
+# is identical to before this issue.
 limit_lane_configured_open() {
   local provider="$1" lane="$2" substrate fn lanes_json present_api=0 present_sub=0
-  declare -F lane_effective_open >/dev/null 2>&1 || return 0
-  # `declare -p`, not a `${...:-}` default: reading one key of an associative
-  # array this process never declared makes bash take it for an indexed one
-  # and evaluate the key arithmetically, which under `set -u` is an unbound-
-  # variable error rather than the empty default it looks like.
-  declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || return 0
-  declare -p PROVIDER_LANES >/dev/null 2>&1 || return 0
+  limit_lane_managed "$provider" || return 0
   substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
   fn="substrate_${substrate//-/_}_lane_present"
-  declare -F "$fn" >/dev/null 2>&1 || return 0
   "$fn" api && present_api=1
   "$fn" subscription && present_sub=1
-  (( present_api || present_sub )) || return 0
   lanes_json="${PROVIDER_LANES[$provider]:-${STAGE_LANE_DEFAULT_JSON:-}}"
   [[ -n "$lanes_json" ]] || lanes_json="${STAGE_LANE_DEFAULT_JSON:-}"
   [[ -n "$lanes_json" ]] || return 0
@@ -907,8 +949,17 @@ if (( limit_frozen_api && limit_frozen_sub )) && [[ "$governing_api" == "$govern
     # probe/launch call site in this file.
     local limit_probe_model
     stage_model_resolve_into limit_probe_model "$probe_model" "${cycle_id:-}:limit-probe"
+    # Forced, never drawn (issue #2242): this probe's whole job is to ask the
+    # lane that has just been judged frozen, and `stage_lane_draw` excludes a
+    # frozen lane by design — so an undrawn probe is refused `no-open-lane`,
+    # answers `inconclusive` over an empty transcript, and 2.1b quietly stops
+    # working for every record that names no lane. `limit_probe_lane` prints
+    # nothing where this provider's launches carry no lane at all, which is an
+    # unmanaged launch exactly as before this issue. The split path below
+    # forces its two lanes literally, for the same reason.
+    probe_lane="$(limit_probe_lane "${check_provider:-anthropic}" "$governing")"
     run_model_stage limit-probe 180 "$limit_probe_model" \
-      "Reply with the single word: ok" "$probe_out" "$cycle_dir" || probe_rc=$?
+      "Reply with the single word: ok" "$probe_out" "$cycle_dir" 0 "" "$probe_lane" || probe_rc=$?
     # The probe's own spend, joined into the fleet-wide ledger like every
     # other launch through run_model_stage (issue #2239, D30) — it never had
     # a stage-start, like 2.0h's own credential probe above, which requirement

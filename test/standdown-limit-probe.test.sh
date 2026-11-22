@@ -82,6 +82,12 @@ limit_probe_model_for() { printf '%s' "$implementer_model_trivial"; }
 # run_model_stage itself (test/stage-run.test.sh covers that seam directly).
 run_model_stage() {
   local out_file="$5"
+  # The LANE argument (lib/stage-run.sh's 9th positional) recorded for the
+  # assertion below: requirement 2.1b probes exactly the lane the gate has
+  # just judged frozen, and `stage_lane_draw` refuses to draw a frozen lane,
+  # so a probe that does not *force* its lane is refused `no-open-lane` and
+  # never launches at all (issue #2242).
+  printf '%s' "${9:-}" > "$launched_lane"
   jq -nc '{total_cost_usd: 0.002, duration_ms: 900, num_turns: 1, is_error: false,
            modelUsage: {"claude-haiku-4-5": {inputTokens: 20, outputTokens: 5,
              cacheCreationInputTokens: 0, cacheReadInputTokens: 0, costUSD: 0.002}}}' \
@@ -93,14 +99,22 @@ run_model_stage() {
   return "${STUB_RUN_RC:-0}"
 }
 
+# The lane the probe forces (issue #2242). Stubbed rather than lifted —
+# test/standdown-lane-openness.test.sh exercises the real
+# `limit_probe_lane` against every lane configuration; what this file is
+# about is that the probe's own launch actually *passes* what it answers.
+# shellcheck disable=SC2317,SC2329  # called from $probe_block via eval, invisible to a static reader
+limit_probe_lane() { printf 'subscription'; }
+
 run_probe() {  # run_probe <cycle_dir>
   ( cycle_dir="$1" implementer_model_trivial="claude-haiku-4-5" \
-      stage_kill_reason="" \
+      stage_kill_reason="" check_provider="anthropic" governing='{}' \
     eval "$probe_block" )
 }
 
 cycle_dir="$(mktemp -d)"
-trap 'rm -rf "$cycle_dir"; rm -f "$call_log"' EXIT
+launched_lane="$(mktemp)"
+trap 'rm -rf "$cycle_dir"; rm -f "$call_log" "$launched_lane"' EXIT
 
 : > "$call_log"
 STUB_RUN_RC=0 run_probe "$cycle_dir"
@@ -121,6 +135,12 @@ assert_eq "...carrying the stub envelope's own tokens" \
   "$(jq -c '.tokens' <<<"$event")"
 assert_eq "...and no kill_reason, since the stub run was not killed" \
   "false" "$(jq -c 'has("kill_reason")' <<<"$event")"
+# The launch forces its lane rather than leaving it to the draw: the draw
+# excludes a frozen lane, which is the only kind of lane 2.1b ever probes,
+# so an unforced probe is refused `no-open-lane` and never runs (issue
+# #2242). An empty answer here is that refusal waiting to happen.
+assert_eq "...and the launch forced the lane limit_probe_lane answered, not an undrawn one" \
+  "subscription" "$(cat "$launched_lane")"
 
 : > "$call_log"
 STUB_RUN_RC=124 run_probe "$cycle_dir"

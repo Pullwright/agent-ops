@@ -61,17 +61,29 @@ declare -gA PROVIDER_SUBSTRATE=()
 declare -gA PROVIDER_LANES=()
 STAGE_LANE_DEFAULT_JSON='{"api":{"weight":1,"enabled":null},"subscription":{"weight":0,"enabled":null}}'
 
-predicate_src="$(awk '
-  /^limit_lane_configured_open\(\) \{$/ { on = 1 }
-  on                                    { print }
-  on && /^\}$/                          { exit }
-' "$STANDDOWN")"
-# shellcheck disable=SC2016  # a literal source fragment to match, not an expansion
-if [[ "$predicate_src" != *'lane_effective_open "$lanes_json"'* ]]; then
-  echo "FAIL - could not extract limit_lane_configured_open from lib/standdown.sh (moved or reworded?)" >&2
-  exit 1
-fi
-eval "$predicate_src"
+# The three predicates that decide which lanes count, lifted whole: the
+# openness test the gate reads, the lane-management test it rests on, and the
+# lane 2.1b's own probe is forced onto.
+extract_fn() {  # extract_fn <name> <a literal fragment it must contain>
+  local name="$1" must="$2" src
+  src="$(awk -v fn="^$name\\\\(\\\\) \\\\{$" '
+    $0 ~ fn       { on = 1 }
+    on            { print }
+    on && /^\}$/  { exit }
+  ' "$STANDDOWN")"
+  if [[ "$src" != *"$must"* ]]; then
+    echo "FAIL - could not extract $name from lib/standdown.sh (moved or reworded?)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$src"
+}
+
+# shellcheck disable=SC2016  # literal source fragments to match, not expansions
+{
+  eval "$(extract_fn limit_lane_managed 'substrate_${substrate//-/_}_lane_present')"
+  eval "$(extract_fn limit_lane_configured_open 'lane_effective_open "$lanes_json"')"
+  eval "$(extract_fn limit_probe_lane 'limit_lane_managed "$provider"')"
+}
 
 gate_src="$(awk '
   /^if \(\( limit_frozen_api \)\) && ! \(\( limit_frozen_sub \)\) \\$/ { on = 1 }
@@ -224,6 +236,33 @@ assert_eq "one identical record freezing both lanes alike still reaches the comb
 assert_eq "…and does so for a substrate with no lanes at all" \
   'combined {"resume_at":"2099-01-01T00:00:00Z"} one-since' \
   "$(run_gate_one_record xai 0 0 1)"
+
+# --- limit_probe_lane: the lane 2.1b's probe is forced onto ----------------
+# `stage_lane_draw` excludes a frozen lane by design, and 2.1b probes exactly
+# the lane just judged frozen — so a probe left to the ordinary draw is
+# refused `no-open-lane`, answers `inconclusive` over an empty transcript,
+# and the estimated stand-down it exists to retire early never lifts. The
+# combined path therefore forces its lane, as the split path already does.
+
+probe_lane() {  # probe_lane <provider> <present_api> <present_sub> <lanes_json> <record>
+  check_provider="$1"
+  stub_api_present="$2"; stub_sub_present="$3"
+  PROVIDER_LANES["$check_provider"]="$4"
+  limit_probe_lane "$check_provider" "$5"
+}
+
+assert_eq "a record naming its own lane is probed on that lane" \
+  'subscription' "$(probe_lane anthropic 1 1 "$split_lanes" '{"lane":"subscription"}')"
+assert_eq "a record naming no lane is probed on the open one" \
+  'api' "$(probe_lane anthropic 1 0 "$default_lanes" '{}')"
+assert_eq "…which is subscription where that is the lane the CLI would use unaided" \
+  'subscription' "$(probe_lane anthropic 0 1 "$default_lanes" '{}')"
+assert_eq "…and api first where both are open" \
+  'api' "$(probe_lane anthropic 1 1 "$split_lanes" '{}')"
+assert_eq "a substrate that manages no lanes forces none, so the probe launches unmanaged" \
+  '' "$(probe_lane xai 1 1 "$default_lanes" '{}')"
+assert_eq "…as does a node holding neither credential" \
+  '' "$(probe_lane anthropic 0 0 "$default_lanes" '{}')"
 
 if (( failures > 0 )); then
   printf '\n%s assertion(s) failed\n' "$failures"
