@@ -464,11 +464,11 @@ conservative reading requirement 2.1's own Enabler and Refiner re-checks
 give, rather than the finer "every lane frozen" the pipeline's own
 stand-down gate now computes. A provider reported here as standing down may
 in fact have one lane still open, with its stages quietly falling through
-to it rather than actually idling — which `agent-cycle.sh --status` and
-`scripts/node-health.sh --metrics` both say plainly, one line per
-currently-frozen lane, because an operator deciding whether to intervene
-needs exactly that distinction and this badge is not where they would look
-for it. Widening the badge itself to match would cost a second union read
+to it rather than actually idling — which `agent-cycle.sh --status` says
+plainly, one line per currently-frozen lane, because an operator deciding
+whether to intervene needs exactly that distinction and this badge is not
+where they would look for it. Widening the badge itself to match would cost
+a second union read
 per candidate for a verdict the Site renders no differently either way —
 the badge's own job is "is anything here worth a human's attention", and a
 provider with one lane down and one running normally answers that no more

@@ -957,9 +957,11 @@
       hit in that bucket (`limit_union_record_for_lane`/
       `limit_union_state_for_lane`). The flag is deleted outright: the
       probe (1b) always can, since it already carried that key's record; a
-      hand `--clear-limit` deletes it only when the flag names exactly the
-      scope asked for — by strict equality, never the wildcard-tolerant
-      match the carriers apply when deciding whether they are frozen.
+      hand `--clear-limit` deletes it when the flag's provider matches
+      and, if a lane was named, the flag's lane matches too — so
+      `--clear-limit <provider>` alone reaches every lane of it — never
+      the wildcard-tolerant match the carriers apply when deciding whether
+      they are frozen.
 
       The stand-down reads the union once per lane, with
       `limit_union_state_for_lane`, answering that lane's governing hit,
