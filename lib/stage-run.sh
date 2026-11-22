@@ -649,29 +649,35 @@ stage_lane_any_present() {
 # stage fall through to the provider's other open lane rather than drawing
 # the frozen one by weight and immediately re-hitting the same limit.
 #
-# Defined as a permissive fallback (never frozen) when
-# `limit_governing_record_for` is not defined — every test that sources
-# lib/stage-run.sh alone without lib/limit-detect.sh/lib/toggle.sh (lib/lane.sh's
-# own header explains why that stays possible) — so an isolated test, or any
-# caller that never sourced the fleet-flag machinery, behaves exactly as it
-# did before this issue. `$state_repo` empty (no fleet to ask) also reads as
-# never frozen, the same "nothing to check" default every live re-check in
-# this codebase takes.
-if declare -F limit_governing_record_for >/dev/null 2>&1; then
-  stage_lane_frozen() {
-    local provider="$1" lane="$2" rec resume_at resume_epoch
-    [[ -n "${state_repo:-}" ]] || return 1
-    rec="$(limit_governing_record_for "$state_repo" "${state_dir:-}" "$provider" "$lane" \
-      < "${union_log:-/dev/null}" 2>/dev/null)" || return 1
-    [[ -n "$rec" ]] || return 1
-    resume_at="$(jq -r '.resume_at // empty' <<<"$rec" 2>/dev/null)"
-    [[ -n "$resume_at" ]] || return 1
-    resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
-    (( resume_epoch > $(date +%s) ))
-  }
-else
-  stage_lane_frozen() { return 1; }
-fi
+# Permissive (never frozen) when `limit_governing_record_for` is not defined —
+# every test that sources lib/stage-run.sh alone without lib/limit-detect.sh/
+# lib/toggle.sh (lib/lane.sh's own header explains why that stays possible) —
+# so an isolated test, or any caller that never sourced the fleet-flag
+# machinery, behaves exactly as it did before this issue. `$state_repo` empty
+# (no fleet to ask) also reads as never frozen, the same "nothing to check"
+# default every live re-check in this codebase takes.
+#
+# The `declare -F` check lives inside the function body, evaluated on every
+# call, rather than once at source time choosing between two function
+# definitions: a source-time check is only ever right for whichever order
+# this file happened to be sourced in relative to lib/limit-detect.sh, and
+# every production entry point today sources limit-detect.sh first only by
+# convention — reorder those two lines in any of them and a source-time
+# check would silently make this exclusion a permanent no-op, with no test
+# anywhere that would notice, since `declare -F` itself can never tell "not
+# yet sourced" apart from "never going to be".
+stage_lane_frozen() {
+  local provider="$1" lane="$2" rec resume_at resume_epoch
+  declare -F limit_governing_record_for >/dev/null 2>&1 || return 1
+  [[ -n "${state_repo:-}" ]] || return 1
+  rec="$(limit_governing_record_for "$state_repo" "${state_dir:-}" "$provider" "$lane" \
+    < "${union_log:-/dev/null}" 2>/dev/null)" || return 1
+  [[ -n "$rec" ]] || return 1
+  resume_at="$(jq -r '.resume_at // empty' <<<"$rec" 2>/dev/null)"
+  [[ -n "$resume_at" ]] || return 1
+  resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
+  (( resume_epoch > $(date +%s) ))
+}
 
 # stage_lane_draw PROVIDER SUBSTRATE SEED
 # Draws a lane ("api" or "subscription") for PROVIDER on SUBSTRATE among its
