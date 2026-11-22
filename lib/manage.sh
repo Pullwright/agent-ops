@@ -700,23 +700,52 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # otherwise (a single token is the reason). The lane half, if given,
       # must be `api` or `subscription`, the only two lanes this system
       # knows.
+      #
+      # `clear_limit_arg1_scoped` — a token *shaped* like `<provider>/<lane>`,
+      # which is no whitespace and exactly one `/` — is what decides whether
+      # the token is read as a scope at all, and it is deliberately narrower
+      # than "contains a slash". Two readings have to stay apart:
+      #
+      #   * `/api`, `foo/api` — scope-shaped, so always a scope and never a
+      #     reason, even when the provider half is empty or names nothing.
+      #     An empty half must not reach `PROVIDER_SUBSTRATE`'s subscript at
+      #     all: an empty subscript on an associative array is a fatal
+      #     expansion error under `set -e`, not the empty read `${...:-}`
+      #     looks like (the same trap `run_model_stage`'s own header records
+      #     for `MODEL_PROVIDER` and `limit_lane_managed` guards with
+      #     `declare -p`). And a provider half that simply names nothing must
+      #     not fall through to the reason reading either, which would turn
+      #     one typo — `--clear-limit foo/api` — into a bare, fleet-wide
+      #     clear of every provider's stand-down.
+      #   * `cap raised 2026/11/22` — a genuine reason that happens to carry
+      #     slashes. Not scope-shaped (whitespace, two slashes), so it stays
+      #     the reason it was before this issue.
       CLEAR_LIMIT_LANE=""
       clear_limit_arg1_provider="${CLEAR_LIMIT_ARG1%%/*}"
-      if [[ "$CLEAR_LIMIT_ARG1" == */* ]]; then
+      clear_limit_arg1_scoped=0
+      if [[ "$CLEAR_LIMIT_ARG1" =~ ^[^[:space:]/]*/[^[:space:]/]*$ ]]; then
         CLEAR_LIMIT_LANE="${CLEAR_LIMIT_ARG1#*/}"
+        clear_limit_arg1_scoped=1
       fi
-      if [[ -n "$CLEAR_LIMIT_ARG1" ]] \
+      clear_limit_arg1_known=0
+      if [[ -n "$clear_limit_arg1_provider" ]] \
          && { [[ "$clear_limit_arg1_provider" == "anthropic" ]] \
-              || [[ -n "${PROVIDER_SUBSTRATE[$clear_limit_arg1_provider]:-}" ]]; } \
+              || [[ -n "${PROVIDER_SUBSTRATE[$clear_limit_arg1_provider]:-}" ]]; }; then
+        clear_limit_arg1_known=1
+      fi
+      if [[ -n "$CLEAR_LIMIT_ARG1" ]] && (( clear_limit_arg1_known )) \
          && { [[ -z "$CLEAR_LIMIT_LANE" ]] \
               || [[ "$CLEAR_LIMIT_LANE" == "api" || "$CLEAR_LIMIT_LANE" == "subscription" ]]; }; then
         CLEAR_LIMIT_PROVIDER="$clear_limit_arg1_provider"
         CLEAR_LIMIT_REASON="$CLEAR_LIMIT_ARG2"
-      elif [[ -n "$CLEAR_LIMIT_ARG1" ]] && [[ "$CLEAR_LIMIT_ARG1" == */* ]] \
-           && { [[ "$clear_limit_arg1_provider" == "anthropic" ]] \
-                || [[ -n "${PROVIDER_SUBSTRATE[$clear_limit_arg1_provider]:-}" ]]; }; then
+      elif (( clear_limit_arg1_scoped )) && (( clear_limit_arg1_known )); then
         printf 'agent-cycle: --clear-limit: "%s" is not api or subscription, the only two lanes\n' \
           "$CLEAR_LIMIT_LANE" >&2
+        exit 64
+      elif (( clear_limit_arg1_scoped )); then
+        printf 'agent-cycle: --clear-limit: "%s" is not a configured provider (known: %s) — a <provider>/<lane> argument is never read as a reason\n' \
+          "$clear_limit_arg1_provider" \
+          "$(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" anthropic | sort -u | paste -sd, -)" >&2
         exit 64
       elif [[ -n "$CLEAR_LIMIT_ARG2" ]]; then
         printf 'agent-cycle: --clear-limit: "%s" is not a configured provider (known: %s) — with two arguments the first must name one\n' \
@@ -887,7 +916,15 @@ if [[ -n "$MANAGE_ACTION" ]]; then
         printf 'agent-cycle: --close-lane: "%s" is not api or subscription, the only two lanes\n' "$close_lane_lane" >&2
         exit 64
       fi
-      if [[ "$close_lane_provider" != "anthropic" && -z "${PROVIDER_SUBSTRATE[$close_lane_provider]:-}" ]]; then
+      # The empty provider half (`--close-lane /api`) is refused by this same
+      # test, before the subscript is ever read: an empty subscript on an
+      # associative array is a fatal expansion error under `set -e`, not the
+      # empty read `${...:-}` looks like — the `||` short-circuits, so the
+      # second half never evaluates. (Same trap `run_model_stage`'s own
+      # header records for `MODEL_PROVIDER`, and `limit_lane_managed` guards
+      # with `declare -p`.)
+      if [[ -z "$close_lane_provider" ]] \
+         || [[ "$close_lane_provider" != "anthropic" && -z "${PROVIDER_SUBSTRATE[$close_lane_provider]:-}" ]]; then
         printf 'agent-cycle: --close-lane: "%s" is not a configured provider (known: %s)\n' \
           "$close_lane_provider" \
           "$(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" anthropic | sort -u | paste -sd, -)" >&2

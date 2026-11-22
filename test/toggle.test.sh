@@ -1792,6 +1792,51 @@ assert_contains "...and reports the stand-down lifted for the provider" \
   "stand-down lifted" "$clear_provider_out"
 rm -f "$a_log" "$b_log"
 
+# --- a malformed <provider>/<lane> argument is refused, never re-read ------
+# A token *shaped* like `<provider>/<lane>` — no whitespace, exactly one `/`
+# — is always an attempted scope, so a provider half that is empty or names
+# nothing is an exit-64 refusal. Two readings it must not get instead:
+#
+#   * the empty half must never reach PROVIDER_SUBSTRATE's subscript, where
+#     an empty subscript on an associative array is a fatal expansion error
+#     under `set -e` rather than the empty read `${...:-}` looks like;
+#   * an unknown half must not fall through to the "a single token is the
+#     reason" reading, which would turn one typo into a bare, fleet-wide
+#     clear of *every* provider's stand-down.
+#
+# Asserted against the flag as well as the exit code, because the second
+# reading fails loudly in neither: it reports a stand-down lifted and
+# deletes the flag outright.
+printf '%s\n' '{"resume_at":"2099-01-01T00:00:00Z","class":"monthly-spend","reset_known":true,"kind":"auto","actor":"node-a","provider":"anthropic","lane":"api"}' \
+  > "$gh_backing/fleet/limit.json"
+for bad_scope in /api anthropic.typo/api; do
+  for bad_cmd in --clear-limit --close-lane; do
+    bad_scope_out="$(run_node "$b_home" agent-cycle.sh "$bad_cmd" "$bad_scope" 2>&1)"
+    assert_eq "$bad_cmd refuses \"$bad_scope\" with a usage error" "64" "$?"
+    assert_contains "...naming the configured providers rather than crashing on the subscript" \
+      "is not a configured provider" "$bad_scope_out"
+    assert_not_contains "...and never leaks bash's own bad-array-subscript error" \
+      "bad array subscript" "$bad_scope_out"
+  done
+done
+assert_eq "...leaving the lane-scoped flag record untouched by any of them" "anthropic api" \
+  "$(jq -r '"\(.provider) \(.lane)"' "$gh_backing/fleet/limit.json" 2>/dev/null)"
+rm -f "$b_log"
+
+# And the reading the shape test exists to preserve: a genuine reason that
+# happens to carry slashes is still a reason, exactly as before this issue,
+# so the bare clear it asks for does lift the stand-down and delete the flag.
+clear_slashy_out="$(run_node "$b_home" agent-cycle.sh --clear-limit "cap raised 2026/11/22" 2>&1)"
+assert_contains "a slash-bearing reason is still read as a reason, not a malformed scope" \
+  "stand-down lifted" "$clear_slashy_out"
+assert_contains "...recording the slash-bearing reason it was given" \
+  'cap raised 2026/11/22' "$(cat "$b_log" 2>/dev/null)"
+assert_eq "...so the bare clear it asks for deletes the flag, lane-scoped record and all" "0" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+assert_not_contains "...and the limit-cleared it logs is scoped to no provider at all" \
+  '"provider"' "$(grep '"event":"limit-cleared"' "$b_log" 2>/dev/null || true)"
+rm -f "$a_log" "$b_log" "$gh_backing/fleet/limit.json"
+
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing
 # merge autonomy must publish its own file under its own name and must not
