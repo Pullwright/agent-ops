@@ -415,21 +415,22 @@ LIMIT_UNION_JQ='
       limit_union_bucket_or_empty($u.by; $prov; ""),
       limit_union_bucket_or_empty($u.by; $prov; $lane)
     ]);
-  # limit_union_fold_for: PROV'\''s own answer collapsed across both of its
-  # lanes (api/subscription) plus the lane-wildcard bucket — the answer every
-  # caller that does not distinguish lanes (the dashboard, lib/enabler.sh,
-  # lib/refinement.sh, review-cycle.sh, monitor-cycle.sh) has always read, now
-  # folded one level deeper without changing what it means: a pre-#2242
-  # record (no lane at all) lands in the lane-wildcard bucket and is found
-  # here exactly as before.
+  # limit_union_fold_for: PROV'\''s own answer collapsed across every lane
+  # bucket the union has actually seen for it, plus the lane-wildcard
+  # bucket — the answer every caller that does not distinguish lanes (the
+  # dashboard, lib/enabler.sh, lib/refinement.sh, review-cycle.sh,
+  # monitor-cycle.sh) has always read, now folded one level deeper without
+  # changing what it means: a pre-#2242 record (no lane at all) lands in the
+  # lane-wildcard bucket and is found here exactly as before. Dynamic over
+  # whatever lanes $u.by[$prov] actually holds, like
+  # limit_union_frozen_providers below, rather than two fixed names: a
+  # record naming a lane other than "api"/"subscription" stays visible here
+  # instead of silently reading as "not frozen" to every provider-level
+  # reader.
   def limit_union_fold_for($names; $prov):
     limit_union_fold($names) as $u |
-    limit_bucket_combine([
-      limit_union_bucket_or_empty($u.by; ""; ""),
-      limit_union_bucket_or_empty($u.by; $prov; ""),
-      limit_union_bucket_or_empty($u.by; $prov; "api"),
-      limit_union_bucket_or_empty($u.by; $prov; "subscription")
-    ]);
+    limit_bucket_combine(
+      [limit_union_bucket_or_empty($u.by; ""; "")] + (($u.by[$prov] // {}) | [.[]]));
   def limit_union_fold_collapsed($names):
     limit_union_fold($names) as $u |
     ([$u.by[] | .[]]) as $all |
