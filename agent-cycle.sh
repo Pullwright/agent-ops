@@ -445,9 +445,10 @@ stops cycles from starting (shared with review-cycle.sh).
                      or the plan rolled over — or to lift a `--close-lane`
                      closure early. Unlike --enable this touches no switch:
                      it clears fleet/limit.json (the whole flag with no
-                     provider named; with one — and, if given, its own lane
-                     — only when the flag's own record already names that
-                     same key) and logs a `limit-cleared` event that
+                     provider named; with one, when the flag's own record
+                     names that provider — whatever lane, if any, it names;
+                     with a lane too, only when it names that same lane)
+                     and logs a `limit-cleared` event that
                      supersedes the cooldown. A wider record left standing by
                      a narrower clear is warned about, since it still holds
                      the named provider (or lane) down.

@@ -765,19 +765,28 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       # must converge on the latest resume) — a human lifting a stand-down is
       # the one case that legitimately moves it earlier, and delete is the
       # only write that expresses that. With a named provider[/lane], the
-      # flag is only ever deleted outright when its own current record names
-      # *exactly* that key — strict equality, never `limit_flag_record_for`'s
-      # own wildcard-tolerant match: a wildcard record (no `provider`, or, with
-      # a lane named, no `lane`) governs every provider/lane and must survive
-      # a scoped clear, which can only ever narrow one bucket of the union,
+      # flag is only ever deleted outright when its own current record is
+      # *within* that scope — never `limit_flag_record_for`'s own
+      # wildcard-tolerant match, which widens the other way: a record
+      # **wider** than the clear (no `provider` at all, or, with a lane
+      # named, no `lane`) governs every provider/lane and must survive, since
+      # a scoped clear can only ever narrow one bucket of the union and could
       # never un-write "every provider/lane but this one" from the flag.
+      #
+      # A record **narrower** than the clear is the opposite case and is
+      # deleted: `--clear-limit anthropic` means every lane of anthropic
+      # (issue #2242's own words), so a flag naming `anthropic/api` is
+      # squarely inside it and leaving it in place would report a stand-down
+      # lifted that is still held down by the carrier read live — the exact
+      # failure this command exists to end. So the lane half is compared only
+      # when the clear itself named one.
       clear_flag=1
       if [[ -n "$CLEAR_LIMIT_PROVIDER" && -n "$state_repo" ]]; then
         flag_now="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
         flag_provider="$(jq -r '.provider // empty' <<<"$flag_now" 2>/dev/null || true)"
         flag_lane="$(jq -r '.lane // empty' <<<"$flag_now" 2>/dev/null || true)"
-        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" && "$flag_lane" == "$CLEAR_LIMIT_LANE" ]] \
-          || clear_flag=0
+        [[ "$flag_provider" == "$CLEAR_LIMIT_PROVIDER" ]] || clear_flag=0
+        [[ -z "$CLEAR_LIMIT_LANE" || "$flag_lane" == "$CLEAR_LIMIT_LANE" ]] || clear_flag=0
       fi
       if [[ -n "$state_repo" ]]; then
         if (( clear_flag )); then

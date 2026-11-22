@@ -1754,6 +1754,30 @@ assert_contains "...logging a limit-cleared event scoped to that lane" \
   '"lane":"subscription"' "$(cat "$b_log" 2>/dev/null)"
 rm -f "$b_log"
 
+# A clear scoped to the *provider* must still delete a flag record scoped to
+# one of its lanes: `--clear-limit anthropic` means every lane of anthropic,
+# so a record naming `anthropic/api` is squarely inside it. Leaving it in
+# place would report a stand-down lifted that the carrier read live still
+# holds down — the exact failure this command exists to end — and would say
+# so in a warning naming the record as "wider", which a lane-scoped one is
+# not. Only a record *wider* than the clear survives, which the wildcard
+# case above already covers.
+rm -f "$a_log"
+run_node "$a_home" agent-cycle.sh --close-lane anthropic/api --until 2099-01-01T00:00:00Z \
+  --reason "narrower than the clear that follows" >/dev/null 2>&1
+assert_eq "a lane-scoped flag record is in place to clear" "anthropic api" \
+  "$(jq -r '"\(.provider) \(.lane)"' "$gh_backing/fleet/limit.json" 2>/dev/null)"
+clear_provider_out="$(run_node "$b_home" agent-cycle.sh --clear-limit anthropic 2>&1)"
+assert_eq "--clear-limit <provider> deletes a flag record scoped to one of its lanes" "0" \
+  "$(test -f "$gh_backing/fleet/limit.json" && echo 1 || echo 0)"
+assert_not_contains "...rather than reporting the flag does not name that provider" \
+  "does not name" "$clear_provider_out"
+assert_not_contains "...or warning that a lane-scoped record is a wider one it cannot remove" \
+  "NOT lifted" "$clear_provider_out"
+assert_contains "...and reports the stand-down lifted for the provider" \
+  "stand-down lifted" "$clear_provider_out"
+rm -f "$a_log" "$b_log"
+
 # --- --kill-merge-autonomy / --restore-merge-autonomy (D18, requirement 2.3b) ---
 # A third fleet flag, independent of the switch and the limit above: killing
 # merge autonomy must publish its own file under its own name and must not

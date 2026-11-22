@@ -481,10 +481,16 @@
     lifted and what it could not, and warns loudly on a failed flag delete
     — a flag left set keeps every node down after the operator believes
     they have resumed; naming a provider (or provider/lane) deletes the
-    flag only when the flag's own current record already names exactly
-    that key — by strict equality, never the wildcard-tolerant match the
-    stand-down check itself applies — leaving a different or wider record
-    untouched. A scoped clear then re-reads both carriers for that same key
+    flag only when the flag's own current record falls *within* that
+    scope — its `provider` is the named one, and, when a lane was named,
+    its `lane` is that lane — never the wildcard-tolerant match the
+    stand-down check itself applies, which widens the other way. A record
+    **wider** than the clear is left untouched (see below); a record
+    **narrower** than it is deleted, since `--clear-limit <provider>`
+    means every lane of that provider and a record naming one of them is
+    squarely inside it — leaving it would report a stand-down lifted that
+    the live carrier still holds down. A different provider's record is
+    untouched either way. A scoped clear then re-reads both carriers for that same key
     rather than inferring success from what it wrote, and warns that the
     stand-down is *not* lifted when a wider record still holds it down,
     naming the less-scoped `--clear-limit` form that can clear it (bare, or
