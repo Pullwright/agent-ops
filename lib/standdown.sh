@@ -675,6 +675,47 @@ limit_probe_model_for() {
   printf '%s' "$implementer_model_trivial"
 }
 
+# limit_lane_configured_open PROVIDER LANE
+# True (exit 0) iff LANE is open for PROVIDER on this node by credential
+# presence and `lanes` configuration alone (issue #2242) — exactly
+# `stage_lane_draw`'s own openness test (lib/stage-run.sh) *minus* its
+# `stage_lane_frozen` exclusion, which is the very thing 2.1's gate below is
+# deciding rather than reading. One predicate, `lane_effective_open`
+# (lib/lane.sh), shared with the draw and with `--status`, so the gate can
+# never think a lane is available to fall through to that the next launch
+# would refuse to draw (requirement 34a's own reason for that file existing).
+#
+# Permissive — open — in every case where lane management is not running at
+# all: the substrate declares no `substrate_<name>_lane_present` (xai today),
+# neither of its two credentials is present (`stage_lane_any_present`'s own
+# contract: an unmanaged launch, `stage_lane` left empty), or this process
+# never sourced lib/lane.sh/lib/model-id.sh (this file's own tests, the same
+# gap its header's `model_key_is_set`/`stage_model_resolve_into` fallbacks
+# already document). Each of those is a provider whose hits name no lane, so
+# both lanes resolve to the same lane-wildcard bucket and the combined path
+# below handles it as the single record it is — the caller's own guard never
+# fires, and behaviour is identical to before this issue.
+limit_lane_configured_open() {
+  local provider="$1" lane="$2" substrate fn lanes_json present_api=0 present_sub=0
+  declare -F lane_effective_open >/dev/null 2>&1 || return 0
+  # `declare -p`, not a `${...:-}` default: reading one key of an associative
+  # array this process never declared makes bash take it for an indexed one
+  # and evaluate the key arithmetically, which under `set -u` is an unbound-
+  # variable error rather than the empty default it looks like.
+  declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || return 0
+  declare -p PROVIDER_LANES >/dev/null 2>&1 || return 0
+  substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
+  fn="substrate_${substrate//-/_}_lane_present"
+  declare -F "$fn" >/dev/null 2>&1 || return 0
+  "$fn" api && present_api=1
+  "$fn" subscription && present_sub=1
+  (( present_api || present_sub )) || return 0
+  lanes_json="${PROVIDER_LANES[$provider]:-${STAGE_LANE_DEFAULT_JSON:-}}"
+  [[ -n "$lanes_json" ]] || lanes_json="${STAGE_LANE_DEFAULT_JSON:-}"
+  [[ -n "$lanes_json" ]] || return 0
+  lane_effective_open "$lanes_json" "$lane" "$present_api" "$present_sub"
+}
+
 _standdown_usage_limit_cooldown() {
 # 2.1 Usage-limit cooldown, scoped to the (provider, lane) that hit it (issue
 # #2135, scoped one level finer to the lane by issue #2242): every node
@@ -775,6 +816,39 @@ if [[ -n "$resume_at_sub" ]]; then
 fi
 limit_frozen_api=0; (( resume_epoch_api > now_epoch )) && limit_frozen_api=1
 limit_frozen_sub=0; (( resume_epoch_sub > now_epoch )) && limit_frozen_sub=1
+
+# "Every lane of it is frozen" counts only the lanes this node could actually
+# fall through to (issue #2242). A lane whose credential is absent, or which
+# this provider's own `lanes` config closes, is no fallthrough for the frozen
+# lane's stages — `stage_lane_draw` will not draw it either — so a provider
+# whose *only* open lane freezes has no open lane left and must stand down
+# now, exactly as it did before this issue scoped the record to a lane.
+# Without this, the gate below reads a closed or absent sibling as merely
+# "not frozen" and never fires: every launch is then refused by
+# `run_model_stage`'s own `no-open-lane` path, which names config.json rather
+# than the live limit, and 2.1b's probe, requirement 2's freeze escalation
+# and the `externally-blocked usage-limit` node state are all skipped for a
+# limit that is genuinely in force. That is the common shape, not an edge:
+# `lane_effective_open`'s own default (`enabled` unset, every provider whose
+# config.json names no `lanes` block) opens `subscription` only when `api` is
+# *absent*, so an unconfigured provider has exactly one open lane.
+#
+# Expressed by lending the frozen lane's own record to its unopen sibling, so
+# the single-record combined path below handles it as the one record it is:
+# one probe, one escalation read, one stand-down reason, byte-identical to
+# the way a provider with no lane split at all is handled. Guarded on the
+# other lane being genuinely frozen, so two lanes shut by configuration
+# alone stays what it already was — the pre-existing `no-open-lane` case,
+# which owes no usage-limit stand-down and must not invent one.
+if (( limit_frozen_api )) && ! (( limit_frozen_sub )) \
+   && ! limit_lane_configured_open "${check_provider:-anthropic}" subscription; then
+  governing_sub="$governing_api"; resume_at_sub="$resume_at_api"
+  union_state_sub="$union_state_api"; limit_frozen_sub=1
+elif (( limit_frozen_sub )) && ! (( limit_frozen_api )) \
+   && ! limit_lane_configured_open "${check_provider:-anthropic}" api; then
+  governing_api="$governing_sub"; resume_at_api="$resume_at_sub"
+  union_state_api="$union_state_sub"; limit_frozen_api=1
+fi
 
 # A provider stands down only once every lane of it is frozen — one open
 # lane is exactly what lets a stage fall through instead (`stage_lane_draw`).

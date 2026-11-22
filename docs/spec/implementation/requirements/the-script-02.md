@@ -908,8 +908,20 @@
       node down only for that key, and a stage of that provider falls
       through to its other lane (`lib/stage-run.sh`'s `stage_lane_draw`,
       which this check never calls into) rather than wait. The provider as
-      a whole stands down only once *every* lane of it is frozen. This
-      check gates the Co-Ordinator against its own resolved provider
+      a whole stands down only once every lane it could fall through to is
+      frozen — counting exactly the lanes `stage_lane_draw` itself would
+      draw from (`lane_effective_open`, requirement 34a's one predicate,
+      via `limit_lane_configured_open`), since a lane whose credential is
+      absent on this node, or which that provider's own `lanes` config
+      closes, is no fallthrough for a frozen sibling's stages. A provider
+      whose *only* open lane freezes therefore stands down at once, exactly
+      as it did before #2242 scoped the record to a lane; that is the
+      ordinary shape rather than an edge case, since `enabled` unset — every
+      provider whose `config.json` names no `lanes` block — opens
+      `subscription` only when `api` is absent, leaving one open lane. Two
+      lanes shut by configuration alone is not this: it owes no usage-limit
+      stand-down, and stays requirement 4d's own `no-open-lane` refusal.
+      This check gates the Co-Ordinator against its own resolved provider
       (`check_provider`); the Implementer, Enabler and Refiner re-checks
       cover their own provider conservatively — by provider alone, not yet
       the lane — so "any lane of my provider is frozen" remains a safe,
