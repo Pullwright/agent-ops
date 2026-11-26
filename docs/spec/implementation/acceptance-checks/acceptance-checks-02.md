@@ -308,15 +308,33 @@
    one of these three that reads `[ ok ]`; `livelocked` and `unconfirmed` both
    warn, exactly as `bounded` does, and for the same reason: a state that
    might not still be true tomorrow — or was never actually measured — is not
-   a healthy one to report as such. `test/memory-wiring.test.sh` passes
+   a healthy one to report as such.
+
+   In the arm that would otherwise read `parented`, `memory_cgroup_verdict`
+   reads `swap-unbounded` instead (agent-ops#1322, read via the
+   `AGENT_OPS_SCHEDULER_CGROUP_SWAP` mount, `MEMORY_CGROUP_PARENT_SWAP_MAX`)
+   when the parent's own `memory.swap.max` reads exactly `max`: a hard
+   ceiling that reclaims or kills is only half the fix, since a cgroup held
+   at it still swaps the *host* rather than itself if the parent's swap is
+   unrestricted — the same incident (agent-ops#1305) took 100% of host swap
+   on a 5.8 GiB VM. `swap-unbounded` warns, never `[ ok ]`. A parent
+   `memory.swap.max` of `0`, or a window that cannot be read at all, leaves
+   the verdict `parented` — an unread window is not evidence either way, and
+   `memory_cgroup_parent_describe`'s own `[ ok ]` line appends a short
+   "(parent memory.swap.max unread)" suffix for that case rather than reading
+   identically to a parent whose swap really is bounded. `test/memory-wiring.test.sh` passes
    against the block lifted verbatim from `lib/standdown.sh`: memory below
    the floor exits 0 without falling through to the rest of the cycle, the
    logged `stand-down` event carries `cause: "memory-low"` and both the
    available and total KiB; memory at or above the floor, an unreadable
    `/proc/meminfo`, and `min_free_memory_bytes: 0` all fall through
    untouched, standing nothing down. `test/doctor.test.sh` passes: the
-   container-memory line always reports one of these verdicts' own wording;
-   and, separately, a rising delta in the parent's own `memory.events` `high`
+   container-memory line always reports one of these verdicts' own wording,
+   including `swap-unbounded`'s, which names the parent's `memory.high`, its
+   `memory.max`, and this cgroup's own `memory.max`, and never reads
+   `[ ok ]`; a parent `memory.swap.max` of `0` on the same otherwise-`parented`
+   fixture reads `[ ok ]` instead; and, separately, a rising delta in the
+   parent's own `memory.events` `high`
    counter (`MEMORY_CGROUP_PARENT_EVENTS`, persisted between runs at
    `state_dir/.doctor-memory-events-high`) warns naming the delta and the
    elapsed time since the prior sample, a flat delta reads `[ ok ]`, and a

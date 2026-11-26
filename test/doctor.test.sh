@@ -2642,7 +2642,7 @@ assert_eq "no GitHub-Authentication-Token-Expiration header (this fixture's stub
 # A forced cgroup fixture, not this test host's own real one — the same
 # reason the plain assertion above only checks that *some* verdict was
 # reported, never which one: this host may or may not be a cgroup v2
-# container, and if it is, which of memory_cgroup_verdict's seven readings it
+# container, and if it is, which of memory_cgroup_verdict's eight readings it
 # is in is not something this test can pin. MEMORY_CGROUP_ROOT/_PARENT_HIGH/
 # _PARENT_MAX, read by lib/memory.sh, override that at the source instead.
 
@@ -2717,6 +2717,47 @@ mc_stale_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALL
   bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
 assert_contains "a setting that does not match the live verdict still warns" \
   "[warn] container memory: this container holds" "$mc_stale_out"
+
+# --- Memory: swap-unbounded (agent-ops#1322) --------------------------------
+#
+# An otherwise-parented hierarchy — a real parent memory.high, a real parent
+# memory.max strictly above this cgroup's own and within the 25% headroom
+# band — whose parent memory.swap.max is left unrestricted: a cgroup held at
+# that ceiling still has somewhere to go, and it swaps the *host* rather than
+# being reclaimed or killed (agent-ops#1305 took 100% of host swap on a
+# 5.8 GiB VM). This must warn, naming all four figures, never [ ok ].
+
+mc_swap_parent_high="$tmp/mc-swap-parent-high"
+mc_swap_parent_max="$tmp/mc-swap-parent-max"
+mc_swap_parent_swap_max="$tmp/mc-swap-parent-swap-max"
+printf '1468006400\n' > "$mc_swap_parent_high"
+printf '2147483648\n' > "$mc_swap_parent_max"
+printf 'max\n' > "$mc_swap_parent_swap_max"
+mc_swap_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$mc_swap_parent_high" \
+  MEMORY_CGROUP_PARENT_MAX="$mc_swap_parent_max" \
+  MEMORY_CGROUP_PARENT_SWAP_MAX="$mc_swap_parent_swap_max" \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "an unrestricted parent memory.swap.max warns, never ok" \
+  "[warn] container memory: this container's parent cgroup has memory.swap.max left unrestricted" "$mc_swap_out"
+assert_contains "...naming the parent's memory.high" "1400 MiB" "$mc_swap_out"
+assert_contains "...naming the parent's memory.max" "2048 MiB" "$mc_swap_out"
+assert_contains "...naming this container's own ceiling" "1536 MiB" "$mc_swap_out"
+assert_not_contains "...and never the plain parented ok line" \
+  "[ ok ] container memory" "$mc_swap_out"
+
+printf '0\n' > "$mc_swap_parent_swap_max"
+mc_swap_bounded_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  MEMORY_CGROUP_ROOT="$mc_cgroup_root" \
+  MEMORY_CGROUP_PARENT_HIGH="$mc_swap_parent_high" \
+  MEMORY_CGROUP_PARENT_MAX="$mc_swap_parent_max" \
+  MEMORY_CGROUP_PARENT_SWAP_MAX="$mc_swap_parent_swap_max" \
+  bash "$DOCTOR" --config "$mc_status_config" 2>&1)"
+assert_contains "the same fixture with the parent's own swap bounded reads ok instead" \
+  "[ ok ] container memory: memory.high is set to" "$mc_swap_bounded_out"
 
 # --- Memory: livelocked can never be accepted (agent-ops#2885) -------------
 #
@@ -3100,7 +3141,7 @@ assert_contains "0 turns the memory warning off entirely, regardless of real ava
 # The cgroup line is advisory and reports whatever this host actually is, so
 # the assertion is that it always says one of the things it can say — never
 # that it says a particular one, which would make the test depend on whether
-# it happens to be run inside a container, and if so which of the seven
+# it happens to be run inside a container, and if so which of the eight
 # verdicts (lib/memory.sh's memory_cgroup_verdict) that container is in.
 #
 # Each alternative below is the opening of one verdict's own describe text, so
@@ -3112,9 +3153,11 @@ assert_contains "0 turns the memory warning off entirely, regardless of real ava
 # genuinely in the `unconfirmed` band (a real parent memory.high with no
 # memory.max window mounted, i.e. one not yet re-run through
 # cgroup-parent-setup.sh) failed this assertion while doctor.sh was emitting
-# exactly the right warning.
+# exactly the right warning. `swap-unbounded` opens "this container's parent
+# cgroup has memory.swap.max left unrestricted", distinct from both for the
+# same reason.
 assert_eq "the container-memory line always reports one of its verdicts" \
-  "yes" "$(if grep -qE "container memory: (memory\.high is set|no cgroup ceiling|no cgroup v2 memory files|this container holds|this container's parent cgroup has memory\.high set to|this container's parent cgroup has a memory\.high ceiling, but its memory\.max cannot be read)" <<<"$out"; then echo yes; else echo no; fi)"
+  "yes" "$(if grep -qE "container memory: (memory\.high is set|no cgroup ceiling|no cgroup v2 memory files|this container holds|this container's parent cgroup has memory\.high set to|this container's parent cgroup has a memory\.high ceiling, but its memory\.max cannot be read|this container's parent cgroup has memory\.swap\.max left unrestricted)" <<<"$out"; then echo yes; else echo no; fi)"
 
 # --- Memory: a rising memory.events high delta on the parent (agent-ops#1305) -
 #

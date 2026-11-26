@@ -171,6 +171,16 @@ memory_describe() {
 : "${MEMORY_CGROUP_PARENT_MAX:=/run/cgroup-parent/memory.max}"
 : "${MEMORY_CGROUP_PARENT_EVENTS:=/run/cgroup-parent/memory.events}"
 
+# MEMORY_CGROUP_PARENT_SWAP_MAX is the same kind of read-only window, onto the
+# parent's `memory.swap.max`. A real `memory.max` closes the livelock band
+# (see `memory_cgroup_verdict` below), but a cgroup held at that ceiling still
+# has somewhere to go if `memory.swap.max` is left unrestricted: it swaps the
+# *host* rather than being reclaimed or killed — agent-ops#1305 took 100% of
+# host swap on a 5.8 GiB WSL2 VM. `scripts/cgroup-parent-setup.sh --swap`
+# defaults to `0`; this window is how a container can tell whether that has
+# actually been run.
+: "${MEMORY_CGROUP_PARENT_SWAP_MAX:=/run/cgroup-parent/memory.swap.max}"
+
 # memory_cgroup_field FIELD
 # One cgroup memory file's contents (`memory.current`, `memory.high`,
 # `memory.max`, ...), or empty when it cannot be read.
@@ -222,6 +232,22 @@ memory_cgroup_parent_max() {
   printf '%s' "$value"
 }
 
+# memory_cgroup_parent_swap_max
+# The parent cgroup's `memory.swap.max` verbatim — `max`, a byte count, or
+# empty when the window cannot be read (an un-migrated compose.yaml with
+# nothing mounted there, or the /dev/null default). Mirrors
+# `memory_cgroup_parent_max` exactly, including the unset-vs-`max`
+# distinction: a parent with unrestricted swap and a parent whose window this
+# container cannot read are not the same state, and folding them together
+# would silently call an unmeasured node swap-unbounded, or a genuinely
+# unrestricted one merely unmeasured.
+memory_cgroup_parent_swap_max() {
+  local value
+  value="$(cat "$MEMORY_CGROUP_PARENT_SWAP_MAX" 2>/dev/null)" || return 0
+  [[ -n "$value" ]] || return 0
+  printf '%s' "$value"
+}
+
 # memory_cgroup_parent_events_high
 # The parent cgroup's `memory.events` `high` field — the running count of
 # times the kernel has throttled this hierarchy under `memory.high` — or empty
@@ -256,11 +282,26 @@ memory_cgroup_parent_events_high() {
 #              parent's ceiling actually adds headroom the kernel can reclaim
 #              into, and the throttle band between the parent's `memory.high`
 #              and this cgroup's own `memory.max` is narrow enough for the
-#              workload to cross it — and unlike `bounded` it survives a
-#              roll, because the ceiling does not live on the container.
-#              Distinguished from `bounded` rather than folded into it because
-#              the two differ in exactly the property this check exists to
-#              report: whether the node will still be bounded tomorrow.
+#              workload to cross it **and** the parent's own
+#              `memory.swap.max` is not left unrestricted — and unlike
+#              `bounded` it survives a roll, because the ceiling does not
+#              live on the container. Distinguished from `bounded` rather
+#              than folded into it because the two differ in exactly the
+#              property this check exists to report: whether the node will
+#              still be bounded tomorrow.
+#   swap-unbounded the same shape as `parented` — a real, sufficiently
+#              headroomed parent `memory.high`/`memory.max` — except the
+#              parent's own `memory.swap.max` reads exactly `max`. A hard
+#              ceiling that reclaims or kills before it is only half the fix:
+#              a cgroup held at that ceiling still has somewhere to go if
+#              swap is unrestricted, and it goes there by swapping the
+#              *host*, not itself — agent-ops#1305 took 100% of host swap on
+#              a 5.8 GiB VM. Warns rather than `[ ok ]`, since an operator
+#              reading `[ ok ]` here is exactly the gap this verdict exists
+#              to close. A swap window this container cannot read (an
+#              un-migrated `compose.yaml`) stays `parented`, not
+#              `swap-unbounded` — see `memory_cgroup_parent_describe` for how
+#              that unmeasured state is still surfaced.
 #   livelocked the parent carries a real `memory.high` below this cgroup's own
 #              `memory.max`, and either the parent's own `memory.max` adds no
 #              usable headroom, or it does but the band it opens is too wide
@@ -343,6 +384,16 @@ memory_cgroup_verdict() {
       # existed at all (agent-ops#1643). Integer form of parent_high <
       # 0.75 * max, to avoid floating point.
       printf 'livelocked'
+    elif [[ "$(memory_cgroup_parent_swap_max)" == "max" ]]; then
+      # The hierarchy's hard ceiling closes the livelock band, but a cgroup
+      # held at it still swaps the host rather than being reclaimed or killed
+      # if the parent's own memory.swap.max is left unrestricted
+      # (agent-ops#1305's 100%-of-host-swap incident). A window this
+      # container cannot read is not evidence of this — see
+      # memory_cgroup_parent_swap_max's own header — so only the literal
+      # string `max` reads swap-unbounded; anything else, including empty,
+      # falls through to parented.
+      printf 'swap-unbounded'
     else
       printf 'parented'
     fi
@@ -368,17 +419,24 @@ memory_cgroup_describe() {
 # memory_cgroup_parent_describe
 # The `parented` counterpart of `memory_cgroup_describe`: the same measured
 # shape, reporting the ancestor's ceiling rather than this cgroup's absent one,
-# so the ok line carries its evidence exactly as the warning does.
+# so the ok line carries its evidence exactly as the warning does. Appends a
+# short suffix when the parent's own memory.swap.max cannot be read (an
+# un-migrated compose.yaml, or a node not yet re-run through
+# cgroup-parent-setup.sh) — still `[ ok ]`, since an unread window is not
+# evidence of anything, but worth naming as unmeasured rather than silently
+# reading identically to a parent whose swap really is bounded.
 memory_cgroup_parent_describe() {
-  local current max parent_high
+  local current max parent_high parent_swap_max suffix=''
   current="$(memory_cgroup_field memory.current)"
   max="$(memory_cgroup_field memory.max)"
   parent_high="$(memory_cgroup_parent_high)"
+  parent_swap_max="$(memory_cgroup_parent_swap_max)"
   [[ "$current" =~ ^[0-9]+$ ]] || current=0
   [[ "$max" =~ ^[0-9]+$ ]] || max=0
   [[ "$parent_high" =~ ^[0-9]+$ ]] || parent_high=0
-  printf 'memory.high is set to %d MiB on this container'"'"'s parent cgroup, so the kernel reclaims before the %d MiB hard ceiling and keeps doing so after a roll; holding %d MiB now' \
-    $(( parent_high / 1048576 )) $(( max / 1048576 )) $(( current / 1048576 ))
+  [[ -z "$parent_swap_max" ]] && suffix=' (parent memory.swap.max unread)'
+  printf 'memory.high is set to %d MiB on this container'"'"'s parent cgroup, so the kernel reclaims before the %d MiB hard ceiling and keeps doing so after a roll; holding %d MiB now%s' \
+    $(( parent_high / 1048576 )) $(( max / 1048576 )) $(( current / 1048576 )) "$suffix"
 }
 
 # memory_cgroup_livelock_describe
@@ -422,6 +480,27 @@ memory_cgroup_livelock_describe() {
     printf 'this container'"'"'s parent cgroup has memory.high set to %d MiB, and its own memory.max (%d MiB) is no higher than this container'"'"'s own %d MiB ceiling, so it adds no headroom to reclaim into before either kill point — holding %d MiB now; re-run scripts/cgroup-parent-setup.sh with a --max above this container'"'"'s own memory_bytes' \
       $(( parent_high / 1048576 )) "$parent_max_mib" $(( max / 1048576 )) $(( current / 1048576 ))
   fi
+}
+
+# memory_cgroup_swap_describe
+# The `swap-unbounded` counterpart of memory_cgroup_parent_describe: the
+# parent's memory.high/memory.max already close the livelock band — the
+# figures memory_cgroup_parent_describe would otherwise report as ok — but
+# its memory.swap.max is left unrestricted, so a cgroup held at that ceiling
+# swaps the host rather than being reclaimed or killed (agent-ops#1305: 100%
+# of host swap on a 5.8 GiB VM).
+memory_cgroup_swap_describe() {
+  local current max parent_high parent_max parent_max_mib=0
+  current="$(memory_cgroup_field memory.current)"
+  max="$(memory_cgroup_field memory.max)"
+  parent_high="$(memory_cgroup_parent_high)"
+  parent_max="$(memory_cgroup_parent_max)"
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  [[ "$max" =~ ^[0-9]+$ ]] || max=0
+  [[ "$parent_high" =~ ^[0-9]+$ ]] || parent_high=0
+  [[ "$parent_max" =~ ^[0-9]+$ ]] && parent_max_mib=$(( parent_max / 1048576 ))
+  printf 'this container'"'"'s parent cgroup has memory.swap.max left unrestricted, even though its memory.high (%d MiB) and memory.max (%d MiB) already sit safely above this container'"'"'s own %d MiB ceiling — a cgroup held at that ceiling swaps the host rather than being reclaimed or killed, which took 100%% of host swap on a 5.8 GiB VM (agent-ops#1305); holding %d MiB now, re-run scripts/cgroup-parent-setup.sh with a --swap of 0' \
+    $(( parent_high / 1048576 )) "$parent_max_mib" $(( max / 1048576 )) $(( current / 1048576 ))
 }
 
 # memory_cgroup_unconfirmed_describe

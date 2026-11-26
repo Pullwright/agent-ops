@@ -567,5 +567,6 @@ printf '  AGENT_OPS_SCHEDULER_CGROUP_PARENT=%s\n' "$name${unit:+.slice}"
 printf '  AGENT_OPS_SCHEDULER_CGROUP_HIGH=%s\n' "$high_file"
 printf '  AGENT_OPS_SCHEDULER_CGROUP_MAX=%s\n' "$max_file"
 printf '  AGENT_OPS_SCHEDULER_CGROUP_EVENTS=%s\n' "$parent_dir/memory.events"
+printf '  AGENT_OPS_SCHEDULER_CGROUP_SWAP=%s\n' "$swap_file"
 printf '\nThen confirm from inside the container:\n\n'
 printf '  docker compose exec scheduler /app/scripts/doctor.sh --offline | grep "container memory"\n'

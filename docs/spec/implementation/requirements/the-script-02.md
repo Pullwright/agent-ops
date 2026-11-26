@@ -431,13 +431,11 @@
       it runs ahead of every check below that can spend. 0c refuses to start
       a cycle into a host that has no room to finish it; this refuses to
       start one into a host that has no memory to run it, which until this
-      check existed nothing did. On the ockham WSL2 host — a VM capped at
-      6 GiB, running two nodes whose cycles overlap for most of every hour —
-      a cycle that started into no headroom pushed the VM into a
-      Windows-backed swap file and stalled the whole machine; a git write
-      truncated by that stall is what left the zero-length objects that
-      permanently disabled `git gc` (#604). A stand-down costs one cycle, and
-      the freeze it avoids costs the host.
+      check existed nothing did. On the ockham WSL2 host (a 6 GiB VM running
+      two overlapping nodes), a cycle started into no headroom once pushed
+      it into a Windows-backed swap file and stalled the machine,
+      truncating a git write that permanently disabled `git gc` (#604). A
+      stand-down costs one cycle; the freeze it avoids costs the host.
 
       `lib/memory.sh` reads and judges free memory the one way both
       `doctor.sh`'s advisory warning (component 14) and this gate use, so the
@@ -503,12 +501,12 @@
       throttles, and throttling that never disengages because nothing
       anywhere is a hard enough wall to reclaim past — or to kill — is a
       livelock, not a mitigation (agent-ops#1305). `ockham-container` wedged
-      75 minutes in exactly this band: `memory.current` sat above the
-      parent's `memory.high` and below both cgroups' `memory.max`, 2,788,595
-      throttle events accumulated at ~96/second, and every allocating task
-      parked in uninterruptible `D` state — `docker exec` into the node
-      included, which is what made the node undiagnosable remotely while it
-      lasted. `doctor.sh`'s own `parented` verdict read this exact state as
+      75 minutes in this band: `memory.current` sat above the parent's
+      `memory.high` and below both cgroups' `memory.max`, 2,788,595 throttle
+      events accumulated at ~96/second, and every allocating task parked in
+      uninterruptible `D` state, including `docker exec` itself — the node
+      was undiagnosable remotely.
+      `doctor.sh`'s own `parented` verdict read this exact state as
       `[ ok ]` throughout, because `parented` only ever checked that the
       parent's `memory.high` sat below the child's own `memory.max`, never
       that the parent had a `memory.max` of its own for the kernel to
@@ -518,44 +516,48 @@
       default) and `memory.swap.max` (`--swap`, defaulting to `0` — the
       incident also took 100% of host swap on a memory-capped WSL2 VM), and
       `--check` now exits 2 for a parent whose `memory.high` is set but whose
-      `memory.max` is not. Two more mounts alongside `/run/cgroup-parent/
+      `memory.max` is not. Three more mounts alongside `/run/cgroup-parent/
       memory.high` — `AGENT_OPS_SCHEDULER_CGROUP_MAX` at `/run/cgroup-parent/
-      memory.max` and `AGENT_OPS_SCHEDULER_CGROUP_EVENTS` at
-      `/run/cgroup-parent/memory.events`, the same `/dev/null`-default idiom
-      — let `memory_cgroup_verdict` read the parent's own hard ceiling and let
-      `doctor.sh` read the parent's raw throttle counter. `memory_cgroup_verdict`
-      gains two verdicts from this: `livelocked` (a real parent `memory.high`
-      with the parent's own `memory.max` either left at `max`, or a real
-      number that is no higher than the child's own — either way nothing the
-      child can reach reclaims or kills before it, so throttling never
-      disengages — warns, and is never `[ ok ]`) and `unconfirmed` (the same
-      real parent `memory.high`, but the parent's own `memory.max` window
-      cannot be read — an un-migrated `compose.yaml`, or a node not yet
-      re-run through `cgroup-parent-setup.sh` — warns rather than guessing
-      `parented`, since a guess given as `[ ok ]` is exactly what left this
-      incident's node wedged for 75 minutes). `parented` itself needs the
+      memory.max`, `AGENT_OPS_SCHEDULER_CGROUP_EVENTS` at `/run/cgroup-parent/
+      memory.events`, and `AGENT_OPS_SCHEDULER_CGROUP_SWAP` (agent-ops#1322)
+      at `/run/cgroup-parent/memory.swap.max`, the same `/dev/null`-default
+      idiom — let `memory_cgroup_verdict` read the parent's own hard
+      ceiling, its raw throttle counter, and whether its own swap is
+      unrestricted. `memory_cgroup_verdict` gains three verdicts from this:
+      `livelocked` (a real parent `memory.high` with the parent's own
+      `memory.max` either left at `max`, or a real number no higher than the
+      child's own — nothing the child can reach reclaims or kills before it,
+      so throttling never disengages — warns, never `[ ok ]`); `unconfirmed`
+      (the same real parent `memory.high`, but the parent's own `memory.max`
+      window cannot be read — an un-migrated `compose.yaml`, or a node not
+      yet re-run through `cgroup-parent-setup.sh` — warns rather than
+      guessing `parented`, since a guess given as `[ ok ]` is exactly what
+      left this incident's node wedged for 75 minutes); and
+      `swap-unbounded` (the arm that would otherwise be `parented`, but the
+      parent's own `memory.swap.max` reads exactly `max` — a hard ceiling
+      closes the livelock band, but a cgroup held at it still swaps the
+      *host*, not itself, if swap is unrestricted — warns; an unreadable
+      swap window stays `parented`, since it is not evidence either way).
+      `parented` itself needs the
       parent's own `memory.max` to sit *strictly above* the child's, not
-      merely to exist: agent-ops#1620 measured `ockham-container` livelocked
+      merely exist: agent-ops#1620 measured `ockham-container` livelocked
       for most of 2026-09-16 with a real parent `memory.max` (1536 MiB)
-      coincident with the child's own — a hard ceiling that exists but adds
-      no headroom over one the child already has is inert in exactly the same
-      way an unbounded parent `memory.max` is, because the kernel's reclaim
-      under `memory.high` throttles severely enough near a shared ceiling
-      that the workload never makes enough progress to reach either kill
-      point. Nor is a `memory.max` strictly above the child's own enough by
-      itself: agent-ops#1643 extrapolated from both incidents that the band
-      is reachable whatever the parent's `memory.max` is, so a parent
-      `memory.max` (say 3072 MiB) genuinely above the child's own (1536 MiB)
-      would still livelock if the parent's `memory.high` (say 768 MiB) sat
-      far enough below the child's own `memory.max` — more than ~25% — for
-      the kernel's reclaim under `memory.high` to throttle too severely
-      across that wide a band for the workload ever to make progress toward
-      either kill point. The live discriminator `parented` needs is therefore
-      the throttle band's *width* (the parent's `memory.high` against the
-      child's own `memory.max`), not merely whether the parent's `memory.max`
-      sits above the child's — a narrow band, such as the interim
-      `ockham-container` remedy's own (parent `memory.high` 1400 MiB against
-      a `memory.max` of 1536 MiB, an ~8.9% gap), still reads `parented`.
+      coincident with the child's own — a ceiling that adds no headroom over
+      one the child already has is as inert as an unbounded one, since the
+      kernel's reclaim under `memory.high` still cannot make the workload
+      progress toward either kill point. Nor is a `memory.max` strictly
+      above the child's own enough by itself: agent-ops#1643 extrapolated
+      that the band is reachable whatever the parent's `memory.max` is, so a
+      parent ceiling genuinely above the child's own (say 3072 MiB against
+      1536 MiB) still livelocks if the parent's `memory.high` sits more than
+      ~25% below the child's own `memory.max` (say 768 MiB) — reclaim
+      throttles too severely across that wide a band for the workload to
+      progress. The live discriminator is therefore the throttle band's
+      *width* (parent `memory.high` against the child's own `memory.max`),
+      not merely whether the parent's `memory.max` sits above the child's —
+      a narrow band, such as the interim `ockham-container` remedy's own
+      (parent `memory.high` 1400 MiB against a `memory.max` of 1536 MiB, an
+      ~8.9% gap), still reads `parented`.
       `doctor.sh` additionally reads the parent's `memory.events`
       `high` counter every run, persists one sample to `state_dir`, and warns
       on any rising delta since the last one — a signal that needs no ceiling

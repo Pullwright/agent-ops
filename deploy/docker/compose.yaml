@@ -322,6 +322,16 @@ x-agent-ops: &agent-ops
     # mount above in every other respect.
     - ${AGENT_OPS_SCHEDULER_CGROUP_MAX:-/dev/null}:/run/cgroup-parent/memory.max:ro
     - ${AGENT_OPS_SCHEDULER_CGROUP_EVENTS:-/dev/null}:/run/cgroup-parent/memory.events:ro
+    # A fourth window, added by agent-ops#1322 for the same reason as the two
+    # above. `memory.max` closes the livelock band, but a cgroup held at that
+    # ceiling still has somewhere to go if `memory.swap.max` is left
+    # unrestricted: it swaps the *host*, not itself — the same incident
+    # (agent-ops#1305) took 100% of host swap on a 5.8 GiB VM. The child's own
+    # copy will not do, for the same reason `memory.high`/`memory.max` above
+    # cannot: invisible from inside a cgroup namespace. `memory_cgroup_verdict`
+    # reads it to tell `parented` (swap bounded) apart from `swap-unbounded`
+    # (it is not). Same `/dev/null` no-op default, same idiom.
+    - ${AGENT_OPS_SCHEDULER_CGROUP_SWAP:-/dev/null}:/run/cgroup-parent/memory.swap.max:ro
   labels:
     # Only containers carrying this label are watchtower's business — the
     # laptop runs unrelated containers that are none of it.

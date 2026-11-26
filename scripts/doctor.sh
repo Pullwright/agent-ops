@@ -1312,6 +1312,7 @@ case "$memory_cgroup_live_verdict" in
     fi
     ;;
   parented)    ok "container memory: $(memory_cgroup_parent_describe)" ;;
+  swap-unbounded) warn "container memory: $(memory_cgroup_swap_describe)" ;;
   livelocked)  warn "container memory: $(memory_cgroup_livelock_describe)" ;;
   unconfirmed) warn "container memory: $(memory_cgroup_unconfirmed_describe)" ;;
   bounded)     warn "container memory: memory.high is set on this container, so the kernel reclaims before the hard ceiling — but it is set on the container, so the next roll will wipe it; see deploy/docker/compose.yaml for the parent cgroup that survives one" ;;
@@ -3200,8 +3201,8 @@ write_unattended_status() {
   fi
   [[ -n "${token_expiry_json:-}" ]] || token_expiry_json='null'
   # The same verdict the Memory section's case statement above already
-  # named (unbounded/parented/livelocked/unconfirmed/bounded/unlimited/
-  # unknown) — recomputed rather than threaded through as a global, since
+  # named (unbounded/parented/swap-unbounded/livelocked/unconfirmed/bounded/
+  # unlimited/unknown) — recomputed rather than threaded through as a global, since
   # memory_cgroup_verdict is a pure read of a handful of local cgroup files
   # (lib/memory.sh), cheap enough to call twice. Published raw so a peer's
   # own invariant (lib/pager-invariants.sh's `memory-cgroup`, agent-ops#2698)
