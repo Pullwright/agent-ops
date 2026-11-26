@@ -1055,6 +1055,23 @@
    found but left out of scope, both in `publish-dashboard.sh` upstream of
    the `github_json` build: the per-repo `prs_json` fold and the
    merge-queue queue-answers merge (`test/publish-dashboard.test.sh`).
+   Issue #2876 converted three further sites found after TD-PPagop-26081506
+   resolved, all in `lib/eligibility.sh`'s band-eligibility write-backs: the
+   `eligibility_band` loop's (`tech_debt` included), the `issues` loop's, and
+   the `decision_band` loop's own fold of each band's blocked/void/
+   34p-escalated-filtered array back into `ordered_repos_json`
+   (`test/cycle-state.test.sh`) — the one place this requirement's own sweep
+   had never reached, because every prior item converted a *source* build
+   (a gatherer's candidate array, a claim or verdict accumulator) rather than
+   this *write-back* of an already-filtered array into the fleet-state
+   aggregate those sources feed. Past the cap, the write-back's own
+   `2>/dev/null || printf '%s' "$ordered_repos_json"` fallback (TD-PPagop-
+   26081407) kept the *unfiltered* band — exactly the void, stale-blocked and
+   34p-escalated entries the filter upstream had just computed and discarded
+   — with nothing logged. The same issue added a selection-side backstop,
+   `candidate_void_or_escalated` (`lib/candidate-select.sh`), that refuses a
+   void or 34p-escalated candidate in the claim loop regardless of which
+   write-back let it through (`test/cycle-state.test.sh`).
 
    **A converted site binds by position, so each argument is one document.**
    `input as $name` reads whichever document comes next; unlike the

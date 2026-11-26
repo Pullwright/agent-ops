@@ -641,6 +641,57 @@ cat > "$log" <<'EOF'
 {"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"297","detail":"void refused (x). reason"}
 {"ts":"2026-11-01T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"297","detail":"void refused (x). reason"}
 EOF
+# The oversized write-back fixtures below (requirement 4g, issue #2876) are
+# built here, outside the subshell, so the subshell that actually exercises
+# `compute_band_eligibility` is the one and only place in this file that
+# sources lib/candidate-select.sh and lib/eligibility.sh together — sourcing
+# that pair from two separate `(...)` groups in the same file is what made
+# `shellcheck -x` misattribute the *earlier* group's own globals as
+# subshell-local (SC2030) once a second group existed to confuse it with.
+#
+# Before the fix, both the `tech_debt`/`issues` (and every sibling band's)
+# write-back delivered the filtered band to `jq` via `--argjson` — an argv
+# argument, capped at MAX_ARG_STRLEN (131072 bytes). A filtered band past that
+# cap failed `jq` silently (`execve`'s own "Argument list too long"), and the
+# `|| printf '%s' "$ordered_repos_json"` fallback then kept the *unfiltered*
+# aggregate with nothing logged — so a void, a stale-blocked, or a
+# 34p-escalated item survived straight back into the band this cycle's
+# Co-Ordinator or Enabler could select from. Builds one `tech_debt` filler
+# array and one `issues` filler array, each large enough on its own that the
+# *filtered* result (not just the input) is still past the cap, then proves a
+# void entry, a blocked-without-fresh-evidence entry, and a 34p-escalated
+# entry are all absent afterwards — every one of the three exclusion shapes
+# `exclude_blocked_or_void_items`/`exclude_blocked_or_void_issues` apply, for
+# both bands the scope of #2876 names.
+#
+# Built in one jq invocation apiece, with the filler range generated inline
+# rather than assembled via --argjson: a 2000-entry filler array is itself
+# already past MAX_ARG_STRLEN, so passing it through argv to build on top of
+# it would hit the identical silent failure this fixture exists to catch,
+# only one step earlier, in the test's own setup.
+big_td_fixture="$(jq -nc '
+  [range(2000) | {ref: ("td-filler-" + (. | tostring)), title: ("filler " + ("x" * 80))}]
+  + [{ref: "void-me-td"}, {ref: "escalated-me-td"}]')"
+big_iss_fixture="$(jq -nc '
+  [range(2000) | {ref: ("iss-filler-" + (. | tostring)), title: ("filler " + ("x" * 80)),
+                  updated_at: "2026-01-01T00:00:00Z"}]
+  + [{ref: "void-me-iss", updated_at: "2026-01-01T00:00:00Z"},
+     {ref: "blocked-me-iss", updated_at: "2025-12-01T00:00:00Z"},
+     {ref: "escalated-me-iss", updated_at: "2026-01-01T00:00:00Z"}]')"
+iss_blocked='[{"repo":"o/a","item":"blocked-me-iss","ts":"2026-01-02T00:00:00Z"}]'
+td_void='[{"item":"void-me-td"}]'
+iss_void='[{"item":"void-me-iss"}]'
+
+cat > "$tmp_dir/escalated-refusals-log.jsonl" <<'EOF'
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"escalated-me-td","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"escalated-me-td","detail":"void refused (x). reason"}
+{"ts":"2026-10-30T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"escalated-me-iss","detail":"void refused (x). reason"}
+{"ts":"2026-10-31T00:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/a","item":"escalated-me-iss","detail":"void refused (x). reason"}
+EOF
+
+cve_void='[{"item":"52"}]'
+cve_escalated='[{"repo":"o/r","item":"53"}]'
+
 (
   # shellcheck source=lib/candidate-select.sh
   . "$SCRIPT_DIR/lib/candidate-select.sh"
@@ -663,11 +714,126 @@ EOF
   enabler_assignee="maintainer"
   compute_band_eligibility
   printf '%s' "$ordered_repos_json" > "$tmp_dir/band-eligibility-set.json"
+
+  # --- compute_band_eligibility's write-back survives a filtered band past
+  # --- MAX_ARG_STRLEN (requirement 4g, issue #2876), continued ------------
+  # The fixtures really do exceed the cap even after filtering (not just
+  # before) — the fact the old `--argjson` delivery actually tripped over,
+  # and the reason a filtered-but-still-small band would never have caught
+  # this.
+  jq -ne --arg n "$(exclude_blocked_or_void_items "$big_td_fixture" "o/a" '[]' "$td_void" | wc -c)" \
+    '($n | tonumber) > 131072' > "$tmp_dir/band-write-back-td-oversized.flag" 2>/dev/null \
+    || printf 'false' > "$tmp_dir/band-write-back-td-oversized.flag"
+  jq -ne --arg n "$(exclude_blocked_or_void_issues "$big_iss_fixture" "o/a" "$iss_blocked" "$iss_void" | wc -c)" \
+    '($n | tonumber) > 131072' > "$tmp_dir/band-write-back-iss-oversized.flag" 2>/dev/null \
+    || printf 'false' > "$tmp_dir/band-write-back-iss-oversized.flag"
+
+  # shellcheck disable=SC2317
+  guard_warn() { printf '%s\t%s\n' "$1" "$2" >> "$tmp_dir/band-write-back-guard-warn.log"; }
+  union_log="$tmp_dir/escalated-refusals-log.jsonl"
+  blocked_json="$iss_blocked" void_json="$(jq -nc --argjson a "$td_void" --argjson b "$iss_void" '$a + $b')"
+  enabler_assignee="maintainer"
+
+  # $big_td_fixture/$big_iss_fixture on stdin, not --argjson, for the same
+  # reason their own construction above avoided it.
+  ordered_repos_json="$(jq -nc \
+    'input as $td | input as $iss | [{slug: "o/a", tech_debt: $td, issues: $iss}]' \
+    <<<"$(printf '%s\n' "$big_td_fixture" "$big_iss_fixture")")"
+  : > "$tmp_dir/band-write-back-guard-warn.log"
+  compute_band_eligibility
+  printf '%s' "$ordered_repos_json" > "$tmp_dir/band-write-back-oversized.json"
+
+  # --- candidate_void_or_escalated (requirement 4g's selection-side
+  # --- backstop, issue #2876): refuses a composed candidate still in the
+  # --- void or 34p set, whatever let it reach selection -------------------
+  candidate_void_or_escalated "o/r" "52" "$cve_void" "$cve_escalated" \
+    && printf 'true' > "$tmp_dir/cve-void-fleet-wide.flag" \
+    || printf 'false' > "$tmp_dir/cve-void-fleet-wide.flag"
+  candidate_void_or_escalated "o/r" "53" "$cve_void" "$cve_escalated" \
+    && printf 'true' > "$tmp_dir/cve-escalated-repo-scoped.flag" \
+    || printf 'false' > "$tmp_dir/cve-escalated-repo-scoped.flag"
+  candidate_void_or_escalated "o/other" "53" "$cve_void" "$cve_escalated" \
+    && printf 'true' > "$tmp_dir/cve-escalated-other-repo.flag" \
+    || printf 'false' > "$tmp_dir/cve-escalated-other-repo.flag"
+  candidate_void_or_escalated "o/r" "54" "$cve_void" "$cve_escalated" \
+    && printf 'true' > "$tmp_dir/cve-neither.flag" \
+    || printf 'false' > "$tmp_dir/cve-neither.flag"
+  candidate_void_or_escalated "o/r" "54" 'not json' 'also not json' \
+    && printf 'true' > "$tmp_dir/cve-malformed.flag" \
+    || printf 'false' > "$tmp_dir/cve-malformed.flag"
 )
 assert_eq "with no enabler_assignee configured, a run at threshold is not excluded from a band" \
   '["297"]' "$(jq -c '[.[] | select(.slug == "o/a") | .tech_debt[].ref]' "$tmp_dir/band-eligibility-unset.json")"
 assert_eq "...but with enabler_assignee configured, the identical run is excluded" \
   '[]' "$(jq -c '[.[] | select(.slug == "o/a") | .tech_debt[].ref]' "$tmp_dir/band-eligibility-set.json")"
+
+assert_eq "the tech_debt fixture's filtered result is still past MAX_ARG_STRLEN" "true" \
+  "$(cat "$tmp_dir/band-write-back-td-oversized.flag")"
+assert_eq "the issues fixture's filtered result is still past MAX_ARG_STRLEN" "true" \
+  "$(cat "$tmp_dir/band-write-back-iss-oversized.flag")"
+assert_eq "no write-back failure was logged for the oversized fixtures" "" \
+  "$(cat "$tmp_dir/band-write-back-guard-warn.log" 2>/dev/null)"
+assert_eq "the oversized tech_debt band keeps every filler entry" "2000" \
+  "$(jq '[.[] | select(.slug == "o/a") | .tech_debt[] | select(.ref | startswith("td-filler-"))] | length' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "...and drops the void entry" "false" \
+  "$(jq '[.[] | select(.slug == "o/a") | .tech_debt[].ref] | any(. == "void-me-td")' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "...and drops the 34p-escalated entry" "false" \
+  "$(jq '[.[] | select(.slug == "o/a") | .tech_debt[].ref] | any(. == "escalated-me-td")' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "the oversized issues band keeps every filler entry" "2000" \
+  "$(jq '[.[] | select(.slug == "o/a") | .issues[] | select(.ref | startswith("iss-filler-"))] | length' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "...and drops the void entry" "false" \
+  "$(jq '[.[] | select(.slug == "o/a") | .issues[].ref] | any(. == "void-me-iss")' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "...and drops the blocked entry with no fresh evidence" "false" \
+  "$(jq '[.[] | select(.slug == "o/a") | .issues[].ref] | any(. == "blocked-me-iss")' \
+     "$tmp_dir/band-write-back-oversized.json")"
+assert_eq "...and drops the 34p-escalated entry" "false" \
+  "$(jq '[.[] | select(.slug == "o/a") | .issues[].ref] | any(. == "escalated-me-iss")' \
+     "$tmp_dir/band-write-back-oversized.json")"
+
+assert_eq "a void item (fleet-wide entry) is refused" "true" "$(cat "$tmp_dir/cve-void-fleet-wide.flag")"
+assert_eq "a 34p-escalated item (repo-scoped entry) is refused" "true" \
+  "$(cat "$tmp_dir/cve-escalated-repo-scoped.flag")"
+assert_eq "an escalated entry scoped to another repo must not match" "false" \
+  "$(cat "$tmp_dir/cve-escalated-other-repo.flag")"
+assert_eq "an item in neither set is not refused" "false" "$(cat "$tmp_dir/cve-neither.flag")"
+assert_eq "malformed void/escalated input fails open (not refused)" "false" \
+  "$(cat "$tmp_dir/cve-malformed.flag")"
+
+# --- …and the claim loop's wiring of it (requirement 17a) ------------------
+# Pinned against the library source, the way test/refinement-traceability.
+# test.sh pins requirement 17f's own counter: driving the whole claim loop
+# here would need a live GitHub and a won claim, and what matters is the one
+# thing a reader cannot see from `candidate_void_or_escalated` alone — that
+# its refusals are counted apart from the pre-claimed ones, so the stand-down
+# ladder names them. Folding them into `claim_skips` instead made a cycle
+# that refused its own void work report `pre-claimed`, which
+# `node_time_state_for_cause` translates to `peer-claimed` — a peer holding
+# an item no peer had ever seen, and the opposite of the signal the band
+# write-back's own failure is supposed to raise.
+coordinator_phase_lib="$SCRIPT_DIR/lib/coordinator-phase.sh"
+cve_loop_src="$(sed -n '/^  if candidate_void_or_escalated /,/^  fi$/p' "$coordinator_phase_lib")"
+assert_eq "the claim loop counts a void/escalated refusal as void_skips, not claim_skips" "yes" \
+  "$(# shellcheck disable=SC2016  # the literal source text is what is being matched
+     [[ "$cve_loop_src" == *'void_skips=$(( void_skips + 1 ))'* \
+       && "$cve_loop_src" != *'claim_skips=$(( claim_skips + 1 ))'* ]] && echo yes || echo no)"
+assert_eq "...and logs the refusal under its own claim-skipped cause" "yes" \
+  "$([[ "$cve_loop_src" == *'cause: "void-or-escalated"'* ]] && echo yes || echo no)"
+assert_eq "a void/escalated stand-down has its own cause, never pre-claimed" "yes" \
+  "$(grep -q 'standdown_cause="void-or-escalated"' "$coordinator_phase_lib" && echo yes || echo no)"
+assert_eq "...decided by void_skips alone, ahead of the pre-claimed rung" "yes" \
+  "$(sed -n '/claim_attempts == 0 \&\& void_skips > 0/,/claim_attempts == 0 \&\& claim_skips > 0/p' \
+       "$coordinator_phase_lib" | grep -q 'standdown_cause="void-or-escalated"' && echo yes || echo no)"
+assert_eq "...and the count reaches the stand-down event for a reader" "yes" \
+  "$(# shellcheck disable=SC2016  # a literal jq variable reference, not a shell one
+     grep -q 'void_skips: \$vs' "$coordinator_phase_lib" && echo yes || echo no)"
+# The cause is an alias, not a nineteenth code — that it translates onto an
+# existing canonical token is pinned in test/node-time-state.test.sh, beside
+# the other three aliases.
 
 # --- void_refusal_escalated_since (the escalation filer's own dedup) ---
 cat > "$log" <<'EOF'

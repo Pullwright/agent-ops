@@ -293,6 +293,18 @@ race_losses=0
 # loss is healthy contention, and the dashboard's `↻ raced` badge must keep
 # meaning only the second.
 claim_skips=0
+# void_skips: candidates refused without an attempt because the candidate is
+# still void, or still carries a 34p escalation (candidate_void_or_escalated,
+# requirement 4g's second line of defence, issue #2876). Counted apart from
+# `claim_skips` rather than folded into it, for the reason `trace_faults`
+# below exists: `claim_skips` alone decides the `pre-claimed` rung of the
+# stand-down ladder, whose cause `node_time_state_for_cause` translates to
+# `peer-claimed` — so folding these in would have a cycle that refused its
+# own void work report a peer holding it, sending the reader after contention
+# that never happened. Nothing was claimed by anyone here: the band
+# subtraction upstream (lib/eligibility.sh) should already have dropped the
+# candidate, and this count is the one signal that it did not.
+void_skips=0
 # trace_faults: candidates dropped by requirement 17f that the repair above
 # could not rescue, or by requirement 17h (agent-ops#769) failing to compose
 # a work order at all. Counted separately from both of the above for the
@@ -311,6 +323,21 @@ for (( ci = 0; ci < n_cand; ci++ )); do
   c_db="$(jq -r '.default_branch // "main"' <<<"$cand")"
   c_takeover="$(jq -r '.takeover // false' <<<"$cand")"
   [[ -n "$c_repo" && -n "$c_item" ]] || continue
+  # Requirement 4g's second line of defence (issue #2876), checked before
+  # requirement 17h's compose below for the same reason 17f is checked before
+  # the pre-claimed check further down: cheaper, and unrelated to either. The
+  # band write-backs (lib/eligibility.sh) already drop a void or
+  # 34p-escalated candidate before the Co-Ordinator ever sees one — this is
+  # the backstop for the one write-back whose own argv delivery could fail
+  # silently and leave such a candidate in place regardless (requirement 4g),
+  # and for any other path that could hand this loop one the band pass never
+  # reached.
+  if candidate_void_or_escalated "$c_repo" "$c_item" "$void_json" "${void_refusal_escalated_json:-[]}"; then
+    void_skips=$(( void_skips + 1 ))
+    log_event "claim-skipped" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg s "$c_source" \
+      '{repo: $r, item: $i, source: $s, cause: "void-or-escalated"}')"
+    continue
+  fi
   # Requirement 17h (agent-ops#769, resolving #844 option (b)): for every
   # source the Script already gathers as structured data, `context`/
   # `acceptance`/`title` are composed here — from a live fetch for
@@ -520,9 +547,20 @@ if [[ -z "$claimed_json" ]]; then
   # already seen claimed — not contention at all, but the Co-Ordinator
   # proposing claimed work past both the deterministic filters and its own
   # exclusion 3, which is a selection defect worth its own name.
+  # `void-or-escalated` means the same thing one step earlier and for a
+  # different reason: nothing was attempted because every candidate was still
+  # void or still carried a 34p escalation (requirement 4g's backstop). It is
+  # ranked above `pre-claimed` because it is the more diagnostic of the two
+  # where a cycle saw both — a pre-claimed candidate is work the fleet is
+  # genuinely doing elsewhere, whereas a void one is work nothing should be
+  # doing at all, and its presence here means the band subtraction upstream
+  # (lib/eligibility.sh) failed to drop it.
   if (( claim_attempts > 0 && claim_unreachable == claim_attempts )); then
     standdown_reason="GitHub could not be reached for any candidate — this is an outage, not contention"
     standdown_cause="unreachable"
+  elif (( claim_attempts == 0 && void_skips > 0 )); then
+    standdown_reason="every candidate was still void or 34p-escalated — refused without an attempt"
+    standdown_cause="void-or-escalated"
   elif (( claim_attempts == 0 && claim_skips > 0 )); then
     standdown_reason="every candidate was already claimed before this cycle's Co-Ordinator ran — skipped without an attempt"
     standdown_cause="pre-claimed"
@@ -547,15 +585,17 @@ if [[ -z "$claimed_json" ]]; then
   # now in a way they were not when this cycle gathered, so the chained
   # cycle's own deterministic filters route it to the next-best item
   # instead of the same fight. The same bounded price (`max_chained_cycles`)
-  # a productive chain pays. The other three causes never chain: against an
+  # a productive chain pays. The other four causes never chain: against an
   # `unreachable` GitHub a fresh cycle buys a second Co-Ordinator engagement
   # and the same empty-handed ending; after a `pre-claimed` stand-down — a
   # selection defect, not contention — an identical re-run is more likely to
-  # repeat the defect than to route around it; and an `untraceable`
+  # repeat the defect than to route around it; an `untraceable`
   # stand-down is the Script's own construction-time check refusing to hand a
   # candidate on — no peer's claim or absence explains the fault, so a fresh
   # cycle would spend its chain budget re-composing the same broken work
-  # order rather than routing around a peer.
+  # order rather than routing around a peer; and a `void-or-escalated`
+  # stand-down is that same refusal over a band the subtraction upstream
+  # failed to filter, which a fresh gather would rebuild the same way.
   if [[ "$standdown_cause" == "raced" ]] \
       && ! (( ONCE )) \
       && chain_should_continue "$chain_count" "$max_chained_cycles" "$ordered_repos_json"; then
@@ -563,10 +603,11 @@ if [[ -z "$claimed_json" ]]; then
   fi
   log_event "stand-down" "$(jq -nc --argjson n "$n_cand" --arg r "$standdown_reason" --arg c "$standdown_cause" \
     --argjson rl "$race_losses" --argjson sk "$claim_skips" \
-    --argjson tf "$trace_faults" \
+    --argjson tf "$trace_faults" --argjson vs "$void_skips" \
     '{reason: $r, candidates: $n, cause: $c, race_losses: $rl}
      + (if $sk > 0 then {claim_skips: $sk} else {} end)
-     + (if $tf > 0 then {trace_faults: $tf} else {} end)')"
+     + (if $tf > 0 then {trace_faults: $tf} else {} end)
+     + (if $vs > 0 then {void_skips: $vs} else {} end)')"
   # node-state (docs/reference/flow-schema.md, D21): translates this stand-down's own
   # (unchanged) cause vocabulary onto the six-state one — see
   # node_time_state_for_cause's header for why raced/pre-claimed/

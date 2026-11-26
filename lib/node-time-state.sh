@@ -35,10 +35,15 @@
 # causes this requirement does not rename (agent-ops#598's join-key
 # precedent: an existing field's values are never renamed to satisfy a new
 # reader) — `raced`/`pre-claimed` (claim-race stand-downs, agent-cycle.sh)
-# and `untraceable` (a corroboration-gate stand-down) keep their own names on
+# and `untraceable`/`void-or-escalated` (a corroboration-gate stand-down, and
+# requirement 4g's void/34p-escalated backstop refusing every candidate —
+# issue #2876) keep their own names on
 # the `stand-down` event itself, and are translated here to the canonical
 # `peer-claimed`/`coordinator-declined` tokens only for the `node-state`
-# event this file emits alongside it.
+# event this file emits alongside it. An alias costs the vocabulary no new
+# token, which is why a stand-down cause this specific can be named honestly
+# on its own event without `extract_standdown_causes` (lib/reason-codes.sh)
+# and `docs/reference/reasons.md` having to grow an entry for it.
 node_time_state_for_cause() {  # CAUSE -> "STATE\tCAUSE\n"
   case "$1" in
     disabled-node)   printf 'down\tdisabled-node\n' ;;
@@ -57,7 +62,7 @@ node_time_state_for_cause() {  # CAUSE -> "STATE\tCAUSE\n"
     back-pressure)   printf 'idle-with-demand\tback-pressure\n' ;;
     awaiting-tick)   printf 'idle-with-demand\tawaiting-tick\n' ;;
     peer-claimed|raced|pre-claimed)         printf 'idle-with-demand\tpeer-claimed\n' ;;
-    coordinator-declined|untraceable) printf 'idle-with-demand\tcoordinator-declined\n' ;;
+    coordinator-declined|untraceable|void-or-escalated) printf 'idle-with-demand\tcoordinator-declined\n' ;;
     no-demand)       printf 'idle-without-demand\tno-demand\n' ;;
     *)               printf '\t\n' ;;
   esac
