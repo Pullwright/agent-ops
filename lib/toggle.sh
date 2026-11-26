@@ -987,23 +987,32 @@ fleet_limit_resume_at() {
   return 0
 }
 
-# fleet_limit_resume_at_for STATE_REPO STATE_DIR PROVIDER
+# fleet_limit_resume_at_for STATE_REPO STATE_DIR PROVIDER [LANE]
 # fleet_limit_resume_at, narrowed to PROVIDER via limit_flag_record_for
 # (lib/limit-detect.sh): empty unless the live flag's own record applies to
 # PROVIDER — it is PROVIDER's own, or it carries no provider at all. The live,
 # fast-path re-check lib/enabler.sh and lib/refinement.sh make right before
-# their own stage launches, scoped the same way the main stand-down check is.
+# their own stage launches, scoped the same way the main stand-down check is
+# — both call this with 3 arguments, deliberately leaving LANE unset
+# (issue #2242): a record scoped to one lane of PROVIDER still answers a
+# 3-argument call, so these two pre-launch checks stay conservative (idle on
+# any lane of their own provider standing down) rather than needing their own
+# lane-fallthrough logic — the stage launch itself (lib/stage-run.sh's
+# `stage_lane_draw`) is what actually falls through to the open lane. With
+# LANE given, also narrowed one level further, the same way
+# lib/coordinator-phase.sh's own per-item re-check (5d) and
+# lib/standdown.sh's main gate use it.
 fleet_limit_resume_at_for() {
   local raw
   raw="$(fleet_flag_fetch "$1" "$2" limit)"
   [[ -n "$raw" ]] || return 0
-  raw="$(limit_flag_record_for "$raw" "$3")"
+  raw="$(limit_flag_record_for "$raw" "$3" "${4:-}")"
   [[ -n "$raw" ]] || return 0
   jq -r '.resume_at // empty' <<<"$raw" 2>/dev/null || true
   return 0
 }
 
-# fleet_limit_publish STATE_REPO STATE_DIR RESUME_AT CLASS RESET_KNOWN NODE [EVIDENCE] [PROVIDER]
+# fleet_limit_publish STATE_REPO STATE_DIR RESUME_AT CLASS RESET_KNOWN NODE [EVIDENCE] [PROVIDER] [LANE]
 # Publish a usage-limit stand-down, extend-only for PROVIDER: a flag already
 # resuming PROVIDER (or every provider — a wildcard record) at or after
 # RESUME_AT is left alone. Two attempts — re-read between them — so losing the
@@ -1027,21 +1036,29 @@ fleet_limit_resume_at_for() {
 # PROVIDER (issue #2133, scoped by issue #2135) names which provider's
 # account hit this limit. Defaults to `anthropic`: every caller before issue
 # #2133, and every caller that passes nothing, means the one provider that
-# has ever existed. The flag still carries exactly one record — a second
-# provider's hit overwrites rather than joins it (limit_flag_record_for's own
-# header explains why that trade is acceptable: the log union, not this fast
-# path, is what stays correct for every provider at once). The "already
+# has ever existed. LANE (issue #2242) names which of that provider's two
+# lanes hit it; empty (every caller before this issue) means every lane of
+# PROVIDER, the same "a record without one applies to every lane" rule
+# `limit_flag_record_for` reads. The flag still carries exactly one record —
+# a second provider's hit, or a second lane of the *same* provider's,
+# overwrites rather than joins it (limit_flag_record_for's own header
+# explains why that trade is acceptable: the log union, not this fast path,
+# is what stays correct for every (provider, lane) key at once — "stays
+# extend-only per key" is what this issue's own body calls it). The "already
 # resuming at or after RESUME_AT" extend-only guard below only ever compares
 # against the *current* record when that record applies to this same
-# PROVIDER — limit_flag_record_for's own "a record without one applies to
-# every provider" rule — so a longer-running freeze for a *different*
-# provider is replaced outright rather than silently absorbing this one: the
-# alternative, comparing resume_at across providers, would let whichever
-# provider happened to have the longer freeze suppress every other provider's
-# own fast-path publication indefinitely.
+# (PROVIDER, LANE) key — limit_flag_record_for's own "a record without one
+# applies to every provider/lane" rule — so a longer-running freeze for a
+# *different* key (a different provider, or a different lane of the same
+# provider) is replaced outright rather than silently absorbing this one:
+# the alternative, comparing resume_at across keys, would let whichever key
+# happened to have the longer freeze suppress every other key's own
+# fast-path publication indefinitely — exactly the "a hit on
+# anthropic/subscription never moves anthropic/api's record" guarantee this
+# issue's own body states.
 fleet_limit_publish() {
   local repo="$1" state_dir="$2" resume_at="$3" class="$4" reset_known="$5" node="$6"
-  local evidence="${7:-}" provider="${8:-anthropic}"
+  local evidence="${7:-}" provider="${8:-anthropic}" lane="${9:-}"
   local new_epoch body cur cur_own cur_at cur_epoch
   [[ -n "$repo" ]] || return 0
   new_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
@@ -1051,13 +1068,28 @@ fleet_limit_publish() {
   # would not identify it better.
   evidence="${evidence:0:400}"
   body="$(jq -nc --arg r "$resume_at" --arg c "$class" --argjson k "${reset_known:-false}" \
-    --arg n "$node" --arg ts "$(_toggle_iso)" --arg e "$evidence" --arg p "$provider" \
+    --arg n "$node" --arg ts "$(_toggle_iso)" --arg e "$evidence" --arg p "$provider" --arg l "$lane" \
     '{resume_at: $r, class: $c, reset_known: $k, node: $n, ts: $ts,
       kind: "auto", actor: $n, provider: $p,
-      evidence: (if $e == "" then null else $e end)}')"
+      evidence: (if $e == "" then null else $e end)}
+     + (if $l == "" then {} else {lane: $l} end)')"
   for _ in 1 2; do
     cur="$(fleet_flag_fetch "$repo" "$state_dir" limit)"
-    cur_own="$(limit_flag_record_for "$cur" "$provider")"
+    # Not `limit_flag_record_for`: that helper's own "a record without a
+    # lane applies to every lane" rule reads $lane=="" as matching *any*
+    # current record's lane, which is right for applying a record to an ask
+    # but wrong here — it would let a narrower current record (one naming a
+    # specific lane) suppress this wildcard-lane write, leaving the lane it
+    # does not name uncovered by a publish that was meant to freeze every
+    # lane of the provider. The extend-only guard only ever wants a current
+    # record whose own scope is as wide as this write's: this write's own
+    # lane when it names one, or, when it names none (wildcard), only a
+    # current record that is wildcard too.
+    cur_own="$(jq -c --arg p "$provider" --arg l "$lane" \
+      'if (type == "object") and ((.provider // "") == "" or .provider == $p)
+          and (if $l == "" then (.lane // "") == ""
+               else ((.lane // "") == "" or .lane == $l) end)
+       then . else empty end' <<<"$cur" 2>/dev/null || true)"
     if [[ -n "$cur_own" ]]; then
       cur_at="$(jq -r '.resume_at // empty' <<<"$cur_own" 2>/dev/null || true)"
       if [[ -n "$cur_at" ]]; then
@@ -1067,6 +1099,30 @@ fleet_limit_publish() {
     fi
     fleet_flag_write "$repo" limit "$body" \
       "fleet: usage limit hit on $node — stand down until $resume_at" "$state_dir" && return 0
+  done
+  return 1
+}
+
+# fleet_limit_close_lane STATE_REPO STATE_DIR PROVIDER LANE RESUME_AT REASON ACTOR
+# `agent-cycle.sh --close-lane` (issue #2242): force-writes a `kind: "manual"`
+# record for (PROVIDER, LANE), unconditionally — never extend-only, since an
+# operator's own act always wins over whatever auto record the flag currently
+# carries, the same direction `--clear-limit`'s delete already takes. Two
+# attempts, matching `fleet_limit_publish`'s own retry shape, so losing the
+# CAS to a concurrent write converges rather than failing outright. Returns
+# non-zero only once both attempts fail to write.
+fleet_limit_close_lane() {
+  local repo="$1" state_dir="$2" provider="$3" lane="$4" resume_at="$5" reason="$6" actor="$7"
+  local body
+  [[ -n "$repo" ]] || return 0
+  body="$(jq -nc --arg r "$resume_at" --arg n "$actor" --arg ts "$(_toggle_iso)" \
+    --arg reason "$reason" --arg p "$provider" --arg l "$lane" \
+    '{resume_at: $r, class: "manual", reset_known: true, node: $n, ts: $ts,
+      kind: "manual", actor: $n, provider: $p, lane: $l,
+      evidence: (if $reason == "" then null else $reason end)}')"
+  for _ in 1 2; do
+    fleet_flag_write "$repo" limit "$body" \
+      "fleet: $provider/$lane closed by hand until $resume_at — $reason" "$state_dir" && return 0
   done
   return 1
 }

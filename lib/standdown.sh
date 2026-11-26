@@ -689,71 +689,231 @@ limit_probe_model_for() {
   printf '%s' "$implementer_model_trivial"
 }
 
+# limit_lane_managed PROVIDER
+# True (exit 0) iff lane management is actually running for PROVIDER on this
+# node (issue #2242): its substrate declares a `substrate_<name>_lane_present`
+# at all (`claude-code` today; xai's Grok Build does not — #2246), at least
+# one of its two credentials is present (`stage_lane_any_present`'s own
+# contract — with neither, `run_model_stage` launches unmanaged and
+# `stage_lane` is left empty), and this process sourced the lane machinery in
+# the first place (lib/lane.sh, lib/model-id.sh — this file's own tests
+# source neither, the same gap its header's `model_key_is_set`/
+# `stage_model_resolve_into` fallbacks already document). False is "this
+# provider's launches carry no lane", which is exactly the shape every
+# pre-#2242 record has.
+limit_lane_managed() {
+  local provider="$1" substrate fn
+  declare -F lane_effective_open >/dev/null 2>&1 || return 1
+  # `declare -p`, not a `${...:-}` default: reading one key of an associative
+  # array this process never declared makes bash take it for an indexed one
+  # and evaluate the key arithmetically, which under `set -u` is an unbound-
+  # variable error rather than the empty default it looks like.
+  declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || return 1
+  declare -p PROVIDER_LANES >/dev/null 2>&1 || return 1
+  substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
+  fn="substrate_${substrate//-/_}_lane_present"
+  declare -F "$fn" >/dev/null 2>&1 || return 1
+  "$fn" api && return 0
+  "$fn" subscription
+}
+
+# limit_probe_lane PROVIDER RECORD
+# The lane requirement 2.1b's own probe must be *forced* onto (issue #2242),
+# printed bare, or nothing at all where this provider's launches carry no
+# lane. 2.1b probes exactly the lane this check has just judged frozen, and
+# `stage_lane_draw` refuses to draw a frozen lane by design — so a probe left
+# to the ordinary draw is refused `no-open-lane` and never launches, which
+# would silently retire 2.1b itself. The split path below forces its lane
+# literally, one probe per lane; the combined path asks this instead, since
+# its one record may name no lane at all.
+#
+# RECORD's own `lane` when it names one (the lending above gives the combined
+# path the frozen lane's own record); otherwise the lane a launch would have
+# drawn had nothing been frozen — `api` first, matching `lane_effective_open`'s
+# own precedence and `stage_lane_draw`'s default weighting. Nothing, where
+# `limit_lane_managed` is false: `run_model_stage` then launches unmanaged
+# exactly as it did before this issue, which is the right answer for a
+# substrate with no lanes (xai) and for a node holding neither credential.
+limit_probe_lane() {
+  local provider="$1" rec="$2" lane
+  lane="$(jq -r '.lane // empty' <<<"$rec" 2>/dev/null || true)"
+  [[ -z "$lane" ]] || { printf '%s' "$lane"; return 0; }
+  limit_lane_managed "$provider" || return 0
+  limit_lane_configured_open "$provider" api && { printf 'api'; return 0; }
+  limit_lane_configured_open "$provider" subscription && { printf 'subscription'; return 0; }
+  return 0
+}
+
+# limit_lane_configured_open PROVIDER LANE
+# True (exit 0) iff LANE is open for PROVIDER on this node by credential
+# presence and `lanes` configuration alone (issue #2242) — exactly
+# `stage_lane_draw`'s own openness test (lib/stage-run.sh) *minus* its
+# `stage_lane_frozen` exclusion, which is the very thing 2.1's gate below is
+# deciding rather than reading. One predicate, `lane_effective_open`
+# (lib/lane.sh), shared with the draw and with `--status`, so the gate can
+# never think a lane is available to fall through to that the next launch
+# would refuse to draw (requirement 34a's own reason for that file existing).
+#
+# Permissive — open — in every case `limit_lane_managed` above calls false:
+# each of those is a provider whose hits name no lane, so both lanes resolve
+# to the same lane-wildcard bucket and the combined path below handles it as
+# the single record it is — the caller's own guard never fires, and behaviour
+# is identical to before this issue.
+limit_lane_configured_open() {
+  local provider="$1" lane="$2" substrate fn lanes_json present_api=0 present_sub=0
+  limit_lane_managed "$provider" || return 0
+  substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
+  fn="substrate_${substrate//-/_}_lane_present"
+  "$fn" api && present_api=1
+  "$fn" subscription && present_sub=1
+  lanes_json="${PROVIDER_LANES[$provider]:-${STAGE_LANE_DEFAULT_JSON:-}}"
+  [[ -n "$lanes_json" ]] || lanes_json="${STAGE_LANE_DEFAULT_JSON:-}"
+  [[ -n "$lanes_json" ]] || return 0
+  lane_effective_open "$lanes_json" "$lane" "$present_api" "$present_sub"
+}
+
 _standdown_usage_limit_cooldown() {
-# 2.1 Usage-limit cooldown, scoped to the provider that hit it (issue #2135):
-# every node shares one account per provider, so a limit any node hit stands
-# every node down for *that provider's own stages* — never for a different
-# provider's. This check gates the Co-Ordinator, the very next stage, so it
-# is scoped to the Co-Ordinator's own resolved provider; the Implementer
-# launch (lib/coordinator-phase.sh 5d), whose provider is chosen per item,
-# carries its own scoped check beside it. The Reviewer launch carries none
-# yet — agent-ops#2661.
-# Two carriers of the same signal, and the later resume wins: the log union
-# is as fresh as the last state-sync fetch, while fleet/limit.json is read
-# live — it is what lets a limit one node hit a minute ago stop this cycle
-# now, not a fetch interval from now. Either carrier can be retired early —
-# automatically by the probe of 2.1b below when the resume time is this
-# system's own guess, or by hand with `--clear-limit [<provider>]` (2.1) —
-# and both retirements work the same way: the union's reduction honours a
-# `limit-cleared` event, and the flag is deleted outright when it governs
-# this same provider.
+# 2.1 Usage-limit cooldown, scoped to the (provider, lane) that hit it (issue
+# #2135, scoped one level finer to the lane by issue #2242): every node
+# shares one account per provider *and* per lane within it (the credential
+# path — "api" or "subscription", lib/lane.sh), so a limit any node hits on
+# one lane sends that provider's stages to its *other* lane until the
+# reset — the actual fallthrough is `lib/stage-run.sh`'s own
+# `stage_lane_draw`, which this check never calls into — and the provider as
+# a whole stands down only once *every* lane of it is frozen. This check
+# gates the Co-Ordinator, the very next stage, so it is scoped to the
+# Co-Ordinator's own resolved provider; the Implementer launch
+# (lib/coordinator-phase.sh 5d), whose provider is chosen per item, carries
+# its own scoped check beside it. The Reviewer launch carries none yet —
+# agent-ops#2661.
+#
+# Two carriers of the same signal per lane, and the later resume wins: the
+# log union is as fresh as the last state-sync fetch, while fleet/limit.json
+# is read live — it is what lets a limit one node hit a minute ago stop this
+# cycle now, not a fetch interval from now. Either carrier can be retired
+# early — automatically by the probe of 2.1b below when the resume time is
+# this system's own guess, or by hand with `--clear-limit
+# [<provider>[/<lane>]]` (2.1) — and both retirements work the same way: the
+# union's reduction honours a `limit-cleared` event, and the flag is deleted
+# outright when it governs this same (provider, lane) key.
 #
 # Both records are carried whole rather than reduced to a timestamp, so the
 # logged reason can say whether `resume_at` is a stated reset or this system's
 # own guess. Reporting a guess as a deadline is what let a stale stand-down
 # outlive the limit that caused it and go unquestioned.
 #
-# The union is read once, by `limit_union_state_for` (lib/limit-detect.sh),
-# for everything this check needs from it, narrowed to $check_provider: the
-# governing hit here, and the freeze's start and escalation memory for the
-# escalation below — already folding in the wildcard bucket (every record
-# with no `provider` at all, from before issue #2133, and any fleet-wide
-# `limit-cleared`/escalation), so a pre-#2135 record still governs every
-# provider. The read skips a line that does not parse, so it fails only when
-# it could not read at all (jq killed, say). That is reported rather than
-# taken for "no limit in force" (#2037), and a union the snapshot could not
-# build (`union_build_ok`, reported there) is treated exactly the same way
-# without being read: the flag carrier decides on its own, as it does when the
-# union simply holds no live hit, and `union_state_ok` tells the escalation
-# that the union's answers are unknown rather than empty.
+# The union is read once per lane, by `limit_union_state_for_lane`
+# (lib/limit-detect.sh), for everything this check needs from it, narrowed to
+# $check_provider and that lane: the governing hit, and the freeze's start and
+# escalation memory for the escalation below — already folding in both
+# wildcard buckets (every record naming no provider, from before issue #2133,
+# and every record naming no lane, from before issue #2242), so a pre-#2135
+# or pre-#2242 record still governs. The read skips a line that does not
+# parse, so it fails only when it could not read at all (jq killed, say).
+# That is reported rather than taken for "no limit in force" (#2037), and a
+# union the snapshot could not build (`union_build_ok`, reported there) is
+# treated exactly the same way without being read: the flag carrier decides
+# on its own, as it does when the union simply holds no live hit, and
+# `union_state_ok` tells the escalation that the union's answers are unknown
+# rather than empty. `api` and `subscription` are read independently and
+# compared as whole JSON records rather than folded together: when they are
+# byte-identical (every hit before this issue named no lane at all, so both
+# resolve to the same lane-wildcard bucket; so does a provider whose
+# substrate manages no lanes at all, e.g. xai today), this check and 2.1b's
+# probe below collapse to exactly the single-record form #2135 shipped,
+# spending one probe, not two, for a provider this issue changes nothing
+# about in practice.
 check_provider="${MODEL_PROVIDER[$coordinator_model]:-anthropic}"
-union_state='{"record":null,"since":null,"escalated":[]}'
 union_state_ok=1
-if ! (( union_build_ok )); then
-  union_state_ok=0
-elif [[ -s "$union_log" ]]; then
-  union_state="$(limit_union_state_for "${check_provider:-anthropic}" < "$union_log" 2>&1)" \
-    || { guard_warn "cycle:union_record" "$union_state"; union_state=""; union_state_ok=0; }
+(( union_build_ok )) || union_state_ok=0
+
+union_state_api='{"record":null,"since":null,"escalated":[]}'
+union_state_sub='{"record":null,"since":null,"escalated":[]}'
+if (( union_state_ok )) && [[ -s "$union_log" ]]; then
+  union_state_api="$(limit_union_state_for_lane "${check_provider:-anthropic}" api < "$union_log" 2>&1)" \
+    || { guard_warn "cycle:union_record:api" "$union_state_api"; union_state_api=""; union_state_ok=0; }
+  union_state_sub="$(limit_union_state_for_lane "${check_provider:-anthropic}" subscription < "$union_log" 2>&1)" \
+    || { guard_warn "cycle:union_record:subscription" "$union_state_sub"; union_state_sub=""; union_state_ok=0; }
 fi
-union_record=""
+[[ -n "$union_state_api" ]] || union_state_api='{"record":null,"since":null,"escalated":[]}'
+[[ -n "$union_state_sub" ]] || union_state_sub='{"record":null,"since":null,"escalated":[]}'
+
+union_record_api=""
+union_record_sub=""
 if (( union_state_ok )); then
-  union_record="$(jq -c '.record // empty' <<<"$union_state" 2>&1)" \
-    || { guard_warn "cycle:union_record" "$union_record"; union_record=""; union_state_ok=0; }
+  union_record_api="$(jq -c '.record // empty' <<<"$union_state_api" 2>&1)" \
+    || { guard_warn "cycle:union_record:api" "$union_record_api"; union_record_api=""; union_state_ok=0; }
+  union_record_sub="$(jq -c '.record // empty' <<<"$union_state_sub" 2>&1)" \
+    || { guard_warn "cycle:union_record:subscription" "$union_record_sub"; union_record_sub=""; union_state_ok=0; }
 fi
-governing="$(limit_later_record "$union_record" "$(limit_flag_record_for \
-  "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)" "${check_provider:-anthropic}")")"
-[[ -n "$governing" ]] || governing='{}'
-resume_at="$(jq -r '.resume_at // empty' <<<"$governing" 2>/dev/null || true)"
-resume_epoch=0
-if [[ -n "$resume_at" ]]; then
-  # TD-PPagop-26081407: `governing` is fleet state read across nodes above
-  # (test 1); epoch 0 reads as "already expired" (test 2) -- the gate this
-  # feeds decides whether the whole fleet stands down for an active limit.
-  resume_epoch="$(date -d "$resume_at" +%s 2>&1)" \
-    || { guard_warn "cycle:resume_epoch" "$resume_epoch"; resume_epoch=0; }
-fi
+limit_flag_raw="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
+governing_api="$(limit_later_record "$union_record_api" \
+  "$(limit_flag_record_for "$limit_flag_raw" "${check_provider:-anthropic}" api)")"
+governing_sub="$(limit_later_record "$union_record_sub" \
+  "$(limit_flag_record_for "$limit_flag_raw" "${check_provider:-anthropic}" subscription)")"
+[[ -n "$governing_api" ]] || governing_api='{}'
+[[ -n "$governing_sub" ]] || governing_sub='{}'
+resume_at_api="$(jq -r '.resume_at // empty' <<<"$governing_api" 2>/dev/null || true)"
+resume_at_sub="$(jq -r '.resume_at // empty' <<<"$governing_sub" 2>/dev/null || true)"
+resume_epoch_api=0
+resume_epoch_sub=0
 now_epoch="$(date +%s)"
-if (( resume_epoch > now_epoch )); then
+if [[ -n "$resume_at_api" ]]; then
+  # TD-PPagop-26081407: `governing_api` is fleet state read across nodes
+  # above (test 1); epoch 0 reads as "already expired" (test 2) -- the gate
+  # this feeds decides whether the whole fleet stands down for an active
+  # limit.
+  resume_epoch_api="$(date -d "$resume_at_api" +%s 2>&1)" \
+    || { guard_warn "cycle:resume_epoch:api" "$resume_epoch_api"; resume_epoch_api=0; }
+fi
+if [[ -n "$resume_at_sub" ]]; then
+  resume_epoch_sub="$(date -d "$resume_at_sub" +%s 2>&1)" \
+    || { guard_warn "cycle:resume_epoch:subscription" "$resume_epoch_sub"; resume_epoch_sub=0; }
+fi
+limit_frozen_api=0; (( resume_epoch_api > now_epoch )) && limit_frozen_api=1
+limit_frozen_sub=0; (( resume_epoch_sub > now_epoch )) && limit_frozen_sub=1
+
+# "Every lane of it is frozen" counts only the lanes this node could actually
+# fall through to (issue #2242). A lane whose credential is absent, or which
+# this provider's own `lanes` config closes, is no fallthrough for the frozen
+# lane's stages — `stage_lane_draw` will not draw it either — so a provider
+# whose *only* open lane freezes has no open lane left and must stand down
+# now, exactly as it did before this issue scoped the record to a lane.
+# Without this, the gate below reads a closed or absent sibling as merely
+# "not frozen" and never fires: every launch is then refused by
+# `run_model_stage`'s own `no-open-lane` path, which names config.json rather
+# than the live limit, and 2.1b's probe, requirement 2's freeze escalation
+# and the `externally-blocked usage-limit` node state are all skipped for a
+# limit that is genuinely in force. That is the common shape, not an edge:
+# `lane_effective_open`'s own default (`enabled` unset, every provider whose
+# config.json names no `lanes` block) opens `subscription` only when `api` is
+# *absent*, so an unconfigured provider has exactly one open lane.
+#
+# Expressed by lending the frozen lane's own record to its unopen sibling, so
+# the single-record combined path below handles it as the one record it is:
+# one probe, one escalation read, one stand-down reason, byte-identical to
+# the way a provider with no lane split at all is handled. Guarded on the
+# other lane being genuinely frozen, so two lanes shut by configuration
+# alone stays what it already was — the pre-existing `no-open-lane` case,
+# which owes no usage-limit stand-down and must not invent one.
+if (( limit_frozen_api )) && ! (( limit_frozen_sub )) \
+   && ! limit_lane_configured_open "${check_provider:-anthropic}" subscription; then
+  governing_sub="$governing_api"; resume_at_sub="$resume_at_api"
+  union_state_sub="$union_state_api"; limit_frozen_sub=1
+elif (( limit_frozen_sub )) && ! (( limit_frozen_api )) \
+   && ! limit_lane_configured_open "${check_provider:-anthropic}" api; then
+  governing_api="$governing_sub"; resume_at_api="$resume_at_sub"
+  union_state_api="$union_state_sub"; limit_frozen_api=1
+fi
+
+# A provider stands down only once every lane of it is frozen — one open
+# lane is exactly what lets a stage fall through instead (`stage_lane_draw`).
+# `governing_api`/`governing_sub` byte-identical (the common no-lane-split
+# case above) collapses this whole check onto the single combined path
+# below, so a provider this issue does not actually split never pays for two
+# probes or two escalation reads.
+if (( limit_frozen_api && limit_frozen_sub )) && [[ "$governing_api" == "$governing_sub" ]]; then
+  governing="$governing_api"; resume_at="$resume_at_api"; union_state="$union_state_api"
   governing_class="$(jq -r '.class // "other"' <<<"$governing" 2>&1)" \
     || { guard_warn "cycle:governing_class" "$governing_class"; governing_class=other; }
   governing_known="$(limit_reset_known "$governing")"
@@ -803,8 +963,17 @@ if (( resume_epoch > now_epoch )); then
     # probe/launch call site in this file.
     local limit_probe_model
     stage_model_resolve_into limit_probe_model "$probe_model" "${cycle_id:-}:limit-probe"
+    # Forced, never drawn (issue #2242): this probe's whole job is to ask the
+    # lane that has just been judged frozen, and `stage_lane_draw` excludes a
+    # frozen lane by design — so an undrawn probe is refused `no-open-lane`,
+    # answers `inconclusive` over an empty transcript, and 2.1b quietly stops
+    # working for every record that names no lane. `limit_probe_lane` prints
+    # nothing where this provider's launches carry no lane at all, which is an
+    # unmanaged launch exactly as before this issue. The split path below
+    # forces its two lanes literally, for the same reason.
+    probe_lane="$(limit_probe_lane "${check_provider:-anthropic}" "$governing")"
     run_model_stage limit-probe 180 "$limit_probe_model" \
-      "Reply with the single word: ok" "$probe_out" "$cycle_dir" || probe_rc=$?
+      "Reply with the single word: ok" "$probe_out" "$cycle_dir" 0 "" "$probe_lane" || probe_rc=$?
     # The probe's own spend, joined into the fleet-wide ledger like every
     # other launch through run_model_stage (issue #2239, D30) — it never had
     # a stage-start, like 2.0h's own credential probe above, which requirement
@@ -971,6 +1140,229 @@ if (( resume_epoch > now_epoch )); then
       "Usage-limit cooldown in effect (${check_provider:-anthropic})" "" "" "$standdown_reason"
     set_node_state_terminal externally-blocked usage-limit
     exit 0
+  fi
+elif (( limit_frozen_api && limit_frozen_sub )); then
+  # Both lanes are frozen under genuinely different records (issue #2242) —
+  # the combined path above only ever handles the case where `api` and
+  # `subscription` resolve to the identical record (no lane split in
+  # practice). Each lane is judged, and probed, independently: a lane that
+  # is itself a `kind: manual` closure, or already carries a stated reset,
+  # is never probed, exactly as the combined path's own 2.1b reasoning
+  # above; an estimated automatic freeze on either lane spends its own
+  # minimal probe, so a provider with both lanes genuinely frozen can spend
+  # up to two probes in the one cycle that first notices — the same
+  # economics as the combined path's one, doubled only for the case that
+  # actually needs two answers.
+  governing_known_api="$(limit_reset_known "$governing_api")"
+  governing_known_sub="$(limit_reset_known "$governing_sub")"
+  governing_kind_api="$(jq -r '.kind // "auto"' <<<"$governing_api" 2>&1)" \
+    || { guard_warn "cycle:governing_kind:api" "$governing_kind_api"; governing_kind_api=auto; }
+  governing_kind_sub="$(jq -r '.kind // "auto"' <<<"$governing_sub" 2>&1)" \
+    || { guard_warn "cycle:governing_kind:subscription" "$governing_kind_sub"; governing_kind_sub=auto; }
+  probe_note_api=""
+  probe_note_sub=""
+
+  if [[ "$governing_kind_api" != "manual" && "$governing_known_api" != "true" ]] && ! (( DRY_RUN )); then
+    probe_out="$cycle_dir/limit-probe-api.out"
+    probe_rc=0
+    probe_model="$(limit_probe_model_for "${check_provider:-anthropic}")"
+    local limit_probe_model
+    stage_model_resolve_into limit_probe_model "$probe_model" "${cycle_id:-}:limit-probe:api"
+    run_model_stage limit-probe 180 "$limit_probe_model" \
+      "Reply with the single word: ok" "$probe_out" "$cycle_dir" 0 "" api || probe_rc=$?
+    log_event "stage-end" "$(jq -nc --argjson rc "$probe_rc" --arg kr "$stage_kill_reason" \
+      --argjson m "$(metering_fields "$limit_probe_model" "$probe_out" "$stage_gaps_json" "$stage_lane_json")" \
+      '{stage: "limit-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
+    probe_verdict="$(limit_probe_verdict "$(cat "$probe_out" 2>/dev/null || true)" \
+      "$(cat "$probe_out.stderr" 2>/dev/null || true)" "${check_provider:-anthropic}")"
+    case "$probe_verdict" in
+      clear)
+        log_event "limit-cleared" "$(jq -nc --arg w "$resume_at_api" \
+          --arg by "auto-probe@$node_name" --arg n "$node_name" --arg p "${check_provider:-anthropic}" \
+          '{was: $w, reason: "probe answered: the limit behind this estimated stand-down is gone", by: $by, actor: $n, kind: "auto", provider: $p, lane: "api"}')"
+        notify_post_cycle "fleet-standdown-end" "standdown:usage-limit:${check_provider:-anthropic}:api" \
+          "Usage-limit cooldown lifted (${check_provider:-anthropic}/api)" "" "" \
+          "probe answered: the limit behind this estimated stand-down (resume was $resume_at_api) is gone"
+        # Only the flag's own (provider, api) key is deleted outright when it
+        # is the flag's *current* occupant, by strict equality — never
+        # limit_flag_record_for's own wildcard-tolerant match, which would
+        # delete a wildcard record this clear says nothing about. The
+        # single-slot flag may instead be carrying the subscription lane's
+        # own record right now (fleet_limit_publish's own per-key
+        # extend-only trade), which this clear must not disturb.
+        if [[ -n "$state_repo" ]]; then
+          flag_now_api="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
+          if [[ "$(jq -r '.provider // empty' <<<"$flag_now_api" 2>/dev/null || true)" == "${check_provider:-anthropic}" ]] \
+             && [[ "$(jq -r '.lane // empty' <<<"$flag_now_api" 2>/dev/null || true)" == "api" ]]; then
+            fleet_flag_delete "$state_repo" "$state_dir" limit >/dev/null || log_event "warning" \
+              '{"detail": "could not clear fleet/limit.json after a clear probe — peers reading it live stand down until their own probes answer"}'
+          fi
+        fi
+        limit_frozen_api=0
+        ;;
+      limited) detect_and_log_limit_hit "$probe_out" || true; probe_note_api=" (probe: still limited)" ;;
+      *) probe_note_api=" (probe: inconclusive)" ;;
+    esac
+  fi
+
+  if [[ "$governing_kind_sub" != "manual" && "$governing_known_sub" != "true" ]] && ! (( DRY_RUN )); then
+    probe_out="$cycle_dir/limit-probe-subscription.out"
+    probe_rc=0
+    probe_model="$(limit_probe_model_for "${check_provider:-anthropic}")"
+    local limit_probe_model
+    stage_model_resolve_into limit_probe_model "$probe_model" "${cycle_id:-}:limit-probe:subscription"
+    run_model_stage limit-probe 180 "$limit_probe_model" \
+      "Reply with the single word: ok" "$probe_out" "$cycle_dir" 0 "" subscription || probe_rc=$?
+    log_event "stage-end" "$(jq -nc --argjson rc "$probe_rc" --arg kr "$stage_kill_reason" \
+      --argjson m "$(metering_fields "$limit_probe_model" "$probe_out" "$stage_gaps_json" "$stage_lane_json")" \
+      '{stage: "limit-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
+    probe_verdict="$(limit_probe_verdict "$(cat "$probe_out" 2>/dev/null || true)" \
+      "$(cat "$probe_out.stderr" 2>/dev/null || true)" "${check_provider:-anthropic}")"
+    case "$probe_verdict" in
+      clear)
+        log_event "limit-cleared" "$(jq -nc --arg w "$resume_at_sub" \
+          --arg by "auto-probe@$node_name" --arg n "$node_name" --arg p "${check_provider:-anthropic}" \
+          '{was: $w, reason: "probe answered: the limit behind this estimated stand-down is gone", by: $by, actor: $n, kind: "auto", provider: $p, lane: "subscription"}')"
+        notify_post_cycle "fleet-standdown-end" "standdown:usage-limit:${check_provider:-anthropic}:subscription" \
+          "Usage-limit cooldown lifted (${check_provider:-anthropic}/subscription)" "" "" \
+          "probe answered: the limit behind this estimated stand-down (resume was $resume_at_sub) is gone"
+        if [[ -n "$state_repo" ]]; then
+          flag_now_sub="$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
+          if [[ "$(jq -r '.provider // empty' <<<"$flag_now_sub" 2>/dev/null || true)" == "${check_provider:-anthropic}" ]] \
+             && [[ "$(jq -r '.lane // empty' <<<"$flag_now_sub" 2>/dev/null || true)" == "subscription" ]]; then
+            fleet_flag_delete "$state_repo" "$state_dir" limit >/dev/null || log_event "warning" \
+              '{"detail": "could not clear fleet/limit.json after a clear probe — peers reading it live stand down until their own probes answer"}'
+          fi
+        fi
+        limit_frozen_sub=0
+        ;;
+      limited) detect_and_log_limit_hit "$probe_out" || true; probe_note_sub=" (probe: still limited)" ;;
+      *) probe_note_sub=" (probe: inconclusive)" ;;
+    esac
+  fi
+
+  if (( limit_frozen_api && limit_frozen_sub )); then
+    # Still fully frozen after probing either lane that needed it: the
+    # provider as a whole stands down, naming both lanes and their own
+    # resumes (issue #2242's own "the escalation names the lanes and their
+    # resumes" — stated here too, since the stand-down reason is the same
+    # sentence a human reads first).
+    lane_reason_api="api $(if [[ "$governing_kind_api" == "manual" ]]; then
+      governing_actor_api="$(jq -r '.actor // .node // "?"' <<<"$governing_api" 2>&1)" \
+        || { guard_warn "cycle:governing_actor:api" "$governing_actor_api"; governing_actor_api='?'; }
+      printf 'manual, set by %s, until %s' "$governing_actor_api" "$resume_at_api"
+    else
+      printf '%s%s' "$(limit_describe "$resume_at_api" \
+        "$(jq -r '.class // "other"' <<<"$governing_api" 2>/dev/null || echo other)" "$governing_known_api")" \
+        "$probe_note_api"
+    fi)"
+    lane_reason_sub="subscription $(if [[ "$governing_kind_sub" == "manual" ]]; then
+      governing_actor_sub="$(jq -r '.actor // .node // "?"' <<<"$governing_sub" 2>&1)" \
+        || { guard_warn "cycle:governing_actor:subscription" "$governing_actor_sub"; governing_actor_sub='?'; }
+      printf 'manual, set by %s, until %s' "$governing_actor_sub" "$resume_at_sub"
+    else
+      printf '%s%s' "$(limit_describe "$resume_at_sub" \
+        "$(jq -r '.class // "other"' <<<"$governing_sub" 2>/dev/null || echo other)" "$governing_known_sub")" \
+        "$probe_note_sub"
+    fi)"
+    standdown_reason="usage-limit cooldown (${check_provider:-anthropic}): every lane is frozen — $lane_reason_api; $lane_reason_sub"
+
+    # The escalation (requirement 2; #244) ages from the LATER of its
+    # automatic lanes' own freeze starts — the moment the provider genuinely
+    # had no open lane left, not the moment either lane individually froze.
+    # Anchoring on the earlier one instead would escalate a lane that has
+    # been frozen beside an open sibling for days the instant the sibling
+    # also froze, even a second ago — exactly the "share shift, not an
+    # outage" case issue #2242's own body says must not page: "fires while
+    # the provider has had no open lane for that long" is the LATER lane's
+    # own age, since before it froze too the earlier one's freeze was never
+    # a full outage. A manual closure never pages the operator who set it,
+    # on either lane, so a provider frozen by one manual and one automatic
+    # lane still escalates on the automatic lane's own age alone; a provider
+    # frozen by two manual closures never escalates at all.
+    if (( limit_escalate_after_hours > 0 )) && ! (( DRY_RUN )) \
+       && [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]] \
+       && { [[ "$governing_kind_api" != "manual" ]] || [[ "$governing_kind_sub" != "manual" ]]; }; then
+      if ! (( union_state_ok )); then
+        log_event "warning" "$(jq -nc \
+          --arg d "automatic usage-limit freeze: the fleet log union could not be built or read this cycle, so whether this freeze was already escalated cannot be told; the escalation is not filed this cycle, and the next cycle tries again" \
+          '{detail: $d}')"
+      else
+        freeze_since=""
+        freeze_basis="union"
+        freeze_lanes=""
+        if [[ "$governing_kind_api" != "manual" ]]; then
+          freeze_since_api="$(jq -r '.since // empty' <<<"$union_state_api" 2>&1)" \
+            || { guard_warn "freeze_since:api" "$freeze_since_api"; freeze_since_api=""; union_state_ok=0; }
+          [[ -n "$freeze_since_api" ]] || freeze_since_api="$(jq -r 'if (.ts | type) == "string" and .ts != "" then .ts else empty end' \
+            <<<"$governing_api" 2>/dev/null || true)"
+          [[ -n "$freeze_since_api" ]] && { freeze_since="$freeze_since_api"; freeze_lanes="api"; }
+        fi
+        if [[ "$governing_kind_sub" != "manual" ]]; then
+          freeze_since_sub="$(jq -r '.since // empty' <<<"$union_state_sub" 2>&1)" \
+            || { guard_warn "freeze_since:subscription" "$freeze_since_sub"; freeze_since_sub=""; union_state_ok=0; }
+          [[ -n "$freeze_since_sub" ]] || freeze_since_sub="$(jq -r 'if (.ts | type) == "string" and .ts != "" then .ts else empty end' \
+            <<<"$governing_sub" 2>/dev/null || true)"
+          if [[ -n "$freeze_since_sub" ]] \
+             && { [[ -z "$freeze_since" ]] || [[ "$freeze_since_sub" > "$freeze_since" ]]; }; then
+            freeze_since="$freeze_since_sub"
+            freeze_lanes="${freeze_lanes:+$freeze_lanes, }subscription"
+          elif [[ -n "$freeze_since_sub" ]]; then
+            freeze_lanes="${freeze_lanes:+$freeze_lanes, }subscription"
+          fi
+        fi
+        if (( union_state_ok )) && [[ -n "$freeze_since" ]]; then
+          freeze_epoch="$(date -d "$freeze_since" +%s 2>&1)" \
+            || { guard_warn "freeze_epoch" "$freeze_epoch"; freeze_epoch=0; }
+          freeze_done="$(jq -r --arg s "$freeze_since" \
+              'if ([.escalated[] | select(. == $s)] | length) > 0 then "escalated" else "" end' <<<"$union_state_api" 2>&1)" \
+            || { guard_warn "freeze_done" "$freeze_done"; freeze_done="unknown"; }
+          if [[ -z "$freeze_done" ]] && (( freeze_epoch > 0 )) \
+             && (( now_epoch - freeze_epoch >= limit_escalate_after_hours * 3600 )); then
+            freeze_body="$cycle_dir/limit-freeze-issue.md"
+            # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
+            {
+              printf '## The fleet has been standing down %s automatically since %s\n\n' "${check_provider:-anthropic}" "$freeze_since"
+              printf 'Every lane of `%s` has been frozen — no open lane for a stage of this provider to fall through to — since %s, and the freeze has now outlived `limit_escalate_after_hours` (%s h). The automatic lane(s) ageing this freeze: %s.\n\n' \
+                "${check_provider:-anthropic}" "$freeze_since" "$limit_escalate_after_hours" "$freeze_lanes"
+              printf 'api: `%s` until %s\nsubscription: `%s` until %s\n\n' \
+                "$governing_api" "$resume_at_api" "$governing_sub" "$resume_at_sub"
+              printf 'If either limit is real, nothing is needed — each lane'\''s own stand-down ends at its own resume time, and each cycle keeps probing an estimated one. If one has lapsed or was misread, `agent-cycle.sh --clear-limit %s/<lane> <reason>` lifts it for that lane alone.\n\n' \
+                "${check_provider:-anthropic}"
+              printf -- '---\nItem: `usage-limit-freeze:%s:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
+                "${check_provider:-anthropic}" "$freeze_since" "$cycle_id" "$node_name"
+            } > "$freeze_body"
+            if freeze_created="$(create_escalation_issue "$crash_loop_repo" \
+                 "usage-limit-freeze:${check_provider:-anthropic}:$freeze_since" "$enabler_escalation_label" \
+                 "Usage-limit freeze (${check_provider:-anthropic}): the fleet has stood down automatically since $freeze_since" \
+                 "$freeze_body")" && [[ -n "$freeze_created" ]]; then
+              log_event "limit-freeze-escalated" "$(jq -nc \
+                --argjson n "${freeze_created%%$'\t'*}" --arg u "${freeze_created#*$'\t'}" \
+                --arg s "$freeze_since" --arg b "$freeze_basis" --arg p "${check_provider:-anthropic}" \
+                --arg l "$freeze_lanes" \
+                '{issue_number: $n, issue_url: $u, since: $s, since_basis: $b, provider: $p, lanes: $l}')"
+            else
+              log_event "warning" "$(jq -nc \
+                --arg d "automatic usage-limit freeze since $freeze_since exceeds ${limit_escalate_after_hours}h but the escalation issue could not be filed — will retry next cycle" \
+                '{detail: $d}')"
+            fi
+          fi
+        fi
+      fi
+    fi
+
+    log_event "stand-down" "$(jq -nc --arg r "$standdown_reason" --arg p "${check_provider:-anthropic}" \
+      '{reason: $r, cause: "usage-limit", provider: $p}')"
+    notify_post_cycle "fleet-standdown-begin" "standdown:usage-limit:${check_provider:-anthropic}" \
+      "Usage-limit cooldown in effect (${check_provider:-anthropic})" "" "" "$standdown_reason"
+    set_node_state_terminal externally-blocked usage-limit
+    exit 0
+  else
+    # A probe cleared one lane: the node-state block just lifted (the other
+    # lane's own stage launches now fall through to it) and this cycle
+    # continues past this point — an immediate transition, not a terminal
+    # one (no exit here).
+    log_node_state_transition overhead
   fi
 fi
 }

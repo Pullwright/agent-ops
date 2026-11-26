@@ -372,7 +372,8 @@ usage: agent-cycle.sh [--dry-run] [--once] [--wake-poll] [--repo <slug>]
        agent-cycle.sh --disable [<reason>] [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --drain <reason> [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --enable [--this-node]
-       agent-cycle.sh --clear-limit [<provider>] [<reason>]
+       agent-cycle.sh --clear-limit [<provider>[/<lane>]] [<reason>]
+       agent-cycle.sh --close-lane <provider>/<lane> [--for <90m|4h|2d|forever>] [--until <timestamp>] [--reason <text>]
        agent-cycle.sh --kill-merge-autonomy [<reason>]
        agent-cycle.sh --restore-merge-autonomy
        agent-cycle.sh --mix [<provider> [<lane>=<weight>... | <lane>.enabled=true | <lane>.balance_usd=<n>] | <provider> --reset]
@@ -433,20 +434,43 @@ stops cycles from starting (shared with review-cycle.sh).
                      node-scoped stand-down; --enable --this-node refuses to
                      clear one of those, since plain --enable is what undoes a
                      fleet-wide disable.
-  --clear-limit [<provider>] [<reason>]
+  --clear-limit [<provider>[/<lane>]] [<reason>]
                      Lift a usage-limit stand-down (2.1). With no provider,
                      every provider's own stand-down lifts, as before issue
                      #2135; name one (e.g. `anthropic`, `xai`) to lift only
-                     that provider's — a different provider's own freeze, if
-                     any, is untouched. Use it once the limit is actually
-                     gone — you raised the cap, or the plan rolled over.
-                     Unlike --enable this touches no switch: it clears
-                     fleet/limit.json (the whole flag with no provider named;
-                     with one, only when the flag's own record already names
-                     that same provider) and logs a `limit-cleared` event
-                     that supersedes the cooldown. A fleet-wide flag record
-                     left standing by a named clear is warned about, since it
-                     still holds that provider down.
+                     that provider's; name `<provider>/<lane>` (`api` or
+                     `subscription`, issue #2242) to lift only that one lane
+                     — the other lane's own freeze, if any, is untouched. Use
+                     it once the limit is actually gone — you raised the cap,
+                     or the plan rolled over — or to lift a `--close-lane`
+                     closure early. Unlike --enable this touches no switch:
+                     it clears fleet/limit.json (the whole flag with no
+                     provider named; with one, when the flag's own record
+                     names that provider — whatever lane, if any, it names;
+                     with a lane too, only when it names that same lane)
+                     and logs a `limit-cleared` event that
+                     supersedes the cooldown. A wider record left standing by
+                     a narrower clear is warned about, since it still holds
+                     the named provider (or lane) down.
+  --close-lane <provider>/<lane> [--for <90m|4h|2d|forever>] [--until <timestamp>] [--reason <text>]
+                     Stop one lane of one provider by hand — a terms concern
+                     with that credential path, say — without an image roll
+                     (issue #2242). Writes a `kind: "manual"` record to
+                     fleet/limit.json for exactly that `<provider>/<lane>`:
+                     never probed (1b) and never auto-cleared (#244), honoured
+                     until its own bound passes or `--clear-limit
+                     <provider>/<lane>` lifts it early. A stage of that
+                     provider falls through to its other lane for as long as
+                     this one stays closed. Needs a bound — --for or --until,
+                     same grammar as --disable/--drain — since an unbounded
+                     closure with no reminder is how a terms concern becomes a
+                     silent, permanent half-outage; `--for forever` states
+                     that choice explicitly rather than leaving it the default.
+                     Fail-closed by design, unlike --mix: a node too old to
+                     read this record's own `lane` field stands the whole
+                     provider down rather than reading nothing (lib/mix.sh's
+                     own `<lane>.enabled=false` refusal names this flag for
+                     exactly that reason).
   --kill-merge-autonomy [reason]
                      Force every repo's effective `merge_autonomy` to `human`
                      fleet-wide, immediately, regardless of config.json or any
@@ -516,12 +540,14 @@ CLEAR_LIMIT_REASON=""
 CLEAR_LIMIT_PROVIDER=""
 CLEAR_LIMIT_ARG1=""
 CLEAR_LIMIT_ARG2=""
+CLOSE_LANE_ARG=""
+CLOSE_LANE_REASON=""
 KILL_MERGE_AUTONOMY_REASON=""
 THIS_NODE=0
 MIX_ARGS=()
 set_manage_action() {
   if [[ -n "$MANAGE_ACTION" ]]; then
-    echo "agent-cycle: --disable, --drain, --enable, --clear-limit, --kill-merge-autonomy, --restore-merge-autonomy, --mix and --status are mutually exclusive" >&2
+    echo "agent-cycle: --disable, --drain, --enable, --clear-limit, --close-lane, --kill-merge-autonomy, --restore-merge-autonomy, --mix and --status are mutually exclusive" >&2
     exit 64
   fi
   MANAGE_ACTION="$1"
@@ -563,6 +589,16 @@ while [[ $# -gt 0 ]]; do
       if [[ $# -gt 0 && "$1" != --* ]]; then CLEAR_LIMIT_ARG1="$1"; shift; fi
       if [[ $# -gt 0 && "$1" != --* ]]; then CLEAR_LIMIT_ARG2="$1"; shift; fi
       ;;
+    --close-lane)
+      set_manage_action close-lane; shift
+      # One required bare token, <provider>/<lane> (issue #2242) — unlike
+      # --clear-limit's optional provider, a closure with no lane to name
+      # would close nothing, so this is mandatory and lib/manage.sh's own
+      # `close-lane` case refuses outright when it is missing or malformed
+      # rather than guessing a reading the way --clear-limit's ambiguous
+      # single token does.
+      if [[ $# -gt 0 && "$1" != --* ]]; then CLOSE_LANE_ARG="$1"; shift; fi
+      ;;
     --kill-merge-autonomy)
       set_manage_action kill-merge-autonomy; shift
       # A reason is required, same as --disable's — the next person to
@@ -583,6 +619,7 @@ while [[ $# -gt 0 ]]; do
     --status) set_manage_action status; shift ;;
     --for) DISABLE_FOR="${2:-}"; shift 2 ;;
     --until) DISABLE_UNTIL="${2:-}"; shift 2 ;;
+    --reason) CLOSE_LANE_REASON="${2:-}"; shift 2 ;;
     --this-node) THIS_NODE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "agent-cycle: unknown argument: $1" >&2; usage >&2; exit 64 ;;
@@ -591,11 +628,16 @@ done
 
 if [[ -n "$MANAGE_ACTION" ]]; then
   if (( DRY_RUN || ONCE || WAKE_POLL )) || [[ -n "$REPO_FILTER" ]]; then
-    echo "agent-cycle: --disable/--drain/--enable/--clear-limit/--kill-merge-autonomy/--restore-merge-autonomy/--mix/--status manage stand-down state; they do not run a cycle" >&2
+    echo "agent-cycle: --disable/--drain/--enable/--clear-limit/--close-lane/--kill-merge-autonomy/--restore-merge-autonomy/--mix/--status manage stand-down state; they do not run a cycle" >&2
     exit 64
   fi
-  if [[ "$MANAGE_ACTION" != "disable" && "$MANAGE_ACTION" != "drain" ]] && [[ -n "$DISABLE_FOR" || -n "$DISABLE_UNTIL" ]]; then
-    echo "agent-cycle: --for and --until only apply to --disable or --drain" >&2
+  if [[ "$MANAGE_ACTION" != "disable" && "$MANAGE_ACTION" != "drain" && "$MANAGE_ACTION" != "close-lane" ]] \
+     && [[ -n "$DISABLE_FOR" || -n "$DISABLE_UNTIL" ]]; then
+    echo "agent-cycle: --for and --until only apply to --disable, --drain or --close-lane" >&2
+    exit 64
+  fi
+  if [[ "$MANAGE_ACTION" != "close-lane" && -n "$CLOSE_LANE_REASON" ]]; then
+    echo "agent-cycle: --reason only applies to --close-lane" >&2
     exit 64
   fi
   if [[ "$MANAGE_ACTION" == "disable" && -z "$DISABLE_REASON" ]]; then
@@ -604,6 +646,10 @@ if [[ -n "$MANAGE_ACTION" ]]; then
   fi
   if [[ "$MANAGE_ACTION" == "drain" && -z "$DRAIN_REASON" ]]; then
     echo "agent-cycle: --drain needs a reason, e.g. --drain 'clearing the backlog before a Kubernetes migration'" >&2
+    exit 64
+  fi
+  if [[ "$MANAGE_ACTION" == "close-lane" && -z "$CLOSE_LANE_ARG" ]]; then
+    echo "agent-cycle: --close-lane needs <provider>/<lane>, e.g. --close-lane anthropic/subscription --for 2d" >&2
     exit 64
   fi
   if [[ "$MANAGE_ACTION" == "kill-merge-autonomy" && -z "$KILL_MERGE_AUTONOMY_REASON" ]]; then

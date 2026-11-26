@@ -155,6 +155,54 @@ check_condition "node disabled" '{node_disabled:true}' "node-disabled"
 check_condition "fleet disabled" '{fleet_disabled:true}' "fleet-disabled"
 check_condition "a usage-limit freeze in force" '{limit_freeze:true}' "usage-limit-freeze"
 
+# --- usage-limit-freeze names the frozen lane (issue #2242) ----------------
+#
+# Requirement 58: the cause states what it is about in its own `detail`, and
+# for this one that includes which lane of which provider is frozen — the
+# lane-scoped answer `scripts/node-health.sh --ready` gathers as
+# `limit_frozen_lanes` (`limit_union_frozen_lanes` over the local union, plus
+# the cached flag) rather than a second definition of its own (requirement
+# 34a). The `{ready, unmet}` shape itself is unchanged, which is why the
+# lanes go in `detail` and not beside it.
+freeze_detail_of() {
+  node_health_readiness "$(jq -c ". + ($1)" <<<"$all_good")" \
+    | jq -r '.unmet[] | select(.code == "usage-limit-freeze") | .detail'
+}
+
+assert_eq "readiness: the usage-limit-freeze detail names the frozen lane and its resume" \
+  "a usage-limit stand-down is in force (anthropic/api until 2099-01-01T00:00:00Z)" \
+  "$(freeze_detail_of '{limit_freeze:true,limit_frozen_lanes:[
+       {provider:"anthropic",lane:"api",record:{resume_at:"2099-01-01T00:00:00Z"}}]}')"
+
+assert_eq "readiness: ...each of two frozen lanes, in one detail" \
+  "a usage-limit stand-down is in force (anthropic/api until 2099-01-01T00:00:00Z; anthropic/subscription until 2099-02-01T00:00:00Z)" \
+  "$(freeze_detail_of '{limit_freeze:true,limit_frozen_lanes:[
+       {provider:"anthropic",lane:"api",record:{resume_at:"2099-01-01T00:00:00Z"}},
+       {provider:"anthropic",lane:"subscription",record:{resume_at:"2099-02-01T00:00:00Z"}}]}')"
+
+# A record naming no lane is every lane of its provider, and one naming no
+# provider is every provider — the pre-#2242 and pre-#2133 shapes. Rendered
+# as what they mean rather than as an empty string beside a slash.
+assert_eq "readiness: ...a record naming no lane reads as every lane of its provider" \
+  "a usage-limit stand-down is in force (anthropic/every lane until 2099-01-01T00:00:00Z)" \
+  "$(freeze_detail_of '{limit_freeze:true,limit_frozen_lanes:[
+       {provider:"anthropic",lane:"",record:{resume_at:"2099-01-01T00:00:00Z"}}]}')"
+
+assert_eq "readiness: ...a record naming no provider reads as every provider" \
+  "a usage-limit stand-down is in force (every provider/every lane until 2099-01-01T00:00:00Z)" \
+  "$(freeze_detail_of '{limit_freeze:true,limit_frozen_lanes:[
+       {provider:"",lane:"",record:{resume_at:"2099-01-01T00:00:00Z"}}]}')"
+
+# The field absent entirely — every caller before this issue, and any facts
+# object a reader hands over without it — leaves the sentence exactly as it
+# was, so the cause never degrades into a dangling "()" .
+assert_eq "readiness: ...no frozen-lane detail leaves the unchanged sentence alone" \
+  "a usage-limit stand-down is in force" \
+  "$(freeze_detail_of '{limit_freeze:true}')"
+assert_eq "readiness: ...an empty frozen-lane list does too" \
+  "a usage-limit stand-down is in force" \
+  "$(freeze_detail_of '{limit_freeze:true,limit_frozen_lanes:[]}')"
+
 # --- xai_configured/xai_credentials_present (issue #2139) ------------------
 
 check_condition "xai configured with neither XAI_API_KEY nor a subscription login" \

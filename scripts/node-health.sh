@@ -321,6 +321,40 @@ cmd_ready() {
     (( resume_epoch > now_epoch )) && limit_freeze=true
   fi
 
+  # `limit_frozen_lanes` (issue #2242) names which lane of which provider is
+  # actually frozen, alongside `limit_freeze`'s own unchanged fleet-wide
+  # boolean — the union's own frozen-lane list (`limit_union_frozen_lanes`,
+  # lib/limit-detect.sh), each filtered to still being live, plus the live
+  # flag's own record when it names a specific lane and is itself still
+  # live (the flag is the fresher carrier, so it is added/merged rather than
+  # read through the union alone).
+  local limit_frozen_lanes_json='[]' limit_lane_line limit_lane_resume_at limit_lane_resume_epoch
+  while IFS= read -r limit_lane_line; do
+    [[ -n "$limit_lane_line" ]] || continue
+    limit_lane_resume_at="$(jq -r '.record.resume_at // empty' <<<"$limit_lane_line" 2>/dev/null)"
+    [[ -n "$limit_lane_resume_at" ]] || continue
+    limit_lane_resume_epoch="$(date -u -d "$limit_lane_resume_at" +%s 2>/dev/null || echo 0)"
+    (( limit_lane_resume_epoch > now_epoch )) || continue
+    limit_frozen_lanes_json="$(jq -c --argjson e "$limit_lane_line" '. + [$e]' <<<"$limit_frozen_lanes_json")"
+  done < <(fleet_logs "$state_dir" "$peers_dir" | limit_union_frozen_lanes 2>/dev/null || true)
+  local flag_now flag_now_provider flag_now_lane flag_now_resume_at flag_now_resume_epoch
+  flag_now="$(cat "$(fleet_cache_file "$state_dir" limit)" 2>/dev/null || true)"
+  flag_now_provider="$(jq -r '.provider // empty' <<<"$flag_now" 2>/dev/null || true)"
+  flag_now_lane="$(jq -r '.lane // empty' <<<"$flag_now" 2>/dev/null || true)"
+  if [[ -n "$flag_now_provider" && -n "$flag_now_lane" ]]; then
+    flag_now_resume_at="$(jq -r '.resume_at // empty' <<<"$flag_now" 2>/dev/null || true)"
+    flag_now_resume_epoch=0
+    [[ -n "$flag_now_resume_at" ]] && flag_now_resume_epoch="$(date -u -d "$flag_now_resume_at" +%s 2>/dev/null || echo 0)"
+    if (( flag_now_resume_epoch > now_epoch )); then
+      limit_frozen_lanes_json="$(jq -c --arg p "$flag_now_provider" --arg l "$flag_now_lane" \
+        --argjson rec "$flag_now" '
+        (map(select(.provider == $p and .lane == $l)) | length == 0) as $new |
+        if $new then . + [{provider: $p, lane: $l, record: $rec}]
+        else map(if .provider == $p and .lane == $l then {provider: $p, lane: $l, record: $rec} else . end) end' \
+        <<<"$limit_frozen_lanes_json")"
+    fi
+  fi
+
   local facts
   facts="$(jq -nc \
     --argjson credentials_present "$credentials_present" \
@@ -330,14 +364,15 @@ cmd_ready() {
     --argjson core_remaining "${core_remaining:-null}" --argjson core_floor "$core_floor" \
     --argjson graphql_remaining "${graphql_remaining:-null}" --argjson graphql_floor "$graphql_floor" \
     --argjson node_disabled "$node_disabled" --argjson fleet_disabled "$fleet_disabled" \
-    --argjson limit_freeze "$limit_freeze" \
+    --argjson limit_freeze "$limit_freeze" --argjson limit_frozen_lanes "$limit_frozen_lanes_json" \
     '{credentials_present:$credentials_present,
       xai_configured:$xai_configured, xai_credentials_present:$xai_credentials_present,
       gh_auth:$gh_auth, gh_auth_detail:$gh_auth_detail,
       disk_free_kb:$disk_free_kb, disk_floor_bytes:$disk_floor_bytes,
       core_remaining:$core_remaining, core_floor:$core_floor,
       graphql_remaining:$graphql_remaining, graphql_floor:$graphql_floor,
-      node_disabled:$node_disabled, fleet_disabled:$fleet_disabled, limit_freeze:$limit_freeze}')"
+      node_disabled:$node_disabled, fleet_disabled:$fleet_disabled, limit_freeze:$limit_freeze,
+      limit_frozen_lanes:$limit_frozen_lanes}')"
   node_health_readiness "$facts"
 }
 

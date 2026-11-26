@@ -266,6 +266,25 @@ node_health_readiness() {
   jq -c '
     def check(cond; code; detail):
       if cond then {code:code, detail:detail} else empty end;
+    # Which lane of which provider is frozen, for the usage-limit-freeze
+    # cause below (issue #2242, requirement 34a: one definition, every
+    # reader). `limit_frozen_lanes` is gathered by scripts/node-health.sh
+    # --ready from the local log union and the cached flag alone — no network
+    # read, so requirement 58a is untouched — and this is the one thing that
+    # reads it: the `{ready, unmet}` shape is unchanged, and the lanes go in
+    # the cause own `detail`, which is where requirement 58 already states
+    # what each cause is about. An entry naming no provider (every record before
+    # issue #2133) or no lane (every record before #2242) is rendered as the
+    # "every …" it means, rather than as a bare empty string.
+    def limit_lane_label:
+      (((.provider // "") | if . == "" then "every provider" else . end)
+       + "/"
+       + ((.lane // "") | if . == "" then "every lane" else . end)
+       + ((.record.resume_at // "") | if . == "" then "" else " until " + . end));
+    def limit_freeze_detail:
+      "a usage-limit stand-down is in force"
+      + (((.limit_frozen_lanes // []) | map(limit_lane_label))
+         | if length == 0 then "" else " (" + join("; ") + ")" end);
     [
       check(.credentials_present != true;
         "credentials-missing"; "no Claude credentials at $CLAUDE_CONFIG_DIR/.credentials.json"),
@@ -300,7 +319,7 @@ node_health_readiness() {
       check(.fleet_disabled == true;
         "fleet-disabled"; "the fleet switch is set"),
       check(.limit_freeze == true;
-        "usage-limit-freeze"; "a usage-limit stand-down is in force")
+        "usage-limit-freeze"; limit_freeze_detail)
     ] as $unmet
     | {ready: ($unmet | length == 0), unmet: $unmet}
   ' <<<"$facts" 2>/dev/null || printf '{"ready":false,"unmet":[{"code":"unreadable-facts","detail":"readiness facts could not be parsed"}]}'

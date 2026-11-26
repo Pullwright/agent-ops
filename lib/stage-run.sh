@@ -637,6 +637,48 @@ stage_lane_any_present() {
   return 1
 }
 
+# stage_lane_frozen PROVIDER LANE
+# True (exit 0) iff LANE is currently frozen by a live usage-limit stand-down
+# for PROVIDER (issue #2242) — the same governing-record combination the
+# stand-down gate itself reads (lib/limit-detect.sh's
+# `limit_governing_record_for`: the cycle's own already-fetched `$union_log`
+# combined with the live flag, memoised within the process by
+# `fleet_flag_fetch` — lib/toggle.sh — so repeated calls across a cycle's
+# many launches cost at most one extra network read), scoped one level down
+# to the lane `stage_lane_draw` below is about to draw. This is what makes a
+# stage fall through to the provider's other open lane rather than drawing
+# the frozen one by weight and immediately re-hitting the same limit.
+#
+# Permissive (never frozen) when `limit_governing_record_for` is not defined —
+# every test that sources lib/stage-run.sh alone without lib/limit-detect.sh/
+# lib/toggle.sh (lib/lane.sh's own header explains why that stays possible) —
+# so an isolated test, or any caller that never sourced the fleet-flag
+# machinery, behaves exactly as it did before this issue. `$state_repo` empty
+# (no fleet to ask) also reads as never frozen, the same "nothing to check"
+# default every live re-check in this codebase takes.
+#
+# The `declare -F` check lives inside the function body, evaluated on every
+# call, rather than once at source time choosing between two function
+# definitions: a source-time check is only ever right for whichever order
+# this file happened to be sourced in relative to lib/limit-detect.sh, and
+# every production entry point today sources limit-detect.sh first only by
+# convention — reorder those two lines in any of them and a source-time
+# check would silently make this exclusion a permanent no-op, with no test
+# anywhere that would notice, since `declare -F` itself can never tell "not
+# yet sourced" apart from "never going to be".
+stage_lane_frozen() {
+  local provider="$1" lane="$2" rec resume_at resume_epoch
+  declare -F limit_governing_record_for >/dev/null 2>&1 || return 1
+  [[ -n "${state_repo:-}" ]] || return 1
+  rec="$(limit_governing_record_for "$state_repo" "${state_dir:-}" "$provider" "$lane" \
+    < "${union_log:-/dev/null}" 2>/dev/null)" || return 1
+  [[ -n "$rec" ]] || return 1
+  resume_at="$(jq -r '.resume_at // empty' <<<"$rec" 2>/dev/null)"
+  [[ -n "$resume_at" ]] || return 1
+  resume_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
+  (( resume_epoch > $(date +%s) ))
+}
+
 # stage_lane_draw PROVIDER SUBSTRATE SEED
 # Draws a lane ("api" or "subscription") for PROVIDER on SUBSTRATE among its
 # open lanes, by weight (issue #2241, D30, docs/ROADMAP.md's D30 row) — only
@@ -650,7 +692,13 @@ stage_lane_any_present() {
 # opens it only when it is the lane the CLI would use unaided — `api`
 # whenever it is present, `subscription` only when it is present and `api`
 # is not (D4's own precedence; the same rule `scripts/doctor.sh`'s
-# `lane_enabled_desc` reports against).
+# `lane_enabled_desc` reports against). A lane open by that rule but
+# currently frozen by a usage-limit stand-down (`stage_lane_frozen` above,
+# issue #2242) is excluded from the draw exactly as a config-closed lane is —
+# the provider's other lane, when it is open and unfrozen, is drawn instead;
+# with neither lane open, this prints nothing and returns 1, same as a
+# config-only "no open lane" (`run_model_stage`'s own `no-open-lane` handling
+# does not need to tell the two apart).
 #
 # Among the open lanes of positive weight, one is drawn with probability
 # proportional to its weight; with none, the open lane of weight zero (there
@@ -686,10 +734,17 @@ stage_lane_draw() {
 
   # Open/closed is `lane_effective_open`'s own call (lib/lane.sh) — shared
   # with `lib/mix.sh`'s status report, so a live `--mix` weight is drawn from
-  # exactly the lanes `--status` describes as open (requirement 34a).
+  # exactly the lanes `--status` describes as open (requirement 34a) — and
+  # then, issue #2242, excluded if it is currently frozen by a usage-limit
+  # stand-down (`stage_lane_frozen` above): `--status`/`--mix` describe a
+  # lane's *configured* openness, not its live freeze state, so this check
+  # stays local to the draw rather than folding into `lane_effective_open`
+  # itself.
   local open_api=0 open_sub=0
-  lane_effective_open "$lanes_json" api "$present_api" "$present_sub" && open_api=1
-  lane_effective_open "$lanes_json" subscription "$present_api" "$present_sub" && open_sub=1
+  lane_effective_open "$lanes_json" api "$present_api" "$present_sub" \
+    && ! stage_lane_frozen "$provider" api && open_api=1
+  lane_effective_open "$lanes_json" subscription "$present_api" "$present_sub" \
+    && ! stage_lane_frozen "$provider" subscription && open_sub=1
 
   local -a weighted=() fallback=()
   (( open_api )) && (( w_api > 0 )) && weighted+=(api)

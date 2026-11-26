@@ -193,7 +193,16 @@
     `github_min_graphql_budget`), `node-disabled`/`fleet-disabled` (the two
     switches, requirements 2.4/2.3a — read from local evidence only, see
     58a) and `usage-limit-freeze` (the cooldown of requirement 2.1, read
-    from the local log union only, see 58a). A condition this node cannot
+    from the local log union only, see 58a — its own `detail` names each
+    currently-frozen `<provider>/<lane>` and that lane's resume, from
+    `lib/limit-detect.sh`'s `limit_union_frozen_lanes` folded over the same
+    local union and merged with the cached flag's own record, so that the
+    lane a stand-down actually named is read from the one definition every
+    other reader of it uses rather than a second one of this check's own
+    (requirement 34a, issue #2242); a record naming no provider or no lane
+    renders as the "every provider"/"every lane" it means, the same
+    "a record without one applies to every provider/lane" rule requirement
+    2.1 reads it by). A condition this node cannot
     read at all — an unreadable disk meter, a `null` budget figure with
     `gh_auth: "ok"` — supports no verdict and is never folded into
     "not ready": only a reading that actually crosses its floor blocks
