@@ -46,6 +46,16 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local desc="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf 'ok   - %s\n' "$desc"
+  else
+    printf 'FAIL - %s (%q unexpectedly found in %q)\n' "$desc" "$needle" "$haystack"
+    failures=$(( failures + 1 ))
+  fi
+}
+
 fixture_dir="$(mktemp -d)"
 trap 'rm -rf "$fixture_dir"' EXIT
 
@@ -120,8 +130,9 @@ assert_contains "memory_describe names the floor in MiB" "512 MiB" "$desc"
 
 # --- memory_cgroup_verdict ---------------------------------------------------
 
-# stub_cgroup HIGH MAX [PARENT_HIGH] — a cgroup v2 memory directory holding
-# just the files the verdict reads, plus the parent window compose mounts.
+# stub_cgroup HIGH MAX [PARENT_HIGH] [PARENT_MAX] [PARENT_SWAP_MAX] — a cgroup
+# v2 memory directory holding just the files the verdict reads, plus the
+# parent windows compose mounts.
 #
 # PARENT_HIGH defaults to the empty file `/dev/null` reads as, which is the
 # unopted-in default and must be pinned rather than inherited: without it
@@ -146,6 +157,14 @@ stub_cgroup() {
     printf '%s' "$4" > "$MEMORY_CGROUP_PARENT_MAX"
   else
     MEMORY_CGROUP_PARENT_MAX="$fixture_dir/no-such-parent-max"
+  fi
+  # Fifth arg, same unset-vs-empty discipline, for the parent's own
+  # memory.swap.max window.
+  if (( $# >= 5 )); then
+    MEMORY_CGROUP_PARENT_SWAP_MAX="$fixture_dir/parent-memory.swap.max"
+    printf '%s' "$5" > "$MEMORY_CGROUP_PARENT_SWAP_MAX"
+  else
+    MEMORY_CGROUP_PARENT_SWAP_MAX="$fixture_dir/no-such-parent-swap-max"
   fi
 }
 
@@ -177,6 +196,30 @@ assert_eq "an unreadable cgroup is unknown, never a verdict" \
 stub_cgroup max 1610612736 1468006400 2147483648
 assert_eq "a ceiling on the parent, itself hard-ceilinged above this container's own, is parented" \
   "parented" "$(memory_cgroup_verdict)"
+
+# --- memory_cgroup_verdict: the parent's own memory.swap.max (agent-ops#1322) -
+#
+# A real memory.max closes the livelock band, but a cgroup held at that
+# ceiling still has somewhere to go if the parent's own memory.swap.max is
+# left unrestricted: it swaps the *host*, not itself (agent-ops#1305 took
+# 100% of host swap on a 5.8 GiB VM). The same otherwise-`parented` fixture
+# as immediately above, plus an unrestricted swap ceiling.
+
+stub_cgroup max 1610612736 1468006400 2147483648 max
+assert_eq "an otherwise-parented ceiling with the parent's own swap left unrestricted is swap-unbounded" \
+  "swap-unbounded" "$(memory_cgroup_verdict)"
+
+stub_cgroup max 1610612736 1468006400 2147483648 0
+assert_eq "the same fixture with the parent's own swap bounded at 0 stays parented" \
+  "parented" "$(memory_cgroup_verdict)"
+
+stub_cgroup max 1610612736 1468006400 2147483648
+assert_eq "the same fixture with the parent's own swap window unmounted stays parented" \
+  "parented" "$(memory_cgroup_verdict)"
+
+stub_cgroup max 1610612736 805306368 1610612736 max
+assert_eq "a livelocked fixture with the parent's own swap unrestricted stays livelocked, never overridden by the swap test" \
+  "livelocked" "$(memory_cgroup_verdict)"
 
 stub_cgroup max 1610612736 max
 assert_eq "a parent with no ceiling of its own bounds nothing" \
@@ -283,6 +326,20 @@ stub_cgroup max 1610612736 805306368
 assert_eq "memory_cgroup_parent_max is empty when the window cannot be read" \
   "" "$(memory_cgroup_parent_max)"
 
+# --- memory_cgroup_parent_swap_max --------------------------------------------
+
+stub_cgroup max 1610612736 805306368 2147483648 max
+assert_eq "memory_cgroup_parent_swap_max reads 'max' verbatim, not collapsed to empty" \
+  "max" "$(memory_cgroup_parent_swap_max)"
+
+stub_cgroup max 1610612736 805306368 2147483648 0
+assert_eq "memory_cgroup_parent_swap_max reads a real byte count" \
+  "0" "$(memory_cgroup_parent_swap_max)"
+
+stub_cgroup max 1610612736 805306368 2147483648
+assert_eq "memory_cgroup_parent_swap_max is empty when the window cannot be read" \
+  "" "$(memory_cgroup_parent_swap_max)"
+
 # --- memory_cgroup_parent_events_high -----------------------------------------
 
 stub_events() {
@@ -319,6 +376,26 @@ assert_contains "memory_cgroup_parent_describe names what is held now" \
   "750 MiB" "$desc"
 assert_contains "memory_cgroup_parent_describe says it survives a roll" \
   "after a roll" "$desc"
+assert_contains "memory_cgroup_parent_describe flags an unread parent memory.swap.max" \
+  "memory.swap.max unread" "$desc"
+
+stub_cgroup max 1610612736 1468006400 2147483648 0
+desc="$(memory_cgroup_parent_describe)"
+assert_not_contains "memory_cgroup_parent_describe says nothing when memory.swap.max reads a real value" \
+  "unread" "$desc"
+
+# --- memory_cgroup_swap_describe (agent-ops#1322) -----------------------------
+
+stub_cgroup max 1610612736 1468006400 2147483648 max
+desc="$(memory_cgroup_swap_describe)"
+assert_contains "memory_cgroup_swap_describe names the parent's high" "1400 MiB" "$desc"
+assert_contains "memory_cgroup_swap_describe names the parent's own max" "2048 MiB" "$desc"
+assert_contains "memory_cgroup_swap_describe names this container's own ceiling" "1536 MiB" "$desc"
+assert_contains "memory_cgroup_swap_describe names what is held now" "750 MiB" "$desc"
+assert_contains "memory_cgroup_swap_describe says swap is unrestricted" \
+  "memory.swap.max left unrestricted" "$desc"
+assert_contains "memory_cgroup_swap_describe points at the fix" \
+  "cgroup-parent-setup.sh" "$desc"
 
 # --- memory_cgroup_livelock_describe ------------------------------------------
 
