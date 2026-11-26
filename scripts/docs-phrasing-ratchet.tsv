@@ -33,7 +33,8 @@ docs/spec/implementation/design-decisions.md	12
 docs/spec/implementation/environment.md	2
 docs/spec/implementation/gotchas.md	1
 docs/spec/implementation/requirements/approver-01.md	3
-docs/spec/implementation/requirements/co-ordinator-01.md	9
+docs/spec/implementation/requirements/co-ordinator-01.md	8
+docs/spec/implementation/requirements/co-ordinator-03.md	1
 docs/spec/implementation/requirements/enabler-01.md	3
 docs/spec/implementation/requirements/enabler-02.md	6
 docs/spec/implementation/requirements/implementer.md	3

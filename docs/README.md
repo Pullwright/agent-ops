@@ -135,7 +135,8 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/spec/implementation/requirements/approver-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Approver |
 | `docs/spec/implementation/requirements/approver-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Approver, part 2 of 2 |
 | `docs/spec/implementation/requirements/co-ordinator-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator (selection only) |
-| `docs/spec/implementation/requirements/co-ordinator-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator, part 2 of 2 |
+| `docs/spec/implementation/requirements/co-ordinator-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator, part 2 of 3 |
+| `docs/spec/implementation/requirements/co-ordinator-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator, part 3 of 3 |
 | `docs/spec/implementation/requirements/enabler-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Enabler |
 | `docs/spec/implementation/requirements/enabler-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Enabler, part 2 of 2 |
 | `docs/spec/implementation/requirements/every-stage.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Every stage (untrusted external content) |
