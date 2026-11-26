@@ -26,6 +26,17 @@
 # `compute_band_eligibility`'s own extracts are settled, so every global this
 # file's one function touches already exists.
 #
+# `run_decision_veto_sweep` sets one further global on a fresh re-block,
+# `decision_veto_blocks_recorded` (requirement 36e, agent-ops#1198), and
+# brackets its own `log_event` calls into `$union_log` the same way
+# `compute_skip_lists` already brackets its own reconciliation passes
+# (lib/candidate-gather.sh) — both for `refresh_after_decision_veto_sweep`
+# (lib/eligibility.sh), called immediately after this function returns, to
+# re-derive this same cycle's `blocked_json`/`decisions_json` and the
+# Enabler/Refiner sets built on them from a log that already carries this
+# cycle's own veto, rather than leaving the re-block to bite only from the
+# next cycle on.
+#
 # The re-block this function records for a non-terminal veto also registers
 # the still-open log issue as that block's own escalation (agent-ops#937's
 # third "Done when" bullet, agent-ops#1198): an `escalated` event naming the
@@ -72,7 +83,24 @@ run_decision_veto_sweep() {
   local processed_json sweep_slug slug_processed_json sweep_action action
   local veto_repo="" veto_item="" veto_issue_number="" veto_issue_url=""
   local na_repo="" na_item="" na_already_blocked=0 na_recorded=0
-  local pending_acts_json cancelled_act
+  local pending_acts_json cancelled_act veto_log_lines_before
+  # requirement 36e (agent-ops#1198): `decision_veto_blocks_recorded` is this
+  # function's own global, read by `refresh_after_decision_veto_sweep`
+  # (lib/eligibility.sh, called immediately after this one returns) to decide
+  # whether there is anything to refresh. Reset every call, never `local` —
+  # the ordinary case (no veto this cycle) must read back as unset-the-flag,
+  # not whatever a previous repo in this same sweep left behind.
+  decision_veto_blocks_recorded=0
+  # `log_event` appends to `$log_file`, never `$union_log` (requirement 2.5's
+  # own snapshot discipline) — so without bracketing the sweep the same way
+  # `compute_skip_lists` already brackets its own reconciliation passes
+  # (lib/candidate-gather.sh), nothing this sweep logs would be visible to
+  # `refresh_after_decision_veto_sweep`'s own re-derivation of `blocked_json`/
+  # `decisions_json` off `union_log`, and the refresh would see this cycle's
+  # veto as though it had never happened.
+  veto_log_lines_before="$(wc -l < "$log_file" 2>&1)" \
+    || { guard_warn "veto_log_lines_before" "$veto_log_lines_before"; veto_log_lines_before=0; }
+  [[ "$veto_log_lines_before" =~ ^[0-9]+$ ]] || veto_log_lines_before=0
   processed_json="$(decision_vetoes_processed_items "$union_log" "$repo_slug_aliases_json")"
   # Requirement 36f: a veto of a decision whose act has not been performed
   # yet cancels the act, and says so on the log. The retirement itself is
@@ -119,6 +147,11 @@ run_decision_veto_sweep() {
           na_recorded=0
           record_needs_refinement_block "$(jq -c 'del(.action)' <<<"$sweep_action" 2>/dev/null || printf '{}')" \
             "script" && na_recorded=1
+          # Only a *fresh* record (agent-ops#1198's pitfall note): an item
+          # `na_already_blocked` already covers needs no refresh at all —
+          # `blocked_json` already carries it, so there is nothing this
+          # cycle's own selection could still get wrong about it.
+          (( na_recorded )) && decision_veto_blocks_recorded=1
           if (( na_recorded || na_already_blocked )) \
              && [[ -n "$veto_issue_number" ]] \
              && [[ "$na_repo" == "$veto_repo" ]] \
@@ -145,6 +178,8 @@ run_decision_veto_sweep() {
     done < <(timeout 120 "$SCRIPT_DIR/scripts/sweep-decision-vetoes.sh" "$sweep_slug" "$node_name" "$cycle_id" \
                <<<"$slug_processed_json" 2>>"$cycle_dir/decision-veto-sweep.err" || true)
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
+
+  tail -n "+$(( veto_log_lines_before + 1 ))" "$log_file" >> "$union_log" 2>/dev/null || true
 
   return 0
 }

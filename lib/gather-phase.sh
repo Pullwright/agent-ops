@@ -57,6 +57,15 @@ compute_refiner_candidates
 # lib/decision-veto.sh's own header.
 run_decision_veto_sweep
 
+# --- Same-cycle refresh after the veto sweep (requirement 36e, agent-ops#1198) ---
+# Immediately after the sweep, never deferred: a veto it re-blocked this
+# cycle must stop being selectable by this same cycle's own Co-Ordinator, and
+# the decision it vetoed must stop being handed to this same cycle's own
+# Refiner as though it still stood — see lib/eligibility.sh's own header for
+# why this is a separate, narrow re-derivation rather than a reordering of
+# the sweep itself.
+refresh_after_decision_veto_sweep
+
 # --- Pending decision acts (requirement 36f) ---
 # After the veto sweep, never before: a reopen this cycle has just discovered
 # cancels a pending act, and doing the acts first would race it.
