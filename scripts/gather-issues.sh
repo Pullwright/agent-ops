@@ -53,6 +53,17 @@
 # begin with, and keeping the two bands disjoint is not a deterministic-filter
 # drop `excluded` needs to explain.
 #
+# A `pw::decision`-labelled issue is dropped the same way (issue #1204): it is
+# the Enabler's own decision-log record (lib/enabler.sh's
+# `create_decision_log_issue`), filed unassigned by design — an assignee would
+# only exclude it from this source for no reason, since nobody is meant to
+# work it. A reopened one (the owner's veto) is otherwise an ordinary open,
+# unassigned, non-`blocked` issue, so without this drop it would be a
+# selectable `issues` candidate whose resulting pull request closes the very
+# veto record it represents on merge — releasing the item that veto blocked
+# with no owner decision anywhere. It was never work to begin with, so it is
+# dropped unreported, like the tech-debt drop above.
+#
 # ## Why issues are pre-fetched at all
 #
 # The issues source used to be the Co-Ordinator's own read: the prompt said
@@ -216,7 +227,10 @@ native_dep_skip_set="$(issue_prefetch_native_dep_skip_set "$issues_raw")"
 # way a PR is: it belongs to the `tech-debt` band instead (scripts/
 # gather-tech-debt.sh), so keeping the two bands disjoint (D15 as revised,
 # #869) is not a candidacy exclusion to report in `excluded` any more than a
-# PR's own drop is — it was never an `issues` candidate to begin with.
+# PR's own drop is — it was never an `issues` candidate to begin with. A
+# `pw::decision`-labelled issue is dropped the same unreported way (issue
+# #1204) — it is the Enabler's own decision-log record, never work to begin
+# with.
 # `priority`'s parse mirrors gather-source-state.sh verbatim; `priority_set`
 # reads the same field more broadly, from the raw option names
 # (`$priority_names`) rather than the filtered `$priority_values`, so it is
@@ -243,6 +257,7 @@ candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
   [.[]
    | select(issue_deterministic_ok)
    | select(([.labels[]?.name] | index("pw::type:tech-debt")) == null)
+   | select(([.labels[]?.name] | index("pw::decision")) == null)
    | {number: .number,
       url: .html_url,
       title: .title,

@@ -657,6 +657,17 @@
      (requirement 3t), so it was never an `issues` candidate to begin with,
      and keeping the two bands disjoint is not a deterministic-filter drop
      `issues_excluded` needs to explain.
+   - **A `pw::decision`-labelled issue is dropped too, unreported** (issue
+     #1204), on the same terms: it is the Enabler's own decision-log record
+     (requirement 36e), filed unassigned by design — an assignee would only
+     exclude it from this source for no reason, since nobody is meant to work
+     it. A reopened one (the owner's veto) is otherwise an ordinary open,
+     unassigned, non-`blocked` issue, so without this drop it would be a
+     selectable `issues` candidate whose resulting pull request closes the
+     very veto record it represents on merge — releasing the item that veto
+     blocked with no owner decision anywhere. It was never an `issues`
+     candidate to begin with, so this drop is not one `issues_excluded` needs
+     to explain either.
    - **The deterministic drop is reported, not lost** (agent-ops#447). Before
      this, the drops above left nothing behind anywhere — no line on
      stdout, no line on stderr, no event in the shared log — so an issue an
