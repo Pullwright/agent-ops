@@ -150,10 +150,16 @@ fi
 # The ten model variables it scans and the MODEL_PROVIDER map a cycle's own
 # resolve_model_id_into calls would have filled by the time it runs. Each
 # call is its own subshell, so the real function never replaces the stub the
-# extracted block above still depends on.
+# extracted block above still depends on. lib/model-id.sh is sourced inside
+# the subshell (not at this file's top level) so model_key_is_set and
+# model_key_qualified_ids are the real functions a mixed-provider set
+# (below) needs — the probe_model_fn is `eval`'d standalone, with no other
+# sourcing of its own (agent-ops#2711).
 # shellcheck disable=SC2034  # read by the eval'd limit_probe_model_for, not visible here
 probe_model_for() {  # probe_model_for <provider>
   (
+    # shellcheck source=lib/model-id.sh
+    . "$SCRIPT_DIR/lib/model-id.sh"
     eval "$probe_model_fn"
     declare -A MODEL_PROVIDER=(
       [claude-haiku-4-5]=anthropic [claude-sonnet-5]=anthropic
@@ -178,6 +184,43 @@ assert_eq "...and the first configured model that does resolve to it otherwise" 
   "grok-4-fast" "$(probe_model_for xai)"
 assert_eq "...falling back to implementer_model_trivial when no model resolves to it at all" \
   "claude-haiku-4-5" "$(probe_model_for openai)"
+
+# A candidate that is itself a weighted-set handle (issue #2247) draws
+# specifically the member on the frozen provider, rather than being skipped
+# or handed to a weighted draw across every member regardless of provider
+# (agent-ops#2711). reviewer_model_complex is stubbed as a set whose
+# xai member carries only 1 of 4 total weight, so a weighted draw would
+# usually favor the anthropic member instead — proving the fix filters by
+# provider rather than merely widening what the weighted draw considers.
+# shellcheck disable=SC2034  # read by the eval'd limit_probe_model_for, not visible here
+probe_model_for_set() {  # probe_model_for_set <provider>
+  (
+    # shellcheck source=lib/model-id.sh
+    . "$SCRIPT_DIR/lib/model-id.sh"
+    eval "$probe_model_fn"
+    declare -A MODEL_PROVIDER=(
+      [claude-haiku-4-5]=anthropic [claude-sonnet-5]=anthropic
+      [claude-opus-5]=anthropic [grok-4-fast]=xai [grok-4]=xai)
+    declare -gA MODEL_SET_JSON=(
+      [reviewer_model_complex]='[{"id":"xai/grok-4","weight":1},{"id":"anthropic/claude-opus-5","weight":3}]')
+    implementer_model_trivial=claude-sonnet-5
+    implementer_model_default=claude-sonnet-5
+    coordinator_model=claude-sonnet-5
+    reviewer_model_default=claude-sonnet-5
+    reviewer_model_complex=reviewer_model_complex
+    enabler_model=claude-sonnet-5
+    refiner_model=claude-sonnet-5
+    approver_model_default=claude-sonnet-5
+    approver_model_complex=claude-sonnet-5
+    approver_model_critical=claude-sonnet-5
+    limit_probe_model_for "$1"
+  )
+}
+
+assert_eq "a mixed-provider set draws specifically its member on the frozen provider" \
+  "grok-4" "$(probe_model_for_set xai)"
+assert_eq "...and is skipped in favour of the next candidate when none of its members match" \
+  "claude-sonnet-5" "$(probe_model_for_set openai)"
 
 printf '\n'
 if (( failures )); then
