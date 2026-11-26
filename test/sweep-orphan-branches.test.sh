@@ -21,8 +21,10 @@
 #   deliberate       a closed, unmerged PR the pipeline itself retired —
 #   retirement       `obsolete`-labelled, or named by a logged
 #                    draft-obsolete-flagged/void-object-closed event — is
-#                    deleted, never recovered (agent-ops#2923); an ordinary
-#                    declined close, with neither signal, is unaffected
+#                    deleted, never recovered (agent-ops#2923); a closed,
+#                    unmerged PR with neither signal — an ordinary human
+#                    decline — is left untouched and skipped instead of
+#                    recovered (issue #1162)
 #   the cap          a backlog surfaces a few per cycle, and the overflow is
 #                    reported, never silent
 #
@@ -429,6 +431,44 @@ assert_contains "and warns, naming the branch, rather than staying silent" \
 assert_not_contains "without ever asking GitHub for rivals at all" \
   "pulls?state=closed" "$calls"
 
+# --- Case 12: a human declined this branch's own PR without merging it (issue #1162) --
+# poetic-fiddle#368/#369: a human closed this branch's own pull request
+# without merging it. The generic arm's analogue of `sweep_record_branch`'s
+# td-record/ skip (TD-PPagop-26082310) — same signal, different namespace,
+# different action: no new recovery draft is filed, but (unlike the
+# td-record/ arm) the ref itself is left untouched, not deleted.
+c="$tmp_dir/declined-own-pr"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/declined-pr\tsha-declined-pr\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-declined-pr"
+compare_fixture "$c" agent/declined-pr 1 "$stale"
+echo 1 > "$c/prs-closed-agent_declined-pr"
+
+out="$(run_sweep "$c")"
+calls="$(cat "$c/calls.log")"
+assert_eq "a branch whose own PR was closed unmerged is skipped, not recovered" \
+  '{"action":"skipped","branch":"agent/declined-pr","reason":"declined"}' \
+  "$(jq -c 'select(.branch == "agent/declined-pr")' <<<"$out")"
+assert_not_contains "and no recovery draft is ever opened for it" \
+  "pr create" "$(grep 'agent/declined-pr' "$c/calls.log" || true)"
+assert_not_contains "and the ref itself is left untouched, unlike a declined td-record/ filing" \
+  "api -X DELETE repos/x/y/git/refs/heads/agent/declined-pr" "$calls"
+
+# --- Case 13: the closed-PR check itself is fail-closed --------------------------
+# Mirrors case 5 (the merged-PR check failing): an unreadable closed-PR list
+# must warn and leave the branch alone, never guess that no closed PR exists.
+c="$tmp_dir/closed-check-fails"; mkdir -p "$c"
+: > "$c/refs-td_tsv"
+printf 'agent/closed-check-fails\tsha-closed-check\n' > "$c/refs-agent_tsv"
+echo "$stale" > "$c/date-sha-closed-check"
+compare_fixture "$c" agent/closed-check-fails 1 "$stale"
+touch "$c/fail-closed-pr-list-agent_closed-check-fails"
+
+out="$(run_sweep "$c")"
+assert_eq "a closed-PR check that errors warns rather than guessing" \
+  '{"action":"warning","branch":"agent/closed-check-fails","detail":"could not check for a closed pull request — leaving it alone"}' \
+  "$(jq -c 'select(.branch == "agent/closed-check-fails")' <<<"$out")"
+
 # --- Case 14: td-record/ delete-only — a declined filing releases both refs -----
 # TD-PPagop-26082310: a human closed the filing pull request without merging,
 # so the record was declined. Recovering it as a draft would hand back
@@ -648,12 +688,12 @@ assert_eq "and so is a void-object-closed retirement" \
 assert_not_contains "with no recovery draft opened for either" \
   "pr create" "$(grep -E 'flag-event-retired|void-event-retired' "$c/calls.log" || true)"
 
-# --- Case 23: an ordinary declined close carries neither signal, and is
-# unaffected (agent-ops#2923) -------------------------------------------------
+# --- Case 23: an ordinary declined close carries neither signal, and is not
+# mistaken for a retirement (agent-ops#2923, issue #1162) --------------------
 # The regression this fix must not cause: a closed, unmerged pull request a
 # human simply declined — no `obsolete` label, no logged retirement event —
-# still falls through to the ordinary recovery-draft flow exactly as before
-# this check existed.
+# is not mistaken for a deliberate pipeline retirement and deleted; it still
+# reaches the generic declined check (issue #1162) and is skipped instead.
 c="$tmp_dir/declined-ordinary"; mkdir -p "$c"
 : > "$c/refs-td_tsv"
 printf 'agent/declined-ordinary\tsha-declined-ord\n' > "$c/refs-agent_tsv"
@@ -662,15 +702,16 @@ compare_fixture "$c" agent/declined-ordinary 1 "$stale"
 jq -n '[{number: 53, state: "CLOSED", labels: [{name: "some-other-label"}],
          closedAt: "2026-01-01T00:00:00Z"}]' \
   > "$c/closed-detail-agent_declined-ordinary.json"
+echo 1 > "$c/prs-closed-agent_declined-ordinary"
 union_log="$c/union.jsonl"
 printf '%s\n' \
   '{"event":"void-object-closed","repo":"x/y","item":"some-unrelated-item"}' \
   > "$union_log"
 
 out="$(run_sweep "$c" "$union_log")"
-assert_eq "an ordinary declined close still gets the ordinary recovery draft" \
-  "agent/declined-ordinary" \
-  "$(jq -r 'select(.action == "recovered") | .branch' <<<"$out")"
+assert_eq "an ordinary declined close is skipped, not retired" \
+  '{"action":"skipped","branch":"agent/declined-ordinary","reason":"declined"}' \
+  "$(jq -c 'select(.branch == "agent/declined-ordinary")' <<<"$out")"
 assert_not_contains "and its ref is never deleted" \
   "api -X DELETE repos/x/y/git/refs/heads/agent/declined-ordinary" \
   "$(cat "$c/calls.log")"
