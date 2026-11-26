@@ -31,11 +31,23 @@
 # and `!= null` guard downstream while naming no cycle at all. Null is what
 # the one out-of-cycle writer that predates this function already hand-rolled
 # for the same reason (`scripts/publish-revert-rate.sh`'s `rework` rows).
-
-# log_event_append LOG_FILE ID_FIELD ID_VALUE NODE EVENT [FIELDS_JSON]
+#
+# The append itself is guarded by an `flock` on `LOG_FILE.lock` (held, under a
+# leading dot, as `.<basename>.lock` beside LOG_FILE — never `LOG_FILE.lock`
+# itself, which would read as a working copy of LOG_FILE to anything globbing
+# `LOG_FILE.*`), the same lock `fleet_repair_log` (`lib/fleet.sh`) takes around
+# its own read-rewrite-rename of a `.jsonl` target: an append landing in the
+# instant `fleet_repair_log` is about to rename its repaired copy over
+# LOG_FILE would otherwise go to the file the rename is about to discard and
+# be lost (#1196). `FLEET_LOG_LOCK_WAIT_SECONDS` bounds the wait — a repair
+# pass costs hundreds of milliseconds even on a multi-megabyte log, so a
+# five-second default leaves ample margin; a caller that still cannot get the
+# lock within it skips the append rather than hang, the same "never worth a
+# cycle" call the trailing `|| true` already makes for every other failure
+# here.
 log_event_append() {
   local log_file="$1" id_field="$2" id_value="$3" node="$4" event="$5" fields="${6:-{\}}"
-  local ts
+  local ts lock
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if ! jq -e 'type == "object"' <<<"$fields" >/dev/null 2>&1; then
     local wrapped
@@ -43,9 +55,15 @@ log_event_append() {
     [[ -n "$wrapped" ]] || wrapped="$(jq -nc --arg f "$fields" '{fields: $f}')"
     fields="$wrapped"
   fi
-  jq -nc --arg ts "$ts" --arg idf "$id_field" --arg idv "$id_value" \
-    --arg node "$node" --arg event "$event" --argjson fields "$fields" \
-    '{ts: $ts} + {($idf): (if $idv == "" then null else $idv end),
-       node: $node, event: $event} + $fields' \
-    >> "$log_file" || true
+  lock="${log_file%/*}"
+  [[ "$lock" == "$log_file" ]] && lock="."
+  lock="$lock/.${log_file##*/}.lock"
+  (
+    flock -w "${FLEET_LOG_LOCK_WAIT_SECONDS:-5}" 200 || exit 0
+    jq -nc --arg ts "$ts" --arg idf "$id_field" --arg idv "$id_value" \
+      --arg node "$node" --arg event "$event" --argjson fields "$fields" \
+      '{ts: $ts} + {($idf): (if $idv == "" then null else $idv end),
+         node: $node, event: $event} + $fields' \
+      >> "$log_file"
+  ) 200>"$lock" || true
 }

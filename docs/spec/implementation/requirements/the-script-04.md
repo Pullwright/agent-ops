@@ -10,7 +10,11 @@
 
    **What replicates.** Everything under `state_dir` except the live locks
    (`lock.json`, `review-lock.json`, `dashboard.lck`, `monitor-lock.json` —
-   `monitor-cycle.sh`, agent-ops#1284), the roll-pending
+   `monitor-cycle.sh`, agent-ops#1284), the per-log lock a NUL repair and
+   every appender into one of `state_dir`'s JSONL logs take against each
+   other (`.<basename>.jsonl.lock` — `fleet_repair_log` in `lib/fleet.sh`,
+   `log_event_append` in `lib/log-event.sh`, agent-ops#1196; globbed, since
+   the name is derived from each log's own basename), the roll-pending
    marker (`roll-pending.json`, requirement 68 (Finish-then-continue), agent-ops#1096), the
    Compose reconciler's own per-host apply output (`compose-apply.log`,
    `lib/compose-reconcile.sh`, the `reconciler` service), the
@@ -58,7 +62,12 @@
    same kind of lock, meaningful only in the PID namespace that minted it —
    `monitor-log.jsonl` is deliberately not among these exclusions, since the
    fleet unions it to decide whose turn the daily monitor run is and when the
-   last report was written, the same as `review-log.jsonl`; `roll-pending.json` is this node's own
+   last report was written, the same as `review-log.jsonl`; a copied
+   `.<basename>.jsonl.lock` is the same kind of lock again — the log it guards
+   is unioned across the fleet, but the lock serialising that node's own
+   appends against its own repair means nothing anywhere else, and the file
+   exists on every node regardless, since opening it is what creates it;
+   `roll-pending.json` is this node's own
    instruction to its own watchtower hook, earned by its own cycle boundary,
    and a copy on a peer would tell that peer's hook to allow a roll nothing
    about that peer actually asked for; a copied `compose-apply.log` would be

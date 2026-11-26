@@ -223,10 +223,23 @@
   a newline, after the `log-repaired` record, so the next append completes
   it, and nothing else in the file waits on it. Every step of the repair is
   guarded, so a step that fails leaves the file as it was and never ends a
-  caller running under `set -e`. Either repair replaces the file by rename
-  only if its size is unchanged since the repair read it: a writer's append
-  that landed meanwhile would be on the file the rename discards, so the
-  window gives up and the next one retries. `log.jsonl` is skipped while the
+  caller running under `set -e`. For the three JSONL logs, the whole
+  sequence — the read, the rewrite of the temp copy, and the rename —
+  runs under an `flock` on `.{basename}.lock` beside the target, the same
+  lock every appender into one of these files (`log_event_append`,
+  `lib/log-event.sh`, and review-cycle.sh's own `log_shared_limit_hit`)
+  takes around its own append, so an append landing during a repair waits
+  for it rather than racing it (agent-ops#1196): whichever gets the lock
+  first runs to completion before the other even starts, and a writer's
+  append always lands on the file the repair leaves behind, never the one
+  it discards. Either repair also still replaces the file by rename only
+  if its size is unchanged since the repair read it — for the three JSONL
+  logs a free second guard the lock already makes unreachable, and for
+  `dashboard.log`, which takes no such lock, the one thing standing between
+  its own writers (the launcher and the Publisher, already serialised with
+  their own lock) and the same loss: a writer's append that landed meanwhile
+  would be on the file the rename discards, so the window gives up and the
+  next one retries. `log.jsonl` is skipped while the
   implementation cycle holds `lock.json` — by `acquire_lock`'s own test, a
   pid `kill -0` finds in a lock that names this container or none — because
   a running cycle copies its own new events into its union snapshot by line

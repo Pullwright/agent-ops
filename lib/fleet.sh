@@ -440,17 +440,48 @@ fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
 # exists to close. The JSONL repair is `fleet_repair_jsonl` below.
 #
 # Cost when there is nothing to do (the normal case) is two reads of PATH —
-# the NUL count and the candidate scan — and no write. The rewrite relies on
-# every writer reopening by name per append, so none holds a descriptor
-# across the rename; an append that lands between the read and the rename
-# would still go to the old file and be lost (#1196), so the swap is
-# abandoned when PATH has changed size since it was read
-# (`fleet_repair_swap`), and the next call retries.
+# the NUL count and the candidate scan — and no write.
+#
+# The rewrite relies on every writer reopening by name per append, so none
+# holds a descriptor across the rename; an append landing between the read
+# and the rename would still go to the old file and be lost (#1196). For a
+# `.jsonl` target this is closed, not merely narrowed: the whole read, write
+# of the temp copy, and rename run under an `flock` on `.{basename}.lock`
+# beside PATH — the same lock `log_event_append` (`lib/log-event.sh`) and
+# every other appender below take around their own append to one of
+# `state_dir`'s JSONL logs — so an append and a repair can never interleave;
+# whichever gets the lock first runs to completion before the other even
+# starts. `dashboard.log` (not `.jsonl`) takes no such lock: its only writers
+# are the launcher and the Publisher it already serialises with their own
+# lock, so it never races a repair to begin with. The `fleet_repair_swap`
+# size check below still runs regardless — it is what the plain-text path
+# alone now relies on, and a second, free guard on the JSONL path.
 #
 # Every step is guarded, and the JSONL repair is called in an `||` list as
 # well: a caller may run under `set -e`, and a step of this best-effort
 # repair that fails must leave the file as it was rather than end the caller.
 fleet_repair_log() {
+  local target="$1" node="$2" lock
+  case "$target" in
+    *.jsonl)
+      lock="${target%/*}"
+      [[ "$lock" == "$target" ]] && lock="."
+      lock="$lock/.${target##*/}.lock"
+      ( flock -w "${FLEET_LOG_LOCK_WAIT_SECONDS:-5}" 200 || exit 0
+        _fleet_repair_log_body "$target" "$node"
+      ) 200>"$lock"
+      ;;
+    *)
+      _fleet_repair_log_body "$target" "$node"
+      ;;
+  esac
+  return 0
+}
+
+# _fleet_repair_log_body — fleet_repair_log's actual read-write-rename
+# sequence, called either directly (a non-`.jsonl` target) or already inside
+# the lock (a `.jsonl` one). Never call this instead of fleet_repair_log.
+_fleet_repair_log_body() {
   local target="$1" node="$2" size clean tmp dropped
   [[ -s "$target" ]] || return 0
   size="$(stat -c %s "$target" 2>/dev/null)" || return 0
@@ -583,9 +614,12 @@ fleet_repair_jsonl() {
 # repair read it. Every writer appends, so a changed size means an append
 # landed during the repair — on the file the rename is about to replace — and
 # the copy lacks it. Abandoning costs nothing: the file is no worse than it
-# was, and the next call retries. It narrows #1196's window to the instant
-# between this check and the rename rather than closing it; only a lock both
-# sides take would close it.
+# was, and the next call retries. For a `.jsonl` target, `fleet_repair_log`'s
+# own lock (#1196) already keeps this from ever firing on a lost append — no
+# appender can be mid-write while that lock is held — so this check is a free
+# second guard there; `dashboard.log`, which takes no such lock, still relies
+# on it alone, narrowing rather than closing its own window to the instant
+# between this check and the rename.
 fleet_repair_swap() {
   local target="$1" tmp="$2" size="$3" now
   now="$(stat -c %s "$target" 2>/dev/null)" || now=""

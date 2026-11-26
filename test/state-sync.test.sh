@@ -191,6 +191,18 @@ printf 'review\n' > "$state/reviews/20260720T020000Z-1/review.out"
 # The things that must stay behind, one per reason in the exclude list.
 printf '{"pid":999}\n' > "$state/lock.json"
 printf '{"pid":998}\n' > "$state/review-lock.json"
+# The per-log lock a NUL repair and every appender into one of state_dir's
+# JSONL logs take against each other (lib/fleet.sh's fleet_repair_log,
+# lib/log-event.sh's log_event_append, agent-ops#1196): a lock file on the
+# same reasoning as the two above, and one that exists on every node whether
+# or not a repair ever had anything to do, since the redirection that opens it
+# is what creates it. One per log, so the exclusion is a glob — these four
+# stand in for it, including one whose log this fixture does not carry, while
+# the logs above must still travel.
+: > "$state/.log.jsonl.lock"
+: > "$state/.review-log.jsonl.lock"
+: > "$state/.monitor-log.jsonl.lock"
+: > "$state/.revert-rate.jsonl.lock"
 # This node's own instruction to its own watchtower hook (agent-ops#1096): a
 # copy on a peer would tell that peer's hook to allow a roll nothing about
 # that peer actually earned, on the same reasoning as the locks above.
@@ -319,6 +331,10 @@ assert_eq "the cron log replicates" "1" "$(test -f "$pushed/cron.log" && echo 1 
 
 assert_eq "the lock does not replicate" "0" "$(test -e "$pushed/lock.json" && echo 1 || echo 0)"
 assert_eq "the review lock does not replicate" "0" "$(test -e "$pushed/review-lock.json" && echo 1 || echo 0)"
+# The JSONL logs' own per-log locks (agent-ops#1196), one assertion for the
+# glob that excludes all of them — the logs they guard replicate above.
+assert_eq "the JSONL logs' own locks do not replicate" "0" \
+  "$(find "$pushed" -maxdepth 1 -name '.*.jsonl.lock' | wc -l)"
 assert_eq "the roll-pending marker does not replicate" "0" "$(test -e "$pushed/roll-pending.json" && echo 1 || echo 0)"
 assert_eq "the dashboard log does not replicate" "0" "$(test -e "$pushed/dashboard.log" && echo 1 || echo 0)"
 assert_eq "the GitHub cache does not replicate" "0" "$(test -e "$pushed/.dashboard-github.json" && echo 1 || echo 0)"
@@ -1930,6 +1946,41 @@ printf '{"ts":"2026-09-16T20:30:00Z","event":"repaired"}\n' > "$swap_copy"
 fleet_repair_swap "$swap_target" "$swap_copy" "$(stat -c %s "$swap_target")"
 assert_eq "a file that has not changed size is replaced by its repaired copy" "repaired" \
   "$(jq -r '.event' < "$swap_target")"
+
+# A concurrent append during the repair's read-write-rename window is
+# preserved, not lost (#1196): `fleet_repair_log` and `log_event_append`
+# (lib/log-event.sh) take the same `flock` on `.{basename}.lock`, so one
+# waits out the other rather than racing it. `awk` is PATH-shimmed to sleep
+# on every call `fleet_repair_jsonl` makes, holding the repair's lock open
+# for long enough that a concurrent `log_event_append` against the same path
+# — launched a moment after the repair starts, so it reliably loses the race
+# for the lock — is still queued behind it when the repair finishes.
+# shellcheck source=lib/log-event.sh
+. "$SCRIPT_DIR/lib/log-event.sh"
+conc_jsonl="$tmp_dir/repair-concurrent.jsonl"
+{ printf '{"ts":"2026-09-16T20:30:00Z","event":"before"}\n'
+  printf '\0%.0s' $(seq 5)
+  printf '{"ts":"2026-09-16T20:31:00Z","event":"after"}\n'; } > "$conc_jsonl"
+real_awk="$(command -v awk)"
+slow_awk_dir="$tmp_dir/slow-awk"
+mkdir -p "$slow_awk_dir"
+cat > "$slow_awk_dir/awk" <<SHIM
+#!/usr/bin/env bash
+sleep 0.4
+exec "$real_awk" "\$@"
+SHIM
+chmod +x "$slow_awk_dir/awk"
+( PATH="$slow_awk_dir:$PATH" fleet_repair_log "$conc_jsonl" "repair-node" ) &
+repair_pid=$!
+sleep 0.1
+log_event_append "$conc_jsonl" cycle "conc-cycle" "conc-node" "concurrent-append"
+wait "$repair_pid"
+assert_eq "the repair still completes with the concurrent writer present" "before after log-repaired concurrent-append" \
+  "$(jq -rs 'map(.event) | join(" ")' < "$conc_jsonl" 2>/dev/null)"
+assert_eq "  ... the concurrent append landed after the repair's own rename, not before it" \
+  "concurrent-append" "$(jq -r '.event' <<<"$(tail -n1 "$conc_jsonl")")"
+assert_eq "  ... and no lock file is left where a snapshot of the directory would see it as a stray working copy" \
+  "" "$(find "$tmp_dir" -maxdepth 1 -name 'repair-concurrent.jsonl.*')"
 
 # ==============================================================================
 # node identity in pipeline events (requirement 33, offline path)
