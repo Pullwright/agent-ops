@@ -596,17 +596,24 @@ _pager_page_key() {
 #     (lib/pager.sh's documented exception).
 #   - the page's own `ref: pager:<key>` footer names a key that no longer
 #     exists in the current invariant registry (`pager_registered_keys`,
-#     lib/pager.sh) — a key renamed or retired out from under an open page,
-#     which `lib/pager.sh`'s key-equality clear logic can never match with a
-#     `pager-cleared` event again (agent-ops#2575: `fit-ladder-pinned` was
-#     renamed to `coordinator-fit-ladder-pinned`, leaving #2372 permanently
-#     un-clearable). Checked first and exclusively — a page filed under a
-#     dead key is retired on that basis alone, without also running the
-#     item-concluded check below, since the two are independent reasons and
-#     an orphaned-key page is outlived regardless of what its own item did.
+#     lib/pager.sh) and is not one of `pager_direct_keys`'s own
+#     directly-driven keys either — a key renamed or retired out from under
+#     an open page, which `lib/pager.sh`'s key-equality clear logic can
+#     never match with a `pager-cleared` event again (agent-ops#2575:
+#     `fit-ladder-pinned` was renamed to `coordinator-fit-ladder-pinned`,
+#     leaving #2372 permanently un-clearable). A directly-driven key
+#     (`pager-eval-frozen`) never sits in `PAGER_KEYS` by design — it is
+#     filed from inside the one branch of `pager_evaluate` that skips that
+#     loop entirely — so without this second list its own page reads
+#     identically to a genuinely orphaned one and is retired within one
+#     evaluation pass of ever being filed (agent-ops#2918). Checked first
+#     and exclusively — a page filed under a dead key is retired on that
+#     basis alone, without also running the item-concluded check below,
+#     since the two are independent reasons and an orphaned-key page is
+#     outlived regardless of what its own item did.
 pager_eval_page_outlived_item() {
   local n _url body kind ref state key registered_keys outlived=() orphaned=()
-  registered_keys="$(pager_registered_keys)"
+  registered_keys="$(pager_registered_keys; pager_direct_keys)"
   while IFS=$'\t' read -r n _url body; do
     [[ -n "$n" ]] || continue
     key="$(_pager_page_key "$body")"
@@ -647,14 +654,17 @@ pager_eval_page_outlived_item() {
 # page this framework or the Enabler files. Re-walks the listing (one more
 # `gh issue list`) rather than parsing EVIDENCE's own prose, so a wording
 # change to the evidence string can never desync the two. A page whose own
-# `ref: pager:<key>` footer names a key no longer in `pager_registered_keys`
-# is closed on that basis alone (agent-ops#2575), with a comment naming the
-# dead key rather than an item state; every other page is checked the
-# original way, against its own item's live GitHub state.
+# `ref: pager:<key>` footer names a key neither in `pager_registered_keys`
+# nor in `pager_direct_keys` (lib/pager.sh) is closed on that basis alone
+# (agent-ops#2575), with a comment naming the dead key rather than an item
+# state; every other page — including one filed under a directly-driven key
+# such as `pager-eval-frozen`, which is never in `PAGER_KEYS` by design
+# (agent-ops#2918) — is checked the original way, against its own item's
+# live GitHub state.
 pager_remedy_page_outlived_item() {
   local n _url body kind ref state key registered_keys closed=0 comment gh
   gh="${PAGER_GH:-gh}"
-  registered_keys="$(pager_registered_keys)"
+  registered_keys="$(pager_registered_keys; pager_direct_keys)"
   while IFS=$'\t' read -r n _url body; do
     [[ -n "$n" ]] || continue
     key="$(_pager_page_key "$body")"

@@ -183,15 +183,21 @@
       carrying `enabler_escalation_label` or `pw::pager` in `pager_repo` is
       outlived for either of two independent reasons, checked in this order.
       First, the page's own `ref: pager:<key>` footer line (`pager_file`'s
-      own format, `lib/pager.sh`) names an invariant key absent from the
-      current registry (`pager_registered_keys`) — a key renamed or retired
-      out from under an open page, which the framework's own key-equality
-      clear logic can never match with a `pager-cleared` event again
-      (agent-ops#2575: `fit-ladder-pinned` was renamed to
-      `coordinator-fit-ladder-pinned`, leaving #2372 permanently
-      un-clearable). This check runs first and, when it matches, retires the
-      page on that basis alone, without also running the item-concluded
-      check below — the two are independent reasons a page can be outlived.
+      own format, `lib/pager.sh`) names an invariant key absent from both
+      the current registry (`pager_registered_keys`) and the directly-driven
+      list (`pager_direct_keys`) — a key renamed or retired out from under
+      an open page, which the framework's own key-equality clear logic can
+      never match with a `pager-cleared` event again (agent-ops#2575:
+      `fit-ladder-pinned` was renamed to `coordinator-fit-ladder-pinned`,
+      leaving #2372 permanently un-clearable). `pager_direct_keys` names the
+      keys `pager_evaluate` files directly from inside one of its own
+      branches rather than through `pager_register`/`PAGER_KEYS` —
+      `pager-eval-frozen` (agent-ops#2918) — which can never sit in
+      `pager_registered_keys` by construction and would otherwise read as
+      orphaned the moment its own page is filed. This check runs first and,
+      when it matches, retires the page on that basis alone, without also
+      running the item-concluded check below — the two are independent
+      reasons a page can be outlived.
       Only a page carrying a `ref: pager:` line can match it at all; an
       Enabler escalation page's own footer names an item, not an invariant
       key, and never matches. Otherwise, links a PR or issue that has
