@@ -1316,11 +1316,29 @@ exclude_blocked_or_void_issues() {  # <candidates-json> <repo> <blocked-json> <v
 # Malformed input degrades to `[]` — silence, not a false positive — on the
 # same fail-open terms as exclude_claimed_items and
 # exclude_blocked_or_void_items above.
-unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json> [trimmed-json]
-  local recorded="$1" eligible="${2:-[]}" policy="${3:-{\}}" trimmed="${4:-[]}" docs
+#
+# Issue #2910: `review-feedback`'s own eligible entries are the one
+# documented exception to "every band's eligible array is the candidate
+# test" (`coordinator_eligible_items`' own header) — not there, but here,
+# because the thing that moves a review-feedback PR out of that band (its
+# blocking review being answered and the PR arming into the landing path) can
+# happen *after* `eligible_items_json`'s own gather-time snapshot but *before*
+# a same-cycle corroboration retry reads it, which the snapshot has no way to
+# reflect. LANDED (`landing_armed_this_cycle`, lib/cycle-state.sh — this
+# cycle's own event log, never a live `gh pr view`) names every PR already
+# known to have moved on; a `review-feedback` entry whose own ref
+# (`pr-<n>-review-<id>`, `scripts/gather-review-feedback.sh`) names one of
+# them is dropped before the ordinary accounting below ever sees it, the same
+# "never demand an account for an item the Script did not actually offer"
+# principle `coordinator_eligible_items`' own `blocked`/`merge_conflicts`
+# exceptions already apply. No other band gets this treatment: their own
+# presence in ELIGIBLE_JSON remains the whole of the candidate test.
+unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json> [trimmed-json] [landed-json]
+  local recorded="$1" eligible="${2:-[]}" policy="${3:-{\}}" trimmed="${4:-[]}" landed="${5:-[]}" docs
   jq -e 'type == "array"' <<<"$eligible" >/dev/null 2>&1 || eligible='[]'
   jq -e 'type == "object"' <<<"$policy" >/dev/null 2>&1 || policy='{}'
   jq -e 'type == "array"' <<<"$trimmed" >/dev/null 2>&1 || trimmed='[]'
+  jq -e 'type == "array"' <<<"$landed" >/dev/null 2>&1 || landed='[]'
   # Keyed on joined strings through two lookup maps rather than on jq's own
   # array/object equality: `index` given an array argument searches for a
   # *subsequence*, not an element, so the obvious `[$repo,$item] | index` form
@@ -1337,10 +1355,11 @@ unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json
   # [] -- an oversized eligible set would then read as "everything is
   # accounted for" rather than the argv failure it actually is, exactly the
   # silent-degradation failure mode requirement 4g exists to remove.
-  # $recorded and $trimmed travel alongside it on the same stdin document, for
-  # the same reason -- $trimmed grows with the cycle's own trimmed band
-  # (requirement 4i) and is no more bounded than $eligible is.
-  docs="$(printf '%s\n' "$recorded" "$eligible" "$trimmed")"
+  # $recorded, $trimmed and $landed travel alongside it on the same stdin
+  # document, for the same reason -- each grows with the cycle's own totals
+  # ($trimmed with requirement 4i's fit ladder, $landed with however many PRs
+  # armed into landing this cycle) and is no more bounded than $eligible is.
+  docs="$(printf '%s\n' "$recorded" "$eligible" "$trimmed" "$landed")"
   # TD-PPagop-26081407: this is the guard the 2026-08-14 outage actually went
   # through -- an execve failure here read as "everything is accounted for"
   # and the Script corroborated a none-selected verdict silently. requirement
@@ -1350,9 +1369,17 @@ unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json
   # so this reports regardless of cause.
   local out
   out="$(jq -nc --argjson policy "$policy" '
-    input as $recorded | input as $eligible | input as $trimmed
+    input as $recorded | input as $eligible | input as $trimmed | input as $landed
     | def ikey: ((.repo // "") + "\u0000" + ((.item // "") | tostring));
       def skey: (ikey + "\u0000" + (.source // ""));
+      # Issue #2910: a review-feedback entry'"'"'s own `item` is its *round'"'"'s*
+      # ref (`pr-<n>-review-<id>`), not the bare PR number landing-armed
+      # events carry, so this pulls the PR number back out of that ref before
+      # $landed_map below can be compared against it. `null` for any other
+      # band'"'"'s item shape, or a review-feedback ref this cycle'"'"'s gatherer
+      # never minted (never observed in practice).
+      def rf_pr_num: (if (.item // "" | test("^pr-[0-9]+-"))
+                      then (.item | capture("^pr-(?<n>[0-9]+)-").n) else null end);
       (($recorded.needs_refinement // []) | map({key: skey, value: true}) | from_entries) as $reported
       | (($recorded.voided // []) | map({key: ikey, value: true}) | from_entries) as $disposed
       # requirement 34e'"'"'s fourth refusal already discards any needs_refinement
@@ -1362,11 +1389,18 @@ unaccounted_items() {  # <recorded-json> <eligible-json> <refinement-policy-json
       # loop the "required" policy exemption just below already exists to
       # avoid for a different reason.
       | ($trimmed | map({key: skey, value: true}) | from_entries) as $fit_trimmed
+      # This function'"'"'s own header explains why review-feedback alone gets
+      # this treatment. Keyed on repo+pr_number, never on skey: the entry and
+      # the landing-armed fact name the same PR under two different id shapes.
+      | ($landed | map({key: ((.repo // "") + "\u0000" + ((.pr_number // "") | tostring)), value: true})
+         | from_entries) as $landed_map
       | [ $eligible[]
           | select((($policy[(.source // "")] // "exempt") != "required")
                    and (($reported[skey] // false) | not)
                    and (($disposed[ikey] // false) | not)
-                   and (($fit_trimmed[skey] // false) | not)) ]
+                   and (($fit_trimmed[skey] // false) | not)
+                   and ((.source != "review-feedback") or (rf_pr_num == null)
+                        or (($landed_map[((.repo // "") + "\u0000" + rf_pr_num)] // false) | not))) ]
     ' <<<"$docs" 2>&1)" || { guard_warn "unaccounted_items" "$out"; out='[]'; }
   printf '%s' "$out"
 }

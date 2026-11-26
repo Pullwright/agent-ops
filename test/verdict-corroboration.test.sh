@@ -330,6 +330,45 @@ assert_eq "an omitted 4th argument exempts nothing, same as before this change" 
 assert_eq "malformed trimmed JSON degrades to exempting nothing" "2" \
   "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$eligible" '{}' "not json")")"
 
+# Issue #2910: a review-feedback item whose own PR armed into the landing
+# path this cycle, after eligible_items_json's own gather-time snapshot was
+# taken but before this corroboration check ran, is dropped by the 5th
+# argument (`landed-json`) — the one documented exception to "every other
+# band is exactly 'presence in the array is the candidate test'"
+# (`coordinator_eligible_items`'s own header): the Co-Ordinator was never
+# actually offered this item, because it had already left the band.
+rf_eligible='[{"repo":"org/a","item":"pr-2907-review-5861819486","source":"review-feedback"},
+              {"repo":"org/a","item":"TD1","source":"tech-debt"}]'
+landed_2907='[{"repo":"org/a","pr_number":"2907"}]'
+out="$(unaccounted_items "$wo_silent" "$rf_eligible" '{}' '[]' "$landed_2907")"
+assert_eq "a review-feedback item whose PR already landed this cycle is accounted for" "1" \
+  "$(jq 'length' <<<"$out")"
+assert_eq "  ... and the untouched tech-debt item is still unaccounted" "TD1" \
+  "$(jq -r '.[0].item' <<<"$out")"
+
+# The match is scoped to the review-feedback item's own PR number and repo —
+# a landed PR under a different number, or in a different repo, accounts for
+# nothing.
+assert_eq "a landed PR under a different number does not account for this one" "2" \
+  "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$rf_eligible" '{}' '[]' '[{"repo":"org/a","pr_number":"9999"}]')")"
+assert_eq "a landed PR in a different repo does not account for this one" "2" \
+  "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$rf_eligible" '{}' '[]' '[{"repo":"org/b","pr_number":"2907"}]')")"
+
+# The exception is review-feedback-only: an eligible tech-debt (or any other
+# band's) entry that happens to carry a matching repo+item is never matched
+# against $landed, because only a review-feedback item's own ref parses as a
+# PR number at all.
+td_as_pr_number='[{"repo":"org/a","item":"2907","source":"tech-debt"}]'
+assert_eq "a non-review-feedback item is never exempted by a landed PR" "1" \
+  "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$td_as_pr_number" '{}' '[]' "$landed_2907")")"
+
+# An omitted 5th argument exempts nothing, same as before this change —
+# backward compatible with every existing call site.
+assert_eq "an omitted 5th argument exempts nothing" "2" \
+  "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$rf_eligible" '{}' '[]')")"
+assert_eq "malformed landed JSON degrades to exempting nothing" "2" \
+  "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" "$rf_eligible" '{}' '[]' "not json")")"
+
 # An empty eligible set has nothing to be unaccounted.
 assert_eq "an empty eligible set is never unaccounted" "0" \
   "$(jq 'length' <<<"$(unaccounted_items "$wo_silent" '[]' '{}')")"

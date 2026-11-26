@@ -160,6 +160,28 @@
    nothing to say here and says nothing: the event is written only where the
    count is above zero, so the ordinary cycle carries no such record.
 
+   **So is a `review-feedback` entry whose own pull request has already armed
+   into the landing path this cycle (issue #2910)** — the one band-specific
+   exemption on top of the otherwise uniform rule above, and the only one that
+   is not about the Co-Ordinator's own account of the item at all. The eligible
+   set is computed once, at gather time; a review-feedback PR's blocking review
+   being answered and the PR arming into landing can both happen *after* that
+   snapshot but *before* a same-cycle corroboration check runs (the Approver
+   and landing-arming step for a prior round, or the 2.1e landing-retry sweep,
+   both of which run earlier the same cycle), so the stale snapshot still names
+   it as an open candidate even though no engagement was ever actually offered
+   it — it had already left the band. `unaccounted_items` reads this cycle's
+   own event log (`landing_armed_this_cycle`, `lib/cycle-state.sh`) for a
+   `landing-armed` event naming the same pull request (matched on repo and PR
+   number, the latter parsed back out of the entry's own
+   `pr-<n>-review-<id>` ref — never a live `gh pr view`, for the same
+   API-cost reason `scripts/gather-review-feedback.sh`'s own header gives) and
+   drops such an entry before the ordinary accounting runs. No other band gets
+   this treatment: `coordinator_eligible_items`' own "presence in the array is
+   the candidate test" rule is unchanged for review-feedback and for every
+   other band alike — this exemption is `unaccounted_items`' own, applied
+   after that set is already fixed, not a second way of computing it.
+
    **Rejections are tagged with the band.** The `warning` and the rejected
    `corroboration` both carry a `bands` object (`{"issues": 3, "tech-debt":
    1}`), every `unaccounted` entry carries its own `source`, and the
