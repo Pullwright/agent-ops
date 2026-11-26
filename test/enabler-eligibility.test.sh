@@ -290,12 +290,16 @@ assert_eq "and it is measured from the *new* block" "2026-07-23T08:00:00Z" \
 
 # --- Escalations (requirement 36a's closure loop) ---
 
-escalated_log() {  # writes a block, three cycles, an examination and an escalation
+# `maybe_run_enabler` (`lib/enabler.sh:2362` then `:2508`) always logs
+# `escalated` before the same engagement's own `enabler-examined` — this
+# writes the two events in that production order, same cycle, examination
+# after the escalation (agent-ops#2881).
+escalated_log() {  # writes a block, three cycles, an escalation and its own examination
   printf '%s\n' "$blocked_line" > "$log"
   coord_cycles 3 >> "$log"
   cat >> "$log" <<'EOF'
-{"ts":"2026-07-23T09:00:00Z","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"escalate","detail":"needs repo secrets set by a human"}
-{"ts":"2026-07-23T09:00:01Z","cycle":"c4","event":"escalated","repo":"o/r","item":"TD1","issue_number":52,"issue_url":"https://github.com/o/r/issues/52","blocked_ts":"2026-07-22T09:00:00Z"}
+{"ts":"2026-07-23T09:00:00Z","cycle":"c4","event":"escalated","repo":"o/r","item":"TD1","issue_number":52,"issue_url":"https://github.com/o/r/issues/52","blocked_ts":"2026-07-22T09:00:00Z"}
+{"ts":"2026-07-23T09:00:01Z","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"escalate","detail":"needs repo secrets set by a human"}
 EOF
 }
 
@@ -318,6 +322,16 @@ escalated_log
 printf '%s\n' '{"ts":"2026-07-24T09:00:00Z","cycle":"c9","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"still-blocked","detail":"the issue was closed but the secret is still absent"}' >> "$log"
 assert_eq "an examination after the closure retires the verification" "" \
   "$(reason_for TD1 3 0 "$open_none")"
+
+# agent-ops#2881: the raising engagement's own `enabler-examined` — logged
+# after `escalated` in the very same cycle, per `escalated_log` above —
+# must not itself count as an examination since the escalation. Counting it
+# retired the `issue-closed` exemption the instant the issue closed, so the
+# human's close was only acted on once `enabler_recheck_hours` elapsed
+# instead of at the next Enabler pass.
+escalated_log
+assert_eq "agent-ops#2881: the raising engagement's own examination does not retire the issue-closed exemption" \
+  "issue-closed" "$(reason_for TD1 3 0 "$open_none")"
 
 # --- The #706 race: a needs-refinement re-flag after the close (TD-PPagop-26082901) ---
 #
@@ -354,8 +368,14 @@ assert_eq "the entry still carries the needs-refinement kind and the prior refin
 # consumed the close — whether before or after the re-flag — must not be
 # re-granted through the needs-refinement exemption. That close was already
 # looked at, so nothing here is "an escalation nobody has acted on since".
+# This examination is a distinct, later engagement from the one that raised
+# the escalation — hence its own cycle id ("c4z", not "c4") — since no two
+# genuinely different engagements ever share a cycle id in production
+# (agent-ops#2881): the raising engagement's own same-cycle marker is excluded
+# by the fix above, but a later engagement's is not, which is exactly what
+# this asserts.
 reflag_after_close_log
-printf '%s\n' '{"ts":"2026-07-23T10:00:00Z","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"still-blocked","detail":"already looked at the closed issue"}' >> "$log"
+printf '%s\n' '{"ts":"2026-07-23T10:00:00Z","cycle":"c4z","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"still-blocked","detail":"already looked at the closed issue"}' >> "$log"
 assert_eq "an examination after the close, even before the re-flag, is not issue-closed" \
   "" "$(reason_for TD1 3 0 "$open_none")"
 

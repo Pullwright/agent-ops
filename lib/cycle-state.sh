@@ -1367,10 +1367,19 @@ ENABLER_ELIGIBLE_JQ='
                     and (.outcome // "") != "escalation-failed"
                     and .ts > $b.ts) ]
          | sort_by(.ts)) as $examined
+      # agent-ops#2881: `maybe_run_enabler` (`lib/enabler.sh`) logs `escalated`
+      # before that same engagement logs its own `enabler-examined`, so the
+      # raising engagement marker always lands after `$escalation.ts` and
+      # would otherwise retire the `issue-closed` exemption the moment the
+      # issue is closed. Excluding any `enabler-examined` whose `cycle`
+      # matches the escalation `cycle` scopes the exclusion to that one
+      # engagement -- an examination from a later cycle carries a different
+      # `cycle` id and still retires the exemption, matching requirement 36a.
       | ([ $all[]
            | select(.event == "enabler-examined" and same_item($b)
                     and (.outcome // "") != "escalation-failed"
-                    and $escalation != null and .ts > $escalation.ts) ]
+                    and $escalation != null and .ts > $escalation.ts
+                    and (.cycle // "") != ($escalation.cycle // "")) ]
          | sort_by(.ts)) as $examined_since_escalation
       | ([ $all[]
            | select(.event == "item-refined" and same_item($b))
