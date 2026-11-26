@@ -261,7 +261,7 @@ while IFS=$'\t' read -r item detail evidence stage; do
   # still act on it.
 done < <(jq -r '.[] | [.item,
                        ((.detail // "") | if . == "" then "-" else . end),
-                       ((.evidence // "") | if . == "" then "-" else . end),
+                       ((.evidence // "" | if type == "object" then tostring else . end) | if . == "" then "-" else . end),
                        (.stage // "-")] | @tsv' \
          <<<"$candidates_json" 2>/dev/null || true)
 
